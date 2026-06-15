@@ -56,13 +56,21 @@ the backup**:
 - All `src/app/api/merchants/[id]/route.ts`
 - All `src/app/provider-portal/**/*` and `src/app/merchant-portal/**/*`
 - All `src/app/{providers,merchants,sub-mids}/page.tsx` (admin SUPER_ADMIN versions)
-- All other `src/app/<page>/page.tsx` (the ComingSoon placeholders for 30+ pages)
+- All other `src/app/<page>/page.tsx` — 33 admin pages reconstructed from
+  PRODUCT_VISION.md §3.x specs and the live DB schema (verified against the
+  existing `6senai-postgres` container).
+- Additional reconstructed API routes since the initial recovery:
+  `api/{admin-log,channels,fund,merchant-config,routing,tenants,reporting,
+  collections/va,pg-adapter,bank-adapter,crypto-rail,recon/breaks,agents,
+  integrations,ledger/{journals,accounts},vendors/[vendor]/payin}`
+  and `api/admin/{users,roles,assignments}`.
 
 The DB schemas these routes assume (table names, columns) are derived from
-`PRODUCT_VISION.md` §3 and from the four `route.ts` files that were read. They
-may not match the original Postgres migrations exactly. The reconstructed routes
-will return 503 ("Service not initialized") when columns differ — that's the
-intended fail-soft behavior in `lib/pg.ts:pgError`.
+`PRODUCT_VISION.md` §3 AND from a live introspection of the running
+`6senai-postgres` container's 20+ databases. So in this recovery the column
+lists are NOT invented — they match the actual `information_schema.columns`
+output for the running stack. If/when a backup is restored, prefer the backup
+but the SQL queries should be close.
 
 ## NOT recovered, NOT reconstructed
 
