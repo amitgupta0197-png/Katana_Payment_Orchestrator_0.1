@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard } from "lucide-react";
@@ -27,9 +28,15 @@ export default function CheckoutPage() {
   });
 
   const cols: Column<Order>[] = [
-    { key: "client_ref", header: "Ref" },
-    { key: "merchant_id", header: "Merchant" },
-    { key: "txn_id", header: "TXN", render: (r) => r.txn_id ?? "—" },
+    {
+      key: "client_ref", header: "Ref",
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/checkout/${r.id}`}>{r.client_ref}</Link>,
+    },
+    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    {
+      key: "txn_id", header: "TXN",
+      render: (r) => r.txn_id ? <Link className="font-mono text-xs hover:underline" href={`/checkout/${r.id}`}>{r.txn_id}</Link> : "—",
+    },
     { key: "amount", header: "Amount", render: (r) => formatAmount(r.amount, r.currency) },
     { key: "method", header: "Method" },
     { key: "selected_rail", header: "Rail", render: (r) => r.selected_rail ?? "—" },

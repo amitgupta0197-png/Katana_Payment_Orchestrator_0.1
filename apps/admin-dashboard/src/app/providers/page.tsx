@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, Plus } from "lucide-react";
@@ -72,8 +73,14 @@ export default function ProvidersPage() {
   });
 
   const cols: Column<Provider>[] = [
-    { key: "code", header: "Code" },
-    { key: "legal_name", header: "Legal name" },
+    {
+      key: "code", header: "Code",
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/providers/${r.id}`}>{r.code}</Link>,
+    },
+    {
+      key: "legal_name", header: "Legal name",
+      render: (r) => <Link className="hover:underline" href={`/providers/${r.id}`}>{r.legal_name}</Link>,
+    },
     { key: "kind", header: "Kind" },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },

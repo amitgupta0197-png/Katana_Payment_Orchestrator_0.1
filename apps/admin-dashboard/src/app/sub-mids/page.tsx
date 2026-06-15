@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Network } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
@@ -28,9 +29,15 @@ export default function AdminSubMidsPage() {
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
   const subCols: Column<SubMid>[] = [
-    { key: "sub_mid_code", header: "Sub-MID" },
+    {
+      key: "sub_mid_code", header: "Sub-MID",
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/sub-mids/${r.id}`}>{r.sub_mid_code}</Link>,
+    },
     { key: "main_mid_code", header: "Main MID" },
-    { key: "merchant_id", header: "Merchant" },
+    {
+      key: "merchant_id", header: "Merchant",
+      render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span>,
+    },
     { key: "traffic_mode", header: "Mode", render: (r) => <Badge variant={statusVariant(r.traffic_mode)}>{r.traffic_mode}</Badge> },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
