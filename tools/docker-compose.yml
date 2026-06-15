@@ -1,0 +1,31 @@
+# Minimal Postgres for the reconstructed dashboard.
+# Brings up one Postgres instance — the BFF connects to multiple logical databases
+# inside it (one per microservice, per the namespacing in apps/admin-dashboard/src/lib/pg.ts).
+#
+# Start with:   docker compose -f tools/docker-compose.yml up -d
+# Bootstrap:    bash tools/bootstrap-db.sh
+#
+# Defaults match apps/admin-dashboard/src/lib/pg.ts:
+#   user=sixsenai, password=sixsenai_pg_2024_secure, port=5432
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: katana-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sixsenai
+      POSTGRES_PASSWORD: sixsenai_pg_2024_secure
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - katana-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sixsenai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  katana-pgdata:

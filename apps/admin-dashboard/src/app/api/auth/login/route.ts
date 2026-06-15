@@ -1,0 +1,58 @@
+// POST /api/auth/login — email + (demo) password → signed cookie session.
+// Demo mode: password "demo" works for the seeded users (admin/provider/merchant @katana.dev).
+// Production: replace with bcrypt against users.password_hash + rate limit + MFA.
+
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { rows, pgError } from "@/lib/pg";
+import { setSessionCookie } from "@/lib/auth";
+
+const schema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export async function POST(req: Request) {
+  let body;
+  try { body = schema.parse(await req.json()); } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
+  if (body.password !== (process.env.DEMO_PASSWORD ?? "demo")) {
+    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
+  }
+  try {
+    const u = await rows<any>("auth", `
+      SELECT id::text, email::text, COALESCE(full_name,'') AS full_name, status
+        FROM users WHERE email = $1
+    `, [body.email]);
+    if (!u.length) return NextResponse.json({ error: "user not found" }, { status: 401 });
+    if (u[0].status !== "active") return NextResponse.json({ error: "user disabled" }, { status: 403 });
+
+    const personas = await rows<any>("iam", `
+      SELECT persona_kind, COALESCE(scope_id,'') AS scope_id, COALESCE(scope_label,'') AS scope_label, is_primary
+        FROM user_personas WHERE user_id = $1::uuid
+        ORDER BY is_primary DESC, granted_at DESC
+    `, [u[0].id]);
+    if (!personas.length) return NextResponse.json({ error: "no persona grants" }, { status: 403 });
+    const primary = personas[0];
+
+    await setSessionCookie({
+      user_id: u[0].id,
+      email: u[0].email,
+      full_name: u[0].full_name,
+      persona: primary.persona_kind,
+      scope_id: primary.scope_id || null,
+      scope_label: primary.scope_label,
+    });
+
+    return NextResponse.json({
+      user: { id: u[0].id, email: u[0].email, full_name: u[0].full_name },
+      persona: primary.persona_kind,
+      scope: { id: primary.scope_id || null, label: primary.scope_label },
+      all_personas: personas,
+    });
+  } catch (err) {
+    const e = pgError(err);
+    return NextResponse.json(e.body, { status: e.status });
+  }
+}
