@@ -53,7 +53,12 @@ export async function setSessionCookie(s: Omit<Session, "exp">) {
   const c = await cookies();
   c.set(COOKIE_NAME, signSession(s), {
     httpOnly: true, sameSite: "lax", path: "/",
-    secure: process.env.NODE_ENV === "production",
+    // Secure by default in production, but allow opt-out for deployments
+    // served over plain HTTP (e.g. an IP-only box with no TLS) where a
+    // Secure cookie would be silently dropped by the browser.
+    secure: process.env.COOKIE_SECURE
+      ? process.env.COOKIE_SECURE === "true"
+      : process.env.NODE_ENV === "production",
     maxAge: TTL_SECONDS,
   });
 }
