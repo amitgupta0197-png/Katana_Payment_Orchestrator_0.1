@@ -71,18 +71,29 @@ export const navItems: NavItem[] = [
 
   { href: "/reconciliation", label: "Reconciliation", icon: GitMerge, status: "live", group: "Risk & Compliance" },
   { href: "/risk", label: "Risk & Velocity", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
+  { href: "/risk/aml", label: "AML / Sanctions", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
+  { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
 
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },
   { href: "/commission", label: "Commission", icon: Percent, status: "live", group: "Operations" },
+  { href: "/events", label: "Event stream", icon: Activity, status: "live", group: "Operations" },
   { href: "/reporting", label: "Reporting", icon: BarChart3, status: "read-only", group: "Operations" },
   { href: "/tenants", label: "Tenants", icon: Globe, status: "live", group: "Operations" },
 
-  { href: "/admin/users",       label: "Users",        icon: UserCog,  status: "live", group: "Admin" },
-  { href: "/admin/roles",       label: "Roles & Permissions", icon: Shield, status: "live", group: "Admin" },
-  { href: "/admin/api-keys",    label: "API Keys",     icon: KeyRound, status: "live", group: "Admin" },
-  { href: "/admin/assignments", label: "Assignments",  icon: UserPlus, status: "live", group: "Admin" },
-  { href: "/integrations",      label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
+  { href: "/admin/users",          label: "Users",        icon: UserCog,  status: "live", group: "Admin" },
+  { href: "/admin/roles",          label: "Roles & Permissions", icon: Shield, status: "live", group: "Admin" },
+  { href: "/admin/api-keys",       label: "API Keys",     icon: KeyRound, status: "live", group: "Admin" },
+  { href: "/admin/assignments",    label: "Assignments",  icon: UserPlus, status: "live", group: "Admin" },
+  { href: "/admin/maker-checker",  label: "Maker-Checker", icon: ShieldAlert, status: "live", group: "Admin" },
+  { href: "/admin/webhooks",       label: "Webhooks", icon: Workflow, status: "live", group: "Admin" },
+  { href: "/admin/routing",        label: "Routing cockpit", icon: GitMerge, status: "live", group: "Admin" },
+  { href: "/admin/tokens",         label: "Vault & tokens", icon: KeyRound, status: "live", group: "Admin" },
+  { href: "/admin/noc",            label: "NOC cockpit", icon: Activity, status: "live", group: "Admin" },
+  { href: "/admin/refunds",        label: "Refunds", icon: Banknote, status: "live", group: "Admin" },
+  { href: "/admin/ai-ops",         label: "AI Ops", icon: Users, status: "live", group: "Admin" },
+  { href: "/admin/hardening",      label: "Hardening", icon: Shield, status: "live", group: "Admin" },
+  { href: "/integrations",         label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
 ];
 
 export const navGroups = ["Overview", "Payment Management", "Money Movement", "Risk & Compliance", "Operations", "Admin"] as const;

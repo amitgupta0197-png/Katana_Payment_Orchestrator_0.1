@@ -63,17 +63,20 @@ async function verifySession(token: string | undefined): Promise<Session | null>
 const PUBLIC_UI = ["/login"];
 const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
+const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 
 const SUPER_ADMIN_UI = [
   "/admin", "/tenants", "/routing", "/pg-adapter", "/bank-adapter",
   "/crypto-rail", "/integrations", "/vendors", "/channels", "/fund",
-  "/admin-log", "/agents",
+  "/admin-log", "/agents", "/events",
 ];
 
 const SUPER_ADMIN_API = [
   "/api/admin", "/api/tenants", "/api/routing", "/api/pg-adapter",
   "/api/bank-adapter", "/api/crypto-rail", "/api/integrations", "/api/channels",
-  "/api/settlement/trigger", "/api/svc-tables",
+  "/api/settlement/trigger", "/api/svc-tables", "/api/events",
+  "/api/admin/routing", "/api/admin/webhooks",
+  "/api/admin/slos", "/api/admin/incidents", "/api/recon/run",
 ];
 
 const PROVIDER_PORTAL_UI = "/provider-portal";
@@ -106,7 +109,7 @@ export async function middleware(req: NextRequest) {
   const isApi = pathname.startsWith("/api/");
 
   if (isApi) {
-    if (PUBLIC_API.includes(pathname) || VENDOR_CALLBACK.test(pathname)) {
+    if (PUBLIC_API.includes(pathname) || VENDOR_CALLBACK.test(pathname) || SANDBOX_PREFIX.test(pathname)) {
       return NextResponse.next({ request: { headers: withPathname(req) } });
     }
   } else {

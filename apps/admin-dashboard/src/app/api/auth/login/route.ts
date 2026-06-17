@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { setSessionCookie } from "@/lib/auth";
+import { publish } from "@/lib/events";
 
 const schema = z.object({
   email: z.string().email(),
@@ -43,6 +44,15 @@ export async function POST(req: Request) {
       persona: primary.persona_kind,
       scope_id: primary.scope_id || null,
       scope_label: primary.scope_label,
+    });
+
+    await publish({
+      eventType: "auth.session_started",
+      producer: "auth",
+      entityType: "session",
+      entityId: u[0].id,
+      actorId: u[0].id,
+      payload: { email: u[0].email, persona: primary.persona_kind, scope: primary.scope_label },
     });
 
     return NextResponse.json({

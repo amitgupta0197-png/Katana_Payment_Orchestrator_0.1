@@ -30,7 +30,7 @@ export async function GET() {
         FROM api_keys
        WHERE ${where}
        ORDER BY created_at DESC LIMIT 200
-    `, params).catch(() => []);
+    `, params);
     return NextResponse.json({ keys });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

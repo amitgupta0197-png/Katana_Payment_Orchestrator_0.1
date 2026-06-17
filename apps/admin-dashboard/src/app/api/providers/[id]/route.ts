@@ -1,11 +1,17 @@
 // GET / PATCH a single provider.
 // SUPER_ADMIN: full read + update kyc_status / status / bank.
-// PROVIDER: read own only; update bank fields only.
+// PROVIDER:    read own only; update bank fields only.
+//
+// BRD §4 (P0): KYC approval / rejection and TERMINATION require maker-checker.
+//   These actions enqueue a maker_checker_requests row (status PENDING)
+//   instead of mutating providers directly. A second SUPER_ADMIN applies
+//   the change via /api/admin/maker-checker.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { publish } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -48,8 +54,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       SELECT id::text, merchant_id, relation, created_at
         FROM provider_merchant_mappings WHERE provider_id = $1::uuid ORDER BY created_at DESC
     `, [id]).catch(() => []);
+    const auditLog = await rows<any>("provider", `
+      SELECT id, actor, action, before_state, after_state, occurred_at
+        FROM provider_audit_logs WHERE provider_id = $1::uuid
+        ORDER BY occurred_at DESC LIMIT 50
+    `, [id]).catch(() => []);
+    const pendingApprovals = await rows<any>("provider", `
+      SELECT request_id::text, action, payload, maker_email, status, created_at
+        FROM maker_checker_requests
+       WHERE resource_type = 'provider' AND resource_id = $1 AND status = 'PENDING'
+       ORDER BY created_at DESC
+    `, [id]).catch(() => []);
 
-    return NextResponse.json({ provider: provider[0], users, docs, commission, mappings });
+    return NextResponse.json({
+      provider: provider[0], users, docs, commission, mappings,
+      audit_log: auditLog, pending_approvals: pendingApprovals,
+    });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
@@ -61,6 +81,14 @@ const patchSchema = z.object({
   contact_phone: z.string().optional(),
   notes: z.string().optional(),
 });
+
+// Which transitions are sensitive enough to require a second approver.
+function isSensitive(fields: Record<string, unknown>): { action: string; payload: any } | null {
+  if (fields.kyc_status === "APPROVED") return { action: "provider.kyc.approve", payload: fields };
+  if (fields.kyc_status === "REJECTED") return { action: "provider.kyc.reject",  payload: fields };
+  if (fields.status     === "TERMINATED") return { action: "provider.status.terminate", payload: fields };
+  return null;
+}
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER"]);
@@ -87,7 +115,51 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (Object.keys(fields).length === 0)
     return NextResponse.json({ error: "no fields you may edit were supplied" }, { status: 400 });
 
+  // Maker-checker gate (SUPER_ADMIN only — provider has no sensitive verbs anyway).
+  const sensitive = s.persona === "SUPER_ADMIN" ? isSensitive(fields) : null;
+  if (sensitive) {
+    try {
+      // Reject if there's already a pending request for the same action on this provider.
+      const dupe = await rows<any>("provider", `
+        SELECT request_id::text FROM maker_checker_requests
+         WHERE resource_type = 'provider' AND resource_id = $1
+           AND action = $2 AND status = 'PENDING' LIMIT 1
+      `, [id, sensitive.action]).catch(() => []);
+      if (dupe.length)
+        return NextResponse.json({ error: "a pending approval for this action already exists", request_id: dupe[0].request_id }, { status: 409 });
+
+      const ins = await rows<{ request_id: string }>("provider", `
+        INSERT INTO maker_checker_requests
+          (resource_type, resource_id, action, payload, maker_id, maker_email)
+        VALUES ('provider', $1, $2, $3::jsonb, $4, $5)
+        RETURNING request_id::text
+      `, [id, sensitive.action, JSON.stringify({ ...sensitive.payload, notes: body.notes }), s.user_id, s.email]);
+
+      await publish({
+        eventType: "maker_checker.requested",
+        producer: "provider_mgmt",
+        entityType: "provider", entityId: id, actorId: s.user_id,
+        payload: { request_id: ins[0].request_id, action: sensitive.action, fields },
+      });
+
+      return NextResponse.json({
+        queued_for_approval: true,
+        request_id: ins[0].request_id,
+        action: sensitive.action,
+        message: "Awaiting a second SUPER_ADMIN to approve at /admin/maker-checker",
+      }, { status: 202 });
+    } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  }
+
+  // Non-sensitive update — apply immediately.
   try {
+    const before = await rows<any>("provider", `
+      SELECT kyc_status, status, COALESCE(bank_account_no,'') AS bank_account_no,
+             COALESCE(bank_ifsc,'') AS bank_ifsc, COALESCE(contact_phone,'') AS contact_phone
+        FROM providers WHERE id = $1::uuid
+    `, [id]);
+    if (!before.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+
     const sets: string[] = [];
     const args: unknown[] = [];
     for (const [k, v] of Object.entries(fields)) {
@@ -100,11 +172,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
        WHERE id = $${args.length}::uuid
        RETURNING id::text, code, kyc_status, status, updated_at
     `, args);
-    if (!res.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     await rows("provider", `
-      INSERT INTO provider_audit_logs (provider_id, action, actor, payload)
-      VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, "PROVIDER_UPDATED", s.email, JSON.stringify({ fields, notes: body.notes })]).catch(() => {});
+      INSERT INTO provider_audit_logs (provider_id, actor, action, before_state, after_state)
+      VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb)
+    `, [id, s.email, "provider.updated", JSON.stringify(before[0]), JSON.stringify(fields)]).catch(() => {});
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
