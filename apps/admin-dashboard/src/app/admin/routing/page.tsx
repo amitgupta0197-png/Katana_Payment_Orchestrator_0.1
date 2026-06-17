@@ -242,7 +242,7 @@ export default function RoutingAdminPage() {
     { key: "kill_switch", header: "Kill", render: (r) => r.kill_switch ? <Badge variant="danger">KILLED</Badge> : <Badge variant="success">live</Badge> },
     { key: "kill_switch_at", header: "Killed at", render: (r) => r.kill_switch_at ? formatDateTime(r.kill_switch_at) : "—" },
     { key: "kill_switch_reason", header: "Reason", render: (r) => r.kill_switch_reason || "—" },
-    { key: "provider", header: "Toggle", render: (r) => <KillSwitchToggle rail={r} /> },
+    { key: "kill_switch_by", header: "Toggle", render: (r) => <KillSwitchToggle rail={r} /> },
   ];
 
   const healthCols: Column<Health>[] = [
@@ -255,7 +255,7 @@ export default function RoutingAdminPage() {
     { key: "utilization", header: "Util %", render: (r) => (r.utilization * 100).toFixed(0) + "%" },
     { key: "last_failure_at", header: "Last fail", render: (r) => r.last_failure_at ? formatDateTime(r.last_failure_at) : "—" },
     { key: "last_success_at", header: "Last ok", render: (r) => r.last_success_at ? formatDateTime(r.last_success_at) : "—" },
-    { key: "provider_code", header: "Actions", render: (r) => (
+    { key: "updated_at", header: "Actions", render: (r) => (
       <div className="flex gap-1">
         <CircuitAction provider={r.provider_code} label="Reset" action="reset" variant="secondary" />
         <CircuitAction provider={r.provider_code} label="Trip" action="trip" variant="danger" />
