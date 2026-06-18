@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle } from "lucide-react";
+import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,10 @@ interface Merchant {
 interface SubMid {
   id: string; sub_mid_code: string; merchant_id: string;
   kyc_status: string; settlement_enabled: boolean; traffic_mode: string; main_mid_code: string;
+}
+interface ApiKey {
+  id: string; label: string; prefix: string; scopes: string[]; status: string;
+  created_at: string; last_used_at?: string; revoked_at?: string;
 }
 
 const STEPS = [
@@ -127,6 +131,116 @@ function RejectButton({ merchant }: { merchant: Merchant }) {
     <Button variant="danger" size="sm" onClick={() => m.mutate()} disabled={m.isPending}>
       <AlertTriangle className="h-4 w-4" /> Reject
     </Button>
+  );
+}
+
+function IssueApiKeyDialog({ merchant }: { merchant: Merchant }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+
+  const m = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/api-keys/issue`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label.trim() || undefined, scopes: [] }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json() as Promise<{ key: ApiKey; secret: string }>;
+    },
+    onSuccess: (d) => {
+      setSecret(d.secret);
+      qc.invalidateQueries({ queryKey: ["merchant", merchant.id, "api-keys"] });
+    },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+
+  function close() {
+    setOpen(false);
+    setTimeout(() => { setSecret(null); setLabel(""); m.reset(); }, 200);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+      <DialogTrigger asChild>
+        <Button size="sm"><KeyRound className="h-4 w-4" /> Generate API key</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Generate API key</DialogTitle>
+          <DialogDescription>
+            Issue a live secret for <span className="font-mono">{merchant.merchant_code}</span>. The full secret is shown once and cannot be retrieved later.
+          </DialogDescription>
+        </DialogHeader>
+        {secret ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-[color:var(--color-success)]/30 bg-[color:var(--color-success-muted)] px-3 py-2 text-xs text-[color:var(--color-success)]">
+              Key created. Copy it now — you won’t be able to see it again.
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{secret}</code>
+              <Button size="sm" variant="secondary" onClick={() => { navigator.clipboard?.writeText(secret); toast.success("Copied to clipboard"); }}>
+                <Copy className="h-4 w-4" /> Copy
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label>Label (optional)</Label>
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={`${merchant.merchant_code} key`} />
+          </div>
+        )}
+        <DialogFooter>
+          {secret ? (
+            <Button onClick={close}>Done</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={close}>Cancel</Button>
+              <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Generating…" : "Generate"}</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ApiKeysCard({ merchant }: { merchant: Merchant }) {
+  const isLive = merchant.stage === "LIVE";
+  const keysQ = useQuery({
+    queryKey: ["merchant", merchant.id, "api-keys"],
+    queryFn: async () => (await fetch(`/api/merchants/${merchant.id}/api-keys`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { keys: ApiKey[] },
+    enabled: isLive,
+  });
+  const keys = keysQ.data?.keys ?? [];
+  const cols: Column<ApiKey>[] = [
+    { key: "label", header: "Label" },
+    { key: "prefix", header: "Key", render: (r) => <span className="font-mono text-xs">{r.prefix}…</span> },
+    { key: "scopes", header: "Scopes", render: (r) => r.scopes?.length ? r.scopes.join(", ") : "—" },
+    { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+    { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
+    { key: "last_used_at", header: "Last used", render: (r) => r.last_used_at ? formatDateTime(r.last_used_at) : "—" },
+  ];
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="text-base">API keys</CardTitle>
+          <CardDescription>Live secret keys for this merchant. Only the prefix is stored — copy the full secret when it’s issued.</CardDescription>
+        </div>
+        {isLive && <IssueApiKeyDialog merchant={merchant} />}
+      </CardHeader>
+      <CardContent>
+        {isLive ? (
+          <DataTable columns={cols} rows={keys} loading={keysQ.isLoading} rowKey={(r) => r.id} emptyState="No API keys yet. Click “Generate API key” to issue one." />
+        ) : (
+          <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
+            API keys can be generated once the merchant reaches the LIVE stage.
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -245,6 +359,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <ApiKeysCard merchant={merchant} />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this merchant.</CardDescription></CardHeader>
