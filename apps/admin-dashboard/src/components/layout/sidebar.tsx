@@ -2,13 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Swords } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { navGroups, navItems } from "@/lib/nav";
+import { navGroups, navItems, filterNavForPersona, type NavPersona } from "@/lib/nav";
 
 export function Sidebar() {
   const pathname = usePathname();
+
+  // Read persona from /api/me/access (already cached by useAccess). Render
+  // the SUPER_ADMIN superset while the query is in flight, then filter on
+  // first paint so we never show admin links to a merchant.
+  const me = useQuery({
+    queryKey: ["me:access"],
+    queryFn: async () => (await fetch("/api/me/access").then((r) => r.json())) as { persona: NavPersona },
+    staleTime: 5 * 60_000,
+  });
+  const persona: NavPersona = me.data?.persona ?? "SUPER_ADMIN";
+  const visibleItems = filterNavForPersona(navItems, persona);
+  const personaLabel = persona === "SUPER_ADMIN" ? "super-admin" : persona === "PROVIDER" ? "provider" : "merchant";
 
   return (
     <aside
@@ -28,7 +41,8 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => {
-          const items = navItems.filter((i) => i.group === group);
+          const items = visibleItems.filter((i) => i.group === group);
+          if (items.length === 0) return null;
           return (
             <div key={group}>
               <h4 className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--color-text-subtle)]">
@@ -75,7 +89,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-        v0.1.0 · super-admin
+        v0.1.0 · {personaLabel}
       </div>
     </aside>
   );

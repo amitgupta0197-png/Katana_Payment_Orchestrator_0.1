@@ -1,11 +1,13 @@
 "use client";
 
+// L1 — agents / franchise. DataView with tier + status chips + search.
+
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import type { Column } from "@/components/ui/data-table";
+import { DataView } from "@/components/world-class/data-view";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Agent {
@@ -19,21 +21,31 @@ export default function AgentsPage() {
     queryKey: ["agents"],
     queryFn: async () => (await fetch("/api/agents").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { agents: Agent[] },
   });
+  const rows = q.data?.agents ?? [];
+  const tiers = Array.from(new Set(rows.map((a) => a.tier))).slice(0, 5);
+
   const cols: Column<Agent>[] = [
-    { key: "code", header: "Code" },
-    { key: "tier", header: "Tier" },
+    { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.code}</span> },
+    { key: "tier", header: "Tier", render: (r) => <Badge variant="brand">{r.tier}</Badge> },
     { key: "legal_name", header: "Legal name" },
     { key: "contact_email", header: "Contact" },
-    { key: "advance_balance", header: "Advance", render: (r) => formatAmount(r.advance_balance, r.currency) },
+    { key: "advance_balance", header: "Advance", render: (r) => <span className={`tabular-nums ${r.advance_balance <= r.low_balance_threshold ? "text-[color:var(--color-danger)]" : ""}`}>{formatAmount(r.advance_balance, r.currency)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-    { key: "created_at", header: "Joined", render: (r) => formatDateTime(r.created_at) },
+    { key: "created_at", header: "Joined", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
   ];
+
   return (
     <>
       <PageHeader title="Agents & franchise" description="Sub-admin franchise tree (PRODUCT_VISION §3.11)." icon={Users} />
-      <Card><CardHeader><CardTitle>{(q.data?.agents ?? []).length} agents</CardTitle></CardHeader>
-        <CardContent><DataTable columns={cols} rows={q.data?.agents ?? []} loading={q.isLoading} rowKey={(r) => r.id} emptyState="No agents in tree." /></CardContent>
-      </Card>
+      <DataView rows={rows} columns={cols} rowKey={(r) => r.id} loading={q.isLoading}
+        search={{ placeholder: "Search by code / name / contact…", fields: ["code", "legal_name", "contact_email", "contact_phone"] }}
+        filters={[
+          { key: "active",   label: "Active",       predicate: (r: Agent) => r.status === "ACTIVE" },
+          { key: "low-bal",  label: "Low balance",  predicate: (r: Agent) => r.advance_balance <= r.low_balance_threshold },
+          ...tiers.map((t) => ({ key: `t-${t}`, label: t, predicate: (r: Agent) => r.tier === t })),
+        ]}
+        savedViewKey="agents" refresh={() => q.refetch()}
+        emptyTitle="No agents in tree" />
     </>
   );
 }

@@ -1,20 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Store, Plus, ChevronRight } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Store, Plus, ChevronRight, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import type { Column } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { DataView } from "@/components/world-class/data-view";
+import { RowActions } from "@/components/world-class/row-actions";
+import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -24,9 +28,11 @@ interface Merchant {
 }
 interface FunnelRow { stage: string; n: number }
 
-function OnboardDialog() {
+function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean; onOpenChange?: (o: boolean) => void } = {}) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [form, setForm] = useState({
     merchant_code: "M-NEW", legal_name: "New Merchant Pvt Ltd",
     brand_name: "", business_type: "PRIVATE_LIMITED", category_mcc: "5411",
@@ -51,7 +57,9 @@ function OnboardDialog() {
   });
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button><Plus /> Onboard merchant</Button></DialogTrigger>
+      {controlledOpen === undefined && (
+        <DialogTrigger asChild><Button><Plus /> Onboard merchant</Button></DialogTrigger>
+      )}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Onboard merchant — Step 1: Application</DialogTitle>
@@ -118,85 +126,96 @@ function OnboardDialog() {
 const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"] as const;
 
 export default function MerchantsPage() {
+  const canCreate = useCan("merchants", "create");
+  const sp = useSearchParams();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => { if (sp.get("new") === "1" && canCreate) setCreateOpen(true); }, [sp, canCreate]);
+
   const q = useQuery({
     queryKey: ["merchants"],
     queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[]; funnel: FunnelRow[] },
   });
-  const [stageFilter, setStageFilter] = useState<string | null>(null);
 
   const cols: Column<Merchant>[] = [
-    {
-      key: "merchant_code", header: "Code",
-      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline" href={`/merchants/${r.id}`}>{r.merchant_code}</Link>,
-    },
+    { key: "merchant_code", header: "Code",
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/merchants/${r.id}`}>{r.merchant_code}</Link> },
     { key: "legal_name", header: "Legal name" },
     { key: "business_type", header: "Type", render: (r) => r.business_type ?? "—" },
     { key: "contact_email", header: "Contact" },
     { key: "risk_tier", header: "Risk", render: (r) => r.risk_tier ? <Badge variant={statusVariant(r.risk_tier)}>{r.risk_tier}</Badge> : "—" },
     { key: "stage", header: "Stage", render: (r) => <Badge variant={statusVariant(r.stage)}>{r.stage}</Badge> },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
-    {
-      key: "actions", header: "",
-      render: (r) => (
-        <Link href={`/merchants/${r.id}`} className="inline-flex items-center text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-brand)]">
-          Open <ChevronRight className="h-3 w-3" />
-        </Link>
-      ),
-    },
   ];
 
   const funnel = q.data?.funnel ?? [];
   const allMerchants = q.data?.merchants ?? [];
-  const filtered = stageFilter ? allMerchants.filter((m) => m.stage === stageFilter) : allMerchants;
 
   return (
     <>
       <PageHeader
         title="Merchants"
-        description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). Onboarding stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
+        description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
         icon={Store}
-        actions={<OnboardDialog />}
       />
       {funnel.length > 0 && (
         <Card className="mb-4">
           <CardHeader>
             <CardTitle className="text-base">Onboarding funnel</CardTitle>
-            <CardDescription>Click a stage to filter the list below.</CardDescription>
+            <CardDescription>Quick visual of where merchants sit. Use filter chips below the toolbar to drill in.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {STAGE_ORDER.map((stage) => {
                 const row = funnel.find((f) => f.stage === stage);
                 const n = row?.n ?? 0;
-                const active = stageFilter === stage;
                 return (
-                  <button
-                    key={stage}
-                    onClick={() => setStageFilter(active ? null : stage)}
-                    className={`text-left rounded-md border p-3 transition-colors ${active ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)]" : "hover:bg-[color:var(--color-surface-muted)]"}`}
-                  >
+                  <div key={stage} className="rounded-md border p-3">
                     <Badge variant={statusVariant(stage)}>{stage}</Badge>
-                    <div className="mt-1 text-xl font-semibold">{n}</div>
-                  </button>
+                    <div className="mt-1 text-xl font-semibold tabular-nums">{n}</div>
+                  </div>
                 );
               })}
             </div>
           </CardContent>
         </Card>
       )}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {filtered.length} {stageFilter ? `${stageFilter} ` : ""}merchant{filtered.length === 1 ? "" : "s"}
-            {stageFilter && (
-              <button onClick={() => setStageFilter(null)} className="ml-3 text-xs font-normal text-[color:var(--color-brand)] hover:underline">clear filter</button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DataTable columns={cols} rows={filtered} loading={q.isLoading} rowKey={(r) => r.id} emptyState="No merchants match this filter." />
-        </CardContent>
-      </Card>
+      <DataView
+        rows={allMerchants}
+        columns={cols}
+        rowKey={(r) => r.id}
+        loading={q.isLoading}
+        href={(r) => `/merchants/${r.id}`}
+        search={{ placeholder: "Search by code, name, contact…", fields: ["merchant_code", "legal_name", "contact_email", "business_type"] }}
+        filters={STAGE_ORDER.map((s) => ({ key: s, label: s, predicate: (r: Merchant) => r.stage === s }))}
+        modes={["table", "kanban"]}
+        kanbanColumn={(r) => r.stage}
+        kanbanColumns={STAGE_ORDER.map((s) => ({ key: s, label: s }))}
+        renderCard={(r) => (
+          <Link href={`/merchants/${r.id}`} className="block rounded-md border bg-[color:var(--color-surface)] p-2 text-sm hover:bg-[color:var(--color-surface-muted)]">
+            <div className="flex items-center justify-between">
+              <Badge variant="brand">{r.merchant_code}</Badge>
+              {r.risk_tier && <Badge variant={statusVariant(r.risk_tier)}>{r.risk_tier}</Badge>}
+            </div>
+            <div className="mt-1 truncate font-medium">{r.legal_name}</div>
+            <div className="mt-0.5 truncate text-xs text-[color:var(--color-text-muted)]">{r.contact_email}</div>
+          </Link>
+        )}
+        fab={canCreate ? { label: "Onboard merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        refresh={() => q.refetch()}
+        savedViewKey="merchants"
+        emptyTitle="No merchants onboarded yet"
+        emptyDescription="Submit the first application to kick off the 6-stage pipeline."
+        rowActions={(r) => (
+          <RowActions
+            openHref={`/merchants/${r.id}`}
+            actions={[
+              { label: "Open detail", icon: ExternalLink, onClick: () => (window.location.href = `/merchants/${r.id}`) },
+            ]}
+          />
+        )}
+      />
+      <OnboardDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 }

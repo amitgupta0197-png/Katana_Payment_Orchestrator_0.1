@@ -1,11 +1,15 @@
 "use client";
 
+// L1 — aggregated pay-in metrics. Tabs (By status / By method).
+
 import { useQuery } from "@tanstack/react-query";
-import { Activity } from "lucide-react";
+import { Activity, ListFilter, Network } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import type { Column } from "@/components/ui/data-table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DataView } from "@/components/world-class/data-view";
+import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, statusVariant } from "@/lib/utils";
 
 interface Order {
@@ -22,39 +26,51 @@ export default function PayinDataPage() {
 
   const byStatus = new Map<string, { count: number; volume: number }>();
   const byMethod = new Map<string, { count: number; volume: number }>();
+  let totalVol = 0;
   for (const o of orders) {
+    const amt = Number(o.amount || 0);
+    totalVol += amt;
     const s = byStatus.get(o.status) ?? { count: 0, volume: 0 };
-    s.count++; s.volume += Number(o.amount || 0); byStatus.set(o.status, s);
+    s.count++; s.volume += amt; byStatus.set(o.status, s);
     const m = byMethod.get(o.method) ?? { count: 0, volume: 0 };
-    m.count++; m.volume += Number(o.amount || 0); byMethod.set(o.method, m);
+    m.count++; m.volume += amt; byMethod.set(o.method, m);
   }
   const statusRows = Array.from(byStatus, ([key, v]) => ({ key, ...v }));
   const methodRows = Array.from(byMethod, ([key, v]) => ({ key, ...v }));
 
   const sCols: Column<typeof statusRows[number]>[] = [
     { key: "key", header: "Status", render: (r) => <Badge variant={statusVariant(r.key)}>{r.key}</Badge> },
-    { key: "count", header: "Count" },
-    { key: "volume", header: "Volume", render: (r) => formatAmount(r.volume) },
+    { key: "count", header: "Count", render: (r) => <span className="tabular-nums">{r.count}</span> },
+    { key: "volume", header: "Volume", render: (r) => <span className="tabular-nums">{formatAmount(r.volume)}</span> },
   ];
   const mCols: Column<typeof methodRows[number]>[] = [
     { key: "key", header: "Method" },
-    { key: "count", header: "Count" },
-    { key: "volume", header: "Volume", render: (r) => formatAmount(r.volume) },
+    { key: "count", header: "Count", render: (r) => <span className="tabular-nums">{r.count}</span> },
+    { key: "volume", header: "Volume", render: (r) => <span className="tabular-nums">{formatAmount(r.volume)}</span> },
   ];
 
   return (
     <>
       <PageHeader title="Pay-in data" description="Aggregated pay-in metrics by status + method." icon={Activity} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle>By status</CardTitle><CardDescription>{orders.length} orders aggregated</CardDescription></CardHeader>
-          <CardContent><DataTable columns={sCols} rows={statusRows} loading={q.isLoading} rowKey={(r) => r.key} emptyState="No orders." /></CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle>By method</CardTitle></CardHeader>
-          <CardContent><DataTable columns={mCols} rows={methodRows} rowKey={(r) => r.key} emptyState="No orders." /></CardContent>
-        </Card>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <KpiTile label="Orders" value={orders.length} loading={q.isLoading} />
+        <KpiTile label="Total volume" value={formatAmount(totalVol)} loading={q.isLoading} />
+        <KpiTile label="Methods" value={methodRows.length} loading={q.isLoading} />
       </div>
+      <Tabs defaultValue="status">
+        <TabsList>
+          <TabsTrigger value="status"><ListFilter className="h-3.5 w-3.5" /> By status</TabsTrigger>
+          <TabsTrigger value="method"><Network className="h-3.5 w-3.5" /> By method</TabsTrigger>
+        </TabsList>
+        <TabsContent value="status">
+          <DataView rows={statusRows} columns={sCols} rowKey={(r) => r.key} loading={q.isLoading}
+            savedViewKey="payin-data-status" emptyTitle="No orders to aggregate" />
+        </TabsContent>
+        <TabsContent value="method">
+          <DataView rows={methodRows} columns={mCols} rowKey={(r) => r.key}
+            savedViewKey="payin-data-method" emptyTitle="No orders to aggregate" />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
