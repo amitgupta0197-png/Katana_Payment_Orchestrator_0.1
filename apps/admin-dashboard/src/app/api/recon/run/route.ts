@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       await publish({
         eventType: "reconciliation.break_opened", producer: "reconciliation",
         entityType: "recon_run", entityId: result.run_id, actorId: s.user_id,
-        payload: result,
+        payload: result as unknown as Record<string, unknown>,
       });
     }
     return NextResponse.json(result);
