@@ -33,6 +33,9 @@ interface ApiKey {
   id: string; label: string; prefix: string; scopes: string[]; status: string;
   created_at: string; last_used_at?: string; revoked_at?: string;
 }
+interface GatewayMidStatus {
+  configured: boolean; gateway?: string; mid_code?: string; scheme?: string; key_hint?: string;
+}
 
 const STEPS = [
   { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic merchant details captured." },
@@ -244,6 +247,109 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
   );
 }
 
+function GatewayMidCard({ merchant }: { merchant: Merchant }) {
+  const qc = useQueryClient();
+  const statusQ = useQuery({
+    queryKey: ["merchant", merchant.id, "gateway-mid"],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/gateway-mid`);
+      if (r.status === 403) return { restricted: true as const };
+      const _d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status));
+      return _d as { status: GatewayMidStatus };
+    },
+  });
+  const restricted = (statusQ.data as { restricted?: boolean })?.restricted;
+  const status = (statusQ.data as { status?: GatewayMidStatus })?.status;
+
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ gateway: "", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512" });
+
+  const m = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/gateway-mid`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success("Gateway MID credentials saved");
+      setOpen(false);
+      setForm({ gateway: "", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512" });
+      qc.invalidateQueries({ queryKey: ["merchant", merchant.id, "gateway-mid"] });
+    },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+
+  const valid = form.gateway && form.mid_code && form.key && form.salt;
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="text-base">Gateway MID credentials</CardTitle>
+          <CardDescription>Internal mapping — the gateway’s Main-MID Key + Salt that Katana uses to sign orders on this merchant’s behalf. Stored encrypted; never shown to the merchant.</CardDescription>
+        </div>
+        {!restricted && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant={status?.configured ? "secondary" : "default"}>
+                <KeyRound className="h-4 w-4" /> {status?.configured ? "Rotate" : "Set credentials"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{status?.configured ? "Rotate" : "Set"} gateway MID credentials</DialogTitle>
+                <DialogDescription>
+                  Paste the Key + Salt the gateway issued for <span className="font-mono">{merchant.merchant_code}</span>’s Main MID. Stored sealed; used to sign orders to the gateway.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><Label>Gateway</Label><Input value={form.gateway} onChange={(e) => setForm({ ...form, gateway: e.target.value })} placeholder="PAYU" /></div>
+                  <div className="space-y-1.5"><Label>Main MID code</Label><Input value={form.mid_code} onChange={(e) => setForm({ ...form, mid_code: e.target.value })} placeholder="MID-…" /></div>
+                </div>
+                <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway merchant key" /></div>
+                <div className="space-y-1.5"><Label>Salt</Label><Input value={form.salt} onChange={(e) => setForm({ ...form, salt: e.target.value })} placeholder="gateway salt" /></div>
+                <div className="space-y-1.5">
+                  <Label>Signing scheme</Label>
+                  <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                    value={form.scheme} onChange={(e) => setForm({ ...form, scheme: e.target.value })}>
+                    <option value="PAYU_SHA512">PAYU_SHA512 (PayU / Airpay)</option>
+                    <option value="HMAC_SHA256">HMAC_SHA256</option>
+                  </select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button onClick={() => m.mutate()} disabled={m.isPending || !valid}>{m.isPending ? "Saving…" : "Save"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </CardHeader>
+      <CardContent>
+        {restricted ? (
+          <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">Visible to Super-Admins only.</div>
+        ) : status?.configured ? (
+          <div className="text-sm space-y-1">
+            <div><span className="text-[color:var(--color-text-muted)]">Gateway:</span> <Badge variant="brand">{status.gateway}</Badge></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Main MID:</span> <span className="font-mono">{status.mid_code}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Scheme:</span> <span className="font-mono">{status.scheme}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Key:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· salt sealed</span></div>
+          </div>
+        ) : (
+          <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
+            No gateway credentials mapped yet. Orders won’t be signed for the gateway until Key + Salt are set.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MerchantDetailView({ id }: { id: string }) {
   const merchantQ = useQuery({
     queryKey: ["merchant", id],
@@ -361,6 +467,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
       </div>
 
       <ApiKeysCard merchant={merchant} />
+
+      <GatewayMidCard merchant={merchant} />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this merchant.</CardDescription></CardHeader>

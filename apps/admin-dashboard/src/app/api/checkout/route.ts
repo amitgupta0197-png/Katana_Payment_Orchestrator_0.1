@@ -26,6 +26,7 @@ import { recordFailure as recordCircuitFailure, recordSuccess as recordCircuitSu
 import { computeRiskScore, recordRiskScore } from "@/lib/risk";
 import { decideSca } from "@/lib/sca";
 import { postJournal } from "@/lib/ledger";
+import { getGatewayMid, signForGateway } from "@/lib/gateway-creds";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -139,6 +140,20 @@ export async function POST(req: Request) {
       payload: { txn_id: txnId, merchant_id: merchantId, amount_minor: String(amountMinor), currency: body.currency, method: body.method },
     });
 
+    // 1.5 Gateway MID mapping. The merchant authenticated with their Katana key;
+    //     Katana now resolves *its own* stored gateway Key+Salt for this merchant
+    //     (sealed in the vault, never exposed) and signs the outbound gateway
+    //     request itself. signature is a one-way hash — safe to surface/audit.
+    let gatewaySigned: { gateway: string; mid_code: string; scheme: string; signature: string } | null = null;
+    const gwMid = await getGatewayMid(merchantId).catch(() => null);
+    if (gwMid) {
+      const signed = signForGateway(gwMid, {
+        txnId, amount: String(fromMinor(amountMinor, body.currency)),
+        productinfo: body.client_ref ?? undefined, email: body.customer_email ?? undefined,
+      });
+      gatewaySigned = { gateway: gwMid.gateway, mid_code: gwMid.mid_code, scheme: signed.scheme, signature: signed.signature };
+    }
+
     // 1a. Risk score (BRD §9). BLOCK terminates the lifecycle here.
     const risk = await computeRiskScore({
       merchantId, amountMinor, currency: body.currency,
@@ -219,7 +234,7 @@ export async function POST(req: Request) {
         chargeResult.nextState, recordedAuthStatus,
         recordedExemption, chargeResult.errorCode ?? null,
         chargeResult.errorMessage ?? null, chargeResult.responseTimeMs,
-        JSON.stringify({ ...chargeResult.raw, sca }),
+        JSON.stringify({ ...chargeResult.raw, sca, gateway: gatewaySigned }),
       ]).catch(() => {});
 
       // Record the outcome on the provider's circuit breaker. SUCCESS /
@@ -369,6 +384,9 @@ export async function POST(req: Request) {
                candidates: candidates.map(c => ({ rank: c.rank, provider: c.provider, score: Number(c.score.toFixed(4)), reasoning: c.reasoning })) },
       risk: { total: risk.total, decision: risk.decision, components: risk.components },
       sca,
+      gateway: gatewaySigned
+        ? { signed: true, gateway: gatewaySigned.gateway, mid_code: gatewaySigned.mid_code, scheme: gatewaySigned.scheme, signature: gatewaySigned.signature }
+        : { signed: false },
       ledger: postedJournalId ? { journal_id: postedJournalId, ...ledgerBreakdown } : null,
       charge: {
         outcome: chargeResult.outcome, next_state: nextStatus,
