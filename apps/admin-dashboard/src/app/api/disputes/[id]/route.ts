@@ -1,13 +1,53 @@
+// GET   /api/disputes/[id] — single dispute + evidence (scoped by persona).
 // PATCH /api/disputes/[id] — transition state, post resolution journal.
+// POST  /api/disputes/[id] — attach evidence row.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
-import { gateOrResponse } from "@/lib/scope";
+import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { transitionDispute, type DisputeState } from "@/lib/disputes";
 import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER", "MERCHANT"]);
+  if ("response" in g) return g.response;
+  const s = g.session;
+  const { id } = await params;
+
+  try {
+    const r = await rows<any>("riskVelocity", `
+      SELECT dispute_id::text, txn_id, COALESCE(order_id::text,'') AS order_id,
+             merchant_id, reason_code, amount_minor::text, currency, status,
+             deadline_at, opened_at, COALESCE(opened_by,'') AS opened_by,
+             resolved_at, COALESCE(resolved_by,'') AS resolved_by,
+             COALESCE(resolution_notes,'') AS resolution_notes,
+             hold_journal_id::text, COALESCE(resolution_journal_id::text,'') AS resolution_journal_id
+        FROM disputes WHERE dispute_id = $1::uuid LIMIT 1
+    `, [id]).catch(() => []);
+    if (!r.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const dispute = r[0];
+
+    // Scope re-check after load — never trust the id alone.
+    if (s.persona === "MERCHANT" && dispute.merchant_id !== s.scope_id)
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (s.persona === "PROVIDER") {
+      const ids = await resolveProviderMerchants(s);
+      if (!ids.includes(dispute.merchant_id))
+        return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    const evidence = await rows<any>("riskVelocity", `
+      SELECT evidence_id::text, evidence_type, COALESCE(file_url,'') AS file_url,
+             COALESCE(notes,'') AS notes, COALESCE(submitted_by,'') AS submitted_by, submitted_at
+        FROM dispute_evidence WHERE dispute_id = $1::uuid ORDER BY submitted_at DESC
+    `, [id]).catch(() => []);
+
+    return NextResponse.json({ dispute, evidence });
+  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+}
 
 const schema = z.object({
   to:    z.enum(["REPRESENTMENT","ACCEPTED","WON","LOST","EXPIRED"]),
