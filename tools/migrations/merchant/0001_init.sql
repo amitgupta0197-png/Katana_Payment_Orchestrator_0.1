@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS merchants (
   website              text,
   registered_address   text,
   stage                text NOT NULL DEFAULT 'APPLICATION'
-                       CHECK (stage IN ('APPLICATION','DOCS_PENDING','SCREENING','IN_REVIEW','APPROVED','LIVE','SUSPENDED','TERMINATED','REJECTED')),
+                       CHECK (stage IN ('APPLICATION','DOCS_PENDING','SCREENING','BANK_VERIFY','CONFIG','IN_REVIEW','APPROVED','LIVE','SUSPENDED','TERMINATED','REJECTED')),
   risk_tier            text CHECK (risk_tier IN ('LOW','MEDIUM','HIGH')),
   step_application     boolean NOT NULL DEFAULT false,
   step_kyb_docs        boolean NOT NULL DEFAULT false,
