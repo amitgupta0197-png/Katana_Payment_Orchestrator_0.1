@@ -26,6 +26,9 @@ import { formatDateTime, statusVariant } from "@/lib/utils";
 interface ApiKey {
   id: string; label: string; owner_kind: string; owner_id: string; prefix: string;
   scopes: string[]; status: string; created_at: string; last_used_at?: string; revoked_at?: string;
+  // Enriched by the API from provider / merchant tables so the search bar can
+  // match human-readable names + filter by KYC-approved owners.
+  owner_name?: string; owner_kyc_status?: string; owner_status?: string;
 }
 
 function IssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -124,6 +127,15 @@ export default function AdminApiKeysPage() {
   const cols: Column<ApiKey>[] = [
     { key: "label", header: "Label" },
     { key: "owner_kind", header: "Owner", render: (r) => <Badge variant="brand">{r.owner_kind}</Badge> },
+    { key: "owner_name", header: "Owner name",
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{r.owner_name || <span className="text-[color:var(--color-text-muted)]">—</span>}</span>
+          {r.owner_kyc_status === "APPROVED" && <Badge variant="success">KYC ✓</Badge>}
+          {r.owner_kyc_status === "PENDING" && <Badge variant="warning">KYC pending</Badge>}
+          {r.owner_kyc_status === "REJECTED" && <Badge variant="danger">KYC ✗</Badge>}
+        </div>
+      ) },
     { key: "owner_id", header: "Owner ID", render: (r) => <span className="font-mono text-xs">{r.owner_id}</span> },
     { key: "prefix", header: "Prefix", render: (r) => <span className="font-mono text-xs">{r.prefix}…</span> },
     { key: "scopes", header: "Scopes", render: (r) => (r.scopes ?? []).join(", ") || "—" },
@@ -144,10 +156,17 @@ export default function AdminApiKeysPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by label, owner, prefix…", fields: ["label", "owner_id", "prefix"] }}
+        search={{
+          placeholder: "Search by label, owner name, owner id, prefix…",
+          // owner_name added so typing a provider/merchant legal name finds
+          // its keys; owner_kyc_status so "approved" filters all KYC-clear.
+          fields: ["label", "owner_id", "owner_name", "owner_kyc_status", "prefix"],
+        }}
         filters={[
           { key: "active",  label: "Active",  predicate: (r: ApiKey) => r.status === "ACTIVE" },
           { key: "revoked", label: "Revoked", predicate: (r: ApiKey) => r.status === "REVOKED" },
+          { key: "kyc-approved", label: "KYC approved", predicate: (r: ApiKey) => r.owner_kyc_status === "APPROVED" },
+          { key: "kyc-pending",  label: "KYC pending",  predicate: (r: ApiKey) => r.owner_kyc_status === "PENDING" || r.owner_kyc_status === "IN_REVIEW" },
           { key: "platform", label: "PLATFORM", predicate: (r: ApiKey) => r.owner_kind === "PLATFORM" },
           { key: "provider", label: "PROVIDER", predicate: (r: ApiKey) => r.owner_kind === "PROVIDER" },
           { key: "merchant", label: "MERCHANT", predicate: (r: ApiKey) => r.owner_kind === "MERCHANT" },
