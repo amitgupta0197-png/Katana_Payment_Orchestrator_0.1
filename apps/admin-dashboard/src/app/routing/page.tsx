@@ -15,7 +15,7 @@ interface Health { rail_id: string; success_rate_bps: number; p95_latency_ms: nu
 export default function RoutingPage() {
   const q = useQuery({
     queryKey: ["routing"],
-    queryFn: async () => (await fetch("/api/routing").then((r) => r.json())) as { rules: Rule[]; rails: Rail[]; health: Health[] },
+    queryFn: async () => (await fetch("/api/routing").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { rules: Rule[]; rails: Rail[]; health: Health[] },
   });
 
   const ruleCols: Column<Rule>[] = [

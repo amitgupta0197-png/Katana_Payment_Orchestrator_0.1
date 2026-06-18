@@ -90,7 +90,7 @@ function DecisionDialog({ kyb, decision }: { kyb: KybCase; decision: "APPROVED" 
 export default function KybPage() {
   const q = useQuery({
     queryKey: ["kyb:admin"],
-    queryFn: async () => (await fetch("/api/kyb").then((r) => r.json())) as { cases: KybCase[] },
+    queryFn: async () => (await fetch("/api/kyb").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { cases: KybCase[] },
   });
   const cols: Column<KybCase>[] = [
     { key: "merchant_id", header: "Merchant" },

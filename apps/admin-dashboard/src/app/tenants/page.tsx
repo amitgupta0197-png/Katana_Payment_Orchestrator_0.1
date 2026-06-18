@@ -13,7 +13,7 @@ interface Tenant { id: string; parent_id: string; type: string; code: string; na
 export default function TenantsPage() {
   const q = useQuery({
     queryKey: ["tenants"],
-    queryFn: async () => (await fetch("/api/tenants").then((r) => r.json())) as { tenants: Tenant[] },
+    queryFn: async () => (await fetch("/api/tenants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { tenants: Tenant[] },
   });
   const cols: Column<Tenant>[] = [
     { key: "code", header: "Code" },

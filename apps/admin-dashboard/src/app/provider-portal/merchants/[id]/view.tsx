@@ -23,15 +23,15 @@ interface Reserve {
 export default function ProviderPortalMerchantDetailView({ id }: { id: string }) {
   const merchants = useQuery({
     queryKey: ["pp:merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[] },
   });
   const subMids = useQuery({
     queryKey: ["pp:sub-mids"],
-    queryFn: async () => (await fetch("/api/sub-mids").then((r) => r.json())) as { sub_mids: SubMid[] },
+    queryFn: async () => (await fetch("/api/sub-mids").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { sub_mids: SubMid[] },
   });
   const reserves = useQuery({
     queryKey: ["pp:reserves"],
-    queryFn: async () => (await fetch("/api/reserves").then((r) => r.json())) as { reserves: Reserve[] },
+    queryFn: async () => (await fetch("/api/reserves").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { reserves: Reserve[] },
   });
 
   const merchant = merchants.data?.merchants?.find((m) => m.id === id);

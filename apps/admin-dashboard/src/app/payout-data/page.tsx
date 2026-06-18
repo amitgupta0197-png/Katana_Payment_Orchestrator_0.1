@@ -13,7 +13,7 @@ interface Payout { id: string; merchant_id: string; amount: number; currency: st
 export default function PayoutDataPage() {
   const q = useQuery({
     queryKey: ["payout-data"],
-    queryFn: async () => (await fetch("/api/payout").then((r) => r.json())) as { payouts: Payout[] },
+    queryFn: async () => (await fetch("/api/payout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { payouts: Payout[] },
   });
   const payouts = q.data?.payouts ?? [];
   const byStatus = new Map<string, { count: number; volume: number }>();

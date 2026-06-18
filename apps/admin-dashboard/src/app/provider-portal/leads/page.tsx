@@ -81,7 +81,7 @@ function NewLeadDialog() {
 export default function LeadsPage() {
   const q = useQuery({
     queryKey: ["pp:merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[] },
   });
 
   const leads = (q.data?.merchants ?? []).filter((m) => LEAD_STAGES.has(m.stage));

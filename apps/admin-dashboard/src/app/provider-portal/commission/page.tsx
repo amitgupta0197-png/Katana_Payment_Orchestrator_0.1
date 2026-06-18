@@ -15,7 +15,7 @@ interface Rule {
 export default function CommissionPage() {
   const q = useQuery({
     queryKey: ["pp:commission"],
-    queryFn: async () => (await fetch("/api/commission").then((r) => r.json())) as
+    queryFn: async () => (await fetch("/api/commission").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as
       { rules: Rule[]; mtd_earned: number; ytd_earned: number },
   });
 

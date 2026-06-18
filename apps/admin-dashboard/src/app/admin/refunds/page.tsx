@@ -24,7 +24,7 @@ export default function RefundsPage() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["refunds"],
-    queryFn: async () => (await fetch("/api/refunds").then((r) => r.json())) as { refunds: Refund[] },
+    queryFn: async () => (await fetch("/api/refunds").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { refunds: Refund[] },
     refetchInterval: 6000,
   });
   const [txn, setTxn] = useState(""); const [amt, setAmt] = useState("100");

@@ -13,7 +13,7 @@ interface Override { id: string; flag_key: string; scope_kind: string; scope_val
 export default function MerchantConfigPage() {
   const q = useQuery({
     queryKey: ["merchant-config"],
-    queryFn: async () => (await fetch("/api/merchant-config").then((r) => r.json())) as { flags: Flag[]; overrides: Override[] },
+    queryFn: async () => (await fetch("/api/merchant-config").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { flags: Flag[]; overrides: Override[] },
   });
 
   const flagCols: Column<Flag>[] = [

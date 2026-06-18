@@ -18,15 +18,15 @@ interface Reserve { id: string; release_status: string; hold_amount: number; rel
 export default function MerchantDashboard() {
   const orders = useQuery({
     queryKey: ["mp:orders"],
-    queryFn: async () => (await fetch("/api/checkout").then((r) => r.json())) as { orders: Order[] },
+    queryFn: async () => (await fetch("/api/checkout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] },
   });
   const balance = useQuery({
     queryKey: ["mp:balance"],
-    queryFn: async () => (await fetch("/api/ledger/balance").then((r) => r.json())) as { balances: Balance[] },
+    queryFn: async () => (await fetch("/api/ledger/balance").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { balances: Balance[] },
   });
   const reserves = useQuery({
     queryKey: ["mp:reserves"],
-    queryFn: async () => (await fetch("/api/reserves").then((r) => r.json())) as { reserves: Reserve[] },
+    queryFn: async () => (await fetch("/api/reserves").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { reserves: Reserve[] },
   });
 
   const today = new Date(); today.setHours(0, 0, 0, 0);

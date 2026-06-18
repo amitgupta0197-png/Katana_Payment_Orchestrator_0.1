@@ -22,7 +22,7 @@ export default function ProfilePage() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["mp:merchant"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[] },
   });
   const me = q.data?.merchants?.[0];
 

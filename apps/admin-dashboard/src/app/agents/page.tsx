@@ -17,7 +17,7 @@ interface Agent {
 export default function AgentsPage() {
   const q = useQuery({
     queryKey: ["agents"],
-    queryFn: async () => (await fetch("/api/agents").then((r) => r.json())) as { agents: Agent[] },
+    queryFn: async () => (await fetch("/api/agents").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { agents: Agent[] },
   });
   const cols: Column<Agent>[] = [
     { key: "code", header: "Code" },

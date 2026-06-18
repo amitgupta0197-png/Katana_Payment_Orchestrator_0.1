@@ -16,7 +16,7 @@ interface Order {
 export default function PayinDataPage() {
   const q = useQuery({
     queryKey: ["payin-data"],
-    queryFn: async () => (await fetch("/api/checkout").then((r) => r.json())) as { orders: Order[] },
+    queryFn: async () => (await fetch("/api/checkout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] },
   });
   const orders = q.data?.orders ?? [];
 

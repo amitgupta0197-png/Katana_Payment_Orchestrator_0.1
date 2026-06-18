@@ -68,7 +68,7 @@ export default function WebhooksPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const q = useQuery({
     queryKey: ["webhooks"],
-    queryFn: async () => (await fetch("/api/admin/webhooks").then((r) => r.json())) as {
+    queryFn: async () => (await fetch("/api/admin/webhooks").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       pending: OutboxRow[]; dlq: OutboxRow[]; recent: OutboxRow[]; configs: ConfigRow[];
     },
     refetchInterval: autoRefresh ? 4000 : false,

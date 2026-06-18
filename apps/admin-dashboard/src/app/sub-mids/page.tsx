@@ -19,7 +19,7 @@ interface MainMid { id: string; mid_code: string; merchant_id: string; sub_mid_c
 export default function AdminSubMidsPage() {
   const q = useQuery({
     queryKey: ["sub-mids"],
-    queryFn: async () => (await fetch("/api/sub-mids").then((r) => r.json())) as { main_mids: MainMid[]; sub_mids: SubMid[] },
+    queryFn: async () => (await fetch("/api/sub-mids").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { main_mids: MainMid[]; sub_mids: SubMid[] },
   });
 
   const mainCols: Column<MainMid>[] = [

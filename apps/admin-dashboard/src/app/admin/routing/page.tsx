@@ -174,7 +174,7 @@ function Experiments() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["experiments"],
-    queryFn: async () => (await fetch("/api/admin/routing/experiments").then((r) => r.json())) as { experiments: Experiment[]; stats: ExperimentStat[] },
+    queryFn: async () => (await fetch("/api/admin/routing/experiments").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { experiments: Experiment[]; stats: ExperimentStat[] },
     refetchInterval: 10000,
   });
   const toggle = useMutation({
@@ -226,7 +226,7 @@ function Experiments() {
 export default function RoutingAdminPage() {
   const q = useQuery({
     queryKey: ["routing-health"],
-    queryFn: async () => (await fetch("/api/admin/routing/health").then((r) => r.json())) as {
+    queryFn: async () => (await fetch("/api/admin/routing/health").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       rails: Rail[]; health: Health[]; circuit_config: CircuitConfig;
     },
     refetchInterval: 4000,

@@ -13,7 +13,7 @@ interface BankStatement { id: string; rail_code: string; account_no: string; amo
 export default function FundPage() {
   const q = useQuery({
     queryKey: ["fund"],
-    queryFn: async () => (await fetch("/api/fund").then((r) => r.json())) as { vendor_balances: VendorBalance[]; recent_bank_statements: BankStatement[] },
+    queryFn: async () => (await fetch("/api/fund").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { vendor_balances: VendorBalance[]; recent_bank_statements: BankStatement[] },
   });
 
   const balanceCols: Column<VendorBalance>[] = [

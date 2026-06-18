@@ -69,7 +69,7 @@ function CreateDialog() {
 export default function ProvidersPage() {
   const q = useQuery({
     queryKey: ["providers"],
-    queryFn: async () => (await fetch("/api/providers").then((r) => r.json())) as { providers: Provider[] },
+    queryFn: async () => (await fetch("/api/providers").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { providers: Provider[] },
   });
 
   const cols: Column<Provider>[] = [

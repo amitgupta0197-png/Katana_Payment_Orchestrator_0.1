@@ -17,8 +17,8 @@ interface Agent { agent_id: string; code: string; display_name: string; purpose:
 interface AnomalyGroup { group_id: string; signal_kind: string; entity_type: string; event_type: string; bucket_start: string; signal_count: number; severity: string; sample_ids: string[] }
 
 export default function AiOpsPage() {
-  const aQ = useQuery({ queryKey: ["agents"], queryFn: async () => (await fetch("/api/admin/agents").then(r => r.json())) as { agents: Agent[] } });
-  const anQ = useQuery({ queryKey: ["anomalies"], queryFn: async () => (await fetch("/api/admin/anomalies").then(r => r.json())) as { groups: AnomalyGroup[]; threshold: number }, refetchInterval: 8000 });
+  const aQ = useQuery({ queryKey: ["agents"], queryFn: async () => (await fetch("/api/admin/agents").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { agents: Agent[] } });
+  const anQ = useQuery({ queryKey: ["anomalies"], queryFn: async () => (await fetch("/api/admin/anomalies").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { groups: AnomalyGroup[]; threshold: number }, refetchInterval: 8000 });
 
   const [cmd, setCmd] = useState("/exceptions");
   const [out, setOut] = useState<{ text: string; command: string } | null>(null);

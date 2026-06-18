@@ -15,7 +15,7 @@ interface DailyRow {
 export default function SummaryPage() {
   const q = useQuery({
     queryKey: ["summary"],
-    queryFn: async () => (await fetch("/api/reporting").then((r) => r.json())) as { daily: DailyRow[] },
+    queryFn: async () => (await fetch("/api/reporting").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { daily: DailyRow[] },
   });
 
   const daily = q.data?.daily ?? [];

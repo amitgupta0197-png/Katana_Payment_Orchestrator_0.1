@@ -14,7 +14,7 @@ interface Transfer { id: string; vasp_code: string; network: string; txid: strin
 export default function CryptoRailPage() {
   const q = useQuery({
     queryKey: ["crypto-rail"],
-    queryFn: async () => (await fetch("/api/crypto-rail").then((r) => r.json())) as { vasps: Vasp[]; recent_transfers: Transfer[] },
+    queryFn: async () => (await fetch("/api/crypto-rail").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { vasps: Vasp[]; recent_transfers: Transfer[] },
   });
   const vCols: Column<Vasp>[] = [
     { key: "code", header: "Code" },

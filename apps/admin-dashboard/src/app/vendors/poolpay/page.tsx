@@ -14,7 +14,7 @@ interface Credential { id: string; vendor: string; env: string; pay_id: string; 
 export default function PoolPayCockpit() {
   const q = useQuery({
     queryKey: ["vendor:poolpay"],
-    queryFn: async () => (await fetch("/api/vendors/poolpay/payin").then((r) => r.json())) as { orders: Order[]; credentials: Credential[] },
+    queryFn: async () => (await fetch("/api/vendors/poolpay/payin").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[]; credentials: Credential[] },
   });
   const cols: Column<Order>[] = [
     { key: "order_id", header: "Order" },

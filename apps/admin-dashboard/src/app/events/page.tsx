@@ -38,7 +38,7 @@ export default function EventsPage() {
   const q = useQuery({
     queryKey: ["events", type],
     queryFn: async () =>
-      (await fetch(`/api/events${type ? `?type=${encodeURIComponent(type)}` : ""}`).then((r) => r.json())) as { events: Event[] },
+      (await fetch(`/api/events${type ? `?type=${encodeURIComponent(type)}` : ""}`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { events: Event[] },
     refetchInterval: autoRefresh ? 4000 : false,
   });
 

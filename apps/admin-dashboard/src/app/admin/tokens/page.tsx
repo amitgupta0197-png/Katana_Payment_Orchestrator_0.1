@@ -79,12 +79,12 @@ function TokenCreator() {
 export default function TokensPage() {
   const tQ = useQuery({
     queryKey: ["tokens"],
-    queryFn: async () => (await fetch("/api/tokens").then((r) => r.json())) as { tokens: Token[] },
+    queryFn: async () => (await fetch("/api/tokens").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { tokens: Token[] },
     refetchInterval: 6000,
   });
   const cQ = useQuery({
     queryKey: ["credentials"],
-    queryFn: async () => (await fetch("/api/admin/credentials").then((r) => r.json())) as { credentials: Credential[] },
+    queryFn: async () => (await fetch("/api/admin/credentials").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { credentials: Credential[] },
     refetchInterval: 10000,
   });
 

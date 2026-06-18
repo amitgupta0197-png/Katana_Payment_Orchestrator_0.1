@@ -73,7 +73,7 @@ function ActionButtons({ sub }: { sub: SubMid }) {
 export default function SubMidDetailView({ id }: { id: string }) {
   const q = useQuery({
     queryKey: ["sub-mid", id],
-    queryFn: async () => (await fetch(`/api/sub-mids/${id}`).then((r) => r.json())) as {
+    queryFn: async () => (await fetch(`/api/sub-mids/${id}`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       sub_mid: SubMid; limits: Limits | null; history: HistoryRow[];
     },
   });

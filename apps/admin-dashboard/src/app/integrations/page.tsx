@@ -16,7 +16,7 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "default"> = {
 export default function IntegrationsPage() {
   const q = useQuery({
     queryKey: ["integrations"],
-    queryFn: async () => (await fetch("/api/integrations").then((r) => r.json())) as { integrations: Integration[] },
+    queryFn: async () => (await fetch("/api/integrations").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { integrations: Integration[] },
   });
   const cols: Column<Integration>[] = [
     { key: "code", header: "Code" },

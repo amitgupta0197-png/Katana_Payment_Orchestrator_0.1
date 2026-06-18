@@ -17,7 +17,7 @@ interface Stats { total_held: number; releasing_this_week: number; released_mtd:
 export default function MerchantReservesPage() {
   const q = useQuery({
     queryKey: ["mp:reserves"],
-    queryFn: async () => (await fetch("/api/reserves").then((r) => r.json())) as { reserves: Reserve[]; stats: Stats },
+    queryFn: async () => (await fetch("/api/reserves").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { reserves: Reserve[]; stats: Stats },
   });
 
   const cols: Column<Reserve>[] = [

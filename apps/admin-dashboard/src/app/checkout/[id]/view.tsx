@@ -36,7 +36,7 @@ interface RouteData {
 export default function CheckoutDetailView({ id }: { id: string }) {
   const q = useQuery({
     queryKey: ["order", id],
-    queryFn: async () => (await fetch(`/api/checkout/${id}`).then((r) => r.json())) as {
+    queryFn: async () => (await fetch(`/api/checkout/${id}`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       order: Order; events: Event[]; callbacks: Callback[]; journals: Journal[];
       attempts: Attempt[]; transitions: Transition[]; route: RouteData | null;
     },

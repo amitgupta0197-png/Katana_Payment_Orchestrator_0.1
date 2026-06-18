@@ -12,7 +12,7 @@ interface Role { code: string; scope: string; permissions: string[]; description
 export default function AdminRolesPage() {
   const q = useQuery({
     queryKey: ["admin:roles"],
-    queryFn: async () => (await fetch("/api/admin/roles").then((r) => r.json())) as { roles: Role[] },
+    queryFn: async () => (await fetch("/api/admin/roles").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { roles: Role[] },
   });
   const cols: Column<Role>[] = [
     { key: "code", header: "Role" },

@@ -24,7 +24,7 @@ export default function TransactionsPage() {
     queryKey: ["mp:orders", status],
     queryFn: async () => {
       const url = status ? `/api/checkout?status=${status}` : "/api/checkout";
-      return (await fetch(url).then((r) => r.json())) as { orders: Order[] };
+      return (await fetch(url).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] };
     },
   });
 

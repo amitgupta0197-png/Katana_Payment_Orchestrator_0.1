@@ -13,19 +13,19 @@ interface KybRow { id: string; status: string }
 export default function ProviderDashboard() {
   const merchants = useQuery({
     queryKey: ["pp:merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: MerchantRow[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: MerchantRow[] },
   });
   const subMids = useQuery({
     queryKey: ["pp:sub-mids"],
-    queryFn: async () => (await fetch("/api/sub-mids").then((r) => r.json())) as { sub_mids: SubMidRow[] },
+    queryFn: async () => (await fetch("/api/sub-mids").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { sub_mids: SubMidRow[] },
   });
   const commission = useQuery({
     queryKey: ["pp:commission"],
-    queryFn: async () => (await fetch("/api/commission").then((r) => r.json())) as { mtd_earned: number; ytd_earned: number },
+    queryFn: async () => (await fetch("/api/commission").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { mtd_earned: number; ytd_earned: number },
   });
   const kyb = useQuery({
     queryKey: ["pp:kyb"],
-    queryFn: async () => (await fetch("/api/kyb").then((r) => r.json())) as { cases: KybRow[] },
+    queryFn: async () => (await fetch("/api/kyb").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { cases: KybRow[] },
   });
 
   const subs = subMids.data?.sub_mids ?? [];

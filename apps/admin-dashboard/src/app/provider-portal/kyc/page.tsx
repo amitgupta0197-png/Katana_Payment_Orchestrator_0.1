@@ -18,7 +18,7 @@ const REQUIRED_DOCS = ["PAN", "GST", "CIN", "MOA", "AOA", "BOARD_RESOLUTION", "A
 export default function ProviderKycPage() {
   const q = useQuery({
     queryKey: ["pp:providers"],
-    queryFn: async () => (await fetch("/api/providers").then((r) => r.json())) as { providers: Provider[] },
+    queryFn: async () => (await fetch("/api/providers").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { providers: Provider[] },
   });
 
   const me = q.data?.providers?.[0];

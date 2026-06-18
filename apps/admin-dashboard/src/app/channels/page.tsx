@@ -35,7 +35,7 @@ function ToggleButton({ channel }: { channel: Channel }) {
 export default function ChannelsPage() {
   const q = useQuery({
     queryKey: ["channels"],
-    queryFn: async () => (await fetch("/api/channels").then((r) => r.json())) as { channels: Channel[] },
+    queryFn: async () => (await fetch("/api/channels").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { channels: Channel[] },
   });
   const cols: Column<Channel>[] = [
     { key: "provider", header: "Provider" },

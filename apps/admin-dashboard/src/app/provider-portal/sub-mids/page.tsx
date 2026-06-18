@@ -105,11 +105,11 @@ function RequestDialog({ mains, merchants }: { mains: MainMid[]; merchants: Merc
 export default function SubMidsPage() {
   const q = useQuery({
     queryKey: ["pp:sub-mids"],
-    queryFn: async () => (await fetch("/api/sub-mids").then((r) => r.json())) as { sub_mids: SubMid[]; main_mids: MainMid[] },
+    queryFn: async () => (await fetch("/api/sub-mids").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { sub_mids: SubMid[]; main_mids: MainMid[] },
   });
   const merchants = useQuery({
     queryKey: ["pp:merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[] },
   });
 
   const cols: Column<SubMid>[] = [

@@ -24,7 +24,7 @@ export default function CheckoutPage() {
   const [status, setStatus] = useState<string>("");
   const q = useQuery({
     queryKey: ["checkout", status],
-    queryFn: async () => (await fetch(status ? `/api/checkout?status=${status}` : "/api/checkout").then((r) => r.json())) as { orders: Order[] },
+    queryFn: async () => (await fetch(status ? `/api/checkout?status=${status}` : "/api/checkout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] },
   });
 
   const cols: Column<Order>[] = [

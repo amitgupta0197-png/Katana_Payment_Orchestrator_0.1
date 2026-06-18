@@ -134,7 +134,7 @@ function StatusActions({ provider }: { provider: Provider }) {
 export default function ProviderDetailView({ id }: { id: string }) {
   const q = useQuery({
     queryKey: ["provider", id],
-    queryFn: async () => (await fetch(`/api/providers/${id}`).then((r) => r.json())) as {
+    queryFn: async () => (await fetch(`/api/providers/${id}`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       provider: Provider; users: User[]; docs: Doc[]; commission: Commission[]; mappings: Mapping[];
     },
   });

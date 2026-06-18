@@ -120,7 +120,7 @@ const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", 
 export default function MerchantsPage() {
   const q = useQuery({
     queryKey: ["merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[]; funnel: FunnelRow[] },
+    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[]; funnel: FunnelRow[] },
   });
   const [stageFilter, setStageFilter] = useState<string | null>(null);
 

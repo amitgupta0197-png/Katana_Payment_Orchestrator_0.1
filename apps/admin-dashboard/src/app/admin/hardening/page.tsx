@@ -28,12 +28,12 @@ export default function HardeningPage() {
   const qc = useQueryClient();
   const hQ = useQuery({
     queryKey: ["hardening"],
-    queryFn: async () => (await fetch("/api/admin/hardening").then((r) => r.json())) as { checks: Check[]; summary: { total: number; score: number; buckets: Record<string, number> } },
+    queryFn: async () => (await fetch("/api/admin/hardening").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { checks: Check[]; summary: { total: number; score: number; buckets: Record<string, number> } },
     refetchInterval: 15000,
   });
   const dQ = useQuery({
     queryKey: ["drills"],
-    queryFn: async () => (await fetch("/api/admin/dr").then((r) => r.json())) as { drills: Drill[] },
+    queryFn: async () => (await fetch("/api/admin/dr").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { drills: Drill[] },
   });
 
   const [drillKind, setDrillKind] = useState("backup_restore");

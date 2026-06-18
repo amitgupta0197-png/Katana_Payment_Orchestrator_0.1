@@ -80,7 +80,7 @@ function ResolveButton({ row, to, label, variant }: { row: Dispute; to: string; 
 export default function DisputesPage() {
   const q = useQuery({
     queryKey: ["disputes"],
-    queryFn: async () => (await fetch("/api/disputes").then((r) => r.json())) as { disputes: Dispute[] },
+    queryFn: async () => (await fetch("/api/disputes").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { disputes: Dispute[] },
     refetchInterval: 6000,
   });
   const open = (q.data?.disputes ?? []).filter(d => d.status === "DISPUTE_OPEN" || d.status === "REPRESENTMENT");

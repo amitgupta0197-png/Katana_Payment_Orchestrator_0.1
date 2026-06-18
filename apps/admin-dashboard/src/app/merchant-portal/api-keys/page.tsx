@@ -108,7 +108,7 @@ function IssueDialog() {
 export default function ApiKeysPage() {
   const q = useQuery({
     queryKey: ["mp:api-keys"],
-    queryFn: async () => (await fetch("/api/admin/api-keys").then((r) => r.json())) as { keys: ApiKey[] },
+    queryFn: async () => (await fetch("/api/admin/api-keys").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { keys: ApiKey[] },
   });
 
   const cols: Column<ApiKey>[] = [

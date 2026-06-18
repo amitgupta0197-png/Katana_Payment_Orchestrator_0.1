@@ -13,7 +13,7 @@ interface User { id: string; email: string; full_name: string; status: string; c
 export default function AdminUsersPage() {
   const q = useQuery({
     queryKey: ["admin:users"],
-    queryFn: async () => (await fetch("/api/admin/users").then((r) => r.json())) as { users: User[] },
+    queryFn: async () => (await fetch("/api/admin/users").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { users: User[] },
   });
   const cols: Column<User>[] = [
     { key: "email", header: "Email" },

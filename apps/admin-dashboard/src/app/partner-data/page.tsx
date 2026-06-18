@@ -17,7 +17,7 @@ interface Record {
 export default function PartnerDataPage() {
   const q = useQuery({
     queryKey: ["partner-data"],
-    queryFn: async () => (await fetch("/api/partner-data").then((r) => r.json())) as { records: Record[] },
+    queryFn: async () => (await fetch("/api/partner-data").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { records: Record[] },
   });
   const cols: Column<Record>[] = [
     { key: "partner_kind", header: "Kind" },

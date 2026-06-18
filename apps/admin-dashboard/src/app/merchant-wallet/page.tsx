@@ -12,7 +12,7 @@ interface Balance { merchant_id: string; currency: string; balance: number }
 export default function MerchantWalletPage() {
   const q = useQuery({
     queryKey: ["balances"],
-    queryFn: async () => (await fetch("/api/ledger/balance").then((r) => r.json())) as { balances: Balance[] },
+    queryFn: async () => (await fetch("/api/ledger/balance").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { balances: Balance[] },
   });
   const cols: Column<Balance>[] = [
     { key: "merchant_id", header: "Merchant" },

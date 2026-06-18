@@ -16,7 +16,7 @@ interface Assignment {
 export default function AdminAssignmentsPage() {
   const q = useQuery({
     queryKey: ["admin:assignments"],
-    queryFn: async () => (await fetch("/api/admin/assignments").then((r) => r.json())) as { assignments: Assignment[] },
+    queryFn: async () => (await fetch("/api/admin/assignments").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { assignments: Assignment[] },
   });
   const cols: Column<Assignment>[] = [
     { key: "user_id", header: "User", render: (r) => <span className="font-mono text-xs">{r.user_id.slice(0,8)}…</span> },

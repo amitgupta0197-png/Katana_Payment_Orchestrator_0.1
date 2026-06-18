@@ -14,7 +14,7 @@ interface Disbursement { id: string; rail_code: string; beneficiary_ifsc: string
 export default function BankAdapterPage() {
   const q = useQuery({
     queryKey: ["bank-adapter"],
-    queryFn: async () => (await fetch("/api/bank-adapter").then((r) => r.json())) as { rails: Rail[]; recent_disbursements: Disbursement[] },
+    queryFn: async () => (await fetch("/api/bank-adapter").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { rails: Rail[]; recent_disbursements: Disbursement[] },
   });
   const rCols: Column<Rail>[] = [
     { key: "code", header: "Code" },

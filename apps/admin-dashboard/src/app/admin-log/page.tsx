@@ -15,7 +15,7 @@ interface Event {
 export default function AdminLogPage() {
   const q = useQuery({
     queryKey: ["admin-log"],
-    queryFn: async () => (await fetch("/api/admin-log").then((r) => r.json())) as { events: Event[] },
+    queryFn: async () => (await fetch("/api/admin-log").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { events: Event[] },
   });
   const cols: Column<Event>[] = [
     { key: "occurred_at", header: "When", render: (r) => formatDateTime(r.occurred_at) },

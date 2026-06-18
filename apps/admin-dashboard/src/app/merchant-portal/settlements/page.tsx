@@ -16,7 +16,7 @@ interface Batch {
 export default function SettlementsPage() {
   const q = useQuery({
     queryKey: ["mp:settlements"],
-    queryFn: async () => (await fetch("/api/settlement/batches").then((r) => r.json())) as { batches: Batch[] },
+    queryFn: async () => (await fetch("/api/settlement/batches").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { batches: Batch[] },
   });
 
   const cols: Column<Batch>[] = [

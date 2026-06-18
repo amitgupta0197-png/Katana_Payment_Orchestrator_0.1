@@ -14,7 +14,7 @@ interface Fact { id: string; merchant_id: string; txn_id: string; kind: string; 
 export default function ReportingPage() {
   const q = useQuery({
     queryKey: ["reporting"],
-    queryFn: async () => (await fetch("/api/reporting").then((r) => r.json())) as { daily: DailyRow[]; facts_recent: Fact[] },
+    queryFn: async () => (await fetch("/api/reporting").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { daily: DailyRow[]; facts_recent: Fact[] },
   });
   const dCols: Column<DailyRow>[] = [
     { key: "day", header: "Day", render: (r) => formatDateTime(r.day) },

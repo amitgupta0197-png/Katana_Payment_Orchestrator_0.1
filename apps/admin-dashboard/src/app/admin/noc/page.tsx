@@ -91,17 +91,17 @@ function ReconButton() {
 export default function NocPage() {
   const sQ = useQuery({
     queryKey: ["slos"],
-    queryFn: async () => (await fetch("/api/admin/slos").then((r) => r.json())) as { slos: SloResult[]; history: any[] },
+    queryFn: async () => (await fetch("/api/admin/slos").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { slos: SloResult[]; history: any[] },
     refetchInterval: 5000,
   });
   const iQ = useQuery({
     queryKey: ["incidents"],
-    queryFn: async () => (await fetch("/api/admin/incidents").then((r) => r.json())) as { incidents: Incident[] },
+    queryFn: async () => (await fetch("/api/admin/incidents").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { incidents: Incident[] },
     refetchInterval: 5000,
   });
   const breaksQ = useQuery({
     queryKey: ["recon-breaks"],
-    queryFn: async () => (await fetch("/api/recon/breaks").then((r) => r.json())) as { breaks: any[]; summary: { ageing_bucket: string; count: number }[] },
+    queryFn: async () => (await fetch("/api/recon/breaks").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { breaks: any[]; summary: { ageing_bucket: string; count: number }[] },
     refetchInterval: 8000,
   });
 

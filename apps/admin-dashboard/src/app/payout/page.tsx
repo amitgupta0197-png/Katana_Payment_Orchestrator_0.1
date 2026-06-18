@@ -16,7 +16,7 @@ interface Payout {
 export default function PayoutPage() {
   const q = useQuery({
     queryKey: ["payouts"],
-    queryFn: async () => (await fetch("/api/payout").then((r) => r.json())) as { payouts: Payout[] },
+    queryFn: async () => (await fetch("/api/payout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { payouts: Payout[] },
   });
   const cols: Column<Payout>[] = [
     { key: "payout_ref", header: "Ref", render: (r) => r.payout_ref ?? "—" },

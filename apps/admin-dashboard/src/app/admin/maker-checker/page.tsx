@@ -89,7 +89,7 @@ function DecideDialog({ row, decision }: { row: PendingRow; decision: "APPROVED"
 export default function MakerCheckerPage() {
   const q = useQuery({
     queryKey: ["maker-checker"],
-    queryFn: async () => (await fetch("/api/admin/maker-checker").then((r) => r.json())) as {
+    queryFn: async () => (await fetch("/api/admin/maker-checker").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as {
       pending: PendingRow[]; recent: RecentRow[];
     },
     refetchInterval: 6000,

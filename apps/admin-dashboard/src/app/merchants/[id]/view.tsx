@@ -134,13 +134,13 @@ export default function MerchantDetailView({ id }: { id: string }) {
   const merchantQ = useQuery({
     queryKey: ["merchant", id],
     queryFn: async () => {
-      const all = (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[] };
+      const all = (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[] };
       return all.merchants.find((m) => m.id === id) ?? null;
     },
   });
   const subMidsQ = useQuery({
     queryKey: ["merchant", id, "sub-mids"],
-    queryFn: async () => (await fetch("/api/sub-mids").then((r) => r.json())) as { sub_mids: SubMid[] },
+    queryFn: async () => (await fetch("/api/sub-mids").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { sub_mids: SubMid[] },
   });
 
   const merchant = merchantQ.data;

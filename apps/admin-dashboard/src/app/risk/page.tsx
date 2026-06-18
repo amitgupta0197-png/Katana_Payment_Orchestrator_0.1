@@ -16,7 +16,7 @@ export default function RiskPage() {
   const [kind, setKind] = useState<Kind>("chargebacks");
   const q = useQuery({
     queryKey: ["risk", kind],
-    queryFn: async () => (await fetch(`/api/risk?kind=${kind}`).then((r) => r.json())) as { items: any[]; kind: string },
+    queryFn: async () => (await fetch(`/api/risk?kind=${kind}`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { items: any[]; kind: string },
   });
 
   const cbCols: Column<any>[] = [

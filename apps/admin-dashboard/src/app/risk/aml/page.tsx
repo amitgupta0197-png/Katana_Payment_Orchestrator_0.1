@@ -134,7 +134,7 @@ function DecideButton({ row, status, label, variant }: { row: Case; status: stri
 export default function AmlCasesPage() {
   const q = useQuery({
     queryKey: ["aml-cases"],
-    queryFn: async () => (await fetch("/api/risk/cases").then((r) => r.json())) as { cases: Case[] },
+    queryFn: async () => (await fetch("/api/risk/cases").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { cases: Case[] },
     refetchInterval: 6000,
   });
   const cases = q.data?.cases ?? [];

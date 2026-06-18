@@ -14,15 +14,15 @@ interface Balance { merchant_id: string; currency: string; balance: number }
 export default function LedgerPage() {
   const journals = useQuery({
     queryKey: ["ledger:journals"],
-    queryFn: async () => (await fetch("/api/ledger/journals").then((r) => r.json())) as { journals: Journal[] },
+    queryFn: async () => (await fetch("/api/ledger/journals").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { journals: Journal[] },
   });
   const accounts = useQuery({
     queryKey: ["ledger:accounts"],
-    queryFn: async () => (await fetch("/api/ledger/accounts").then((r) => r.json())) as { accounts: Account[] },
+    queryFn: async () => (await fetch("/api/ledger/accounts").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { accounts: Account[] },
   });
   const balances = useQuery({
     queryKey: ["ledger:balances"],
-    queryFn: async () => (await fetch("/api/ledger/balance").then((r) => r.json())) as { balances: Balance[] },
+    queryFn: async () => (await fetch("/api/ledger/balance").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { balances: Balance[] },
   });
 
   const jCols: Column<Journal>[] = [

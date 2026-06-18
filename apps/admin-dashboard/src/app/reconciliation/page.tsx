@@ -17,7 +17,7 @@ interface Break {
 export default function ReconciliationPage() {
   const q = useQuery({
     queryKey: ["recon:breaks"],
-    queryFn: async () => (await fetch("/api/recon/breaks").then((r) => r.json())) as { breaks: Break[] },
+    queryFn: async () => (await fetch("/api/recon/breaks").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { breaks: Break[] },
   });
   const cols: Column<Break>[] = [
     { key: "reference", header: "Ref" },

@@ -18,7 +18,7 @@ interface Chargeback {
 export default function DisputesPage() {
   const q = useQuery({
     queryKey: ["mp:risk:chargebacks"],
-    queryFn: async () => (await fetch("/api/risk?kind=chargebacks").then((r) => r.json())) as { items: Chargeback[] },
+    queryFn: async () => (await fetch("/api/risk?kind=chargebacks").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { items: Chargeback[] },
   });
 
   // TODO: chargeback evidence endpoint. Toast for now.

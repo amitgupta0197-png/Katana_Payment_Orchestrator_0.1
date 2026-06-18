@@ -14,7 +14,7 @@ interface Credential { id: string; provider: string; env: string; active: boolea
 export default function PgAdapterPage() {
   const q = useQuery({
     queryKey: ["pg-adapter"],
-    queryFn: async () => (await fetch("/api/pg-adapter").then((r) => r.json())) as { providers: Provider[]; credentials: Credential[] },
+    queryFn: async () => (await fetch("/api/pg-adapter").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { providers: Provider[]; credentials: Credential[] },
   });
   const pCols: Column<Provider>[] = [
     { key: "code", header: "Code" },

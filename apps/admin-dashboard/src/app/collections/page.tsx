@@ -16,7 +16,7 @@ interface VA {
 export default function CollectionsPage() {
   const q = useQuery({
     queryKey: ["collections"],
-    queryFn: async () => (await fetch("/api/collections/va").then((r) => r.json())) as { accounts: VA[] },
+    queryFn: async () => (await fetch("/api/collections/va").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { accounts: VA[] },
   });
   const cols: Column<VA>[] = [
     { key: "counterparty", header: "Merchant" },
