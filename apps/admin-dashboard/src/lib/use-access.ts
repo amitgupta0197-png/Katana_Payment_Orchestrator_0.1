@@ -28,10 +28,14 @@ const COL_FOR: Record<Op, keyof Rights> = {
 
 // useCan — returns false until the query loads; pair with hidden/disabled
 // affordances so the UI doesn't flash a CTA the user can't use.
+//
+// SUPER_ADMIN bypass: if the persona is SUPER_ADMIN and the module isn't in
+// the matrix yet (e.g. a new feature ships before the matrix row is seeded),
+// default to true. Mirrors the server-side bypass in lib/access.ts → can().
 export function useCan(moduleCode: string, op: Op): boolean {
   const q = useAccess();
   if (!q.data) return false;
   const row = q.data.rights[moduleCode];
-  if (!row) return false;
+  if (!row) return q.data.persona === "SUPER_ADMIN";
   return row[COL_FOR[op]];
 }

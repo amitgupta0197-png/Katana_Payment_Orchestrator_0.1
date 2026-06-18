@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { LayoutDashboard } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getSession } from "@/lib/auth";
 
 const PILLARS = [
   { title: "Providers",   href: "/providers",   description: "Sub-admin reseller entities & commission rules" },
@@ -14,7 +16,12 @@ const PILLARS = [
   { title: "Risk",        href: "/risk",        description: "Velocity rules, blacklists, chargebacks" },
 ];
 
-export default function DashboardHome() {
+export default async function DashboardHome() {
+  // Persona-aware landing — PROVIDER/MERCHANT log in and land on their own
+  // portal instead of the SUPER_ADMIN operations console.
+  const session = await getSession();
+  if (session?.persona === "PROVIDER")  redirect("/provider-portal");
+  if (session?.persona === "MERCHANT")  redirect("/merchant-portal");
   return (
     <>
       <PageHeader

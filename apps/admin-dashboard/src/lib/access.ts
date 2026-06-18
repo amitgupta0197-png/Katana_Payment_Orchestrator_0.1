@@ -80,6 +80,12 @@ export async function getMatrix(persona: Persona): Promise<MatrixCell[]> {
 
 // Per-persona rights map keyed by module_code — used by useAccess() on the
 // client to gate CTAs without an extra round-trip per check.
+//
+// SUPER_ADMIN bypass: if no rows exist yet (fresh DB before the UAM matrix
+// migration is applied) we still need the matrix to render and CTAs to work.
+// We synthesize an all-true map for every known module so the platform is
+// usable from day one. Explicit DENY rows still win because they replace the
+// synthesized default below.
 export async function rightsFor(persona: Persona): Promise<Record<string, Rights>> {
   const r = await rows<{ module_code: string } & Rights>(
     "iam",
@@ -87,7 +93,18 @@ export async function rightsFor(persona: Persona): Promise<Record<string, Rights
        FROM uam_module_access WHERE persona = $1`,
     [persona],
   ).catch(() => []);
+
   const out: Record<string, Rights> = {};
+
+  if (persona === "SUPER_ADMIN") {
+    const mods = await rows<{ module_code: string }>(
+      "iam", `SELECT module_code FROM uam_modules`,
+    ).catch(() => []);
+    for (const m of mods) {
+      out[m.module_code] = { can_create: true, can_read: true, can_update: true, can_delete: true, can_admin: true };
+    }
+  }
+
   for (const row of r) {
     out[row.module_code] = {
       can_create: row.can_create,

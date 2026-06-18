@@ -29,16 +29,35 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+export type NavPersona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT";
+
 export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
   status: "live" | "read-only" | "scaffold";
   group: "Overview" | "Payment Management" | "Money Movement" | "Risk & Compliance" | "Operations" | "Admin";
+  /** Personas that should see this nav entry. Defaults to SUPER_ADMIN only. */
+  personas?: NavPersona[];
+}
+
+// Persona buckets — used by Sidebar to filter the full list before render so
+// PROVIDER/MERCHANT never see admin-only links pointing at endpoints they
+// can't reach. SUPER_ADMIN always sees everything; the other two see a
+// curated subset that matches their own portal entries.
+export const SHARED_PERSONAS: NavPersona[] = ["SUPER_ADMIN", "PROVIDER", "MERCHANT"];
+export const PROVIDER_NAV: NavPersona[] = ["SUPER_ADMIN", "PROVIDER"];
+export const MERCHANT_NAV: NavPersona[] = ["SUPER_ADMIN", "MERCHANT"];
+
+export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavItem[] {
+  return items.filter((i) => {
+    const allowed = i.personas ?? ["SUPER_ADMIN"];
+    return allowed.includes(persona);
+  });
 }
 
 export const navItems: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live", group: "Overview" },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live", group: "Overview", personas: SHARED_PERSONAS },
   { href: "/admin-log", label: "Admin Log", icon: ScrollText, status: "live", group: "Overview" },
 
   { href: "/providers",        label: "Providers",       icon: UserPlus, status: "live", group: "Payment Management" },

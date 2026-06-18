@@ -26,9 +26,22 @@ export async function GET() {
       where += ` AND merchant_id = ANY($${params.length + 1}::text[])`;
       params.push(ids);
     }
+    // Aliases below match the column names the /settlement page renders.
+    // SQL columns: batch_date / fees_amount / net_amount; client expects
+    // period_start / period_end / fee_amount / net_payable. Keep both for
+    // back-compat — drop the duplicates after the page stabilizes.
     const batches = await rows<any>("settlement", `
-      SELECT id, tenant_id, merchant_id, batch_date, gross_amount, fees_amount,
-             net_amount, utr, payout_ref, status, txn_count, created_at, completed_at
+      SELECT id, tenant_id, merchant_id,
+             batch_date,
+             batch_date         AS period_start,
+             batch_date         AS period_end,
+             gross_amount,
+             fees_amount,
+             fees_amount        AS fee_amount,
+             net_amount,
+             net_amount         AS net_payable,
+             COALESCE('INR'::text, '') AS currency,
+             utr, payout_ref, status, txn_count, created_at, completed_at
         FROM settlement_batches
        WHERE ${where}
        ORDER BY batch_date DESC LIMIT 200
