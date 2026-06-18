@@ -36,6 +36,7 @@ const schema = z.object({
   key: z.string().min(1).max(2048),
   salt: z.string().min(1).max(2048),
   scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]),
+  env: z.enum(["TEST", "PROD"]).default("TEST"),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -56,7 +57,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     await storeGatewayMid(code, {
       gateway: body.gateway.toUpperCase(), mid_code: body.mid_code,
-      key: body.key, salt: body.salt, scheme: body.scheme,
+      key: body.key, salt: body.salt, scheme: body.scheme, env: body.env,
     });
     // Echo only non-secret status back.
     return NextResponse.json({ status: await getGatewayMidStatus(code) }, { status: 201 });

@@ -34,7 +34,7 @@ interface ApiKey {
   created_at: string; last_used_at?: string; revoked_at?: string;
 }
 interface GatewayMidStatus {
-  configured: boolean; gateway?: string; mid_code?: string; scheme?: string; key_hint?: string;
+  configured: boolean; gateway?: string; mid_code?: string; scheme?: string; env?: string; key_hint?: string;
 }
 interface CheckoutCredsStatus {
   configured: boolean; key?: string; scheme?: string; salt_hint?: string;
@@ -381,7 +381,7 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
   const status = (statusQ.data as { status?: GatewayMidStatus })?.status;
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ gateway: "", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512" });
+  const [form, setForm] = useState({ gateway: "PAYU", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512", env: "TEST" });
 
   const m = useMutation({
     mutationFn: async () => {
@@ -395,7 +395,7 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
     onSuccess: () => {
       toast.success("Gateway MID credentials saved");
       setOpen(false);
-      setForm({ gateway: "", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512" });
+      setForm({ gateway: "PAYU", mid_code: "", key: "", salt: "", scheme: "PAYU_SHA512", env: "TEST" });
       qc.invalidateQueries({ queryKey: ["merchant", merchant.id, "gateway-mid"] });
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
@@ -431,13 +431,23 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
                 </div>
                 <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway merchant key" /></div>
                 <div className="space-y-1.5"><Label>Salt</Label><Input value={form.salt} onChange={(e) => setForm({ ...form, salt: e.target.value })} placeholder="gateway salt" /></div>
-                <div className="space-y-1.5">
-                  <Label>Signing scheme</Label>
-                  <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-                    value={form.scheme} onChange={(e) => setForm({ ...form, scheme: e.target.value })}>
-                    <option value="PAYU_SHA512">PAYU_SHA512 (PayU / Airpay)</option>
-                    <option value="HMAC_SHA256">HMAC_SHA256</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Signing scheme</Label>
+                    <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                      value={form.scheme} onChange={(e) => setForm({ ...form, scheme: e.target.value })}>
+                      <option value="PAYU_SHA512">PAYU_SHA512 (PayU / Airpay)</option>
+                      <option value="HMAC_SHA256">HMAC_SHA256</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Environment</Label>
+                    <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                      value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })}>
+                      <option value="TEST">TEST (test.payu.in)</option>
+                      <option value="PROD">PROD (secure.payu.in)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -455,7 +465,7 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
           <div className="text-sm space-y-1">
             <div><span className="text-[color:var(--color-text-muted)]">Gateway:</span> <Badge variant="brand">{status.gateway}</Badge></div>
             <div><span className="text-[color:var(--color-text-muted)]">Main MID:</span> <span className="font-mono">{status.mid_code}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Scheme:</span> <span className="font-mono">{status.scheme}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Scheme:</span> <span className="font-mono">{status.scheme}</span> · <span className="text-[color:var(--color-text-muted)]">Env:</span> <Badge variant={status.env === "PROD" ? "danger" : "default"}>{status.env}</Badge></div>
             <div><span className="text-[color:var(--color-text-muted)]">Key:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· salt sealed</span></div>
           </div>
         ) : (

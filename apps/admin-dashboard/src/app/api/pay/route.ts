@@ -13,8 +13,11 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { pgError } from "@/lib/pg";
+import { rows, pgError } from "@/lib/pg";
+import { toMinor, fromMinor } from "@/lib/money";
 import { resolveMerchantByCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
+import { getGatewayMid } from "@/lib/gateway-creds";
+import { payuAutoSubmitForm } from "@/lib/payu";
 import { runCheckout } from "@/lib/checkout-core";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +32,14 @@ const schema = z.object({
   productinfo: z.string().optional(),
   firstname: z.string().optional(),
   email: z.string().optional(),
+  phone: z.string().optional(),
   currency: z.string().optional(),
   method: z.string().optional(),
+  // Hosted-gateway redirect: when truthy, Katana returns an auto-submit form to
+  // the gateway's (PayU) hosted page instead of running the simulated pipeline.
+  redirect: z.union([z.string(), z.boolean()]).optional(),
+  surl: z.string().optional(),   // merchant success URL (Katana forwards here after the gateway callback)
+  furl: z.string().optional(),   // merchant failure URL
 });
 
 async function parseBody(req: Request): Promise<Record<string, unknown>> {
@@ -67,6 +76,45 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+
+    // 2.5 Hosted-gateway redirect (real PayU): build a signed PayU request with
+    //     the merchant's stored gateway Key+Salt and hand the customer's browser
+    //     off to PayU's hosted page. PayU posts the result to our return endpoint.
+    const wantRedirect = body.redirect === true || body.redirect === "true" || body.redirect === "1";
+    if (wantRedirect) {
+      const gwMid = await getGatewayMid(merchantCode);
+      if (!gwMid || gwMid.gateway !== "PAYU") {
+        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+      }
+      const currency = (body.currency ?? "INR").toUpperCase();
+      const amountMinor = toMinor(amountStr, currency);
+
+      // Create/track the order; PayU's callback finalises it. Store the merchant's
+      // own success/failure URLs so the return handler can forward the customer.
+      const existing = await rows<{ id: string }>("checkout",
+        "SELECT id FROM checkout_orders WHERE idempotency_key = $1 LIMIT 1", [body.txnid]);
+      if (!existing.length) {
+        await rows("checkout", `
+          INSERT INTO checkout_orders
+            (tenant_id, merchant_id, client_ref, txn_id, amount, amount_minor, currency,
+             method, status, idempotency_key, customer_email, client_surl, client_furl)
+          VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, 'CREATED', $8, $9, $10, $11)
+        `, [merchantCode, body.productinfo ?? body.txnid, body.txnid,
+            Number(fromMinor(amountMinor, currency)), String(amountMinor), currency,
+            (body.method ?? "CARD").toUpperCase(), body.txnid,
+            body.email ?? null, body.surl ?? null, body.furl ?? null]).catch(() => {});
+      }
+
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+      const ret = `${base}/api/gateway/payu/return`;
+      const html = payuAutoSubmitForm(gwMid, {
+        txnid: body.txnid, amount: amountStr,
+        productinfo: body.productinfo ?? "Order", firstname: body.firstname ?? "Customer",
+        email: body.email ?? "", phone: body.phone ?? "9999999999",
+        surl: ret, furl: ret,
+      });
+      return new NextResponse(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }
 
     // 3. map to the checkout pipeline. method must be one Katana supports.
     const method = (body.method ?? "UPI_INTENT").toUpperCase();

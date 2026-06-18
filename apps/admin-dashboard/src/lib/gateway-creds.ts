@@ -26,6 +26,7 @@ export interface GatewayMid {
   key: string;          // gateway-provided merchant key
   salt: string;         // gateway-provided salt
   scheme: SigningScheme;
+  env?: "TEST" | "PROD";   // gateway environment (PayU test vs secure). Default TEST.
 }
 
 // Persist (or rotate) a merchant's gateway MID credentials. Sealed at rest.
@@ -49,13 +50,14 @@ export async function getGatewayMid(merchantCode: string): Promise<GatewayMid | 
 // Non-secret status for the operator UI — deliberately omits key + salt.
 export type GatewayMidStatus =
   | { configured: false }
-  | { configured: true; gateway: string; mid_code: string; scheme: SigningScheme; key_hint: string };
+  | { configured: true; gateway: string; mid_code: string; scheme: SigningScheme; env: "TEST" | "PROD"; key_hint: string };
 
 export async function getGatewayMidStatus(merchantCode: string): Promise<GatewayMidStatus> {
   const mid = await getGatewayMid(merchantCode);
   if (!mid) return { configured: false };
   return {
     configured: true, gateway: mid.gateway, mid_code: mid.mid_code, scheme: mid.scheme,
+    env: mid.env ?? "TEST",
     key_hint: mid.key.length > 4 ? `••••${mid.key.slice(-4)}` : "••••",
   };
 }
