@@ -61,7 +61,10 @@ async function verifySession(token: string | undefined): Promise<Session | null>
 }
 
 const PUBLIC_UI = ["/login"];
-const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health"];
+// /api/pay is the merchant-facing order endpoint — authenticated by the
+// merchant's Katana Key + Salt signature (not a session cookie), so it must
+// bypass the session gate here.
+const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 

@@ -15,6 +15,7 @@
 
 import { randomBytes, timingSafeEqual } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
+import { rows } from "@/lib/pg";
 import { computeSignature, type SigningScheme, type GatewaySignInput } from "@/lib/gateway-creds";
 
 const LABEL = "checkout_integration";
@@ -34,7 +35,22 @@ export async function issueCheckoutCreds(merchantCode: string, scheme: SigningSc
     kind: "merchant_secret", ownerType: "merchant", ownerId: merchantCode,
     label: LABEL, plaintext: JSON.stringify(creds),
   });
+  // Maintain the key -> merchant lookup (one active key per merchant; the new
+  // key supersedes any previous one).
+  await rows("checkout", `DELETE FROM merchant_checkout_keys WHERE merchant_code = $1`, [merchantCode]).catch(() => {});
+  await rows("checkout", `
+    INSERT INTO merchant_checkout_keys (mkey, merchant_code, scheme)
+    VALUES ($1, $2, $3)
+  `, [creds.key, merchantCode, creds.scheme]).catch(() => {});
   return creds;
+}
+
+// Resolve a presented checkout key (mk_...) -> merchant_code. Returns null for
+// an unknown key.
+export async function resolveMerchantByCheckoutKey(mkey: string): Promise<string | null> {
+  const r = await rows<{ merchant_code: string }>("checkout",
+    `SELECT merchant_code FROM merchant_checkout_keys WHERE mkey = $1`, [mkey]).catch(() => []);
+  return r[0]?.merchant_code ?? null;
 }
 
 // Server-side full read — used to verify an inbound signed order.
