@@ -85,6 +85,7 @@ export const navItems: NavItem[] = [
   { href: "/admin/roles",          label: "Roles & Permissions", icon: Shield, status: "live", group: "Admin" },
   { href: "/admin/api-keys",       label: "API Keys",     icon: KeyRound, status: "live", group: "Admin" },
   { href: "/admin/assignments",    label: "Assignments",  icon: UserPlus, status: "live", group: "Admin" },
+  { href: "/admin/access",         label: "Access matrix", icon: Shield,   status: "live", group: "Admin" },
   { href: "/admin/maker-checker",  label: "Maker-Checker", icon: ShieldAlert, status: "live", group: "Admin" },
   { href: "/admin/webhooks",       label: "Webhooks", icon: Workflow, status: "live", group: "Admin" },
   { href: "/admin/routing",        label: "Routing cockpit", icon: GitMerge, status: "live", group: "Admin" },

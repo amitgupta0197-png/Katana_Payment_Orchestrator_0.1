@@ -64,7 +64,7 @@ for db in "${DATABASES[@]}"; do
 done
 
 echo "[bootstrap] applying migrations…"
-for svc in auth iam provider merchant mid ledger; do
+for svc in auth iam provider merchant mid ledger tenant; do
   case "$svc" in
     auth)     db=authservice_db ;;
     iam)      db=iamservice_db ;;
@@ -72,6 +72,7 @@ for svc in auth iam provider merchant mid ledger; do
     merchant) db=merchantservice_db ;;
     mid)      db=midservice_db ;;
     ledger)   db=ledgerservice_db ;;
+    tenant)   db=tenantservice_db ;;
   esac
   for f in "$MIG/$svc"/*.sql; do
     echo "  $svc ← $(basename "$f")"

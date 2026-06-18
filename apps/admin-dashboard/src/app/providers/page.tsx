@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Provider {
@@ -67,6 +68,7 @@ function CreateDialog() {
 }
 
 export default function ProvidersPage() {
+  const canCreate = useCan("providers", "create");
   const q = useQuery({
     queryKey: ["providers"],
     queryFn: async () => (await fetch("/api/providers").then((r) => r.json())) as { providers: Provider[] },
@@ -94,7 +96,7 @@ export default function ProvidersPage() {
         title="Providers"
         description="Sub-admin reseller entities and their KYC lifecycle (PRODUCT_VISION §3.1)."
         icon={UserPlus}
-        actions={<CreateDialog />}
+        actions={canCreate ? <CreateDialog /> : null}
       />
       <Card>
         <CardHeader><CardTitle>{(q.data?.providers ?? []).length} providers</CardTitle></CardHeader>

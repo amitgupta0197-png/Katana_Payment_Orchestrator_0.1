@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -118,6 +119,7 @@ function OnboardDialog() {
 const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"] as const;
 
 export default function MerchantsPage() {
+  const canCreate = useCan("merchants", "create");
   const q = useQuery({
     queryKey: ["merchants"],
     queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: Merchant[]; funnel: FunnelRow[] },
@@ -155,7 +157,7 @@ export default function MerchantsPage() {
         title="Merchants"
         description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). Onboarding stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
         icon={Store}
-        actions={<OnboardDialog />}
+        actions={canCreate ? <OnboardDialog /> : null}
       />
       {funnel.length > 0 && (
         <Card className="mb-4">

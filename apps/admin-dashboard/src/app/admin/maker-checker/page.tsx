@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface PendingRow {
@@ -87,6 +88,7 @@ function DecideDialog({ row, decision }: { row: PendingRow; decision: "APPROVED"
 }
 
 export default function MakerCheckerPage() {
+  const canDecide = useCan("maker_checker", "admin");
   const q = useQuery({
     queryKey: ["maker-checker"],
     queryFn: async () => (await fetch("/api/admin/maker-checker").then((r) => r.json())) as {
@@ -102,10 +104,14 @@ export default function MakerCheckerPage() {
     { key: "maker_email", header: "Maker", render: (r) => r.maker_email || r.maker_id },
     { key: "payload", header: "Payload", render: (r) => <span className="font-mono text-xs">{JSON.stringify(r.payload).slice(0, 80)}</span> },
     { key: "request_id", header: "Decide", render: (r) => (
-      <div className="flex gap-2">
-        <DecideDialog row={r} decision="APPROVED" />
-        <DecideDialog row={r} decision="REJECTED" />
-      </div>
+      canDecide ? (
+        <div className="flex gap-2">
+          <DecideDialog row={r} decision="APPROVED" />
+          <DecideDialog row={r} decision="REJECTED" />
+        </div>
+      ) : (
+        <span className="text-xs text-[color:var(--color-text-muted)]">read-only</span>
+      )
     )},
   ];
 

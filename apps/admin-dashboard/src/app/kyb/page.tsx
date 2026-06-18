@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface KybCase {
@@ -88,6 +89,7 @@ function DecisionDialog({ kyb, decision }: { kyb: KybCase; decision: "APPROVED" 
 }
 
 export default function KybPage() {
+  const canDecide = useCan("kyb", "admin");
   const q = useQuery({
     queryKey: ["kyb:admin"],
     queryFn: async () => (await fetch("/api/kyb").then((r) => r.json())) as { cases: KybCase[] },
@@ -102,10 +104,13 @@ export default function KybPage() {
     { key: "decided_at", header: "Decided", render: (r) => r.decided_at ? formatDateTime(r.decided_at) : "—" },
     {
       key: "actions", header: "",
-      render: (r) =>
-        r.status === "APPROVED" || r.status === "REJECTED" || r.status === "EXPIRED"
-          ? <span className="text-xs text-[color:var(--color-text-subtle)]">{r.status}</span>
-          : <div className="flex gap-2"><DecisionDialog kyb={r} decision="APPROVED" /><DecisionDialog kyb={r} decision="REJECTED" /></div>,
+      render: (r) => {
+        if (r.status === "APPROVED" || r.status === "REJECTED" || r.status === "EXPIRED")
+          return <span className="text-xs text-[color:var(--color-text-subtle)]">{r.status}</span>;
+        if (!canDecide)
+          return <span className="text-xs text-[color:var(--color-text-muted)]">read-only</span>;
+        return <div className="flex gap-2"><DecisionDialog kyb={r} decision="APPROVED" /><DecisionDialog kyb={r} decision="REJECTED" /></div>;
+      },
     },
   ];
   return (
