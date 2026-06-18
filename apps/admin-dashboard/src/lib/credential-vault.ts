@@ -49,7 +49,7 @@ export function unsealValue(blob: SealedBlob): Buffer {
 }
 
 export interface StoreInput {
-  kind: "vendor_secret" | "mid_secret" | "webhook_secret" | "bank_key";
+  kind: "vendor_secret" | "mid_secret" | "webhook_secret" | "bank_key" | "merchant_secret";
   ownerType: "vendor" | "merchant" | "provider" | "tenant";
   ownerId: string;
   label: string;

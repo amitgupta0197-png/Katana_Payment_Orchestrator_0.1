@@ -36,6 +36,9 @@ interface ApiKey {
 interface GatewayMidStatus {
   configured: boolean; gateway?: string; mid_code?: string; scheme?: string; key_hint?: string;
 }
+interface CheckoutCredsStatus {
+  configured: boolean; key?: string; scheme?: string; salt_hint?: string;
+}
 
 const STEPS = [
   { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic merchant details captured." },
@@ -240,6 +243,121 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
             API keys can be generated once the merchant reaches the LIVE stage.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CheckoutKeyCard({ merchant }: { merchant: Merchant }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [scheme, setScheme] = useState("PAYU_SHA512");
+  const [issued, setIssued] = useState<{ key: string; salt: string; scheme: string } | null>(null);
+
+  const statusQ = useQuery({
+    queryKey: ["merchant", merchant.id, "checkout-key"],
+    queryFn: async () => (await fetch(`/api/merchants/${merchant.id}/checkout-key`).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { status: CheckoutCredsStatus },
+  });
+  const status = statusQ.data?.status;
+
+  const m = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/checkout-key`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheme }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json() as Promise<{ creds: { key: string; salt: string; scheme: string } }>;
+    },
+    onSuccess: (d) => {
+      setIssued(d.creds);
+      qc.invalidateQueries({ queryKey: ["merchant", merchant.id, "checkout-key"] });
+    },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+
+  function close() {
+    setOpen(false);
+    setTimeout(() => { setIssued(null); m.reset(); }, 200);
+  }
+  const copy = (v: string) => { navigator.clipboard?.writeText(v); toast.success("Copied"); };
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="text-base">Checkout integration (Key + Salt)</CardTitle>
+          <CardDescription>Katana-issued Key + Salt the merchant puts in their checkout to sign orders to Katana. Katana verifies it, then re-signs to the gateway.</CardDescription>
+        </div>
+        <Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant={status?.configured ? "secondary" : "default"}>
+              <KeyRound className="h-4 w-4" /> {status?.configured ? "Regenerate" : "Generate Key + Salt"}
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{status?.configured ? "Regenerate" : "Generate"} checkout Key + Salt</DialogTitle>
+              <DialogDescription>
+                For <span className="font-mono">{merchant.merchant_code}</span>. The Salt is shown once — give both to the merchant for their checkout config. Regenerating invalidates the previous pair.
+              </DialogDescription>
+            </DialogHeader>
+            {issued ? (
+              <div className="space-y-3">
+                <div className="rounded-md border border-[color:var(--color-success)]/30 bg-[color:var(--color-success-muted)] px-3 py-2 text-xs text-[color:var(--color-success)]">
+                  Generated. Copy the Salt now — it won’t be shown again.
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Merchant Key</Label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.key}</code>
+                    <Button size="sm" variant="secondary" onClick={() => copy(issued.key)}><Copy className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Merchant Salt</Label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.salt}</code>
+                    <Button size="sm" variant="secondary" onClick={() => copy(issued.salt)}><Copy className="h-4 w-4" /></Button>
+                  </div>
+                </div>
+                <div className="text-xs text-[color:var(--color-text-muted)]">Scheme: <span className="font-mono">{issued.scheme}</span></div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Signing scheme</Label>
+                <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                  value={scheme} onChange={(e) => setScheme(e.target.value)}>
+                  <option value="PAYU_SHA512">PAYU_SHA512 (PayU-style checkout)</option>
+                  <option value="HMAC_SHA256">HMAC_SHA256</option>
+                </select>
+              </div>
+            )}
+            <DialogFooter>
+              {issued ? (
+                <Button onClick={close}>Done</Button>
+              ) : (
+                <>
+                  <Button variant="secondary" onClick={close}>Cancel</Button>
+                  <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Generating…" : "Generate"}</Button>
+                </>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {status?.configured ? (
+          <div className="text-sm space-y-1">
+            <div><span className="text-[color:var(--color-text-muted)]">Key:</span> <span className="font-mono">{status.key}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Salt:</span> <span className="font-mono">{status.salt_hint}</span> <span className="text-[color:var(--color-text-muted)]">· sealed</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Scheme:</span> <span className="font-mono">{status.scheme}</span></div>
+          </div>
+        ) : (
+          <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
+            No checkout credentials issued yet. Generate a Key + Salt to hand to the merchant.
           </div>
         )}
       </CardContent>
@@ -467,6 +585,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
       </div>
 
       <ApiKeysCard merchant={merchant} />
+
+      <CheckoutKeyCard merchant={merchant} />
 
       <GatewayMidCard merchant={merchant} />
 

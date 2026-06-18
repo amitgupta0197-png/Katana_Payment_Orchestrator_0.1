@@ -80,24 +80,34 @@ export interface GatewaySignInput {
   email?: string;
 }
 
-// Compute the signature Katana sends to the gateway, using the merchant's
-// stored Key + Salt. Pluggable per gateway:
+export interface KeySalt { key: string; salt: string; scheme: SigningScheme; }
+
+// Compute a PayU-style request signature from any Key + Salt. Pluggable:
 //   PAYU_SHA512 — PayU/Airpay/Easebuzz classic request hash:
 //       sha512(key|txnid|amount|productinfo|firstname|email|udf1..udf5||||||salt)
-//     (empty placeholders kept positional so the gateway can re-derive it.)
+//     (empty placeholders kept positional so the other side can re-derive it.)
 //   HMAC_SHA256 — generic, mirrors lib/webhooks.ts signing: HMAC(key+salt, payload).
-export function signForGateway(mid: GatewayMid, order: GatewaySignInput): { scheme: SigningScheme; signature: string } {
-  if (mid.scheme === "HMAC_SHA256") {
+//
+// Used on BOTH sides of the orchestration:
+//   - Katana -> gateway  (gateway-provided key/salt)        via signForGateway()
+//   - merchant -> Katana (Katana-issued key/salt)           via lib/merchant-checkout.ts
+export function computeSignature(cred: KeySalt, order: GatewaySignInput): { scheme: SigningScheme; signature: string } {
+  if (cred.scheme === "HMAC_SHA256") {
     const canonical = [order.txnId, order.amount, order.productinfo ?? "", order.email ?? ""].join("|");
-    return { scheme: mid.scheme, signature: createHmac("sha256", `${mid.key}${mid.salt}`).update(canonical).digest("hex") };
+    return { scheme: cred.scheme, signature: createHmac("sha256", `${cred.key}${cred.salt}`).update(canonical).digest("hex") };
   }
   // PAYU_SHA512 (default)
   const seq = [
-    mid.key, order.txnId, order.amount,
+    cred.key, order.txnId, order.amount,
     order.productinfo ?? "", order.firstname ?? "", order.email ?? "",
     "", "", "", "", "",     // udf1..udf5
     "", "", "", "", "",     // reserved blanks per PayU hash spec
-    mid.salt,
+    cred.salt,
   ].join("|");
-  return { scheme: mid.scheme, signature: createHash("sha512").update(seq).digest("hex") };
+  return { scheme: cred.scheme, signature: createHash("sha512").update(seq).digest("hex") };
+}
+
+// Sign Katana's outbound request to the gateway using the gateway-provided creds.
+export function signForGateway(mid: GatewayMid, order: GatewaySignInput): { scheme: SigningScheme; signature: string } {
+  return computeSignature({ key: mid.key, salt: mid.salt, scheme: mid.scheme }, order);
 }
