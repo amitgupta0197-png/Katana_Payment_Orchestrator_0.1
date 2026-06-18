@@ -1,13 +1,16 @@
 "use client";
 
+// L1 — event stream. DataView with event-type filter chips, search by
+// entity/producer, auto-refresh toggle in the header.
+
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import type { Column } from "@/components/ui/data-table";
+import { DataView } from "@/components/world-class/data-view";
 import { formatDateTime } from "@/lib/utils";
 
 interface Event {
@@ -15,14 +18,6 @@ interface Event {
   entity_type: string; entity_id: string; actor_id?: string;
   payload: Record<string, unknown>; created_at: string;
 }
-
-const EVENT_TYPES = [
-  "", "merchant.created", "submid.status_changed", "payment.created",
-  "route.selected", "callback.received", "payment.succeeded",
-  "settlement.calculated", "reconciliation.break_opened", "risk.alert",
-  "provider.kyc_decided", "maker_checker.requested", "maker_checker.decided",
-  "auth.session_started", "auth.session_ended",
-];
 
 function badgeForType(t: string): "brand" | "success" | "warning" | "danger" | "default" {
   if (t.startsWith("payment.succeeded") || t.endsWith(".decided")) return "success";
@@ -32,23 +27,26 @@ function badgeForType(t: string): "brand" | "success" | "warning" | "danger" | "
 }
 
 export default function EventsPage() {
-  const [type, setType] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-
   const q = useQuery({
-    queryKey: ["events", type],
-    queryFn: async () =>
-      (await fetch(`/api/events${type ? `?type=${encodeURIComponent(type)}` : ""}`).then((r) => r.json())) as { events: Event[] },
+    queryKey: ["events"],
+    queryFn: async () => (await fetch("/api/events").then((r) => r.json())) as { events: Event[] },
     refetchInterval: autoRefresh ? 4000 : false,
   });
+  const events = q.data?.events ?? [];
+
+  // Auto-derive top 8 event types as filter chips (most useful for live tailing).
+  const typeCounts = new Map<string, number>();
+  for (const e of events) typeCounts.set(e.event_type, (typeCounts.get(e.event_type) ?? 0) + 1);
+  const topTypes = Array.from(typeCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k);
 
   const cols: Column<Event>[] = [
-    { key: "created_at", header: "When", render: (e) => formatDateTime(e.created_at) },
+    { key: "created_at", header: "When", render: (e) => <span className="text-xs tabular-nums">{formatDateTime(e.created_at)}</span> },
     { key: "event_type", header: "Event", render: (e) => <Badge variant={badgeForType(e.event_type)}>{e.event_type}</Badge> },
     { key: "producer", header: "Producer", render: (e) => <span className="text-xs">{e.producer}</span> },
-    { key: "entity_type", header: "Entity", render: (e) => `${e.entity_type}/${e.entity_id}` },
+    { key: "entity_type", header: "Entity", render: (e) => <span className="text-xs">{e.entity_type}/{e.entity_id.slice(0, 8)}</span> },
     { key: "actor_id", header: "Actor", render: (e) => e.actor_id ? <span className="font-mono text-xs">{e.actor_id.slice(0, 8)}</span> : "—" },
-    { key: "payload", header: "Payload", render: (e) => <span className="font-mono text-xs">{JSON.stringify(e.payload).slice(0, 120)}</span> },
+    { key: "payload", header: "Payload", render: (e) => <span className="font-mono text-xs">{JSON.stringify(e.payload).slice(0, 100)}</span> },
   ];
 
   return (
@@ -58,36 +56,29 @@ export default function EventsPage() {
         description="Cross-module event bus (BRD §16). Live feed of every state change."
         icon={Activity}
         actions={
-          <div className="flex items-center gap-2">
-            <select
-              className="flex h-9 rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-              value={type} onChange={(e) => setType(e.target.value)}
-            >
-              {EVENT_TYPES.map((t) => <option key={t} value={t}>{t || "All event types"}</option>)}
-            </select>
-            <Button size="sm" variant={autoRefresh ? "default" : "secondary"} onClick={() => setAutoRefresh((v) => !v)}>
-              <RefreshCw className="h-4 w-4" /> {autoRefresh ? "Live" : "Paused"}
-            </Button>
-          </div>
+          <Button size="sm" variant={autoRefresh ? "default" : "secondary"} onClick={() => setAutoRefresh((v) => !v)}>
+            <RefreshCw className="h-4 w-4" /> {autoRefresh ? "Live" : "Paused"}
+          </Button>
         }
       />
-      <Card>
-        <CardHeader>
-          <CardTitle>{(q.data?.events ?? []).length} events</CardTitle>
-          <CardDescription>
-            {autoRefresh ? "Auto-refreshing every 4 seconds." : "Refresh paused. Click Live to resume."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={cols}
-            rows={q.data?.events ?? []}
-            loading={q.isLoading}
-            rowKey={(e) => e.event_id}
-            emptyState="No events yet. Try logging out and back in, then refresh."
-          />
-        </CardContent>
-      </Card>
+      <DataView
+        rows={events}
+        columns={cols}
+        rowKey={(e) => e.event_id}
+        loading={q.isLoading}
+        search={{ placeholder: "Search by entity / producer / event…", fields: ["event_type", "producer", "entity_type", "entity_id"] }}
+        filters={[
+          { key: "risk",    label: "Risk",       predicate: (e: Event) => e.event_type.startsWith("risk.") },
+          { key: "payment", label: "Payments",   predicate: (e: Event) => e.event_type.startsWith("payment.") },
+          { key: "checker", label: "Maker-checker", predicate: (e: Event) => e.event_type.startsWith("maker_checker") },
+          { key: "auth",    label: "Auth",       predicate: (e: Event) => e.event_type.startsWith("auth.") },
+          ...topTypes.slice(0, 4).map((t) => ({ key: `t-${t}`, label: t, predicate: (e: Event) => e.event_type === t })),
+        ]}
+        savedViewKey="events"
+        refresh={() => q.refetch()}
+        emptyTitle="No events yet"
+        emptyDescription="Trigger any action — events propagate here within seconds."
+      />
     </>
   );
 }
