@@ -478,6 +478,78 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
   );
 }
 
+function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
+  const [amount, setAmount] = useState("100.00");
+  const [email, setEmail] = useState("buyer@example.com");
+  const [result, setResult] = useState<{ order?: { status?: string; txn_id?: string }; route?: { provider?: string }; charge?: { outcome?: string }; gateway?: { signed?: boolean } } | null>(null);
+
+  const sim = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/test-pay`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, email, redirect: false }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d;
+    },
+    onSuccess: (d) => { setResult(d); toast.success(`Order ${d.order?.status ?? "ran"}`); },
+    onError: (e: Error) => { setResult(null); toast.error("Failed", { description: e.message }); },
+  });
+
+  const payu = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/test-pay`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, email, redirect: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { payu_url: string; fields: Record<string, string> };
+    },
+    onSuccess: (d) => {
+      const f = document.createElement("form");
+      f.method = "post"; f.action = d.payu_url;
+      for (const [k, v] of Object.entries(d.fields)) {
+        const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i);
+      }
+      document.body.appendChild(f); f.submit();   // navigate the browser to PayU
+    },
+    onError: (e: Error) => toast.error("PayU redirect failed", { description: e.message }),
+  });
+
+  return (
+    <Card className="mb-4">
+      <CardHeader>
+        <CardTitle className="text-base">Test checkout</CardTitle>
+        <CardDescription>Run a payment for this merchant straight from the dashboard — no external checkout page needed.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5"><Label>Amount</Label><Input value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Customer email</Label><Input value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => sim.mutate()} disabled={sim.isPending}>
+            {sim.isPending ? "Running…" : "Run simulated payment"}
+          </Button>
+          <Button onClick={() => payu.mutate()} disabled={payu.isPending}>
+            <ArrowRight className="h-4 w-4" /> {payu.isPending ? "Redirecting…" : "Pay via PayU"}
+          </Button>
+        </div>
+        {result && (
+          <div className="rounded-md border p-3 text-sm space-y-1">
+            <div><span className="text-[color:var(--color-text-muted)]">Result:</span> <Badge variant={result.order?.status === "SUCCESS" ? "success" : "danger"}>{result.order?.status ?? "—"}</Badge></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Txn:</span> <span className="font-mono text-xs">{result.order?.txn_id ?? "—"}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Provider:</span> {result.route?.provider ?? "—"} · <span className="text-[color:var(--color-text-muted)]">charge:</span> {result.charge?.outcome ?? "—"} · <span className="text-[color:var(--color-text-muted)]">gateway signed:</span> {result.gateway?.signed ? "yes" : "no"}</div>
+          </div>
+        )}
+        <p className="text-xs text-[color:var(--color-text-muted)]">“Simulated” runs Katana’s pipeline instantly (no PayU needed). “Pay via PayU” needs PayU creds set above and opens PayU’s hosted page.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MerchantDetailView({ id }: { id: string }) {
   const merchantQ = useQuery({
     queryKey: ["merchant", id],
@@ -599,6 +671,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <CheckoutKeyCard merchant={merchant} />
 
       <GatewayMidCard merchant={merchant} />
+
+      <TestCheckoutCard merchant={merchant} />
 
       <Card>
         <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this merchant.</CardDescription></CardHeader>
