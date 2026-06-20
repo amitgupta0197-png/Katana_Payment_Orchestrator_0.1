@@ -21,13 +21,18 @@ export async function computeTotals(input: {
   merchantId: string; periodStart: Date; periodEnd: Date; currency: string;
 }): Promise<BatchTotals> {
   // Sum journal lines tagged to this merchant via account_code naming.
-  // Gross = sum credits to MERCHANT_PAYABLE.<mid>
-  // Reserves = sum credits to MERCHANT_RESERVE.<mid> (or DISPUTE_HOLD)
-  // Fees = sum credits to MDR_EARNED.PG (platform MDR)
-  // Commissions = sum credits to COMMISSION_PAYABLE.* tagged with this merchant
+  //   gross    = debits to ASSETS.PG_FLOAT.* on payment.success (true payin volume)
+  //   net      = credits MINUS debits on MERCHANT_PAYABLE.<mid>
+  //              (debits include in-period refunds/chargebacks — so a refund
+  //               correctly reduces the amount we settle, fixing an overpay bug)
+  //   reserves = credits to MERCHANT_RESERVE.<mid>
+  //   fees     = credits to MDR_EARNED.*  (platform MDR)
+  //   commissions = credits to COMMISSION_PAYABLE.* for this merchant
   const r = await rows<any>("ledger", `
     SELECT
-      COALESCE(SUM(CASE WHEN a.code = 'LIABILITIES.MERCHANT_PAYABLE.' || $1 AND l.side='C' THEN l.amount_minor ELSE 0 END),0)::text AS gross_minor,
+      COALESCE(SUM(CASE WHEN a.code LIKE 'ASSETS.PG_FLOAT.%' AND l.side='D' AND j.journal_type='payment.success' THEN l.amount_minor ELSE 0 END),0)::text AS gross_minor,
+      COALESCE(SUM(CASE WHEN a.code = 'LIABILITIES.MERCHANT_PAYABLE.' || $1 AND l.side='C' THEN l.amount_minor ELSE 0 END),0)::text AS payable_credit_minor,
+      COALESCE(SUM(CASE WHEN a.code = 'LIABILITIES.MERCHANT_PAYABLE.' || $1 AND l.side='D' THEN l.amount_minor ELSE 0 END),0)::text AS payable_debit_minor,
       COALESCE(SUM(CASE WHEN a.code LIKE 'LIABILITIES.MERCHANT_RESERVE.' || $1 AND l.side='C' THEN l.amount_minor ELSE 0 END),0)::text AS reserves_minor,
       COALESCE(SUM(CASE WHEN a.code LIKE 'INCOME.MDR_EARNED.%' AND l.side='C' AND j.merchant_id=$1 THEN l.amount_minor ELSE 0 END),0)::text AS fees_minor,
       COALESCE(SUM(CASE WHEN a.code LIKE 'LIABILITIES.COMMISSION_PAYABLE.%' AND l.side='C' AND j.merchant_id=$1 THEN l.amount_minor ELSE 0 END),0)::text AS commissions_minor,
@@ -46,14 +51,13 @@ export async function computeTotals(input: {
   const reserves = BigInt(x.reserves_minor ?? "0");
   const fees = BigInt(x.fees_minor ?? "0");
   const commissions = BigInt(x.commissions_minor ?? "0");
-  // Net to settle = what the merchant nets above (already excludes fees/reserves/commissions
-  // because those credit different accounts). Provide as-is.
+  const net = BigInt(x.payable_credit_minor ?? "0") - BigInt(x.payable_debit_minor ?? "0");
   return {
     gross_minor: gross,
     fees_minor: fees,
     commissions_minor: commissions,
     reserves_minor: reserves,
-    net_minor: gross,                  // gross here is already net-of-line-deductions
+    net_minor: net,
     payment_count: Number(x.payment_count ?? 0),
   };
 }
@@ -98,16 +102,16 @@ export async function createBatch(input: CreateBatchInput): Promise<CreatedBatch
 
   const b = await rows<{ batch_id: string; status: string }>("settlement", `
     INSERT INTO settlement_batches
-      (tenant_id, merchant_id, cycle_for_date, period_start, period_end, currency,
-       txn_count, gross_amount, fee_amount, reserve_amount, net_payable, status)
+      (tenant_id, merchant_id, batch_date, period_start, period_end, currency,
+       txn_count, gross_amount, fee_amount, reserve_amount, net_amount, status)
     VALUES ('tenant-default', $1, ($3::timestamptz)::date, $2, $3, $4, $5,
-            $6, $7, $8, $9,
-            CASE WHEN $9::numeric > 0 THEN 'SETTLED' ELSE 'EMPTY' END)
-    ON CONFLICT (tenant_id, merchant_id, cycle_for_date, currency) DO UPDATE
+            $6, $7, $8, $9::bigint,
+            CASE WHEN $9::bigint > 0 THEN 'SETTLED' ELSE 'EMPTY' END)
+    ON CONFLICT (tenant_id, merchant_id, batch_date, currency) DO UPDATE
       SET period_start=EXCLUDED.period_start, period_end=EXCLUDED.period_end,
           txn_count=EXCLUDED.txn_count,
           gross_amount=EXCLUDED.gross_amount, fee_amount=EXCLUDED.fee_amount,
-          reserve_amount=EXCLUDED.reserve_amount, net_payable=EXCLUDED.net_payable,
+          reserve_amount=EXCLUDED.reserve_amount, net_amount=EXCLUDED.net_amount,
           status=EXCLUDED.status
     RETURNING id::text AS batch_id, status
   `, [
