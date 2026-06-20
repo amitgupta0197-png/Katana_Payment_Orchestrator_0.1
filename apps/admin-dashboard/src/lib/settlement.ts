@@ -7,6 +7,7 @@
 
 import { rows } from "@/lib/pg";
 import { postJournal } from "@/lib/ledger";
+import { createPayout, payoutForBatch } from "@/lib/payout";
 
 export interface BatchTotals {
   gross_minor: bigint;
@@ -74,6 +75,7 @@ export interface CreatedBatch {
   batch_id: string; status: string;
   totals: BatchTotals;
   settlement_journal_id: string;
+  payout_id: string | null;
 }
 
 export async function createBatch(input: CreateBatchInput): Promise<CreatedBatch> {
@@ -106,7 +108,7 @@ export async function createBatch(input: CreateBatchInput): Promise<CreatedBatch
        txn_count, gross_amount, fee_amount, reserve_amount, net_amount, status)
     VALUES ('tenant-default', $1, ($3::timestamptz)::date, $2, $3, $4, $5,
             $6, $7, $8, $9::bigint,
-            CASE WHEN $9::bigint > 0 THEN 'SETTLED' ELSE 'EMPTY' END)
+            CASE WHEN $9::bigint > 0 THEN 'PENDING' ELSE 'EMPTY' END)
     ON CONFLICT (tenant_id, merchant_id, batch_date, currency) DO UPDATE
       SET period_start=EXCLUDED.period_start, period_end=EXCLUDED.period_end,
           txn_count=EXCLUDED.txn_count,
@@ -121,10 +123,23 @@ export async function createBatch(input: CreateBatchInput): Promise<CreatedBatch
     totals.reserves_minor.toString(), totals.net_minor.toString(),
   ]).catch(() => []);
 
+  const batchId = b[0]?.batch_id ?? "";
+
+  // Create the disbursement intent (idempotent per batch). Processing it later
+  // (or by the settlement trigger) stamps the UTR and flips the batch to PAID.
+  let payoutId: string | null = null;
+  if (batchId && totals.net_minor > 0n) {
+    payoutId = (await payoutForBatch(batchId)) ?? await createPayout({
+      merchantId: input.merchantId, batchId,
+      amountMinor: totals.net_minor, currency: input.currency,
+    });
+  }
+
   return {
-    batch_id: b[0]?.batch_id ?? "",
+    batch_id: batchId,
     status: b[0]?.status ?? "EMPTY",
     totals,
     settlement_journal_id: settlementJournalId,
+    payout_id: payoutId,
   };
 }

@@ -5,9 +5,11 @@
 // breakdown + journal link.
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Banknote, FileText } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Banknote, FileText, Play, Send } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { Column } from "@/components/ui/data-table";
@@ -29,11 +31,43 @@ interface Batch {
 }
 
 export default function SettlementPage() {
+  const qc = useQueryClient();
   const [drawer, setDrawer] = useState<Batch | null>(null);
   const q = useQuery({
     queryKey: ["settlement"],
     queryFn: async () => (await fetch("/api/settlement/batches").then((r) => r.json())) as { batches: Batch[] },
     refetchInterval: 30_000,
+  });
+
+  const run = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/settlement/trigger", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { merchants: number; batches_paid: number; reserves_released: number };
+    },
+    onSuccess: (d) => {
+      toast.success("Settlement run complete", { description: `${d.merchants} merchant(s), ${d.batches_paid} paid, ${d.reserves_released} reserve(s) released` });
+      qc.invalidateQueries({ queryKey: ["settlement"] });
+    },
+    onError: (e: Error) => toast.error("Settlement run failed", { description: e.message }),
+  });
+
+  const payout = useMutation({
+    mutationFn: async (batchId: string) => {
+      const r = await fetch(`/api/settlement/batches/${batchId}/payout`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { utr: string };
+    },
+    onSuccess: (d) => {
+      toast.success("Payout disbursed", { description: `UTR ${d.utr}` });
+      setDrawer(null);
+      qc.invalidateQueries({ queryKey: ["settlement"] });
+    },
+    onError: (e: Error) => toast.error("Payout failed", { description: e.message }),
   });
 
   const batches = q.data?.batches ?? [];
@@ -60,6 +94,11 @@ export default function SettlementPage() {
         title="Settlements"
         description="Per-merchant settlement batches. Open a row to see breakdown + journal trace."
         icon={Banknote}
+        actions={
+          <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
+            <Play className="h-4 w-4" /> {run.isPending ? "Running…" : "Run settlement cycle"}
+          </Button>
+        }
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -116,6 +155,13 @@ export default function SettlementPage() {
                     <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">UTR</span><span className="font-mono text-xs">{drawer.utr || "—"}</span></div>
                     <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Payout ref</span><span className="font-mono text-xs">{drawer.payout_ref || "—"}</span></div>
                     {drawer.completed_at && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Completed</span><span>{formatDateTime(drawer.completed_at)}</span></div>}
+                    {drawer.status !== "PAID" && drawer.status !== "COMPLETED" && drawer.status !== "EMPTY" && Number(drawer.net_payable || 0) > 0 && (
+                      <div className="pt-2">
+                        <Button size="sm" onClick={() => payout.mutate(drawer.id)} disabled={payout.isPending}>
+                          <Send className="h-4 w-4" /> {payout.isPending ? "Disbursing…" : "Pay out now"}
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
                 <Card>
