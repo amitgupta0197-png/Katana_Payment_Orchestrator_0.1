@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 const COOKIE_NAME = "katana_session";
 const SECRET = process.env.SESSION_SECRET ?? "dev-session-secret-do-not-use-in-prod";
 
-type Persona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT";
+type Persona = "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 interface Session {
   user_id: string; email: string; full_name: string;
   persona: Persona; scope_id: string | null; scope_label: string; exp: number;

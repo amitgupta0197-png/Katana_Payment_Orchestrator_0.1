@@ -4,7 +4,11 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 
-export type Persona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT";
+// BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
+// payment-operations module; access is enforced per-route via gateOrResponse.
+export type Persona =
+  | "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT"
+  | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 
 export interface Session {
   user_id: string;
