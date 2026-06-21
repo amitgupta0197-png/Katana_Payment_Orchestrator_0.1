@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/world-class/money-input";
 import { formatAmount } from "@/lib/utils";
 
 export default function FifoControlsPage() {
@@ -48,9 +49,9 @@ export default function FifoControlsPage() {
           <CardContent className="space-y-2">
             <Input className="h-9" placeholder="merchant code e.g. M10001" value={lim.merchant_id} onChange={(e) => setLim({ ...lim, merchant_id: e.target.value })} />
             <div className="grid grid-cols-3 gap-2">
-              <Input className="h-9" placeholder="per-txn ₹" value={lim.per_txn} onChange={(e) => setLim({ ...lim, per_txn: e.target.value })} />
-              <Input className="h-9" placeholder="daily ₹" value={lim.daily} onChange={(e) => setLim({ ...lim, daily: e.target.value })} />
-              <Input className="h-9" placeholder="monthly ₹" value={lim.monthly} onChange={(e) => setLim({ ...lim, monthly: e.target.value })} />
+              <MoneyInput placeholder="per-txn" value={lim.per_txn} onChange={(v) => setLim({ ...lim, per_txn: v })} />
+              <MoneyInput placeholder="daily" value={lim.daily} onChange={(v) => setLim({ ...lim, daily: v })} />
+              <MoneyInput placeholder="monthly" value={lim.monthly} onChange={(v) => setLim({ ...lim, monthly: v })} />
             </div>
             <Button size="sm" onClick={() => saveLimit.mutate()} disabled={!lim.merchant_id || saveLimit.isPending}><Save className="h-4 w-4" /> Save limits</Button>
             <div className="space-y-1 pt-2">

@@ -14,6 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { EmptyState } from "@/components/world-class/empty-state";
+import { MoneyInput } from "@/components/world-class/money-input";
 import { useConfirm } from "@/components/world-class/confirm-dialog";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -146,7 +148,7 @@ export default function PayoutsPage() {
               <option value="">Select whitelisted beneficiary…</option>
               {approved.map((b) => <option key={b.id} value={b.id}>{b.beneficiary_name} · {b.bank_name ?? b.network ?? "—"} ({b.merchant_id})</option>)}
             </select>
-            <Input className="h-9" placeholder="Amount" value={payout.amount} onChange={(e) => setPayout({ ...payout, amount: e.target.value })} />
+            <MoneyInput value={payout.amount} onChange={(v) => setPayout({ ...payout, amount: v })} required placeholder="Amount" />
             <Button size="sm" onClick={confirmCreate} disabled={!payout.beneficiary_id || !payout.amount || createPayout.isPending}><Send className="h-4 w-4" /> Create payout</Button>
           </CardContent>
         </Card>
@@ -155,7 +157,7 @@ export default function PayoutsPage() {
       <Card className="mt-4">
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Pending approvals ({pending.length})</CardTitle><CardDescription>Maker-checker: a different user than the maker must decide.</CardDescription></CardHeader>
         <CardContent className="space-y-1">
-          {pending.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">Nothing pending.</div>}
+          {pending.length === 0 && <EmptyState icon={ShieldCheck} title="No approvals pending" description="High-value payouts, USDT wallet changes and settlement releases will appear here for a second person to review." />}
           {pending.map((a) => (
             <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +178,7 @@ export default function PayoutsPage() {
       <Card className="mt-4">
         <CardHeader><CardTitle className="text-base">Beneficiaries ({bens.length})</CardTitle><CardDescription>Account numbers masked. Approve PENDING to whitelist.</CardDescription></CardHeader>
         <CardContent className="space-y-1">
-          {bens.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">No beneficiaries.</div>}
+          {bens.length === 0 && <EmptyState icon={UserPlus} title="No beneficiaries yet" description="Add a beneficiary above (bank or USDT wallet). A second user must approve it before you can pay out." />}
           {bens.map((b) => (
             <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-2">
@@ -198,7 +200,7 @@ export default function PayoutsPage() {
       <Card className="mt-4">
         <CardHeader><CardTitle className="text-base">Payout orders ({payoutOrders.length})</CardTitle></CardHeader>
         <CardContent className="space-y-1">
-          {payoutOrders.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">No payout orders.</div>}
+          {payoutOrders.length === 0 && <EmptyState icon={Banknote} title="No payouts yet" description="Raise a payout above to a whitelisted beneficiary. It’ll appear here and flow through the FIFO queue." />}
           {payoutOrders.map((o) => (
             <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center gap-2">

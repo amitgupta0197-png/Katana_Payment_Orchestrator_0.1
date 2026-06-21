@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { EmptyState } from "@/components/world-class/empty-state";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Alert {
@@ -256,7 +257,7 @@ export default function ForensicsPage() {
           <CardDescription>Duplicate-UTR, velocity and operator-risk flags raised by the FIFO module.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
-          {list.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">No alerts.</div>}
+          {list.length === 0 && <EmptyState icon={ShieldAlert} title="No fraud alerts" description="Duplicate-UTR, velocity, anomaly and SLA-breach flags will appear here. Run an anomaly scan above to check now." />}
           {list.map((a) => (
             <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-2">

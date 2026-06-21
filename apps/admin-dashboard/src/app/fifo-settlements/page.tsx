@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/world-class/empty-state";
+import { MoneyInput } from "@/components/world-class/money-input";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 export default function FifoSettlementsPage() {
@@ -48,7 +50,7 @@ export default function FifoSettlementsPage() {
         <CardHeader><CardTitle className="text-base">Create settlement batch</CardTitle><CardDescription>Nets all COMPLETED, unsettled pay-ins for the merchant. Optional chargeback hold / approved adjustment (₹).</CardDescription></CardHeader>
         <CardContent className="flex flex-wrap items-end gap-2">
           <Input className="h-9 w-48" placeholder="merchant code e.g. M10001" value={f.merchant_id} onChange={(e) => setF({ ...f, merchant_id: e.target.value })} />
-          <Input className="h-9 w-40" placeholder="chargeback hold ₹" value={f.chargeback_hold} onChange={(e) => setF({ ...f, chargeback_hold: e.target.value })} />
+          <MoneyInput className="w-40" placeholder="chargeback hold" value={f.chargeback_hold} onChange={(v) => setF({ ...f, chargeback_hold: v })} />
           <Input className="h-9 w-40" placeholder="adjustment ± ₹" value={f.adjustment} onChange={(e) => setF({ ...f, adjustment: e.target.value })} />
           <Button size="sm" onClick={() => create.mutate()} disabled={!f.merchant_id || create.isPending}><Plus className="h-4 w-4" /> Create batch</Button>
         </CardContent>
@@ -57,7 +59,7 @@ export default function FifoSettlementsPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Settlement batches ({batches.length})</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
-          {batches.length === 0 ? <div className="text-xs text-[color:var(--color-text-muted)]">No batches yet.</div> : (
+          {batches.length === 0 ? <EmptyState icon={Banknote} title="No settlement batches yet" description="Enter a merchant code above and create a batch to net their completed pay-ins into a payout. Large or adjusted batches go to maker-checker." /> : (
             <table className="w-full text-xs">
               <thead><tr className="border-b text-left text-[color:var(--color-text-muted)]">
                 <th className="px-2 py-1.5">batch</th><th className="px-2 py-1.5">merchant</th><th className="px-2 py-1.5">orders</th>

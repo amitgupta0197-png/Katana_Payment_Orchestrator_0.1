@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { EmptyState } from "@/components/world-class/empty-state";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 const bucketVariant = (b: string) =>
@@ -113,7 +114,7 @@ export default function FifoReconciliationPage() {
               <span className="text-xs text-[color:var(--color-text-muted)]">{r.created_by} · {formatDateTime(r.created_at)}</span>
             </div>
           ))}
-          {(q.data?.runs ?? []).length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">No runs yet. Click “Run reconciliation”.</div>}
+          {(q.data?.runs ?? []).length === 0 && <EmptyState icon={GitCompareArrows} title="No reconciliation runs yet" description="Run a pass to match completed orders against the ledger and surface any mismatches." action={{ label: "Run reconciliation", icon: Play, onClick: () => run.mutate() }} />}
         </CardContent>
       </Card>
     </>

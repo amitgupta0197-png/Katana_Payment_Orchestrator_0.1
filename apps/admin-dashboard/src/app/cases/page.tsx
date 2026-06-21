@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/world-class/empty-state";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 const sevVariant = (s: string) => s === "CRITICAL" || s === "HIGH" ? "danger" : s === "MEDIUM" ? "warning" : "info";
@@ -76,7 +77,7 @@ export default function CasesPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">Cases ({cases.length})</CardTitle></CardHeader>
           <CardContent className="space-y-1">
-            {cases.length === 0 && <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">No cases.</div>}
+            {cases.length === 0 && <EmptyState icon={Briefcase} title="No cases open" description="Open a case above to investigate a flagged order or merchant — attach notes/evidence and place the order on hold." />}
             {cases.map((c) => (
               <button key={c.id} onClick={() => setSel(c.id)} className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-[color:var(--color-surface-muted)] ${sel === c.id ? "border-[color:var(--color-brand)]" : ""}`}>
                 <div className="flex flex-wrap items-center gap-2">
