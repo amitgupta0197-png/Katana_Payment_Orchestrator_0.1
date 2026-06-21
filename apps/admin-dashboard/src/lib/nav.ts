@@ -128,6 +128,7 @@ export const navItems: NavItem[] = [
   { href: "/admin/hardening",      label: "Hardening", icon: Shield, status: "live", group: "Admin" },
   { href: "/integrations",         label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
   { href: "/security",             label: "Security (MFA)", icon: Shield, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "PROVIDER", "MERCHANT", "OPERATOR"] },
+  { href: "/fifo-controls",        label: "Merchant Controls", icon: Sliders, status: "live", group: "Admin" },
 ];
 
 export const navGroups = ["Overview", "Payment Management", "Money Movement", "Risk & Compliance", "Operations", "Admin"] as const;

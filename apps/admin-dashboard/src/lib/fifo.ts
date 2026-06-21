@@ -32,6 +32,7 @@ export const NEXT: Record<string, string[]> = {
   PROCESSING:     ["PROOF_UPLOADED", "FAILED", "HOLD"],
   PROOF_UPLOADED: ["COMPLETED", "REJECTED", "PROCESSING"],
   COMPLETED:      ["SETTLED", "REFUND", "DISPUTE"],
+  SETTLED:        ["REFUND", "DISPUTE"],           // post-settlement refund/chargeback
   HOLD:           ["VALIDATED", "QUEUED", "REJECTED", "CANCELLED"],
 };
 
@@ -142,6 +143,33 @@ async function checkVelocity(orderId: string, orderRef: string, merchantId: stri
   }
 }
 
+// Merchant transaction limits (BRD FR-003, §11.A, §15 step 3). Returns an error
+// string if the pay-in would breach the per-txn / daily / monthly cap, else null.
+export async function checkMerchantLimits(merchantId: string, amountMinor: bigint, direction: Direction): Promise<string | null> {
+  if (direction !== "PAYIN") return null;   // payouts are balance-checked separately
+  const lim = (await rows<any>("fifo", `
+    SELECT per_txn_minor::text, daily_minor::text, monthly_minor::text FROM fifo_merchant_limits WHERE merchant_id=$1
+  `, [merchantId]).catch(() => []))[0];
+  if (!lim) return null;
+  const fmt = (v: bigint) => (Number(v) / 100).toLocaleString();
+  if (lim.per_txn_minor != null && amountMinor > BigInt(lim.per_txn_minor))
+    return `amount exceeds per-transaction limit (₹${fmt(BigInt(lim.per_txn_minor))})`;
+  const used = async (since: string) => BigInt((await rows<{ s: string }>("fifo", `
+    SELECT COALESCE(SUM(amount_minor),0)::text AS s FROM fifo_orders
+     WHERE merchant_id=$1 AND direction='PAYIN' AND status NOT IN ('REJECTED','CANCELLED','FAILED')
+       AND created_at >= ${since}
+  `, [merchantId]).catch(() => []))[0]?.s ?? "0");
+  if (lim.daily_minor != null) {
+    const d = await used("date_trunc('day', now())");
+    if (d + amountMinor > BigInt(lim.daily_minor)) return `would exceed daily limit (₹${fmt(BigInt(lim.daily_minor))}; used ₹${fmt(d)})`;
+  }
+  if (lim.monthly_minor != null) {
+    const mo = await used("date_trunc('month', now())");
+    if (mo + amountMinor > BigInt(lim.monthly_minor)) return `would exceed monthly limit (₹${fmt(BigInt(lim.monthly_minor))}; used ₹${fmt(mo)})`;
+  }
+  return null;
+}
+
 export interface CreateOrderInput {
   merchantId: string; direction: Direction; amountMinor: bigint; currency: string;
   settlementMode: string; customerName?: string; customerPhone?: string; customerEmail?: string;
@@ -161,6 +189,10 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
   if (!m) return { error: "merchant not found", status: 404 };
   if (m.stage !== "LIVE") return { error: `merchant not LIVE (stage=${m.stage})`, status: 409 };
   if (input.amountMinor <= 0n) return { error: "amount must be > 0", status: 400 };
+
+  // FR-003 / §11.A: enforce per-transaction / daily / monthly limits.
+  const limitErr = await checkMerchantLimits(input.merchantId, input.amountMinor, input.direction);
+  if (limitErr) return { error: limitErr, status: 409 };
 
   const orderRef = "ORD-" + randomBytes(6).toString("hex").toUpperCase();
   const txnRef = "TXN-" + randomBytes(8).toString("hex").toUpperCase();
@@ -378,6 +410,53 @@ export async function sweepVerificationSla(): Promise<{ verification_breaches: n
     await recordFraudAlert({ orderId: it.order_id, orderRef: it.order_ref, merchantId: it.merchant_id, type: "SLA_BREACH", severity: "HIGH", detail: `not verified within ${VERIFY_SLA_SECONDS}s of acceptance`, payload: { kind: "VERIFY" } });
   }
   return { verification_breaches: stale.length };
+}
+
+// Refund a completed/settled pay-in (BRD §20, §16, §27). Posts a refund journal
+// linked to the original txn (D MERCHANT_PAYABLE, C CUSTOMER_REFUND_PAYABLE) and
+// moves the order to REFUND. Supports partial refunds.
+export async function refundOrder(input: {
+  orderIdOrRef: string; amountMinor?: bigint; reason?: string; actor: string;
+}): Promise<{ ok: boolean; error?: string; status?: number; journal_id?: string | null }> {
+  const o = (await rows<any>("fifo", `
+    SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, txn_ref, status
+      FROM fifo_orders WHERE order_ref=$1 OR id::text=$1 LIMIT 1
+  `, [input.orderIdOrRef]))[0];
+  if (!o) return { ok: false, error: "order not found", status: 404 };
+  if (o.direction !== "PAYIN") return { ok: false, error: "only pay-ins can be refunded", status: 409 };
+  if (!["COMPLETED", "SETTLED"].includes(o.status)) return { ok: false, error: `cannot refund from ${o.status}`, status: 409 };
+  const amount = input.amountMinor ?? BigInt(o.amount_minor);
+  if (amount <= 0n || amount > BigInt(o.amount_minor)) return { ok: false, error: "invalid refund amount", status: 400 };
+
+  const r = await transition({ orderId: o.id, to: "REFUND", actor: input.actor, actorKind: "admin", reason: input.reason ?? `refund ${amount}`, payload: { refund_minor: amount.toString(), original_txn: o.txn_ref } });
+  if (!r.ok) return { ok: false, error: r.error, status: 409 };
+
+  let journalId: string | null = null;
+  try {
+    const j = await postJournal({
+      journal_type: "refund.posted",
+      narration: `FIFO refund for ${o.txn_ref}`,
+      currency: o.currency, merchant_id: o.merchant_id,
+      ref: { type: "refund", id: o.txn_ref },
+      idempotency_key: `refund.posted:${o.txn_ref}`,
+      lines: [
+        { account_code: `LIABILITIES.MERCHANT_PAYABLE.${o.merchant_id}`, account_type: "LIABILITY", side: "D", amount_minor: amount, currency: o.currency },
+        { account_code: `LIABILITIES.CUSTOMER_REFUND_PAYABLE.${o.merchant_id}`, account_type: "LIABILITY", side: "C", amount_minor: amount, currency: o.currency },
+      ],
+    });
+    journalId = j.journal_id;
+  } catch { /* ledger best-effort */ }
+  return { ok: true, journal_id: journalId };
+}
+
+// Open a dispute on a completed/settled order (BRD §16). Moves to DISPUTE and
+// records the reason on the timeline.
+export async function disputeOrder(input: { orderIdOrRef: string; reason?: string; actor: string }): Promise<{ ok: boolean; error?: string; status?: number }> {
+  const o = (await rows<any>("fifo", `SELECT id::text, status FROM fifo_orders WHERE order_ref=$1 OR id::text=$1 LIMIT 1`, [input.orderIdOrRef]))[0];
+  if (!o) return { ok: false, error: "order not found", status: 404 };
+  const r = await transition({ orderId: o.id, to: "DISPUTE", actor: input.actor, actorKind: "admin", reason: input.reason ?? "dispute opened" });
+  if (!r.ok) return { ok: false, error: r.error, status: 409 };
+  return { ok: true };
 }
 
 // Resolve the operator record for a logged-in user (by email), auto-registering

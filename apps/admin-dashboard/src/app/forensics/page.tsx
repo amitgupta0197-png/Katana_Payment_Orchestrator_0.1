@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle, Radar, ShieldCheck } from "lucide-react";
+import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle, Radar, ShieldCheck, Undo2, Gavel } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,31 @@ export default function ForensicsPage() {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
+  const refund = useMutation({
+    mutationFn: async (ref: string) => {
+      const amt = typeof window !== "undefined" ? window.prompt(`Refund amount for ${ref} (blank = full):`) : "";
+      if (amt === null) throw new Error("cancelled");
+      const r = await fetch(`/api/v1/orders/${encodeURIComponent(ref)}/refund`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(amt ? { amount: amt } : {}) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: (d) => { toast.success(`Refunded${d.journal_id ? " (ledger posted)" : ""}`); if (ref) gen.mutate(ref); },
+    onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Refund failed", { description: e.message }); },
+  });
+  const dispute = useMutation({
+    mutationFn: async (ref: string) => {
+      const reason = typeof window !== "undefined" ? window.prompt(`Dispute reason for ${ref}:`) : "";
+      if (!reason) throw new Error("cancelled");
+      const r = await fetch(`/api/v1/orders/${encodeURIComponent(ref)}/dispute`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: () => { toast.success("Dispute opened"); if (ref) gen.mutate(ref); },
+    onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Dispute failed", { description: e.message }); },
+  });
+
   function download() {
     if (!pack) return;
     const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
@@ -160,6 +185,12 @@ export default function ForensicsPage() {
             <CardDescription>
               report_hash <span className="font-mono">{String(pack.report_hash).slice(0, 24)}…</span> · {pack.section_count} sections · generated {formatDateTime(pack.generated_at)}
             </CardDescription>
+            {["COMPLETED", "SETTLED"].includes(pack.order?.status) && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => refund.mutate(pack.order.order_ref)} disabled={refund.isPending}><Undo2 className="h-4 w-4" /> Refund</Button>
+                <Button size="sm" variant="secondary" onClick={() => dispute.mutate(pack.order.order_ref)} disabled={dispute.isPending}><Gavel className="h-4 w-4" /> Open dispute</Button>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
             {pack.order && <Section title="Order summary" icon={Receipt}><KV data={{
