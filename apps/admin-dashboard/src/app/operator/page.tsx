@@ -85,10 +85,10 @@ export default function OperatorConsolePage() {
   });
 
   const act = useMutation({
-    mutationFn: async (v: { ref: string; action: string; utr?: string; reason?: string }) => {
+    mutationFn: async (v: { ref: string; action: string; utr?: string; tx_hash?: string; reason?: string }) => {
       const r = await fetch(`/api/v1/orders/${v.ref}/action`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: v.action, utr: v.utr, reason: v.reason }),
+        body: JSON.stringify({ action: v.action, utr: v.utr, tx_hash: v.tx_hash, reason: v.reason }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
@@ -128,8 +128,8 @@ export default function OperatorConsolePage() {
         )}
         {st === "PROOF_UPLOADED" && (
           <>
-            <Input className="h-8 w-40" placeholder="UTR / reference" value={utr[ref] ?? ""} onChange={(e) => setUtr({ ...utr, [ref]: e.target.value })} />
-            <Button size="sm" onClick={() => act.mutate({ ref, action: "complete", utr: utr[ref] })} disabled={act.isPending}><CheckCircle2 className="h-4 w-4" /> Complete</Button>
+            <Input className="h-8 w-44" placeholder={it.settlement_mode === "USDT" ? "Blockchain tx hash" : "UTR / reference"} value={utr[ref] ?? ""} onChange={(e) => setUtr({ ...utr, [ref]: e.target.value })} />
+            <Button size="sm" onClick={() => act.mutate({ ref, action: "complete", ...(it.settlement_mode === "USDT" ? { tx_hash: utr[ref] } : { utr: utr[ref] }) })} disabled={act.isPending}><CheckCircle2 className="h-4 w-4" /> Complete</Button>
           </>
         )}
         {st !== "COMPLETED" && st !== "REJECTED" && (

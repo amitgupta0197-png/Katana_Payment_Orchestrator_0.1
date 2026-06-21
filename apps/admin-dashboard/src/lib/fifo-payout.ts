@@ -7,6 +7,7 @@ import { rows } from "@/lib/pg";
 import { randomBytes } from "crypto";
 import { postJournal } from "@/lib/ledger";
 import { transition, recordEvent, recordFraudAlert } from "@/lib/fifo";
+import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORKS } from "@/lib/fifo-usdt";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -90,13 +91,25 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
   const txnRef = "TXN-" + randomBytes(8).toString("hex").toUpperCase();
   const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();
 
+  // USDT settlement controls (BRD §11.C, §22, FR-008): network whitelist + wallet
+  // (already APPROVED) + locked rate. Computed USDT amount stored on the order.
+  let usdt: { network: string; rate: number; source: string; lockedAt: string; amount: number } | null = null;
+  if (mode === "USDT") {
+    if (!b.wallet_address) return { error: "beneficiary has no USDT wallet", status: 409 };
+    if (!isAllowedNetwork(b.network)) return { error: `network ${b.network ?? "?"} not allowed (${ALLOWED_USDT_NETWORKS.join("/")})`, status: 409 };
+    const lock = await lockUsdtRate();
+    usdt = { network: b.network.toUpperCase(), rate: lock.rate, source: lock.source, lockedAt: lock.lockedAt, amount: computeUsdtAmount(input.amountMinor, lock.rate) };
+  }
+
   const o = (await rows<any>("fifo", `
     INSERT INTO fifo_orders
-      (order_ref, merchant_id, direction, amount_minor, currency, settlement_mode, purpose, txn_ref, beneficiary_id, status)
-    VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED')
+      (order_ref, merchant_id, direction, amount_minor, currency, settlement_mode, purpose, txn_ref, beneficiary_id, status,
+       usdt_network, usdt_rate, usdt_rate_source, usdt_rate_locked_at, usdt_amount)
+    VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED',$9,$10,$11,$12,$13)
     RETURNING id::text, order_ref
-  `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency, mode, input.purpose ?? null, txnRef, input.beneficiaryId]))[0];
-  await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: `payout to ${b.beneficiary_name}` });
+  `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency, mode, input.purpose ?? null, txnRef, input.beneficiaryId,
+      usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null]))[0];
+  await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: `payout to ${b.beneficiary_name}`, payload: usdt ? { usdt } : undefined });
   await transition({ orderId: o.id, to: "VALIDATED", reason: "beneficiary whitelisted + balance ok", actor: input.actor });
 
   // High-value payouts require maker-checker approval before they can queue.
@@ -107,14 +120,14 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
       VALUES ('PAYOUT_HIGH_VALUE','order',$1,$2,$3,$4,$5,$6,$7)
     `, [o.id, o.order_ref, input.merchantId, input.amountMinor.toString(), input.currency, `Payout ${input.amountMinor} to ${b.beneficiary_name}`, input.actor ?? null]).catch(() => {});
     await recordFraudAlert({ orderId: o.id, orderRef: o.order_ref, merchantId: input.merchantId, type: "HIGH_VALUE", severity: "MEDIUM", detail: `High-value payout pending approval` });
-    return { order: { id: o.id, order_ref: o.order_ref, status: "HOLD", approval_required: true } };
+    return { order: { id: o.id, order_ref: o.order_ref, status: "HOLD", approval_required: true, usdt } };
   }
 
   // Otherwise enqueue for operator/finance execution.
   await transition({ orderId: o.id, to: "QUEUED", reason: "added to FIFO payout queue", actor: input.actor });
   await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [o.id]).catch(() => {});
   await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 0, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [o.id]);
-  return { order: { id: o.id, order_ref: o.order_ref, status: "QUEUED", approval_required: false } };
+  return { order: { id: o.id, order_ref: o.order_ref, status: "QUEUED", approval_required: false, usdt } };
 }
 
 // Checker decides a pending approval (maker-checker, BRD §9). On approval of a

@@ -187,7 +187,9 @@ export default function PayoutsPage() {
                 <span className="tabular-nums font-medium">{formatAmount(Number(o.amount_minor), o.currency)}</span>
                 <span className="text-xs text-[color:var(--color-text-muted)]">{o.merchant_id} · {o.settlement_mode}</span>
                 <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
+                {o.settlement_mode === "USDT" && o.usdt_amount && <Badge variant="info">{o.usdt_amount} USDT @ {o.usdt_rate} {o.usdt_network}</Badge>}
                 {o.utr && <span className="text-xs">UTR {o.utr}</span>}
+                {o.tx_hash && <span className="text-xs font-mono">tx {String(o.tx_hash).slice(0, 12)}…</span>}
               </div>
               <span className="text-xs text-[color:var(--color-text-muted)]">{formatDateTime(o.created_at)}</span>
             </div>

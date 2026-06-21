@@ -53,6 +53,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ ok: true, status: "PROCESSING" });
     }
     if (body.action === "complete") {
+      // USDT transfers must carry an on-chain tx_hash to close (BRD §11.C, FR-008).
+      if (o.settlement_mode === "USDT" && !body.tx_hash) {
+        return NextResponse.json({ error: "tx_hash required to complete a USDT settlement" }, { status: 400 });
+      }
       // Duplicate-UTR guard (BRD §24, AC-008): the same bank UTR cannot close two
       // orders. Auto-HOLD the second one and raise a fraud alert instead.
       if (body.utr) {
