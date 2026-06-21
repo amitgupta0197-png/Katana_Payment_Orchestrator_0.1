@@ -8,6 +8,7 @@
 import { rows } from "@/lib/pg";
 import { randomBytes } from "crypto";
 import { computeRiskScore } from "@/lib/risk";
+import { postJournal } from "@/lib/ledger";
 
 export type Direction = "PAYIN" | "PAYOUT";
 
@@ -157,6 +158,39 @@ export async function assignNextForOperator(operatorId: string): Promise<{ assig
   await transition({ orderId: head.order_id, to: "ASSIGNED", actorKind: "system", reason: `assigned to operator ${op.id}` });
 
   return { assigned: { queue_id: head.queue_id, order_id: head.order_id, order_ref: head.order_ref, amount_minor: head.amount_minor, direction: head.direction, merchant_id: head.merchant_id } };
+}
+
+// Post a completed PAY-IN to the ledger so it flows into the settlement engine
+// (mirrors checkout-core: gross debit to PG_FLOAT; net/reserve/MDR credits). The
+// idempotency_key makes re-completion safe. Returns the journal id (or null).
+export async function settlePayinToLedger(input: {
+  merchantId: string; txnRef: string; amountMinor: bigint; currency: string; provider?: string;
+}): Promise<string | null> {
+  const provider = (input.provider || "MANUAL").toUpperCase();
+  const MDR_BPS = 195n, RESERVE_BPS = 500n;
+  const commission = (input.amountMinor * MDR_BPS) / 10000n;
+  const reserve = (input.amountMinor * RESERVE_BPS) / 10000n;
+  const net = input.amountMinor - commission - reserve;
+  try {
+    const j = await postJournal({
+      journal_type: "payment.success",
+      narration: `FIFO pay-in ${input.txnRef} via ${provider}`,
+      currency: input.currency, merchant_id: input.merchantId,
+      ref: { type: "payment", id: input.txnRef },
+      idempotency_key: `payment.success:${input.txnRef}`,
+      lines: [
+        { account_code: `ASSETS.PG_FLOAT.${provider}`, account_type: "ASSET", side: "D", amount_minor: input.amountMinor, currency: input.currency },
+        { account_code: `LIABILITIES.MERCHANT_PAYABLE.${input.merchantId}`, account_type: "LIABILITY", side: "C", amount_minor: net, currency: input.currency },
+        { account_code: `LIABILITIES.MERCHANT_RESERVE.${input.merchantId}`, account_type: "LIABILITY", side: "C", amount_minor: reserve, currency: input.currency },
+        { account_code: `INCOME.MDR_EARNED.PLATFORM`, account_type: "INCOME", side: "C", amount_minor: commission, currency: input.currency },
+      ],
+    });
+    await rows("ledger", `
+      INSERT INTO reserve_release_calendar (merchant_id, amount_minor, currency, scheduled_at, status)
+      VALUES ($1, $2, $3, now() + interval '7 days', 'SCHEDULED')
+    `, [input.merchantId, reserve.toString(), input.currency]).catch(() => {});
+    return j.journal_id;
+  } catch { return null; }
 }
 
 // Resolve the operator record for a logged-in user (by email), auto-registering
