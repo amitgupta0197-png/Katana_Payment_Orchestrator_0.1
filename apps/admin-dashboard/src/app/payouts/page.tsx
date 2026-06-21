@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { useConfirm } from "@/components/world-class/confirm-dialog";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Beneficiary {
@@ -35,6 +36,7 @@ async function jpost(url: string, body: unknown) {
 
 export default function PayoutsPage() {
   const qc = useQueryClient();
+  const { confirm, dialog } = useConfirm();
   const [merchantId, setMerchantId] = useState("");
   const [ben, setBen] = useState({ beneficiary_name: "", bank_name: "", account_number: "", ifsc: "", upi_id: "", wallet_address: "", network: "" });
   const [payout, setPayout] = useState({ beneficiary_id: "", amount: "" });
@@ -87,8 +89,25 @@ export default function PayoutsPage() {
   const pending = approvals.data?.approvals ?? [];
   const payoutOrders = (orders.data ?? []).filter((o) => o.direction === "PAYOUT");
 
+  // Confirm the chosen beneficiary + amount before raising a payout.
+  const confirmCreate = async () => {
+    const b = approved.find((x) => x.id === payout.beneficiary_id);
+    if (await confirm({ title: "Create payout?", danger: true, confirmLabel: "Create payout",
+      body: `Pay ₹${payout.amount} to ${b?.beneficiary_name ?? "beneficiary"} (${b?.merchant_id ?? merchantId}). High-value payouts route to maker-checker.` })) createPayout.mutate();
+  };
+  const confirmDecide = async (a: Approval, decision: "approve" | "reject") => {
+    const amt = a.amount_minor ? formatAmount(Number(a.amount_minor), a.currency ?? "INR") : "";
+    if (await confirm({
+      title: decision === "approve" ? "Approve this request?" : "Reject this request?",
+      danger: decision === "reject",
+      confirmLabel: decision === "approve" ? "Approve" : "Reject",
+      body: `${a.action_type}${amt ? ` · ${amt}` : ""}${a.order_ref ? ` · ${a.order_ref}` : ""}. ${decision === "approve" ? "Approving releases the funds / settlement." : "This rejects the request."}`,
+    })) decideApproval.mutate({ id: a.id, decision });
+  };
+
   return (
     <>
+      {dialog}
       <PageHeader title="Payouts & Beneficiaries" description="Whitelist beneficiaries, raise balance-checked payouts, clear maker-checker approvals (BRD §18/§9)." icon={Send} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -128,7 +147,7 @@ export default function PayoutsPage() {
               {approved.map((b) => <option key={b.id} value={b.id}>{b.beneficiary_name} · {b.bank_name ?? b.network ?? "—"} ({b.merchant_id})</option>)}
             </select>
             <Input className="h-9" placeholder="Amount" value={payout.amount} onChange={(e) => setPayout({ ...payout, amount: e.target.value })} />
-            <Button size="sm" onClick={() => createPayout.mutate()} disabled={!payout.beneficiary_id || !payout.amount || createPayout.isPending}><Send className="h-4 w-4" /> Create payout</Button>
+            <Button size="sm" onClick={confirmCreate} disabled={!payout.beneficiary_id || !payout.amount || createPayout.isPending}><Send className="h-4 w-4" /> Create payout</Button>
           </CardContent>
         </Card>
       </div>
@@ -146,8 +165,8 @@ export default function PayoutsPage() {
                 <span className="text-xs text-[color:var(--color-text-muted)]">{a.detail} · maker {a.maker ?? "—"}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Button size="sm" onClick={() => decideApproval.mutate({ id: a.id, decision: "approve" })} disabled={decideApproval.isPending}><Check className="h-4 w-4" /> Approve</Button>
-                <Button size="sm" variant="danger" onClick={() => decideApproval.mutate({ id: a.id, decision: "reject" })} disabled={decideApproval.isPending}><X className="h-4 w-4" /> Reject</Button>
+                <Button size="sm" onClick={() => confirmDecide(a, "approve")} disabled={decideApproval.isPending}><Check className="h-4 w-4" /> Approve</Button>
+                <Button size="sm" variant="danger" onClick={() => confirmDecide(a, "reject")} disabled={decideApproval.isPending}><X className="h-4 w-4" /> Reject</Button>
               </div>
             </div>
           ))}
