@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { QuickStartCard } from "@/components/world-class/quick-start";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface QItem {
@@ -168,6 +169,9 @@ export default function OperatorConsolePage() {
         icon={Headphones}
         actions={<Button size="sm" onClick={() => claim.mutate()} disabled={claim.isPending}><ArrowDownToLine className="h-4 w-4" /> {claim.isPending ? "Claiming…" : "Claim next"}</Button>}
       />
+
+      <QuickStartCard id="operator" title="New here? Working the queue in 4 steps"
+        steps={["Claim the next item (button or press C)", "Accept it within the SLA countdown (A)", "Start processing and upload the payment proof (P)", "Enter the UTR / tx-hash and Complete"]} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <KpiTile label="In queue" value={queued.length} loading={q.isLoading} />

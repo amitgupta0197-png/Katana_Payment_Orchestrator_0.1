@@ -17,6 +17,7 @@ import { KpiTile } from "@/components/world-class/kpi-tile";
 import { EmptyState } from "@/components/world-class/empty-state";
 import { MoneyInput } from "@/components/world-class/money-input";
 import { useConfirm } from "@/components/world-class/confirm-dialog";
+import { QuickStartCard } from "@/components/world-class/quick-start";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Beneficiary {
@@ -111,6 +112,9 @@ export default function PayoutsPage() {
     <>
       {dialog}
       <PageHeader title="Payouts & Beneficiaries" description="Whitelist beneficiaries, raise balance-checked payouts, clear maker-checker approvals (BRD §18/§9)." icon={Send} />
+
+      <QuickStartCard id="payouts" title="Paying out in 3 steps"
+        steps={["Add a beneficiary (bank or USDT wallet)", "Have a second user approve it to whitelist", "Raise a payout — high-value goes to maker-checker"]} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Beneficiaries" value={bens.length} loading={beneficiaries.isLoading} />
