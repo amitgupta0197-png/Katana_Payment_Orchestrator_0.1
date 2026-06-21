@@ -28,6 +28,7 @@ import {
   ScrollText,
   Headphones,
   FileSearch,
+  Briefcase,
   type LucideIcon,
 } from "lucide-react";
 
@@ -98,12 +99,14 @@ export const navItems: NavItem[] = [
   { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
   { href: "/forensics", label: "Forensics", icon: FileSearch, status: "live", group: "Risk & Compliance" },
+  { href: "/cases", label: "Compliance Cases", icon: Briefcase, status: "live", group: "Risk & Compliance" },
 
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/payouts", label: "Payouts & Beneficiaries", icon: Send, status: "live", group: "Operations" },
   { href: "/fifo-dashboard", label: "FIFO Dashboard", icon: LayoutDashboard, status: "live", group: "Operations" },
   { href: "/fifo-reports", label: "FIFO Reports", icon: BarChart3, status: "live", group: "Operations" },
   { href: "/fifo-reconciliation", label: "FIFO Reconciliation", icon: GitMerge, status: "live", group: "Operations" },
+  { href: "/fifo-settlements", label: "FIFO Settlements", icon: Banknote, status: "live", group: "Operations" },
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },
   { href: "/commission", label: "Commission", icon: Percent, status: "live", group: "Operations" },
   { href: "/events", label: "Event stream", icon: Activity, status: "live", group: "Operations" },

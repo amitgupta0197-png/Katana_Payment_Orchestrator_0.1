@@ -8,6 +8,7 @@ import { randomBytes } from "crypto";
 import { postJournal } from "@/lib/ledger";
 import { transition, recordEvent, recordFraudAlert } from "@/lib/fifo";
 import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORKS } from "@/lib/fifo-usdt";
+import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settlement";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -152,6 +153,12 @@ export async function decideApproval(id: string, approve: boolean, checker: stri
   } else if ((a.action_type === "BENEFICIARY_ADD" || a.action_type === "USDT_WALLET_CHANGE") && a.resource_id) {
     await rows("fifo", `UPDATE fifo_beneficiaries SET status=$2, approved_by=$3, approved_at=now() WHERE id=$1::uuid AND status='PENDING'`,
       [a.resource_id, approve ? "APPROVED" : "REJECTED", checker]).catch(() => {});
+  } else if (a.action_type === "SETTLEMENT_RELEASE" && a.resource_id) {
+    if (approve) await finalizeSettlementBatch(a.resource_id, checker);
+    else await rejectSettlementBatch(a.resource_id);
+  } else if (a.action_type === "RECON_ADJUSTMENT" && a.resource_id) {
+    // Resolve the reconciliation item; the reason code lives on the approval.
+    if (approve) await rows("fifo", `UPDATE fifo_recon_items SET resolved=true WHERE id=$1::uuid`, [a.resource_id]).catch(() => {});
   }
   return { ok: true };
 }

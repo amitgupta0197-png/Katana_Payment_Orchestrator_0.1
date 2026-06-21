@@ -4,7 +4,7 @@
 // orders against the ledger and classifies mismatches into buckets.
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GitCompareArrows, Play } from "lucide-react";
+import { GitCompareArrows, Play, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,19 @@ export default function FifoReconciliationPage() {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
+  const adjust = useMutation({
+    mutationFn: async (it: any) => {
+      const reason = typeof window !== "undefined" ? window.prompt(`Reason for adjusting ${it.order_ref} (${it.bucket}):`) : "";
+      if (!reason) throw new Error("cancelled");
+      const r = await fetch("/api/v1/reconciliation/adjust", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_id: it.id, reason }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: () => { toast.success("Adjustment raised — awaiting maker-checker on Payouts › approvals"); qc.invalidateQueries({ queryKey: ["fifo-recon"] }); },
+    onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Failed", { description: e.message }); },
+  });
+
   const latest = q.data?.runs?.[0];
   const items = q.data?.items ?? [];
   const mismatches = items.filter((i) => i.bucket !== "MATCHED");
@@ -71,7 +84,7 @@ export default function FifoReconciliationPage() {
             <table className="w-full text-xs">
               <thead><tr className="border-b text-left text-[color:var(--color-text-muted)]">
                 <th className="px-2 py-1.5">order</th><th className="px-2 py-1.5">dir</th><th className="px-2 py-1.5">bucket</th>
-                <th className="px-2 py-1.5">expected</th><th className="px-2 py-1.5">reported</th><th className="px-2 py-1.5">detail</th>
+                <th className="px-2 py-1.5">expected</th><th className="px-2 py-1.5">reported</th><th className="px-2 py-1.5">detail</th><th className="px-2 py-1.5"></th>
               </tr></thead>
               <tbody>
                 {mismatches.map((it, i) => (
@@ -82,6 +95,7 @@ export default function FifoReconciliationPage() {
                     <td className="px-2 py-1.5 tabular-nums">{it.expected_minor ? formatAmount(Number(it.expected_minor)) : "—"}</td>
                     <td className="px-2 py-1.5 tabular-nums">{it.reported_minor ? formatAmount(Number(it.reported_minor)) : "—"}</td>
                     <td className="px-2 py-1.5 text-[color:var(--color-text-muted)]">{it.detail}</td>
+                    <td className="px-2 py-1.5">{it.resolved ? <Badge variant="success">resolved</Badge> : <Button size="sm" variant="ghost" className="h-7" onClick={() => adjust.mutate(it)} disabled={adjust.isPending}><Wrench className="h-3 w-3" /> Adjust</Button>}</td>
                   </tr>
                 ))}
               </tbody>

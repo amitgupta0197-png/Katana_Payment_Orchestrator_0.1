@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     `);
     const targetRun = runId ?? runs[0]?.id ?? null;
     const items = targetRun ? await rows<any>("fifo", `
-      SELECT order_ref, txn_ref, utr, direction, expected_minor::text, reported_minor::text, bucket, detail, resolved
+      SELECT id::text, order_ref, txn_ref, utr, direction, expected_minor::text, reported_minor::text, bucket, detail, resolved
         FROM fifo_recon_items WHERE run_id = $1::uuid ORDER BY (bucket='MATCHED'), bucket, order_ref LIMIT 1000
     `, [targetRun]) : [];
     return NextResponse.json({ runs, run_id: targetRun, items });
