@@ -7,6 +7,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { operatorForUser, transition, settlePayinToLedger, findDuplicateUtr, recordFraudAlert } from "@/lib/fifo";
+import { settlePayoutToLedger } from "@/lib/fifo-payout";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       let journalId: string | null = null;
       if (o.direction === "PAYIN") {
         journalId = await settlePayinToLedger({ merchantId: o.merchant_id, txnRef: o.txn_ref, amountMinor: BigInt(o.amount_minor), currency: o.currency, provider: o.settlement_mode });
+      } else if (o.direction === "PAYOUT") {
+        journalId = await settlePayoutToLedger({ merchantId: o.merchant_id, txnRef: o.txn_ref, amountMinor: BigInt(o.amount_minor), currency: o.currency, provider: o.settlement_mode });
       }
       return NextResponse.json({ ok: true, status: "COMPLETED", journal_id: journalId });
     }

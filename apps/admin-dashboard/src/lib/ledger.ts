@@ -24,7 +24,8 @@ export type JournalType =
   | "dispute.lost"
   | "settlement.batch"
   | "refund.posted"
-  | "commission.payout";
+  | "commission.payout"
+  | "payout.disbursed";
 
 export type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
 export type Side = "D" | "C";
