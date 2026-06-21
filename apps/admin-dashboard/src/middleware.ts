@@ -66,7 +66,9 @@ const PUBLIC_UI = ["/login"];
 // bypass the session gate here.
 // /api/pay (merchant Key+Salt signed) and /api/gateway/payu/return (PayU
 // response-hash authenticated) bypass the session gate.
-const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay", "/api/gateway/payu/return", "/api/pay-result"];
+// /api/v1/webhooks/payment-status (HMAC x-signature) and /api/v1/cron/daily
+// (x-cron-key secret) authenticate themselves, so they bypass the session gate.
+const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/cron/daily"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 
