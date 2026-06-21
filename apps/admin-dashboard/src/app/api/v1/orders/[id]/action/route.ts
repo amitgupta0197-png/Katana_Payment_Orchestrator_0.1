@@ -63,13 +63,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (body.utr) {
         const dup = await findDuplicateUtr(o.id, body.utr);
         if (dup) {
-          await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: `duplicate UTR ${body.utr} (already on ${dup.order_ref})` });
+          const h = await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: `duplicate UTR ${body.utr} (already on ${dup.order_ref})` });
+          if (h.ok) await rows("fifo", `UPDATE fifo_queue SET status='CANCELLED' WHERE order_id=$1::uuid`, [o.id]).catch(() => {});
           await recordFraudAlert({
             orderId: o.id, orderRef: o.order_ref, merchantId: o.merchant_id, type: "DUPLICATE_UTR", severity: "CRITICAL",
             detail: `UTR ${body.utr} already attached to ${dup.order_ref} (${dup.status})`,
             payload: { utr: body.utr, conflict_order_ref: dup.order_ref, conflict_status: dup.status },
           });
-          return NextResponse.json({ error: `duplicate UTR — already used on ${dup.order_ref}; order placed on HOLD`, held: true }, { status: 409 });
+          return NextResponse.json({ error: `duplicate UTR — already used on ${dup.order_ref}${h.ok ? "; order placed on HOLD" : ""}`, held: h.ok }, { status: 409 });
         }
       }
       const r = await transition({ orderId: o.id, to: "COMPLETED", actor, actorKind, reason: "completed by operator", payload: { utr: body.utr, tx_hash: body.tx_hash } });
@@ -92,9 +93,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await sendStatusCallback({ ...o, status: "REJECTED" });
       return NextResponse.json({ ok: true, status: "REJECTED" });
     }
-    // hold → escalate to risk
+    // hold → escalate to risk. Release the queue row so it stops counting against
+    // the operator's concurrency (the risk team works it off-queue).
     const r = await transition({ orderId: o.id, to: "HOLD", actor, actorKind, reason: body.reason ?? "escalated to risk" });
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 409 });
+    await rows("fifo", `UPDATE fifo_queue SET status='CANCELLED' WHERE order_id=$1::uuid`, [o.id]).catch(() => {});
     return NextResponse.json({ ok: true, status: "HOLD" });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

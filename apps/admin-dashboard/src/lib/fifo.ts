@@ -28,9 +28,9 @@ export const NEXT: Record<string, string[]> = {
   VALIDATED:      ["QUEUED", "HOLD"],
   QUEUED:         ["ASSIGNED", "CANCELLED"],
   ASSIGNED:       ["ACCEPTED", "QUEUED", "HOLD"],   // reassign returns to queue; SLA escalation -> HOLD
-  ACCEPTED:       ["PROCESSING", "QUEUED"],
+  ACCEPTED:       ["PROCESSING", "QUEUED", "HOLD"],  // operator/compliance can hold any in-flight item
   PROCESSING:     ["PROOF_UPLOADED", "FAILED", "HOLD"],
-  PROOF_UPLOADED: ["COMPLETED", "REJECTED", "PROCESSING"],
+  PROOF_UPLOADED: ["COMPLETED", "REJECTED", "PROCESSING", "HOLD"], // duplicate-UTR / risk hold
   COMPLETED:      ["SETTLED", "REFUND", "DISPUTE"],
   SETTLED:        ["REFUND", "DISPUTE"],           // post-settlement refund/chargeback
   HOLD:           ["VALIDATED", "QUEUED", "REJECTED", "CANCELLED"],
