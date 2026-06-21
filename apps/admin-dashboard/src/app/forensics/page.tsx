@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle } from "lucide-react";
+import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle, Radar } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,17 @@ export default function ForensicsPage() {
     },
   });
 
+  const scan = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/v1/anomaly/scan", { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: (d) => { toast.success(`Anomaly scan: ${d.raised} raised / ${d.scanned} scanned`); alerts.refetch(); },
+    onError: (e: Error) => toast.error("Scan failed", { description: e.message }),
+  });
+
   const gen = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/v1/orders/${encodeURIComponent(id)}/evidence-pack`);
@@ -97,7 +108,8 @@ export default function ForensicsPage() {
 
   return (
     <>
-      <PageHeader title="Forensics & Evidence" description="Fraud alerts and on-demand forensic evidence packs (BRD §25/§30)." icon={FileSearch} />
+      <PageHeader title="Forensics & Evidence" description="Fraud alerts and on-demand forensic evidence packs (BRD §25/§30)." icon={FileSearch}
+        actions={<Button size="sm" variant="secondary" onClick={() => scan.mutate()} disabled={scan.isPending}><Radar className="h-4 w-4" /> {scan.isPending ? "Scanning…" : "Run anomaly scan"}</Button>} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Open alerts" value={open.length} variant={open.length > 0 ? "warning" : "default"} loading={alerts.isLoading} />

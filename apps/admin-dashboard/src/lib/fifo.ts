@@ -68,7 +68,7 @@ export async function transition(input: {
 // Record a fraud/risk alert (BRD §23/§24). Best-effort — never blocks the caller.
 export async function recordFraudAlert(input: {
   orderId?: string | null; orderRef?: string | null; merchantId?: string | null;
-  type: "DUPLICATE_UTR" | "VELOCITY" | "WALLET_CHANGE" | "OPERATOR_RISK" | "HIGH_VALUE";
+  type: "DUPLICATE_UTR" | "VELOCITY" | "WALLET_CHANGE" | "OPERATOR_RISK" | "HIGH_VALUE" | "ANOMALY";
   severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; detail?: string; payload?: Record<string, unknown>;
 }): Promise<void> {
   await rows("fifo", `
@@ -114,6 +114,7 @@ export interface CreateOrderInput {
   merchantId: string; direction: Direction; amountMinor: bigint; currency: string;
   settlementMode: string; customerName?: string; customerPhone?: string; customerEmail?: string;
   purpose?: string; priority?: number; deviceIp?: string; deviceFingerprint?: string;
+  deviceUserAgent?: string; deviceGeo?: string;
   callbackUrl?: string; actor?: string | null;
 }
 
@@ -145,6 +146,9 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
       input.deviceIp ?? null, input.deviceFingerprint ?? null]))[0];
   await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: "order created" });
   if (input.callbackUrl) await rows("fifo", `UPDATE fifo_orders SET callback_url=$2 WHERE id=$1::uuid`, [o.id, input.callbackUrl]).catch(() => {});
+  if (input.deviceUserAgent || input.deviceGeo)
+    await rows("fifo", `UPDATE fifo_orders SET device_user_agent=COALESCE($2,device_user_agent), device_geo=COALESCE($3,device_geo) WHERE id=$1::uuid`,
+      [o.id, input.deviceUserAgent ?? null, input.deviceGeo ?? null]).catch(() => {});
 
   // Risk score (FR-003 / §15 step 4). BLOCK -> HOLD for Risk Team.
   let riskTotal = 0, riskDecision = "ALLOW";

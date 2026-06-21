@@ -42,13 +42,16 @@ export async function POST(req: Request) {
   const currency = body.currency.toUpperCase();
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
   const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
+  const userAgent = req.headers.get("user-agent") ?? undefined;
+  const geo = req.headers.get("cf-ipcountry") ?? req.headers.get("x-vercel-ip-country") ?? req.headers.get("x-geo-country") ?? undefined;
 
   try {
     const r = await createOrder({
       merchantId, direction: body.direction, amountMinor: toMinor(amountStr, currency), currency,
       settlementMode: body.settlement_mode, purpose: body.purpose, priority: body.priority,
       customerName: body.customer?.name, customerPhone: body.customer?.phone, customerEmail: body.customer?.email,
-      deviceIp: ip ?? undefined, deviceFingerprint: body.device_fingerprint, callbackUrl: body.callback_url, actor: s.email,
+      deviceIp: ip ?? undefined, deviceFingerprint: body.device_fingerprint,
+      deviceUserAgent: userAgent, deviceGeo: geo, callbackUrl: body.callback_url, actor: s.email,
     });
     if (r.error) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
     return NextResponse.json({ order: r.order }, { status: 201 });

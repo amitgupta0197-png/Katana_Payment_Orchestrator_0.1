@@ -43,6 +43,7 @@ export async function buildEvidencePack(orderIdOrRef: string, generatedBy?: stri
     SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode,
            customer_name, customer_phone, customer_email, purpose, status, risk_score, risk_decision,
            txn_ref, utr, tx_hash, beneficiary_id::text, device_ip, device_fingerprint,
+           device_user_agent, device_geo,
            created_at, validated_at, queued_at, completed_at
       FROM fifo_orders WHERE order_ref = $1 OR id::text = $1 LIMIT 1
   `, [orderIdOrRef]))[0];
@@ -99,7 +100,7 @@ export async function buildEvidencePack(orderIdOrRef: string, generatedBy?: stri
     proofs,
     ledger_entries,
     fraud_alerts,
-    device: { ip: order.device_ip ?? null, fingerprint: order.device_fingerprint ?? null },
+    device: { ip: order.device_ip ?? null, fingerprint: order.device_fingerprint ?? null, user_agent: order.device_user_agent ?? null, geo: order.device_geo ?? null },
     settlement_reference: { utr: order.utr ?? null, tx_hash: order.tx_hash ?? null },
     section_count: 0,
   };
