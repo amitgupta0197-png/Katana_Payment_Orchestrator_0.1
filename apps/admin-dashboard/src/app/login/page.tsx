@@ -27,6 +27,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("admin@katana.dev");
   const [password, setPassword] = useState("demo");
+  const [totp, setTotp] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -36,13 +38,13 @@ export default function LoginPage() {
     try {
       const r = await fetch("/api/auth/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, totp: totp || undefined }),
       });
+      const body = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
+        if (body.mfa_required) setMfaRequired(true);
         throw new Error(body.error ?? "Sign-in failed");
       }
-      const body = await r.json();
       router.push(next || LANDING[body.persona] || "/");
       router.refresh();
     } catch (err) {
@@ -69,6 +71,12 @@ export default function LoginPage() {
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
+            {mfaRequired && (
+              <div className="space-y-1.5">
+                <Label htmlFor="totp">Authentication code</Label>
+                <Input id="totp" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={totp} onChange={(e) => setTotp(e.target.value)} autoFocus />
+              </div>
+            )}
             {error && <div className="rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">{error}</div>}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}

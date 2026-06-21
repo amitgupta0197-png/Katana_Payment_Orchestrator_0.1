@@ -17,6 +17,8 @@ export interface Session {
   persona: Persona;
   scope_id: string | null;
   scope_label: string;
+  mfa?: boolean;       // MFA satisfied at login (SEC-003)
+  device?: string;     // bound device hash (SEC-004)
   exp: number; // unix seconds
 }
 
