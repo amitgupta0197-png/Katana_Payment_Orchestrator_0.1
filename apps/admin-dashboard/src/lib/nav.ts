@@ -27,6 +27,7 @@ import {
   Sliders,
   ScrollText,
   Headphones,
+  FileSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -96,6 +97,7 @@ export const navItems: NavItem[] = [
   { href: "/risk/aml", label: "AML / Sanctions", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
+  { href: "/forensics", label: "Forensics", icon: FileSearch, status: "live", group: "Risk & Compliance" },
 
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },

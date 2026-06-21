@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { operatorForUser, transition, settlePayinToLedger } from "@/lib/fifo";
+import { operatorForUser, transition, settlePayinToLedger, findDuplicateUtr, recordFraudAlert } from "@/lib/fifo";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +52,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ ok: true, status: "PROCESSING" });
     }
     if (body.action === "complete") {
+      // Duplicate-UTR guard (BRD §24, AC-008): the same bank UTR cannot close two
+      // orders. Auto-HOLD the second one and raise a fraud alert instead.
+      if (body.utr) {
+        const dup = await findDuplicateUtr(o.id, body.utr);
+        if (dup) {
+          await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: `duplicate UTR ${body.utr} (already on ${dup.order_ref})` });
+          await recordFraudAlert({
+            orderId: o.id, orderRef: o.order_ref, merchantId: o.merchant_id, type: "DUPLICATE_UTR", severity: "CRITICAL",
+            detail: `UTR ${body.utr} already attached to ${dup.order_ref} (${dup.status})`,
+            payload: { utr: body.utr, conflict_order_ref: dup.order_ref, conflict_status: dup.status },
+          });
+          return NextResponse.json({ error: `duplicate UTR — already used on ${dup.order_ref}; order placed on HOLD`, held: true }, { status: 409 });
+        }
+      }
       const r = await transition({ orderId: o.id, to: "COMPLETED", actor, actorKind, reason: "completed by operator", payload: { utr: body.utr, tx_hash: body.tx_hash } });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 409 });
       await rows("fifo", `UPDATE fifo_orders SET utr=COALESCE($2,utr), tx_hash=COALESCE($3,tx_hash) WHERE id=$1::uuid`, [o.id, body.utr ?? null, body.tx_hash ?? null]).catch(() => {});

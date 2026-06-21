@@ -65,6 +65,51 @@ export async function transition(input: {
   return { ok: true, from: cur.status };
 }
 
+// Record a fraud/risk alert (BRD §23/§24). Best-effort — never blocks the caller.
+export async function recordFraudAlert(input: {
+  orderId?: string | null; orderRef?: string | null; merchantId?: string | null;
+  type: "DUPLICATE_UTR" | "VELOCITY" | "WALLET_CHANGE" | "OPERATOR_RISK" | "HIGH_VALUE";
+  severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; detail?: string; payload?: Record<string, unknown>;
+}): Promise<void> {
+  await rows("fifo", `
+    INSERT INTO fifo_fraud_alerts (order_id, order_ref, merchant_id, alert_type, severity, detail, payload)
+    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
+  `, [input.orderId ?? null, input.orderRef ?? null, input.merchantId ?? null, input.type,
+      input.severity ?? "MEDIUM", input.detail ?? null,
+      input.payload ? JSON.stringify(input.payload) : null]).catch(() => {});
+}
+
+// Duplicate-UTR detection (BRD §24, AC-008). Returns the conflicting order if the
+// same UTR is already attached to a different live/closed order.
+export async function findDuplicateUtr(orderId: string, utr: string): Promise<{ order_ref: string; status: string } | null> {
+  const dup = (await rows<{ order_ref: string; status: string }>("fifo", `
+    SELECT order_ref, status FROM fifo_orders
+     WHERE utr = $1 AND id <> $2::uuid
+       AND status IN ('PROCESSING','PROOF_UPLOADED','COMPLETED','SETTLED')
+     LIMIT 1
+  `, [utr, orderId]).catch(() => []))[0];
+  return dup ?? null;
+}
+
+// Velocity check (BRD §24): same customer raising many orders in a short window.
+// Records a VELOCITY alert when the count crosses the threshold; never blocks.
+const VELOCITY_WINDOW_MIN = 10, VELOCITY_MAX = 5;
+async function checkVelocity(orderId: string, orderRef: string, merchantId: string, customerRef?: string | null): Promise<void> {
+  if (!customerRef) return;
+  const n = (await rows<{ n: number }>("fifo", `
+    SELECT COUNT(*)::int AS n FROM fifo_orders
+     WHERE merchant_id = $1 AND (customer_phone = $2 OR customer_email = $2)
+       AND created_at > now() - ($3 * interval '1 minute')
+  `, [merchantId, customerRef, VELOCITY_WINDOW_MIN]).catch(() => []))[0]?.n ?? 0;
+  if (n > VELOCITY_MAX) {
+    await recordFraudAlert({
+      orderId, orderRef, merchantId, type: "VELOCITY", severity: "HIGH",
+      detail: `${n} orders from same customer in ${VELOCITY_WINDOW_MIN}m (limit ${VELOCITY_MAX})`,
+      payload: { count: n, window_min: VELOCITY_WINDOW_MIN, customer_ref: customerRef },
+    });
+  }
+}
+
 export interface CreateOrderInput {
   merchantId: string; direction: Direction; amountMinor: bigint; currency: string;
   settlementMode: string; customerName?: string; customerPhone?: string; customerEmail?: string;
@@ -130,6 +175,9 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
   const pos = (await rows<{ n: number }>("fifo", `
     SELECT COUNT(*)::int AS n FROM fifo_queue WHERE status='QUEUED'
   `))[0]?.n ?? 0;
+
+  // Velocity screening (BRD §24) — flags repeated customer activity, non-blocking.
+  await checkVelocity(o.id, o.order_ref, input.merchantId, input.customerEmail ?? input.customerPhone);
 
   return { order: { id: o.id, order_ref: o.order_ref, status: "QUEUED", queue_position: pos, risk_score: riskTotal, risk_decision: riskDecision } };
 }
