@@ -32,7 +32,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type NavPersona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT" | "OPERATOR";
+export type NavPersona =
+  | "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT"
+  | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 
 export interface NavItem {
   href: string;
@@ -59,6 +61,29 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
     const allowed = i.personas ?? ["SUPER_ADMIN"];
     return allowed.includes(persona);
   });
+}
+
+// Curated nav for the back-office / internal personas. These previously fell back
+// to the full ~60-item super-admin menu; here each sees only the consoles relevant
+// to their job. Nothing is removed from the app — every page stays reachable by URL
+// and the ⌘K command palette; this only declutters the sidebar (presentation only).
+const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
+  OPERATOR:   ["/", "/operator", "/fifo-dashboard", "/security"],
+  FINANCE:    ["/", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/security"],
+  RISK:       ["/", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
+  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
+  SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
+};
+
+// Resolve the nav a given persona should see. SUPER_ADMIN/ADMIN see everything;
+// PROVIDER/MERCHANT use their existing tag-based subset; the internal personas use
+// the curated allow-list above; any unknown persona safely falls back to the full list.
+export function personaNav(items: NavItem[], persona: NavPersona): NavItem[] {
+  if (persona === "SUPER_ADMIN" || persona === "ADMIN") return filterNavForPersona(items, "SUPER_ADMIN");
+  if (persona === "PROVIDER" || persona === "MERCHANT") return filterNavForPersona(items, persona);
+  const allow = CURATED_NAV[persona];
+  if (allow) return items.filter((i) => allow.includes(i.href));
+  return filterNavForPersona(items, "SUPER_ADMIN");
 }
 
 export const navItems: NavItem[] = [

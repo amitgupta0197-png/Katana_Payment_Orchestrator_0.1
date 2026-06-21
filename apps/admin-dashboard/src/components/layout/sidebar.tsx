@@ -6,22 +6,24 @@ import { useQuery } from "@tanstack/react-query";
 import { Swords } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { navGroups, navItems, filterNavForPersona, type NavPersona } from "@/lib/nav";
+import { navGroups, navItems, personaNav, type NavPersona } from "@/lib/nav";
 
 export function Sidebar() {
   const pathname = usePathname();
 
-  // Read persona from /api/me/access (already cached by useAccess). Render
-  // the SUPER_ADMIN superset while the query is in flight, then filter on
-  // first paint so we never show admin links to a merchant.
+  // Read the real session persona from /api/auth/me (works for every role, unlike
+  // /api/me/access which only covers admin/provider/merchant). Render the full
+  // superset while the query is in flight so the menu never flashes empty, then
+  // curate per persona on first paint. Decluttering only — all pages stay reachable
+  // via URL and the ⌘K command palette.
   const me = useQuery({
-    queryKey: ["me:access"],
-    queryFn: async () => (await fetch("/api/me/access").then((r) => r.json())) as { persona: NavPersona },
+    queryKey: ["me:persona"],
+    queryFn: async () => (await fetch("/api/auth/me").then((r) => r.json())) as { persona: NavPersona },
     staleTime: 5 * 60_000,
   });
   const persona: NavPersona = me.data?.persona ?? "SUPER_ADMIN";
-  const visibleItems = filterNavForPersona(navItems, persona);
-  const personaLabel = persona === "SUPER_ADMIN" ? "super-admin" : persona === "PROVIDER" ? "provider" : "merchant";
+  const visibleItems = personaNav(navItems, persona);
+  const personaLabel = persona.toLowerCase().replace(/_/g, "-");
 
   return (
     <aside

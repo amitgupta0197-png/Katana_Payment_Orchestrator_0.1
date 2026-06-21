@@ -16,8 +16,14 @@ const DEMO_USERS = [
 
 const LANDING: Record<string, string> = {
   SUPER_ADMIN: "/",
+  ADMIN: "/",
   PROVIDER: "/provider-portal",
   MERCHANT: "/merchant-portal",
+  OPERATOR: "/operator",
+  FINANCE: "/fifo-settlements",
+  RISK: "/forensics",
+  COMPLIANCE: "/forensics",
+  SUPPORT: "/",
 };
 
 export default function LoginPage() {
