@@ -101,6 +101,8 @@ export const navItems: NavItem[] = [
 
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/payouts", label: "Payouts & Beneficiaries", icon: Send, status: "live", group: "Operations" },
+  { href: "/fifo-dashboard", label: "FIFO Dashboard", icon: LayoutDashboard, status: "live", group: "Operations" },
+  { href: "/fifo-reports", label: "FIFO Reports", icon: BarChart3, status: "live", group: "Operations" },
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },
   { href: "/commission", label: "Commission", icon: Percent, status: "live", group: "Operations" },
   { href: "/events", label: "Event stream", icon: Activity, status: "live", group: "Operations" },

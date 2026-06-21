@@ -114,7 +114,7 @@ export interface CreateOrderInput {
   merchantId: string; direction: Direction; amountMinor: bigint; currency: string;
   settlementMode: string; customerName?: string; customerPhone?: string; customerEmail?: string;
   purpose?: string; priority?: number; deviceIp?: string; deviceFingerprint?: string;
-  actor?: string | null;
+  callbackUrl?: string; actor?: string | null;
 }
 
 export interface CreatedOrder {
@@ -144,6 +144,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
       input.customerEmail ?? null, input.purpose ?? null, txnRef,
       input.deviceIp ?? null, input.deviceFingerprint ?? null]))[0];
   await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: "order created" });
+  if (input.callbackUrl) await rows("fifo", `UPDATE fifo_orders SET callback_url=$2 WHERE id=$1::uuid`, [o.id, input.callbackUrl]).catch(() => {});
 
   // Risk score (FR-003 / §15 step 4). BLOCK -> HOLD for Risk Team.
   let riskTotal = 0, riskDecision = "ALLOW";

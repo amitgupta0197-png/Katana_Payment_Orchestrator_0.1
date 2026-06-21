@@ -23,6 +23,7 @@ const schema = z.object({
     name: z.string().optional(), phone: z.string().optional(), email: z.string().optional(),
   }).optional(),
   device_fingerprint: z.string().optional(),
+  callback_url: z.string().url().optional(),
 });
 
 export async function POST(req: Request) {
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       merchantId, direction: body.direction, amountMinor: toMinor(amountStr, currency), currency,
       settlementMode: body.settlement_mode, purpose: body.purpose, priority: body.priority,
       customerName: body.customer?.name, customerPhone: body.customer?.phone, customerEmail: body.customer?.email,
-      deviceIp: ip ?? undefined, deviceFingerprint: body.device_fingerprint, actor: s.email,
+      deviceIp: ip ?? undefined, deviceFingerprint: body.device_fingerprint, callbackUrl: body.callback_url, actor: s.email,
     });
     if (r.error) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
     return NextResponse.json({ order: r.order }, { status: 201 });

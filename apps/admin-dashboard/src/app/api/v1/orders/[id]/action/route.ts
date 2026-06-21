@@ -8,6 +8,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { operatorForUser, transition, settlePayinToLedger, findDuplicateUtr, recordFraudAlert } from "@/lib/fifo";
 import { settlePayoutToLedger } from "@/lib/fifo-payout";
+import { sendStatusCallback } from "@/lib/fifo-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const o = (await rows<any>("fifo", `
-      SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode, status, txn_ref
+      SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode, status, txn_ref, callback_url
         FROM fifo_orders WHERE order_ref=$1 OR id::text=$1 LIMIT 1
     `, [id]))[0];
     if (!o) return NextResponse.json({ error: "order not found" }, { status: 404 });
@@ -81,12 +82,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       } else if (o.direction === "PAYOUT") {
         journalId = await settlePayoutToLedger({ merchantId: o.merchant_id, txnRef: o.txn_ref, amountMinor: BigInt(o.amount_minor), currency: o.currency, provider: o.settlement_mode });
       }
+      await sendStatusCallback({ ...o, status: "COMPLETED", utr: body.utr, tx_hash: body.tx_hash });
       return NextResponse.json({ ok: true, status: "COMPLETED", journal_id: journalId });
     }
     if (body.action === "reject") {
       const r = await transition({ orderId: o.id, to: "REJECTED", actor, actorKind, reason: body.reason ?? "rejected by operator" });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 409 });
       await rows("fifo", `UPDATE fifo_queue SET status='CANCELLED' WHERE order_id=$1::uuid`, [o.id]).catch(() => {});
+      await sendStatusCallback({ ...o, status: "REJECTED" });
       return NextResponse.json({ ok: true, status: "REJECTED" });
     }
     // hold → escalate to risk
