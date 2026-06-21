@@ -12,12 +12,19 @@ import { postJournal } from "@/lib/ledger";
 
 export type Direction = "PAYIN" | "PAYOUT";
 
+// SLA for accepting an assigned item (BRD §15 steps 9-11, §29). If an operator
+// does not ACCEPT within this window the item auto-returns to the queue.
+export const SLA_SECONDS = 180;
+// After this many SLA breaches the item stops bouncing and escalates to HOLD
+// for a supervisor (BRD §15 step 11 — exception handling).
+export const MAX_REASSIGNS = 3;
+
 // Allowed status transitions (BRD §16 lifecycle).
 export const NEXT: Record<string, string[]> = {
   CREATED:        ["VALIDATED", "REJECTED"],
   VALIDATED:      ["QUEUED", "HOLD"],
   QUEUED:         ["ASSIGNED", "CANCELLED"],
-  ASSIGNED:       ["ACCEPTED", "QUEUED"],          // reassign returns to queue
+  ASSIGNED:       ["ACCEPTED", "QUEUED", "HOLD"],   // reassign returns to queue; SLA escalation -> HOLD
   ACCEPTED:       ["PROCESSING", "QUEUED"],
   PROCESSING:     ["PROOF_UPLOADED", "FAILED", "HOLD"],
   PROOF_UPLOADED: ["COMPLETED", "REJECTED", "PROCESSING"],
@@ -152,12 +159,60 @@ export async function assignNextForOperator(operatorId: string): Promise<{ assig
 
   await rows("fifo", `
     UPDATE fifo_queue SET status='ASSIGNED', assigned_to=$1::uuid, assigned_at=now(),
-           sla_due_at=now() + interval '3 minutes'
+           sla_due_at=now() + ($3::int * interval '1 second')
      WHERE id=$2::uuid
-  `, [operatorId, head.queue_id]);
+  `, [operatorId, head.queue_id, SLA_SECONDS]);
   await transition({ orderId: head.order_id, to: "ASSIGNED", actorKind: "system", reason: `assigned to operator ${op.id}` });
 
   return { assigned: { queue_id: head.queue_id, order_id: head.order_id, order_ref: head.order_ref, amount_minor: head.amount_minor, direction: head.direction, merchant_id: head.merchant_id } };
+}
+
+// Sweep assigned items whose accept-by SLA has expired (BRD §15 steps 9-11, §29).
+// Items not ACCEPTED in time auto-return to the QUEUED head (priority bumped so
+// they retry first), reassign_count++ and an event recorded. After MAX_REASSIGNS
+// breaches the item is pulled off the queue and HELD for a supervisor. Safe to
+// call repeatedly (sweep/cron pattern) — rows are locked with SKIP LOCKED.
+export async function sweepSlaBreaches(): Promise<{ swept: number; requeued: string[]; escalated: string[] }> {
+  const expired = await rows<any>("fifo", `
+    SELECT q.id::text AS queue_id, q.order_id::text, q.reassign_count, q.assigned_to::text AS assigned_to,
+           o.order_ref
+      FROM fifo_queue q JOIN fifo_orders o ON o.id = q.order_id
+     WHERE q.status='ASSIGNED' AND q.sla_due_at IS NOT NULL AND q.sla_due_at < now()
+     ORDER BY q.sla_due_at ASC
+     LIMIT 200
+     FOR UPDATE OF q SKIP LOCKED
+  `).catch(() => []);
+
+  const requeued: string[] = [], escalated: string[] = [];
+  for (const it of expired) {
+    const nextCount = (it.reassign_count ?? 0) + 1;
+    if (nextCount >= MAX_REASSIGNS) {
+      // Too many missed SLAs — take it off the queue and escalate to a supervisor.
+      await rows("fifo", `UPDATE fifo_queue SET status='CANCELLED', reassign_count=$2 WHERE id=$1::uuid`,
+        [it.queue_id, nextCount]).catch(() => {});
+      await transition({
+        orderId: it.order_id, to: "HOLD", actorKind: "system",
+        reason: `SLA breached ${nextCount}× without accept — escalated to supervisor`,
+        payload: { queue_id: it.queue_id, reassign_count: nextCount, missed_operator: it.assigned_to, sla_seconds: SLA_SECONDS },
+      });
+      escalated.push(it.order_ref);
+    } else {
+      // Return to the queue head for re-assignment; bump priority so it retries first.
+      await rows("fifo", `
+        UPDATE fifo_queue
+           SET status='QUEUED', assigned_to=NULL, assigned_at=NULL, accepted_at=NULL,
+               sla_due_at=NULL, reassign_count=$2, priority=priority+1
+         WHERE id=$1::uuid
+      `, [it.queue_id, nextCount]).catch(() => {});
+      await transition({
+        orderId: it.order_id, to: "QUEUED", actorKind: "system",
+        reason: `SLA breach: not accepted within ${SLA_SECONDS}s — auto-returned to queue (reassign #${nextCount})`,
+        payload: { queue_id: it.queue_id, reassign_count: nextCount, missed_operator: it.assigned_to, sla_seconds: SLA_SECONDS },
+      });
+      requeued.push(it.order_ref);
+    }
+  }
+  return { swept: expired.length, requeued, escalated };
 }
 
 // Post a completed PAY-IN to the ledger so it flows into the settlement engine

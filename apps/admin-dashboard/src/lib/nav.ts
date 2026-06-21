@@ -26,10 +26,11 @@ import {
   Activity,
   Sliders,
   ScrollText,
+  Headphones,
   type LucideIcon,
 } from "lucide-react";
 
-export type NavPersona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT";
+export type NavPersona = "SUPER_ADMIN" | "PROVIDER" | "MERCHANT" | "OPERATOR";
 
 export interface NavItem {
   href: string;
@@ -48,6 +49,8 @@ export interface NavItem {
 export const SHARED_PERSONAS: NavPersona[] = ["SUPER_ADMIN", "PROVIDER", "MERCHANT"];
 export const PROVIDER_NAV: NavPersona[] = ["SUPER_ADMIN", "PROVIDER"];
 export const MERCHANT_NAV: NavPersona[] = ["SUPER_ADMIN", "MERCHANT"];
+// FIFO ops console — visible to super-admins and the operators who work the queue.
+export const OPERATOR_NAV: NavPersona[] = ["SUPER_ADMIN", "OPERATOR"];
 
 export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavItem[] {
   return items.filter((i) => {
@@ -94,6 +97,7 @@ export const navItems: NavItem[] = [
   { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
 
+  { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },
   { href: "/commission", label: "Commission", icon: Percent, status: "live", group: "Operations" },
   { href: "/events", label: "Event stream", icon: Activity, status: "live", group: "Operations" },

@@ -3,9 +3,9 @@
 // Operator Console (PayTech BRD §16). Work the FIFO queue: claim head-of-line,
 // accept → process → upload proof → complete. Read-only view of the queue tail.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Headphones, ArrowDownToLine, Check, Play, Upload, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Headphones, ArrowDownToLine, Check, Play, Upload, CheckCircle2, XCircle, AlertTriangle, Timer, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,31 @@ interface QItem {
   direction: string; amount_minor: string; currency: string; settlement_mode: string;
   order_status: string; queue_status: string; priority: number;
   enqueued_at: string; assigned_to: string | null; sla_due_at: string | null;
+  reassign_count?: number;
   risk_score?: number; risk_decision?: string; customer_name?: string;
+}
+
+// Live accept-by countdown (BRD §15/§29). Ticks every second; turns red and
+// flips to "reassigning" once the SLA is breached — the sweep will requeue it.
+function SlaCountdown({ dueAt }: { dueAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const ms = new Date(dueAt).getTime() - now;
+  if (ms <= 0) {
+    return <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-[color:var(--color-danger)]"><RotateCcw className="h-3 w-3" /> SLA breached — reassigning…</span>;
+  }
+  const total = Math.floor(ms / 1000);
+  const mm = String(Math.floor(total / 60)).padStart(2, "0");
+  const ss = String(total % 60).padStart(2, "0");
+  const urgent = total <= 30;
+  return (
+    <span className={`ml-2 inline-flex items-center gap-1 text-xs font-medium tabular-nums ${urgent ? "text-[color:var(--color-danger)]" : "text-[color:var(--color-warning)]"}`}>
+      <Timer className="h-3 w-3" /> accept in {mm}:{ss}
+    </span>
+  );
 }
 
 export default function OperatorConsolePage() {
@@ -31,6 +55,9 @@ export default function OperatorConsolePage() {
   const q = useQuery({
     queryKey: ["operator-queue"],
     queryFn: async () => {
+      // Enforce SLA on every poll (no cron needed): returns breached assignments
+      // to the queue before we read it, so the view reflects reassignments live.
+      await fetch("/api/v1/queue/sweep", { method: "POST" }).catch(() => {});
       const r = await fetch("/api/v1/queue");
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
@@ -142,7 +169,8 @@ export default function OperatorConsolePage() {
                   <span className="font-medium tabular-nums">{formatAmount(Number(it.amount_minor), it.currency)}</span> · {it.settlement_mode} ·{" "}
                   <span className="text-[color:var(--color-text-muted)]">{it.merchant_id}</span>{" "}
                   <Badge variant={statusVariant(it.order_status)}>{it.order_status}</Badge>
-                  {it.sla_due_at && it.order_status === "ASSIGNED" && <span className="ml-2 text-xs text-[color:var(--color-warning)]">accept by {formatDateTime(it.sla_due_at)}</span>}
+                  {it.sla_due_at && it.order_status === "ASSIGNED" && <SlaCountdown dueAt={it.sla_due_at} />}
+                  {(it.reassign_count ?? 0) > 0 && <Badge variant="warning" className="ml-2">reassigned ×{it.reassign_count}</Badge>}
                 </div>
                 {actionsFor(it)}
               </div>
