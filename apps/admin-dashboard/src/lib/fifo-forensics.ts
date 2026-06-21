@@ -79,13 +79,13 @@ export async function buildEvidencePack(orderIdOrRef: string, generatedBy?: stri
   if (order.txn_ref) {
     ledger_entries = await rows<any>("ledger", `
       SELECT je.id::text AS journal_id, je.journal_type, je.narration, je.currency,
-             je.total_debit_minor::text, je.total_credit_minor::text, je.entry_hash, je.created_at,
+             je.total_debit_minor::text, je.total_credit_minor::text, je.entry_hash, je.posted_at,
              a.code AS account_code, ll.side, ll.amount_minor::text AS line_amount_minor
         FROM journal_entries je
         JOIN ledger_lines ll ON ll.journal_id = je.id
         JOIN accounts a ON a.id = ll.account_id
-       WHERE je.ref_type = 'payment' AND je.ref_id = $1
-       ORDER BY je.created_at ASC, a.code ASC
+       WHERE je.ref_type IN ('payment','payout') AND je.ref_id = $1
+       ORDER BY je.posted_at ASC, a.code ASC
     `, [order.txn_ref]).catch(() => []);
   }
 
