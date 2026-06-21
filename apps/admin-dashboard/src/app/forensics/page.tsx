@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle, Radar } from "lucide-react";
+import { ShieldAlert, FileSearch, Download, Fingerprint, ScrollText, Receipt, AlertTriangle, Radar, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,17 @@ export default function ForensicsPage() {
     onError: (e: Error) => toast.error("Scan failed", { description: e.message }),
   });
 
+  const verifyChain = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/v1/audit/verify?order_ref=${encodeURIComponent(ref)}`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: (d) => d.ok ? toast.success(`Audit chain intact · ${d.events} events`) : toast.error(`Chain BROKEN at ${d.brokenAt}`),
+    onError: (e: Error) => toast.error("Verify failed", { description: e.message }),
+  });
+
   const gen = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/v1/orders/${encodeURIComponent(id)}/evidence-pack`);
@@ -127,6 +138,7 @@ export default function ForensicsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Input className="h-9 w-56" placeholder="ORD-XXXXXXXX" value={ref} onChange={(e) => setRef(e.target.value)} />
             <Button size="sm" onClick={() => gen.mutate(ref)} disabled={!ref || gen.isPending}><FileSearch className="h-4 w-4" /> {gen.isPending ? "Building…" : "Generate"}</Button>
+            <Button size="sm" variant="secondary" onClick={() => verifyChain.mutate()} disabled={!ref || verifyChain.isPending}><ShieldCheck className="h-4 w-4" /> Verify audit chain</Button>
             {pack && <Button size="sm" variant="secondary" onClick={download}><Download className="h-4 w-4" /> Download JSON</Button>}
           </div>
           <div className="flex flex-wrap gap-1">

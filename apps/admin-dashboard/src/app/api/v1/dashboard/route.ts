@@ -8,25 +8,31 @@ import { gateOrResponse } from "@/lib/scope";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const g = await gateOrResponse(["SUPER_ADMIN", "ADMIN", "OPERATOR", "FINANCE", "RISK", "COMPLIANCE"]);
+  const g = await gateOrResponse(["SUPER_ADMIN", "ADMIN", "OPERATOR", "FINANCE", "RISK", "COMPLIANCE", "MERCHANT"]);
   if ("response" in g) return g.response;
+  // Merchants see only their own slice (§31 merchant dashboard).
+  const mid = g.session.persona === "MERCHANT" ? g.session.scope_id : null;
+  const oFilter = mid ? "WHERE merchant_id = $1" : "";
+  const oParams = mid ? [mid] : [];
   try {
     const byStatus = await rows<any>("fifo", `
       SELECT direction, status, COUNT(*)::int AS n, COALESCE(SUM(amount_minor),0)::text AS amt
-        FROM fifo_orders GROUP BY direction, status
-    `);
-    const queue = await rows<any>("fifo", `
+        FROM fifo_orders ${oFilter} GROUP BY direction, status
+    `, oParams);
+    const queue = mid ? [] : await rows<any>("fifo", `
       SELECT status, COUNT(*)::int AS n FROM fifo_queue GROUP BY status
     `);
-    const breaches = (await rows<{ n: number }>("fifo", `SELECT COUNT(*)::int AS n FROM fifo_queue WHERE reassign_count > 0`))[0]?.n ?? 0;
-    const ops = (await rows<any>("fifo", `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='ACTIVE')::int AS active FROM fifo_operators`))[0] ?? { total: 0, active: 0 };
-    const alerts = await rows<any>("fifo", `SELECT alert_type, COUNT(*)::int AS n FROM fifo_fraud_alerts WHERE status='OPEN' GROUP BY alert_type`);
+    const breaches = mid ? 0 : (await rows<{ n: number }>("fifo", `SELECT COUNT(*)::int AS n FROM fifo_queue WHERE reassign_count > 0`))[0]?.n ?? 0;
+    const ops = mid ? { total: 0, active: 0 } : (await rows<any>("fifo", `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='ACTIVE')::int AS active FROM fifo_operators`))[0] ?? { total: 0, active: 0 };
+    const alerts = await rows<any>("fifo", `SELECT alert_type, COUNT(*)::int AS n FROM fifo_fraud_alerts WHERE status='OPEN' ${mid ? "AND merchant_id = $1" : ""} GROUP BY alert_type`, oParams);
+    const finPattern = mid ? `LIABILITIES.MERCHANT_PAYABLE.${mid}` : "LIABILITIES.MERCHANT_PAYABLE.%";
+    const resPattern = mid ? `LIABILITIES.MERCHANT_RESERVE.${mid}` : "LIABILITIES.MERCHANT_RESERVE.%";
     const fin = (await rows<any>("ledger", `
       SELECT
-        COALESCE(SUM(CASE WHEN a.code LIKE 'LIABILITIES.MERCHANT_PAYABLE.%' THEN (CASE WHEN ll.side='C' THEN ll.amount_minor ELSE -ll.amount_minor END) ELSE 0 END),0)::text AS payable,
-        COALESCE(SUM(CASE WHEN a.code LIKE 'LIABILITIES.MERCHANT_RESERVE.%' THEN (CASE WHEN ll.side='C' THEN ll.amount_minor ELSE -ll.amount_minor END) ELSE 0 END),0)::text AS reserve
+        COALESCE(SUM(CASE WHEN a.code LIKE $1 THEN (CASE WHEN ll.side='C' THEN ll.amount_minor ELSE -ll.amount_minor END) ELSE 0 END),0)::text AS payable,
+        COALESCE(SUM(CASE WHEN a.code LIKE $2 THEN (CASE WHEN ll.side='C' THEN ll.amount_minor ELSE -ll.amount_minor END) ELSE 0 END),0)::text AS reserve
         FROM ledger_lines ll JOIN accounts a ON a.id = ll.account_id
-    `).catch(() => [{ payable: "0", reserve: "0" }]))[0] ?? { payable: "0", reserve: "0" };
+    `, [finPattern, resPattern]).catch(() => [{ payable: "0", reserve: "0" }]))[0] ?? { payable: "0", reserve: "0" };
 
     const pick = (dir: string, st: string) => byStatus.find((r) => r.direction === dir && r.status === st) ?? { n: 0, amt: "0" };
     const sumDir = (dir: string, sts: string[]) => byStatus.filter((r) => r.direction === dir && sts.includes(r.status)).reduce((a, r) => a + r.n, 0);

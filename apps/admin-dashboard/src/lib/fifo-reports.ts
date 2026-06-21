@@ -36,11 +36,20 @@ export async function buildReport(type: ReportType): Promise<Report> {
              COUNT(q.id) FILTER (WHERE q.assigned_to = op.id)::int AS assigned,
              COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.accepted_at IS NOT NULL)::int AS accepted,
              COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.status = 'DONE')::int AS completed,
-             COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.reassign_count > 0)::int AS sla_breaches
+             COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.status = 'CANCELLED')::int AS rejected,
+             COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.reassign_count > 0)::int AS sla_breaches,
+             COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.accepted_at IS NOT NULL
+                                  AND EXTRACT(HOUR FROM q.accepted_at) < 6)::int AS after_hours,
+             COUNT(q.id) FILTER (WHERE q.assigned_to = op.id AND q.status='DONE'
+                                  AND NOT EXISTS (SELECT 1 FROM fifo_order_proofs p WHERE p.order_id = q.order_id))::int AS proof_missing
         FROM fifo_operators op LEFT JOIN fifo_queue q ON q.assigned_to = op.id
        GROUP BY op.id, op.email, op.name, op.status ORDER BY completed DESC
     `);
-    return { columns: ["email", "name", "status", "assigned", "accepted", "completed", "sla_breaches"], rows: r };
+    const rowsOut = r.map((o) => {
+      const handled = (o.completed ?? 0) + (o.rejected ?? 0);
+      return { ...o, rejection_ratio: handled ? Math.round((o.rejected / handled) * 100) + "%" : "—" };
+    });
+    return { columns: ["email", "name", "status", "assigned", "accepted", "completed", "rejected", "rejection_ratio", "sla_breaches", "after_hours", "proof_missing"], rows: rowsOut };
   }
 
   if (type === "settlement") {

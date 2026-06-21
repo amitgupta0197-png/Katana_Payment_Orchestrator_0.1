@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { pgError } from "@/lib/pg";
-import { sweepSlaBreaches } from "@/lib/fifo";
+import { sweepSlaBreaches, sweepAssignmentSla, sweepVerificationSla } from "@/lib/fifo";
 import { runReconciliation } from "@/lib/fifo-recon";
 import { scanAnomalies } from "@/lib/fifo-anomaly";
 
@@ -19,6 +19,8 @@ export async function POST(req: Request) {
   const out: Record<string, unknown> = { ran_at: new Date().toISOString() };
   try {
     out.sla_sweep = await sweepSlaBreaches().catch((e) => ({ error: (e as Error).message }));
+    out.assignment_sla = await sweepAssignmentSla().catch((e) => ({ error: (e as Error).message }));
+    out.verification_sla = await sweepVerificationSla().catch((e) => ({ error: (e as Error).message }));
     out.reconciliation = await runReconciliation({ source: "LEDGER", createdBy: "cron@daily" }).catch((e) => ({ error: (e as Error).message }));
     out.anomaly = await scanAnomalies().catch((e) => ({ error: (e as Error).message }));
     return NextResponse.json({ ok: true, ...out });

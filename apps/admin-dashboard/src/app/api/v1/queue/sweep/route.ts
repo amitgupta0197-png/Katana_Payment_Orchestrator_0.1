@@ -6,7 +6,7 @@
 import { NextResponse } from "next/server";
 import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { sweepSlaBreaches } from "@/lib/fifo";
+import { sweepSlaBreaches, sweepAssignmentSla, sweepVerificationSla } from "@/lib/fifo";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,8 @@ export async function POST(_req: Request) {
 
   try {
     const r = await sweepSlaBreaches();
-    return NextResponse.json({ ok: true, ...r });
+    const a = await sweepAssignmentSla();
+    const v = await sweepVerificationSla();
+    return NextResponse.json({ ok: true, ...r, ...a, ...v });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

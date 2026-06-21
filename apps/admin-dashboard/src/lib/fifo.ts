@@ -6,7 +6,7 @@
 // flows into the settlement engine we already built.
 
 import { rows } from "@/lib/pg";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { computeRiskScore } from "@/lib/risk";
 import { postJournal } from "@/lib/ledger";
 
@@ -18,6 +18,9 @@ export const SLA_SECONDS = 180;
 // After this many SLA breaches the item stops bouncing and escalates to HOLD
 // for a supervisor (BRD §15 step 11 — exception handling).
 export const MAX_REASSIGNS = 3;
+// Other §29 SLAs: queue assignment (2m) and pay-in verification (10m).
+export const QUEUE_ASSIGN_SLA_SECONDS = Number(process.env.FIFO_QUEUE_ASSIGN_SLA ?? 120);
+export const VERIFY_SLA_SECONDS = Number(process.env.FIFO_VERIFY_SLA ?? 600);
 
 // Allowed status transitions (BRD §16 lifecycle).
 export const NEXT: Record<string, string[]> = {
@@ -40,11 +43,40 @@ export async function recordEvent(input: {
   orderId: string; from: string | null; to: string;
   actor?: string | null; actorKind?: string; reason?: string; payload?: Record<string, unknown>;
 }): Promise<void> {
+  // Per-order tamper-evident hash chain (SEC-006): entry_hash = sha256(prev | fields).
+  // Per-order chaining is naturally serialized (one actor per order) so it can't
+  // fork under concurrency the way a global chain would.
+  let prev = "GENESIS";
+  try {
+    const last = (await rows<{ entry_hash: string }>("fifo",
+      `SELECT entry_hash FROM fifo_order_events WHERE order_id=$1::uuid AND entry_hash IS NOT NULL ORDER BY at DESC, id DESC LIMIT 1`,
+      [input.orderId]))[0];
+    if (last?.entry_hash) prev = last.entry_hash;
+  } catch { /* fall back to GENESIS */ }
+  const material = [prev, input.orderId, input.from ?? "", input.to, input.actor ?? "", input.actorKind ?? "system", input.reason ?? ""].join("|");
+  const entry = createHash("sha256").update(material).digest("hex");
   await rows("fifo", `
-    INSERT INTO fifo_order_events (order_id, from_status, to_status, actor, actor_kind, reason, payload)
-    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
+    INSERT INTO fifo_order_events (order_id, from_status, to_status, actor, actor_kind, reason, payload, prev_hash, entry_hash)
+    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
   `, [input.orderId, input.from, input.to, input.actor ?? null, input.actorKind ?? "system",
-      input.reason ?? null, input.payload ? JSON.stringify(input.payload) : null]).catch(() => {});
+      input.reason ?? null, input.payload ? JSON.stringify(input.payload) : null, prev, entry]).catch(() => {});
+}
+
+// Recompute a single order's event chain and report whether it is intact (SEC-006).
+export async function verifyEventChain(orderId: string): Promise<{ ok: boolean; events: number; brokenAt?: string }> {
+  const evs = await rows<any>("fifo", `
+    SELECT id::text, from_status, to_status, actor, actor_kind, reason, prev_hash, entry_hash
+      FROM fifo_order_events WHERE order_id=$1::uuid ORDER BY at ASC, id ASC
+  `, [orderId]);
+  let prev = "GENESIS";
+  for (const e of evs) {
+    if (!e.entry_hash) continue; // legacy event predating the chain
+    const material = [prev, orderId, e.from_status ?? "", e.to_status, e.actor ?? "", e.actor_kind ?? "system", e.reason ?? ""].join("|");
+    const expect = createHash("sha256").update(material).digest("hex");
+    if (e.prev_hash !== prev || e.entry_hash !== expect) return { ok: false, events: evs.length, brokenAt: e.id };
+    prev = e.entry_hash;
+  }
+  return { ok: true, events: evs.length };
 }
 
 // Generic guarded transition: validates from->to, updates status, records event.
@@ -68,7 +100,7 @@ export async function transition(input: {
 // Record a fraud/risk alert (BRD §23/§24). Best-effort — never blocks the caller.
 export async function recordFraudAlert(input: {
   orderId?: string | null; orderRef?: string | null; merchantId?: string | null;
-  type: "DUPLICATE_UTR" | "VELOCITY" | "WALLET_CHANGE" | "OPERATOR_RISK" | "HIGH_VALUE" | "ANOMALY";
+  type: "DUPLICATE_UTR" | "VELOCITY" | "WALLET_CHANGE" | "OPERATOR_RISK" | "HIGH_VALUE" | "ANOMALY" | "SLA_BREACH" | "LOB_MISMATCH";
   severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; detail?: string; payload?: Record<string, unknown>;
 }): Promise<void> {
   await rows("fifo", `
@@ -183,6 +215,15 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
 
   // Velocity screening (BRD §24) — flags repeated customer activity, non-blocking.
   await checkVelocity(o.id, o.order_ref, input.merchantId, input.customerEmail ?? input.customerPhone);
+
+  // LOB/MCC match (BRD §27): if the merchant has a configured allow-list, the
+  // order purpose must match — otherwise raise a compliance flag (non-blocking).
+  if (input.purpose) {
+    const lob = (await rows<{ allowed_purposes: string[] }>("fifo", `SELECT allowed_purposes FROM fifo_merchant_lob WHERE merchant_id=$1`, [input.merchantId]).catch(() => []))[0];
+    if (lob?.allowed_purposes?.length && !lob.allowed_purposes.includes(input.purpose)) {
+      await recordFraudAlert({ orderId: o.id, orderRef: o.order_ref, merchantId: input.merchantId, type: "LOB_MISMATCH", severity: "MEDIUM", detail: `purpose '${input.purpose}' not in approved LOB`, payload: { purpose: input.purpose, allowed: lob.allowed_purposes } });
+    }
+  }
 
   return { order: { id: o.id, order_ref: o.order_ref, status: "QUEUED", queue_position: pos, risk_score: riskTotal, risk_decision: riskDecision } };
 }
@@ -299,6 +340,44 @@ export async function settlePayinToLedger(input: {
     `, [input.merchantId, reserve.toString(), input.currency]).catch(() => {});
     return j.journal_id;
   } catch { return null; }
+}
+
+// Queue-assignment SLA (BRD §29: assign within 2m). Items sitting QUEUED past the
+// window get a priority bump (so they're picked next) + a one-time SLA alert.
+export async function sweepAssignmentSla(): Promise<{ assignment_breaches: number }> {
+  const stale = await rows<any>("fifo", `
+    SELECT q.id::text AS queue_id, q.order_id::text, o.order_ref, o.merchant_id
+      FROM fifo_queue q JOIN fifo_orders o ON o.id = q.order_id
+     WHERE q.status='QUEUED' AND q.enqueued_at < now() - ($1 * interval '1 second')
+       AND NOT EXISTS (SELECT 1 FROM fifo_fraud_alerts a WHERE a.order_id=q.order_id
+                        AND a.alert_type='SLA_BREACH' AND a.status='OPEN' AND a.payload->>'kind'='QUEUE_ASSIGN')
+     LIMIT 200
+  `, [QUEUE_ASSIGN_SLA_SECONDS]).catch(() => []);
+  for (const it of stale) {
+    await rows("fifo", `UPDATE fifo_queue SET priority=priority+1 WHERE id=$1::uuid`, [it.queue_id]).catch(() => {});
+    await recordEvent({ orderId: it.order_id, from: "QUEUED", to: "QUEUED", actorKind: "system", reason: `queue-assignment SLA breach (> ${QUEUE_ASSIGN_SLA_SECONDS}s) — priority bumped` });
+    await recordFraudAlert({ orderId: it.order_id, orderRef: it.order_ref, merchantId: it.merchant_id, type: "SLA_BREACH", severity: "MEDIUM", detail: `not assigned within ${QUEUE_ASSIGN_SLA_SECONDS}s`, payload: { kind: "QUEUE_ASSIGN" } });
+  }
+  return { assignment_breaches: stale.length };
+}
+
+// Pay-in verification SLA (BRD §29: verify within 10m of acceptance). Accepted/
+// processing/proof-uploaded items past the window raise a one-time HIGH alert.
+export async function sweepVerificationSla(): Promise<{ verification_breaches: number }> {
+  const stale = await rows<any>("fifo", `
+    SELECT q.order_id::text, o.order_ref, o.merchant_id, o.status
+      FROM fifo_queue q JOIN fifo_orders o ON o.id = q.order_id
+     WHERE o.status IN ('ACCEPTED','PROCESSING','PROOF_UPLOADED')
+       AND q.accepted_at IS NOT NULL AND q.accepted_at < now() - ($1 * interval '1 second')
+       AND NOT EXISTS (SELECT 1 FROM fifo_fraud_alerts a WHERE a.order_id=q.order_id
+                        AND a.alert_type='SLA_BREACH' AND a.status='OPEN' AND a.payload->>'kind'='VERIFY')
+     LIMIT 200
+  `, [VERIFY_SLA_SECONDS]).catch(() => []);
+  for (const it of stale) {
+    await recordEvent({ orderId: it.order_id, from: it.status, to: it.status, actorKind: "system", reason: `verification SLA breach (> ${VERIFY_SLA_SECONDS}s since acceptance)` });
+    await recordFraudAlert({ orderId: it.order_id, orderRef: it.order_ref, merchantId: it.merchant_id, type: "SLA_BREACH", severity: "HIGH", detail: `not verified within ${VERIFY_SLA_SECONDS}s of acceptance`, payload: { kind: "VERIFY" } });
+  }
+  return { verification_breaches: stale.length };
 }
 
 // Resolve the operator record for a logged-in user (by email), auto-registering
