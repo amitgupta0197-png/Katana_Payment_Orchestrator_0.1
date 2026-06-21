@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { EmptyState } from "@/components/world-class/empty-state";
+import { useInputDialog } from "@/components/world-class/input-dialog";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Alert {
@@ -49,6 +50,7 @@ function KV({ data }: { data: Record<string, unknown> }) {
 }
 
 export default function ForensicsPage() {
+  const { prompt, dialog: inputDialog } = useInputDialog();
   const [ref, setRef] = useState("");
   const [pack, setPack] = useState<any>(null);
 
@@ -106,29 +108,34 @@ export default function ForensicsPage() {
   });
 
   const refund = useMutation({
-    mutationFn: async (ref: string) => {
-      const amt = typeof window !== "undefined" ? window.prompt(`Refund amount for ${ref} (blank = full):`) : "";
-      if (amt === null) throw new Error("cancelled");
-      const r = await fetch(`/api/v1/orders/${encodeURIComponent(ref)}/refund`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(amt ? { amount: amt } : {}) });
+    mutationFn: async (v: { ref: string; amount?: string }) => {
+      const r = await fetch(`/api/v1/orders/${encodeURIComponent(v.ref)}/refund`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v.amount ? { amount: v.amount } : {}) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
       return d;
     },
     onSuccess: (d) => { toast.success(`Refunded${d.journal_id ? " (ledger posted)" : ""}`); if (ref) gen.mutate(ref); },
-    onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Refund failed", { description: e.message }); },
+    onError: (e: Error) => toast.error("Refund failed", { description: e.message }),
   });
   const dispute = useMutation({
-    mutationFn: async (ref: string) => {
-      const reason = typeof window !== "undefined" ? window.prompt(`Dispute reason for ${ref}:`) : "";
-      if (!reason) throw new Error("cancelled");
-      const r = await fetch(`/api/v1/orders/${encodeURIComponent(ref)}/dispute`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
+    mutationFn: async (v: { ref: string; reason: string }) => {
+      const r = await fetch(`/api/v1/orders/${encodeURIComponent(v.ref)}/dispute`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: v.reason }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
       return d;
     },
     onSuccess: () => { toast.success("Dispute opened"); if (ref) gen.mutate(ref); },
-    onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Dispute failed", { description: e.message }); },
+    onError: (e: Error) => toast.error("Dispute failed", { description: e.message }),
   });
+  // Collect the amount/reason via a friendly modal (replaces window.prompt).
+  async function askRefund(orderRef: string) {
+    const amt = await prompt({ title: `Refund ${orderRef}`, label: "Amount in ₹ (leave blank for a full refund)", placeholder: "e.g. 5000", danger: true, confirmLabel: "Refund" });
+    if (amt !== null) refund.mutate({ ref: orderRef, amount: amt || undefined });
+  }
+  async function askDispute(orderRef: string) {
+    const reason = await prompt({ title: `Open dispute · ${orderRef}`, label: "Reason", placeholder: "e.g. chargeback raised by bank", required: true, danger: true, confirmLabel: "Open dispute" });
+    if (reason) dispute.mutate({ ref: orderRef, reason });
+  }
 
   function download() {
     if (!pack) return;
@@ -145,6 +152,7 @@ export default function ForensicsPage() {
 
   return (
     <>
+      {inputDialog}
       <PageHeader title="Forensics & Evidence" description="Fraud alerts and on-demand forensic evidence packs (BRD §25/§30)." icon={FileSearch}
         actions={<Button size="sm" variant="secondary" onClick={() => scan.mutate()} disabled={scan.isPending}><Radar className="h-4 w-4" /> {scan.isPending ? "Scanning…" : "Run anomaly scan"}</Button>} />
 
@@ -188,8 +196,8 @@ export default function ForensicsPage() {
             </CardDescription>
             {["COMPLETED", "SETTLED"].includes(pack.order?.status) && (
               <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => refund.mutate(pack.order.order_ref)} disabled={refund.isPending}><Undo2 className="h-4 w-4" /> Refund</Button>
-                <Button size="sm" variant="secondary" onClick={() => dispute.mutate(pack.order.order_ref)} disabled={dispute.isPending}><Gavel className="h-4 w-4" /> Open dispute</Button>
+                <Button size="sm" variant="secondary" onClick={() => askRefund(pack.order.order_ref)} disabled={refund.isPending}><Undo2 className="h-4 w-4" /> Refund</Button>
+                <Button size="sm" variant="secondary" onClick={() => askDispute(pack.order.order_ref)} disabled={dispute.isPending}><Gavel className="h-4 w-4" /> Open dispute</Button>
               </div>
             )}
           </CardHeader>

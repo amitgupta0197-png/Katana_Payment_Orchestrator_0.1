@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { EmptyState } from "@/components/world-class/empty-state";
+import { useInputDialog } from "@/components/world-class/input-dialog";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 const bucketVariant = (b: string) =>
@@ -19,6 +20,7 @@ const bucketVariant = (b: string) =>
 
 export default function FifoReconciliationPage() {
   const qc = useQueryClient();
+  const { prompt, dialog: inputDialog } = useInputDialog();
   const q = useQuery({
     queryKey: ["fifo-recon"],
     queryFn: async () => {
@@ -42,10 +44,8 @@ export default function FifoReconciliationPage() {
   });
 
   const adjust = useMutation({
-    mutationFn: async (it: any) => {
-      const reason = typeof window !== "undefined" ? window.prompt(`Reason for adjusting ${it.order_ref} (${it.bucket}):`) : "";
-      if (!reason) throw new Error("cancelled");
-      const r = await fetch("/api/v1/reconciliation/adjust", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item_id: it.id, reason }) });
+    mutationFn: async (v: { item_id: string; reason: string }) => {
+      const r = await fetch("/api/v1/reconciliation/adjust", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
       return d;
@@ -54,12 +54,18 @@ export default function FifoReconciliationPage() {
     onError: (e: Error) => { if (e.message !== "cancelled") toast.error("Failed", { description: e.message }); },
   });
 
+  async function askAdjust(it: any) {
+    const reason = await prompt({ title: `Adjust ${it.order_ref}`, body: `Bucket: ${it.bucket}. Raises a maker-checker adjustment (a different user must approve).`, label: "Reason / code", placeholder: "e.g. gateway late-settle confirmed", required: true, confirmLabel: "Raise adjustment" });
+    if (reason) adjust.mutate({ item_id: it.id, reason });
+  }
+
   const latest = q.data?.runs?.[0];
   const items = q.data?.items ?? [];
   const mismatches = items.filter((i) => i.bucket !== "MATCHED");
 
   return (
     <>
+      {inputDialog}
       <PageHeader title="FIFO Reconciliation" description="Match completed orders against the ledger; classify mismatches (BRD §21, AC-007)." icon={GitCompareArrows}
         actions={<Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}><Play className="h-4 w-4" /> {run.isPending ? "Running…" : "Run reconciliation"}</Button>} />
 
@@ -96,7 +102,7 @@ export default function FifoReconciliationPage() {
                     <td className="px-2 py-1.5 tabular-nums">{it.expected_minor ? formatAmount(Number(it.expected_minor)) : "—"}</td>
                     <td className="px-2 py-1.5 tabular-nums">{it.reported_minor ? formatAmount(Number(it.reported_minor)) : "—"}</td>
                     <td className="px-2 py-1.5 text-[color:var(--color-text-muted)]">{it.detail}</td>
-                    <td className="px-2 py-1.5">{it.resolved ? <Badge variant="success">resolved</Badge> : <Button size="sm" variant="ghost" className="h-7" onClick={() => adjust.mutate(it)} disabled={adjust.isPending}><Wrench className="h-3 w-3" /> Adjust</Button>}</td>
+                    <td className="px-2 py-1.5">{it.resolved ? <Badge variant="success">resolved</Badge> : <Button size="sm" variant="ghost" className="h-7" onClick={() => askAdjust(it)} disabled={adjust.isPending}><Wrench className="h-3 w-3" /> Adjust</Button>}</td>
                   </tr>
                 ))}
               </tbody>

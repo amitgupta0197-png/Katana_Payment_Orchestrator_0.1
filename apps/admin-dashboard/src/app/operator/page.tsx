@@ -111,6 +111,24 @@ export default function OperatorConsolePage() {
     onError: (e: Error) => toast.error("Upload failed", { description: e.message }),
   });
 
+  // Keyboard shortcuts for high-throughput queue work (presentation only — fires
+  // the same actions as the buttons). C = claim next, A = accept the first assigned
+  // item, P = start processing the first accepted item. Ignored while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      const firstWith = (st: string) => mine.find((i) => i.order_status === st);
+      if (k === "c") { e.preventDefault(); if (!claim.isPending) claim.mutate(); }
+      else if (k === "a") { const it = firstWith("ASSIGNED"); if (it) { e.preventDefault(); act.mutate({ ref: it.order_ref, action: "accept" }); } }
+      else if (k === "p") { const it = firstWith("ACCEPTED"); if (it) { e.preventDefault(); act.mutate({ ref: it.order_ref, action: "process" }); } }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mine, claim, act]);
+
   function actionsFor(it: QItem) {
     const ref = it.order_ref;
     const st = it.order_status;
@@ -146,7 +164,7 @@ export default function OperatorConsolePage() {
     <>
       <PageHeader
         title="Operator Console"
-        description="Work the FIFO queue — claim the next item, process it, upload proof and complete."
+        description="Work the FIFO queue — claim the next item, process it, upload proof and complete. Shortcuts: C claim · A accept · P process."
         icon={Headphones}
         actions={<Button size="sm" onClick={() => claim.mutate()} disabled={claim.isPending}><ArrowDownToLine className="h-4 w-4" /> {claim.isPending ? "Claiming…" : "Claim next"}</Button>}
       />
