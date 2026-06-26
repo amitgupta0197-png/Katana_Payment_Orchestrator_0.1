@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   amount: z.coerce.number().positive().max(1_000_000),
   currency: z.string().default("INR"),
-  customer_vpa: z.string().optional(),
+  customer_vpa: z.string().optional(),   // sender / payer VPA
+  receiver_vpa: z.string().optional(),   // receiver / payee VPA
   customer_phone: z.string().optional(),
   order_ref: z.string().max(60).optional(),
   channel: z.string().default("UPI_INTENT"),
@@ -41,6 +42,7 @@ export async function POST(req: Request) {
       currency: body.currency,
       channel: body.channel,
       customerVpa: body.customer_vpa ?? null,
+      receiverVpa: body.receiver_vpa ?? null,
       customerPhone: body.customer_phone ?? null,
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });

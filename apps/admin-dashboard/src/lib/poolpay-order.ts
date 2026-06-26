@@ -11,7 +11,8 @@ export interface CreatePoolPayInput {
   amount: number;
   currency: string;
   channel?: string;
-  customerVpa?: string | null;
+  customerVpa?: string | null;   // sender / payer UPI VPA
+  receiverVpa?: string | null;   // receiver / payee UPI VPA (the `pa` in the intent)
   customerPhone?: string | null;
   merchantId?: string | null;
 }
@@ -42,11 +43,14 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   } else {
     payId = shortId("pay");
     vendorTxnId = shortId("ppx");
-    const query = buildUpiQuery({ orderId, amount: input.amount, note });
+    const query = buildUpiQuery({ payeeVpa: input.receiverVpa || undefined, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
   }
-  const meta = { deeplinks, upi_intent: upiIntent, qr_payload: upiIntent };
+  const meta = {
+    deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
+    receiver_vpa: input.receiverVpa ?? null, sender_vpa: input.customerVpa ?? null,
+  };
 
   const inserted = await rows<any>("vendorGateway", `
     INSERT INTO vendor_payin_orders

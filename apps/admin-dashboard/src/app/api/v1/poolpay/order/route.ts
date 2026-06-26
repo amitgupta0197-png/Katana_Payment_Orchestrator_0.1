@@ -25,7 +25,8 @@ const schema = z.object({
   firstname: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
-  customer_vpa: z.string().optional(),
+  customer_vpa: z.string().optional(),   // sender / payer VPA
+  receiver_vpa: z.string().optional(),   // receiver / payee VPA
   currency: z.string().optional(),
 });
 
@@ -68,6 +69,7 @@ export async function POST(req: Request) {
       amount,
       currency: (body.currency ?? "INR").toUpperCase(),
       customerVpa: body.customer_vpa ?? null,
+      receiverVpa: body.receiver_vpa ?? null,
       customerPhone: body.phone ?? null,
       merchantId: merchantCode,
     });

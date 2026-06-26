@@ -30,7 +30,7 @@ const MUTED = "text-[color:var(--color-text-muted)]";
 
 export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ amount: "499", customer_vpa: "", customer_phone: "", order_ref: "" });
+  const [form, setForm] = useState({ amount: "499", receiver_vpa: "", customer_vpa: "", customer_phone: "", order_ref: "" });
   const [active, setActive] = useState<CreatedOrder | null>(null);
 
   const create = useMutation({
@@ -39,6 +39,7 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: form.amount,
+          receiver_vpa: form.receiver_vpa || undefined,
           customer_vpa: form.customer_vpa || undefined,
           customer_phone: form.customer_phone || undefined,
           order_ref: form.order_ref || undefined,
@@ -79,9 +80,15 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Customer VPA <span className={`font-normal ${MUTED}`}>(optional)</span></Label>
-                <Input value={form.customer_vpa} onChange={(e) => setForm({ ...form, customer_vpa: e.target.value })} placeholder="name@upi" />
+                <Label>Receiver UPI <span className={`font-normal ${MUTED}`}>(payee)</span></Label>
+                <Input value={form.receiver_vpa} onChange={(e) => setForm({ ...form, receiver_vpa: e.target.value })} placeholder="merchant@upi" />
               </div>
+              <div className="space-y-1.5">
+                <Label>Sender UPI <span className={`font-normal ${MUTED}`}>(payer, optional)</span></Label>
+                <Input value={form.customer_vpa} onChange={(e) => setForm({ ...form, customer_vpa: e.target.value })} placeholder="customer@upi" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Customer phone <span className={`font-normal ${MUTED}`}>(optional)</span></Label>
                 <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="9XXXXXXXXX" />
