@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 interface PoolPay { enabled?: boolean; pay_id?: string; settlement_vpa?: string; env?: string; notes?: string }
-interface Config { methods: string[]; enabled_methods: string[]; poolpay: PoolPay }
+interface Config { methods: string[]; enabled_methods: string[]; poolpay: PoolPay; blocked?: boolean }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
 const METHOD_META: Record<string, { label: string; Icon: LucideIcon }> = {
@@ -46,18 +46,26 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
   const q = useConfig(merchantId);
   const methods = q.data?.methods ?? [];
   const enabled = new Set(q.data?.enabled_methods ?? []);
+  const blocked = q.data?.blocked === true;
+
+  const patch = async (body: Record<string, unknown>) => {
+    const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+    return (await r.json()) as Config;
+  };
 
   const m = useMutation({
-    mutationFn: async (next: string[]) => {
-      const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled_methods: next }),
-      });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return (await r.json()) as Config;
-    },
+    mutationFn: (next: string[]) => patch({ enabled_methods: next }),
     onSuccess: (d) => { qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
     onError: (e: Error) => { toast.error("Failed", { description: e.message }); qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payment-config"] }); },
+  });
+
+  const block = useMutation({
+    mutationFn: (next: boolean) => patch({ blocked: next }),
+    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Merchant blocked — new pay-ins rejected" : "Merchant unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
   const toggle = (method: string) => {
@@ -67,9 +75,17 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 
   return (
     <Card className="mb-4">
-      <CardHeader>
-        <CardTitle className="text-base">Payment collection methods</CardTitle>
-        <CardDescription>Which methods this merchant can collect payments through. Tap to toggle.</CardDescription>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">Payment collection methods</CardTitle>
+          <CardDescription>Which methods this merchant can collect payments through. Tap to toggle.</CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          {blocked && <Badge variant="danger">BLOCKED</Badge>}
+          <Button size="sm" variant={blocked ? "secondary" : "danger"} disabled={block.isPending} onClick={() => block.mutate(!blocked)}>
+            {blocked ? "Unblock merchant" : "Block merchant"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {q.isLoading ? (

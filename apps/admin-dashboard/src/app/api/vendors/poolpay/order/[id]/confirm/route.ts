@@ -39,6 +39,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (POOLPAY_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
 
+    // Risk: duplicate-UTR blocking — a UTR/RRN may settle exactly one order.
+    if (body.outcome === "SUCCESS" && body.utr?.trim()) {
+      const dup = await rows<{ order_id: string }>("vendorGateway",
+        `SELECT order_id FROM vendor_payin_orders WHERE rrn = $1 AND id <> $2::uuid LIMIT 1`,
+        [body.utr.trim(), id]);
+      if (dup.length)
+        return NextResponse.json({ error: `duplicate UTR — already used by order ${dup[0].order_id}` }, { status: 409 });
+    }
+
     const rrn = body.outcome === "SUCCESS" ? (body.utr?.trim() || genRrn(order.id)) : null;
     const responseCode = body.outcome === "SUCCESS" ? "00" : "U30";
     const meta = {

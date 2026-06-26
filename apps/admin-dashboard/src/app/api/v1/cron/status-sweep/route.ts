@@ -22,6 +22,7 @@ export async function POST(req: Request) {
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
+         AND COALESCE((meta->>'hold')::boolean, false) = false   -- held orders need manual confirm
        ORDER BY created_at ASC LIMIT 1000
     `).catch(() => []);
 

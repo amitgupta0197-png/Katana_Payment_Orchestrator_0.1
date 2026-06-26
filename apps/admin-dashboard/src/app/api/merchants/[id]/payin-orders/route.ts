@@ -36,6 +36,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         active_vpa: m.receiver_vpa ?? null,
         vpa_total: pool.length,
         vpa_remaining: pool.filter((p: any) => p.status === "READY").length,
+        hold: m.hold === true,
+        hold_reason: m.hold_reason ?? null,
         terminal: ["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"].includes(o.status),
       };
     });

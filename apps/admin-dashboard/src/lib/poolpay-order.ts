@@ -39,9 +39,24 @@ function shortId(prefix: string) {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
 }
 
+// Risk threshold (major units). Orders >= this are held for manual review.
+export const HIGH_AMOUNT_HOLD = Number(process.env.HIGH_AMOUNT_HOLD ?? 50000);
+
+export class MerchantBlockedError extends Error {
+  constructor(public merchantId: string) { super(`merchant ${merchantId} is blocked`); }
+}
+
 export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<CreatePoolPayResult> {
   const orderId = input.orderId;
   const note = `Order ${orderId}`;
+
+  // Risk: block-merchant — a blocked merchant cannot create new pay-ins.
+  if (input.merchantId) {
+    const b = await rows<{ blocked: boolean }>(
+      "merchant", `SELECT blocked FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
+    ).catch(() => []);
+    if (b[0]?.blocked === true) throw new MerchantBlockedError(input.merchantId);
+  }
 
   // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses
   // the parent merchant's API key but carries its own identity, so payin volume is
@@ -76,6 +91,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
   }
+  // Risk: high-amount hold — orders at/above the threshold are held for manual
+  // review and are NOT auto-settled by the poller; ops must confirm them.
+  const hold = input.amount >= HIGH_AMOUNT_HOLD;
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
     mode,                                  // QR | INTENT
@@ -83,6 +101,8 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     vpa_pool: pool,                        // [{ vpa, status }] for backup failover
     sender_vpa: input.customerVpa ?? null,
     sub_mid_code: subMidCode,
+    hold,                                  // high-amount → manual review
+    hold_reason: hold ? `amount >= ${HIGH_AMOUNT_HOLD}` : null,
   };
 
   const inserted = await rows<any>("vendorGateway", `

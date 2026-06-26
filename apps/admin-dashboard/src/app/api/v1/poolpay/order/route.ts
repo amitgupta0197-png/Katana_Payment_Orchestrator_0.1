@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { resolveMerchantByCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
-import { createPoolPayOrder } from "@/lib/poolpay-order";
+import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
 
 export const dynamic = "force-dynamic";
 
@@ -90,5 +90,8 @@ export async function POST(req: Request) {
       qr_payload: r.upiIntent,
       pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
     }, { status: r.reused ? 200 : 201 });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

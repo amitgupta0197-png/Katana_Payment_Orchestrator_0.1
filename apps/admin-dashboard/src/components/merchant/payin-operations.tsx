@@ -15,7 +15,7 @@ import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 interface Order {
   id: string; order_id: string; vendor: string; amount: number; currency_code: string;
   status: string; mode: string; active_vpa: string | null; vpa_total: number; vpa_remaining: number;
-  sub_mid_code: string; terminal: boolean; created_at: string;
+  sub_mid_code: string; hold?: boolean; hold_reason?: string | null; terminal: boolean; created_at: string;
 }
 
 export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
@@ -80,6 +80,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
                       <Badge variant="brand">{o.vendor}</Badge>
                       <Badge variant="default">{o.mode === "QR" ? <><QrCode className="mr-1 h-3 w-3" />QR</> : <><Smartphone className="mr-1 h-3 w-3" />deeplink</>}</Badge>
                       {o.sub_mid_code && <Badge variant="info">{o.sub_mid_code}</Badge>}
+                      {o.hold && <Badge variant="warning" title={o.hold_reason ?? "manual review"}>HELD · review</Badge>}
                       <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-[color:var(--color-text-muted)]">
