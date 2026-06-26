@@ -33,6 +33,7 @@ import { ActivityFeed } from "@/components/world-class/activity-feed";
 import { InlineEdit } from "@/components/world-class/inline-edit";
 import { RowActions, ACT } from "@/components/world-class/row-actions";
 import { EmptyState } from "@/components/world-class/empty-state";
+import { ProviderOnboardMerchant } from "@/components/merchant/provider-onboard-merchant";
 import { useCan } from "@/lib/use-access";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -127,6 +128,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   const canMerchantCreate = useCan("merchants", "create");
   const [merchantDrawer, setMerchantDrawer] = useState<Mapping | null>(null);
   const [kycDialog, setKycDialog] = useState<"APPROVED" | "REJECTED" | "IN_REVIEW" | null>(null);
+  const [onboardOpen, setOnboardOpen] = useState(false);
 
   const q = useQuery({
     queryKey: ["provider", id],
@@ -330,12 +332,12 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
           {canMerchantCreate && (
-            <Button size="sm" onClick={() => window.open("/merchants?new=1", "_blank")}><Plus className="h-4 w-4" /> Onboard merchant</Button>
+            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard merchant</Button>
           )}
         </CardHeader>
         <CardContent>
           {mappings.length === 0
-            ? <EmptyState icon={Network} title="No merchants mapped" description="Onboard merchants under this provider to start volume." action={canMerchantCreate ? { label: "Onboard merchant", icon: Plus, onClick: () => window.open("/merchants?new=1", "_blank") } : undefined} />
+            ? <EmptyState icon={Network} title="No merchants mapped" description="Onboard merchants under this provider to start volume." action={canMerchantCreate ? { label: "Onboard merchant", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
             : <DataTable columns={mapCols} rows={mappings} rowKey={(r) => r.id} onRowClick={(r) => setMerchantDrawer(r)} />}
         </CardContent>
       </Card>
@@ -471,6 +473,14 @@ export default function ProviderDetailView({ id }: { id: string }) {
           </DrawerBody>
         </DrawerContent>
       </Drawer>
+
+      <ProviderOnboardMerchant
+        providerId={id}
+        providerLabel={provider.code}
+        open={onboardOpen}
+        onOpenChange={setOnboardOpen}
+        onCreated={() => qc.invalidateQueries({ queryKey: ["provider", id] })}
+      />
     </>
   );
 }
