@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Column } from "@/components/ui/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataView } from "@/components/world-class/data-view";
+import { PoolPayCreateOrder } from "@/components/vendors/poolpay-create-order";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Order { id: string; pay_id: string; order_id: string; amount: number; currency_code: string; channel: string; vendor_txn_id: string; rrn: string; response_code: string; status: string; created_at: string }
@@ -42,6 +43,9 @@ export default function PoolPayCockpit() {
   return (
     <>
       <PageHeader title="PoolPay cockpit" description="Sandbox dispatcher + production observability (PRODUCT_VISION §3.6)." icon={CreditCard} />
+      <div className="mb-4">
+        <PoolPayCreateOrder onChange={() => q.refetch()} />
+      </div>
       <Tabs defaultValue="orders">
         <TabsList>
           <TabsTrigger value="orders">Orders
