@@ -25,8 +25,10 @@ const schema = z.object({
   firstname: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
-  customer_vpa: z.string().optional(),   // sender / payer VPA
-  receiver_vpa: z.string().optional(),   // receiver / payee VPA
+  customer_vpa: z.string().optional(),         // sender / payer VPA
+  receiver_vpa: z.string().optional(),         // single receiver VPA
+  receiver_vpas: z.array(z.string()).max(30).optional(), // receiver VPA pool (backup failover)
+  mode: z.enum(["QR", "INTENT"]).optional(),
   currency: z.string().optional(),
 });
 
@@ -70,6 +72,8 @@ export async function POST(req: Request) {
       currency: (body.currency ?? "INR").toUpperCase(),
       customerVpa: body.customer_vpa ?? null,
       receiverVpa: body.receiver_vpa ?? null,
+      receiverVpas: body.receiver_vpas,
+      mode: body.mode,
       customerPhone: body.phone ?? null,
       merchantId: merchantCode,
     });

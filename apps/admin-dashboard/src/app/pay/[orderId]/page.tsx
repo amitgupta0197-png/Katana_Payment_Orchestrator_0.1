@@ -13,7 +13,7 @@ import { Smartphone, QrCode, Copy, CheckCircle2, XCircle, Clock, ShieldCheck } f
 
 interface PayStatus {
   order_id: string; amount: number; currency_code: string; status: string;
-  terminal: boolean; rrn: string | null;
+  terminal: boolean; rrn: string | null; mode?: string;
   deeplinks: { paytm: string; phonepe: string; upi: string } | null;
   upi_intent: string | null;
 }
@@ -87,7 +87,7 @@ function PaymentInner({ orderId }: { orderId: string }) {
 
             {!d?.terminal ? (
               <>
-                {upi && (
+                {upi && d?.mode !== "INTENT" && (
                   <div className="mb-5 flex flex-col items-center">
                     <div className="rounded-2xl bg-white p-3 shadow-inner">
                       <QRCodeSVG value={upi} size={188} level="M" marginSize={1} />

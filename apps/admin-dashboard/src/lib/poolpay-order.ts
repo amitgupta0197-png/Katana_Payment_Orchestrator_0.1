@@ -12,9 +12,20 @@ export interface CreatePoolPayInput {
   currency: string;
   channel?: string;
   customerVpa?: string | null;   // sender / payer UPI VPA
-  receiverVpa?: string | null;   // receiver / payee UPI VPA (the `pa` in the intent)
+  receiverVpa?: string | null;   // single receiver VPA (legacy / convenience)
+  receiverVpas?: string[];       // receiver VPA pool (20-25) for backup failover
+  mode?: "QR" | "INTENT";        // QR-based vs non-QR (deeplink) presentation
   customerPhone?: string | null;
   merchantId?: string | null;
+}
+
+// Build the receiver-VPA pool with per-VPA health. The first READY VPA is active;
+// on failure ops/merchant advances to the next so the order can still succeed.
+export function buildVpaPool(input: CreatePoolPayInput): { pool: { vpa: string; status: string }[]; active: string | null } {
+  const list = (input.receiverVpas?.length ? input.receiverVpas : (input.receiverVpa ? [input.receiverVpa] : []))
+    .map((v) => v.trim()).filter(Boolean);
+  const pool = list.map((vpa, i) => ({ vpa, status: i === 0 ? "ACTIVE" : "READY" }));
+  return { pool, active: pool[0]?.vpa ?? null };
 }
 
 export interface CreatePoolPayResult {
@@ -45,6 +56,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     subMidCode = sm[0]?.sub_mid_code ?? null;
   }
 
+  const { pool, active } = buildVpaPool(input);
+  const mode = input.mode === "INTENT" ? "INTENT" : "QR";
+
   // Real PoolPay when configured (POOLPAY_MODE=live); deterministic sandbox otherwise.
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string, status = "PENDING";
   if (poolpayLive()) {
@@ -58,13 +72,16 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
     vendorTxnId = `${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("ppx")}`;
-    const query = buildUpiQuery({ payeeVpa: input.receiverVpa || undefined, orderId, amount: input.amount, note });
+    const query = buildUpiQuery({ payeeVpa: active || undefined, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
   }
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
-    receiver_vpa: input.receiverVpa ?? null, sender_vpa: input.customerVpa ?? null,
+    mode,                                  // QR | INTENT
+    receiver_vpa: active ?? input.receiverVpa ?? null,
+    vpa_pool: pool,                        // [{ vpa, status }] for backup failover
+    sender_vpa: input.customerVpa ?? null,
     sub_mid_code: subMidCode,
   };
 

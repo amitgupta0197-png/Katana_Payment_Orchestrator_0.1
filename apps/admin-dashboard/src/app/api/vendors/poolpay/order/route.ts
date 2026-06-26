@@ -17,8 +17,10 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   amount: z.coerce.number().positive().max(1_000_000),
   currency: z.string().default("INR"),
-  customer_vpa: z.string().optional(),   // sender / payer VPA
-  receiver_vpa: z.string().optional(),   // receiver / payee VPA
+  customer_vpa: z.string().optional(),         // sender / payer VPA
+  receiver_vpa: z.string().optional(),         // single receiver VPA
+  receiver_vpas: z.array(z.string()).max(30).optional(), // receiver VPA pool (backup failover)
+  mode: z.enum(["QR", "INTENT"]).optional(),   // QR vs non-QR deeplink
   customer_phone: z.string().optional(),
   order_ref: z.string().max(60).optional(),
   channel: z.string().default("UPI_INTENT"),
@@ -43,6 +45,8 @@ export async function POST(req: Request) {
       channel: body.channel,
       customerVpa: body.customer_vpa ?? null,
       receiverVpa: body.receiver_vpa ?? null,
+      receiverVpas: body.receiver_vpas,
+      mode: body.mode,
       customerPhone: body.customer_phone ?? null,
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });

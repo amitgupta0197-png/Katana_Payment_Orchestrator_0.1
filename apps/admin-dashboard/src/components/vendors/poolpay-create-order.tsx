@@ -30,7 +30,7 @@ const MUTED = "text-[color:var(--color-text-muted)]";
 
 export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ amount: "499", receiver_vpa: "", customer_vpa: "", customer_phone: "", order_ref: "" });
+  const [form, setForm] = useState({ amount: "499", receiver_vpas: "", customer_vpa: "", customer_phone: "", order_ref: "", mode: "QR" });
   const [active, setActive] = useState<CreatedOrder | null>(null);
 
   const create = useMutation({
@@ -39,7 +39,8 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: form.amount,
-          receiver_vpa: form.receiver_vpa || undefined,
+          mode: form.mode,
+          receiver_vpas: form.receiver_vpas.split(/[\s,]+/).map((v) => v.trim()).filter(Boolean),
           customer_vpa: form.customer_vpa || undefined,
           customer_phone: form.customer_phone || undefined,
           order_ref: form.order_ref || undefined,
@@ -78,17 +79,36 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
                 <Input value={form.order_ref} onChange={(e) => setForm({ ...form, order_ref: e.target.value })} placeholder="auto-generated" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Receiver UPI <span className={`font-normal ${MUTED}`}>(payee)</span></Label>
-                <Input value={form.receiver_vpa} onChange={(e) => setForm({ ...form, receiver_vpa: e.target.value })} placeholder="merchant@upi" />
+            <div className="space-y-1.5">
+              <Label>Payment mode</Label>
+              <div className="flex gap-2">
+                {(["QR", "INTENT"] as const).map((mk) => (
+                  <button key={mk} type="button" onClick={() => setForm({ ...form, mode: mk })}
+                    className={`flex-1 rounded-xl border px-3 py-2 text-sm transition ${
+                      form.mode === mk
+                        ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]"
+                        : `border-[color:var(--color-border)] ${MUTED} hover:bg-[color:var(--color-surface-muted)]`
+                    }`}>
+                    {mk === "QR" ? "QR based" : "Non-QR (app deeplink)"}
+                  </button>
+                ))}
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Receiver UPI pool <span className={`font-normal ${MUTED}`}>(payee — 1 to 25, one per line; first is primary, rest are backups)</span></Label>
+              <textarea
+                className="flex min-h-[84px] w-full rounded-xl border px-3 py-2 text-sm bg-[color:var(--color-surface)]"
+                value={form.receiver_vpas}
+                onChange={(e) => setForm({ ...form, receiver_vpas: e.target.value })}
+                placeholder={"merchant1@upi\nmerchant2@upi\nmerchant3@upi"}
+              />
+              <p className={`text-xs ${MUTED}`}>If a VPA can&apos;t receive, operations fail it over to the next backup.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Sender UPI <span className={`font-normal ${MUTED}`}>(payer, optional)</span></Label>
                 <Input value={form.customer_vpa} onChange={(e) => setForm({ ...form, customer_vpa: e.target.value })} placeholder="customer@upi" />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Customer phone <span className={`font-normal ${MUTED}`}>(optional)</span></Label>
                 <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="9XXXXXXXXX" />

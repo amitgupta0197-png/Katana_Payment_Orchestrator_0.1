@@ -47,6 +47,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       status: order.status,
       terminal: POOLPAY_TERMINAL.has(order.status),
       rrn: order.rrn || null,
+      mode: meta.mode ?? "QR",
       deeplinks: meta.deeplinks ?? null,
       upi_intent: meta.upi_intent ?? null,
     });
