@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
+import { PaymentMethodsCard, PoolPayConfigCard } from "@/components/merchant/payment-config";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -742,6 +743,10 @@ export default function MerchantDetailView({ id }: { id: string }) {
       </div>
 
       <ProviderAttributionCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+
+      <PaymentMethodsCard merchantId={merchant.id} />
+
+      <PoolPayConfigCard merchantId={merchant.id} />
 
       <ApiKeysCard merchant={merchant} />
 
