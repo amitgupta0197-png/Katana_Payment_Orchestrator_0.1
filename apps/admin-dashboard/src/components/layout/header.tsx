@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogoutButton } from "./logout-button";
+import { ThemeToggle } from "./theme-toggle";
 
 export async function Header() {
   // headers() is awaited so we can later read x-session-persona if needed.
@@ -36,6 +37,7 @@ export async function Header() {
             <span className="text-[color:var(--color-text-muted)]">{session.email}</span>
           </div>
         )}
+        <ThemeToggle />
         {session ? (
           <LogoutButton />
         ) : (
