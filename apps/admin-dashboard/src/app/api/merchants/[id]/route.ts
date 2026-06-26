@@ -46,8 +46,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (s.persona === "MERCHANT" && s.scope_id !== id)
     return NextResponse.json({ error: "merchants can only edit own row" }, { status: 403 });
   if (s.persona === "PROVIDER") {
-    const ids = await resolveProviderMerchants(s);
-    if (!ids.includes(id))
+    const codes = await resolveProviderMerchants(s); // returns merchant_codes
+    const m = await rows<{ merchant_code: string }>("merchant", `SELECT merchant_code FROM merchants WHERE id = $1::uuid`, [id]);
+    if (!m.length || !codes.includes(m[0].merchant_code))
       return NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 });
   }
 

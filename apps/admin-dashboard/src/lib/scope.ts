@@ -120,17 +120,37 @@ import { rows } from "./pg";
 
 export async function resolveProviderMerchants(s: Session): Promise<string[]> {
   if (s.persona !== "PROVIDER" || !s.scope_id) return [];
-  // provider_merchant_mappings has no `status` column in this schema;
-  // existence of the row is the active state. The merchant_id is a string
-  // (merchant_code), not a uuid — matches checkout_orders.merchant_id etc.
-  const r = await rows<{ merchant_id: string }>(
+  // provider_merchant_mappings.merchant_id holds the merchant UUID (newer rows);
+  // very old rows may hold the merchant_code. Resolve everything to merchant_code,
+  // which every downstream table keys by (checkout_orders, vendor_payin_orders,
+  // ledger, settlement, reporting, …). Returning raw UUIDs here was the bug that
+  // made a logged-in provider see none of its mapped merchants.
+  const maps = await rows<{ merchant_id: string }>(
     "provider",
     `SELECT merchant_id::text AS merchant_id
        FROM provider_merchant_mappings
-      WHERE provider_id = $1::uuid`,
+      WHERE provider_id = $1::uuid AND status = 'ACTIVE'`,
     [s.scope_id],
-  );
-  return r.map((x) => x.merchant_id);
+  ).catch(() => []);
+  if (!maps.length) return [];
+
+  const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  const codes = new Set<string>();
+  const uuids: string[] = [];
+  for (const m of maps) {
+    if (isUuid(m.merchant_id)) uuids.push(m.merchant_id);
+    else codes.add(m.merchant_id);
+  }
+
+  if (uuids.length) {
+    const res = await rows<{ merchant_code: string }>(
+      "merchant",
+      `SELECT merchant_code FROM merchants WHERE id = ANY($1::uuid[])`,
+      [uuids],
+    ).catch(() => []);
+    for (const r of res) codes.add(r.merchant_code);
+  }
+  return [...codes];
 }
 
 import { getSession, requirePersona } from "./auth";
