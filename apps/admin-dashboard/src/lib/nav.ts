@@ -68,9 +68,9 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // to their job. Nothing is removed from the app — every page stays reachable by URL
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
-  OPERATOR:   ["/", "/operator", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/security"],
-  RISK:       ["/", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
+  OPERATOR:   ["/", "/operator", "/status-intelligence", "/fifo-dashboard", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/security"],
+  RISK:       ["/", "/status-intelligence", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
 };
@@ -94,6 +94,7 @@ export const navItems: NavItem[] = [
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
   { href: "/merchants",        label: "Merchant",        icon: Store,    status: "live", group: "Payment Management" },
   { href: "/merchant-config",  label: "Merchant Config", icon: Sliders,  status: "live", group: "Payment Management" },
+  { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/payin-order",      label: "Payin Order",     icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/summary",          label: "Summary",         icon: BarChart3,status: "live", group: "Payment Management" },
   { href: "/payout-order",     label: "Payout Order",    icon: Send,     status: "live", group: "Payment Management" },
@@ -128,6 +129,7 @@ export const navItems: NavItem[] = [
 
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/payouts", label: "Payouts & Beneficiaries", icon: Send, status: "live", group: "Operations" },
+  { href: "/status-intelligence", label: "Status Intelligence", icon: Activity, status: "live", group: "Operations" },
   { href: "/fifo-dashboard", label: "FIFO Dashboard", icon: LayoutDashboard, status: "live", group: "Operations" },
   { href: "/fifo-reports", label: "FIFO Reports", icon: BarChart3, status: "live", group: "Operations" },
   { href: "/fifo-reconciliation", label: "FIFO Reconciliation", icon: GitMerge, status: "live", group: "Operations" },
