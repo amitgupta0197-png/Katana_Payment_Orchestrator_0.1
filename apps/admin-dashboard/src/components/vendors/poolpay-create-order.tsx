@@ -138,7 +138,7 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
         </div>
 
         {!terminal ? (
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0">
             <div className="flex flex-col items-center pb-1">
               <div className="rounded-2xl bg-white p-2.5 shadow-inner">
                 <QRCodeSVG value={created.upi_intent} size={150} level="M" />
@@ -154,12 +154,12 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
             <Button asChild variant="secondary" className="w-full justify-start">
               <a href={dl.upi}><QrCode /> QR / Generic UPI</a>
             </Button>
-            <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-2">
+            <div className="min-w-0 overflow-hidden rounded-md border bg-[color:var(--color-surface-muted)] p-2">
               <div className={`mb-1 text-xs ${MUTED}`}>Customer payment link (share with the payer):</div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate text-xs">{payLink}</code>
-                <Button size="sm" variant="ghost" onClick={() => copy(payLink)} title="Copy link"><Copy className="h-4 w-4" /></Button>
-                <Button asChild size="sm" variant="ghost" title="Open"><a href={payLink} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a></Button>
+              <div className="flex min-w-0 items-center gap-2">
+                <code className="min-w-0 flex-1 truncate text-xs">{payLink}</code>
+                <Button size="sm" variant="ghost" className="shrink-0" onClick={() => copy(payLink)} title="Copy link"><Copy className="h-4 w-4" /></Button>
+                <Button asChild size="sm" variant="ghost" className="shrink-0" title="Open"><a href={payLink} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a></Button>
               </div>
             </div>
             <p className={`text-xs ${MUTED}`}>Waiting for the customer to pay — status updates automatically.</p>
