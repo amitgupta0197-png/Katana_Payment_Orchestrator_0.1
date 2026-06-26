@@ -63,3 +63,76 @@ export function genRrn(seed: string): string {
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 1_000_000_000_000;
   return h.toString().padStart(12, "0");
 }
+
+// ---------------------------------------------------------------------------
+// REAL PoolPay S2S integration point (scaffold).
+//
+// To go live, set in the server env (.env.local on the VPS):
+//   POOLPAY_MODE=live
+//   POOLPAY_BASE_URL=<from PoolPay>
+//   POOLPAY_CLIENT_ID=<from PoolPay>
+//   POOLPAY_API_KEY=<from PoolPay>          (and/or POOLPAY_SECRET for signing)
+// Then replace the request paths / headers / response field mapping marked
+// TODO(poolpay) below to match PoolPay's actual S2S API docs. Until POOLPAY_MODE
+// is "live", everything runs in the deterministic sandbox above and these
+// functions are never called.
+// ---------------------------------------------------------------------------
+
+export function poolpayLive(): boolean {
+  return process.env.POOLPAY_MODE === "live" && !!process.env.POOLPAY_BASE_URL;
+}
+
+function poolpayHeaders(): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    "x-client-id": process.env.POOLPAY_CLIENT_ID ?? "",
+    authorization: `Bearer ${process.env.POOLPAY_API_KEY ?? ""}`,
+  };
+}
+
+export interface RemoteOrderInput {
+  orderId: string; amount: number; currency: string;
+  customerVpa?: string; customerPhone?: string; note?: string;
+}
+export interface RemoteOrderResult {
+  payId: string; vendorTxnId: string; deeplinks: DeepLinks; upiIntent: string; status: string;
+}
+
+export async function createOrderRemote(input: RemoteOrderInput): Promise<RemoteOrderResult> {
+  const base = process.env.POOLPAY_BASE_URL!;
+  // TODO(poolpay): align path/body with PoolPay's real S2S order-create contract.
+  const res = await fetch(`${base}/v1/order/create`, {
+    method: "POST",
+    headers: poolpayHeaders(),
+    body: JSON.stringify({
+      order_id: input.orderId, amount: input.amount, currency: input.currency,
+      customer_vpa: input.customerVpa, customer_phone: input.customerPhone, note: input.note,
+    }),
+  });
+  if (!res.ok) throw new Error(`PoolPay order-create failed: HTTP ${res.status}`);
+  const data: any = await res.json();
+  // TODO(poolpay): map PoolPay's deeplink response fields to these.
+  const upi = data?.deeplinks?.upi ?? data?.intent_url ?? "";
+  return {
+    payId: data?.pay_id ?? data?.payId ?? "",
+    vendorTxnId: data?.txn_id ?? data?.vendorTxnId ?? "",
+    deeplinks: {
+      paytm: data?.deeplinks?.paytm ?? upi,
+      phonepe: data?.deeplinks?.phonepe ?? upi,
+      upi,
+    },
+    upiIntent: upi,
+    status: data?.status ?? "PENDING",
+  };
+}
+
+export async function enquireStatusRemote(vendorTxnId: string): Promise<{ status: string; rrn?: string; response_code?: string }> {
+  const base = process.env.POOLPAY_BASE_URL!;
+  // TODO(poolpay): align with PoolPay's real status-enquiry contract.
+  const res = await fetch(`${base}/v1/order/status?txn_id=${encodeURIComponent(vendorTxnId)}`, {
+    headers: poolpayHeaders(),
+  });
+  if (!res.ok) throw new Error(`PoolPay status failed: HTTP ${res.status}`);
+  const data: any = await res.json();
+  return { status: data?.status, rrn: data?.rrn, response_code: data?.response_code };
+}

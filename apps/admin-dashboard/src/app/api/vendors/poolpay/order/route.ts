@@ -10,7 +10,7 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { buildUpiQuery, buildDeeplinks } from "@/lib/poolpay";
+import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote } from "@/lib/poolpay";
 
 export const dynamic = "force-dynamic";
 
@@ -38,23 +38,34 @@ export async function POST(req: Request) {
   try {
     const orderId = body.order_ref?.trim()
       || `PP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
-    const payId = shortId("pay");
-    const vendorTxnId = shortId("ppx");
     const note = `Order ${orderId}`;
-    const query = buildUpiQuery({ orderId, amount: body.amount, note });
-    const deeplinks = buildDeeplinks(query);
-    const upiIntent = deeplinks.upi;
+
+    // Real PoolPay when configured (POOLPAY_MODE=live); deterministic sandbox otherwise.
+    let payId: string, vendorTxnId: string, deeplinks, upiIntent: string, status = "PENDING";
+    if (poolpayLive()) {
+      const r = await createOrderRemote({
+        orderId, amount: body.amount, currency: body.currency,
+        customerVpa: body.customer_vpa, customerPhone: body.customer_phone, note,
+      });
+      payId = r.payId; vendorTxnId = r.vendorTxnId; deeplinks = r.deeplinks; upiIntent = r.upiIntent; status = r.status || "PENDING";
+    } else {
+      payId = shortId("pay");
+      vendorTxnId = shortId("ppx");
+      const query = buildUpiQuery({ orderId, amount: body.amount, note });
+      deeplinks = buildDeeplinks(query);
+      upiIntent = deeplinks.upi;
+    }
     const meta = { deeplinks, upi_intent: upiIntent, qr_payload: upiIntent };
 
     const res = await rows<any>("vendorGateway", `
       INSERT INTO vendor_payin_orders
         (tenant_id, vendor, pay_id, order_id, amount, currency_code, channel,
          vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta)
-      VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,'U17','PENDING',$7,$8,$9::jsonb)
+      VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,'U17',$10,$7,$8,$9::jsonb)
       ON CONFLICT (vendor, order_id) DO NOTHING
       RETURNING id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel, status, created_at
     `, [payId, orderId, body.amount, body.currency, body.channel, vendorTxnId,
-        body.customer_vpa ?? null, body.customer_phone ?? null, JSON.stringify(meta)]);
+        body.customer_vpa ?? null, body.customer_phone ?? null, JSON.stringify(meta), status]);
 
     if (!res.length)
       return NextResponse.json({ error: "order_ref already used" }, { status: 409 });

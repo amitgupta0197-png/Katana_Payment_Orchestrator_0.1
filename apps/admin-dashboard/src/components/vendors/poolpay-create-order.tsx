@@ -6,7 +6,8 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Copy, Smartphone, QrCode } from "lucide-react";
+import { Plus, Copy, Smartphone, QrCode, ExternalLink } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -118,6 +119,7 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
   const terminal = q.data?.terminal ?? false;
   const dl = created.deeplinks;
   const rrn = q.data?.order?.rrn;
+  const payLink = `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${created.order.id}`;
   const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
 
   return (
@@ -137,6 +139,12 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
 
         {!terminal ? (
           <div className="space-y-2">
+            <div className="flex flex-col items-center pb-1">
+              <div className="rounded-2xl bg-white p-2.5 shadow-inner">
+                <QRCodeSVG value={created.upi_intent} size={150} level="M" />
+              </div>
+              <div className={`mt-2 text-xs ${MUTED}`}>Scan with any UPI app</div>
+            </div>
             <Button asChild variant="secondary" className="w-full justify-start">
               <a href={dl.paytm}><Smartphone /> Pay with Paytm</a>
             </Button>
@@ -147,10 +155,11 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
               <a href={dl.upi}><QrCode /> QR / Generic UPI</a>
             </Button>
             <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-2">
-              <div className={`mb-1 text-xs ${MUTED}`}>UPI string (scan or copy):</div>
+              <div className={`mb-1 text-xs ${MUTED}`}>Customer payment link (share with the payer):</div>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate text-xs">{created.upi_intent}</code>
-                <Button size="sm" variant="ghost" onClick={() => copy(created.upi_intent)}><Copy className="h-4 w-4" /></Button>
+                <code className="flex-1 truncate text-xs">{payLink}</code>
+                <Button size="sm" variant="ghost" onClick={() => copy(payLink)} title="Copy link"><Copy className="h-4 w-4" /></Button>
+                <Button asChild size="sm" variant="ghost" title="Open"><a href={payLink} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-4 w-4" /></a></Button>
               </div>
             </div>
             <p className={`text-xs ${MUTED}`}>Waiting for the customer to pay — status updates automatically.</p>

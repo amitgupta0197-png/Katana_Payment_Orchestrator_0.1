@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 // Persona portals + login own their chrome. Sniff the path Next.js sets in
 // request headers so the SUPER_ADMIN sidebar/header don't leak into them.
-const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal"];
+const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal", "/pay"];
 
 async function isStandaloneShell(): Promise<boolean> {
   const h = await headers();

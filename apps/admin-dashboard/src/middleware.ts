@@ -69,6 +69,10 @@ const PUBLIC_UI = ["/login"];
 // /api/v1/webhooks/payment-status (HMAC x-signature) and /api/v1/cron/daily
 // (x-cron-key secret) authenticate themselves, so they bypass the session gate.
 const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/cron/daily"];
+// Prefix-matched public surfaces: the customer-facing PoolPay payment page and
+// its status endpoint (the order id in the URL is the capability).
+const PUBLIC_UI_PREFIX = ["/pay"];
+const PUBLIC_API_PREFIX = ["/api/pay-status"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 
@@ -116,11 +120,11 @@ export async function middleware(req: NextRequest) {
   const isApi = pathname.startsWith("/api/");
 
   if (isApi) {
-    if (PUBLIC_API.includes(pathname) || VENDOR_CALLBACK.test(pathname) || SANDBOX_PREFIX.test(pathname)) {
+    if (PUBLIC_API.includes(pathname) || isUnder(pathname, PUBLIC_API_PREFIX) || VENDOR_CALLBACK.test(pathname) || SANDBOX_PREFIX.test(pathname)) {
       return NextResponse.next({ request: { headers: withPathname(req) } });
     }
   } else {
-    if (PUBLIC_UI.includes(pathname)) return NextResponse.next({ request: { headers: withPathname(req) } });
+    if (PUBLIC_UI.includes(pathname) || isUnder(pathname, PUBLIC_UI_PREFIX)) return NextResponse.next({ request: { headers: withPathname(req) } });
   }
 
   const token = req.cookies.get(COOKIE_NAME)?.value;
