@@ -15,12 +15,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ vendor:
              channel, COALESCE(vendor_txn_id,'') AS vendor_txn_id,
              COALESCE(rrn,'') AS rrn, response_code, status,
              COALESCE(merchant_id,'') AS merchant_id, created_at
-        FROM vendor_payin_orders WHERE vendor = $1
+        FROM vendor_payin_orders WHERE upper(vendor) = upper($1)
        ORDER BY created_at DESC LIMIT 200
     `, [vendor]).catch(() => []);
     const credentials = await rows<any>("vendorGateway", `
       SELECT id::text, vendor, env, COALESCE(pay_id,'') AS pay_id, active, created_at
-        FROM vendor_credentials WHERE vendor = $1
+        FROM vendor_credentials WHERE upper(vendor) = upper($1)
        ORDER BY env DESC LIMIT 10
     `, [vendor]).catch(() => []);
     return NextResponse.json({ orders, credentials });
