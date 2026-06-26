@@ -1,87 +1,81 @@
 @import "tailwindcss";
 
-/* Default tokens = LIGHT theme (white + purple).
-   The dark (violet) theme overrides every token under `html.dark` below.
-   Components consume these via `var(--color-*)`, so switching the html class
-   re-themes the whole app at runtime (next-themes adds .light / .dark). */
+/* Default tokens = LIGHT theme (white + electric blue).
+   The dark (midnight navy) theme overrides every token under `html.dark`.
+   Components consume var(--color-*) + the glass utilities, so switching the
+   html class re-themes the whole app at runtime (next-themes adds .light/.dark). */
 @theme {
-  --color-brand: oklch(0.55 0.22 300);
-  --color-brand-2: oklch(0.48 0.22 300);     /* gradient end / pressed */
-  --color-brand-fg: oklch(0.99 0 0);
-  --color-brand-muted: oklch(0.95 0.045 300);
+  --color-brand: #2563eb;
+  --color-brand-2: #1d4ed8;        /* gradient end / pressed */
+  --color-brand-fg: #ffffff;
+  --color-brand-muted: #e6eeff;
 
-  --color-surface: oklch(1 0 0);             /* elevated: cards, header, inputs */
-  --color-surface-muted: oklch(0.975 0.012 300); /* app canvas / page bg */
+  --color-surface: #ffffff;        /* solid chrome: sidebar, header, inputs */
+  --color-surface-muted: #eef3fb;  /* app canvas / page bg */
 
-  --color-text: oklch(0.22 0.03 300);
-  --color-text-muted: oklch(0.47 0.03 300);
-  --color-text-subtle: oklch(0.62 0.025 300);
-  --color-muted: oklch(0.975 0.012 300);
+  --color-text: #0f1b33;
+  --color-text-muted: #51607a;
+  --color-text-subtle: #7a88a0;
+  --color-muted: #eef3fb;
 
-  --color-border: oklch(0.92 0.015 300);
-  --color-border-strong: oklch(0.86 0.025 300);
+  --color-border: #e2e8f2;
+  --color-border-strong: #cbd5e6;
 
-  --color-success: oklch(0.6 0.15 145);
-  --color-success-muted: oklch(0.94 0.06 145);
-  --color-warning: oklch(0.72 0.16 75);
-  --color-warning-muted: oklch(0.95 0.07 75);
-  --color-danger: oklch(0.57 0.21 25);
-  --color-danger-muted: oklch(0.95 0.06 25);
-  --color-info: oklch(0.6 0.15 290);
-  --color-info-muted: oklch(0.95 0.05 290);
+  --color-success: #16a34a;
+  --color-success-muted: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-muted: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-muted: #fee2e2;
+  --color-info: #0ea5e9;
+  --color-info-muted: #e0f2fe;
 }
 
-/* DARK theme (purple). Higher specificity than :root so it always wins,
-   independent of layer/source order. next-themes toggles the `dark` class. */
+/* DARK theme (midnight navy + electric blue). Higher specificity than :root so
+   it always wins regardless of layer/source order. */
 html.dark,
 html[data-theme="dark"] {
-  --color-brand: oklch(0.62 0.23 300);
-  --color-brand-2: oklch(0.52 0.23 300);
-  --color-brand-fg: oklch(0.99 0.01 300);
-  --color-brand-muted: oklch(0.34 0.10 300);
+  --color-brand: #3b82f6;
+  --color-brand-2: #2563eb;
+  --color-brand-fg: #ffffff;
+  --color-brand-muted: #18253f;
 
-  --color-surface: oklch(0.245 0.045 295);   /* card */
-  --color-surface-muted: oklch(0.175 0.035 290); /* darkest page canvas */
+  --color-surface: #131a2b;        /* solid chrome */
+  --color-surface-muted: #0a0e1a;  /* darkest canvas */
 
-  --color-text: oklch(0.97 0.012 300);
-  --color-text-muted: oklch(0.74 0.03 300);
-  --color-text-subtle: oklch(0.62 0.03 300);
-  --color-muted: oklch(0.22 0.04 295);
+  --color-text: #e6eaf2;
+  --color-text-muted: #9aa6bf;
+  --color-text-subtle: #6b7793;
+  --color-muted: #161e32;
 
-  --color-border: oklch(0.32 0.04 295);
-  --color-border-strong: oklch(0.42 0.05 295);
+  --color-border: #24304a;
+  --color-border-strong: #324063;
 
-  --color-success: oklch(0.72 0.16 150);
-  --color-success-muted: oklch(0.32 0.08 150);
-  --color-warning: oklch(0.82 0.15 85);
-  --color-warning-muted: oklch(0.34 0.08 85);
-  --color-danger: oklch(0.68 0.20 25);
-  --color-danger-muted: oklch(0.34 0.10 25);
-  --color-info: oklch(0.70 0.15 290);
-  --color-info-muted: oklch(0.32 0.08 290);
+  --color-success: #22c55e;
+  --color-success-muted: #10301e;
+  --color-warning: #f59e0b;
+  --color-warning-muted: #33240f;
+  --color-danger: #ef4444;
+  --color-danger-muted: #341417;
+  --color-info: #38bdf8;
+  --color-info-muted: #0e2b3a;
 
-  /* Claymorphism shadows — dark: deep drop + faint light inner highlight. */
-  --shadow-clay:
-    12px 12px 28px -8px rgba(0, 0, 0, 0.62),
-    -6px -6px 18px -10px rgba(255, 255, 255, 0.06),
-    inset 2px 2px 8px rgba(255, 255, 255, 0.06),
-    inset -6px -6px 16px rgba(0, 0, 0, 0.55);
-  --shadow-clay-sm:
-    6px 6px 16px -6px rgba(0, 0, 0, 0.6),
-    -3px -3px 10px -6px rgba(255, 255, 255, 0.05),
-    inset 2px 2px 5px rgba(255, 255, 255, 0.08),
-    inset -3px -3px 8px rgba(0, 0, 0, 0.5);
-  --shadow-clay-inset:
-    inset 4px 4px 9px rgba(0, 0, 0, 0.55),
-    inset -2px -2px 7px rgba(255, 255, 255, 0.05);
+  /* Frosted-glass surface tokens (dark). */
+  --glass-bg: rgba(22, 30, 51, 0.60);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 45%);
+  --glass-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.80);
+  --glass-blur: 18px;
+  --shadow-raised:
+    0 10px 24px -12px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --shadow-inset: inset 0 2px 6px rgba(0, 0, 0, 0.5);
 
-  /* Surface sheen + hairline + atmospheric canvas glow (dark). */
-  --clay-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 46%);
-  --clay-border: rgba(255, 255, 255, 0.08);
+  /* Atmospheric canvas glow (dark, blue/cyan). */
   --app-glow:
-    radial-gradient(900px 520px at 8% -10%, rgba(150, 92, 240, 0.20), transparent 60%),
-    radial-gradient(820px 600px at 100% -6%, rgba(86, 116, 240, 0.13), transparent 55%),
-    radial-gradient(700px 700px at 90% 110%, rgba(150, 92, 240, 0.10), transparent 60%);
+    radial-gradient(900px 520px at 8% -10%, rgba(59, 130, 246, 0.20), transparent 60%),
+    radial-gradient(820px 600px at 100% -6%, rgba(56, 189, 248, 0.12), transparent 55%),
+    radial-gradient(700px 700px at 88% 112%, rgba(37, 99, 235, 0.12), transparent 60%);
 
   color-scheme: dark;
 }
@@ -90,31 +84,21 @@ html[data-theme="dark"] {
   :root {
     color-scheme: light;
 
-    /* Claymorphism radii (theme-independent). */
-    --radius-clay: 1.5rem;
-    --radius-clay-sm: 0.9rem;
+    /* Frosted-glass surface tokens (light). */
+    --glass-bg: rgba(255, 255, 255, 0.62);
+    --glass-border: rgba(20, 40, 90, 0.10);
+    --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 50%);
+    --glass-shadow: 0 24px 60px -30px rgba(30, 50, 110, 0.30);
+    --glass-blur: 18px;
+    --shadow-raised:
+      0 8px 20px -10px rgba(30, 50, 110, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    --shadow-inset: inset 0 2px 5px rgba(30, 50, 110, 0.10);
 
-    /* Claymorphism shadows — light: soft violet drop + bright inner highlight. */
-    --shadow-clay:
-      12px 12px 26px -8px rgba(90, 50, 150, 0.20),
-      -8px -8px 20px -6px rgba(255, 255, 255, 0.92),
-      inset 3px 3px 8px rgba(255, 255, 255, 0.9),
-      inset -6px -6px 14px rgba(120, 80, 180, 0.14);
-    --shadow-clay-sm:
-      6px 6px 14px -6px rgba(90, 50, 150, 0.26),
-      -4px -4px 10px -5px rgba(255, 255, 255, 0.9),
-      inset 2px 2px 5px rgba(255, 255, 255, 0.55),
-      inset -3px -3px 8px rgba(80, 40, 140, 0.18);
-    --shadow-clay-inset:
-      inset 4px 4px 9px rgba(120, 80, 180, 0.16),
-      inset -3px -3px 8px rgba(255, 255, 255, 0.92);
-
-    /* Surface sheen + hairline + atmospheric canvas glow (light). */
-    --clay-sheen: linear-gradient(180deg, rgba(120, 80, 180, 0.05), rgba(255, 255, 255, 0) 42%);
-    --clay-border: rgba(90, 50, 150, 0.10);
+    /* Atmospheric canvas glow (light, blue). */
     --app-glow:
-      radial-gradient(900px 480px at 8% -10%, rgba(168, 120, 230, 0.13), transparent 60%),
-      radial-gradient(820px 560px at 100% -4%, rgba(120, 140, 240, 0.09), transparent 55%);
+      radial-gradient(900px 480px at 8% -10%, rgba(59, 130, 246, 0.12), transparent 60%),
+      radial-gradient(820px 560px at 100% -4%, rgba(56, 189, 248, 0.08), transparent 55%);
   }
   * {
     border-color: var(--color-border);
@@ -131,21 +115,24 @@ html[data-theme="dark"] {
   }
 }
 
-/* Claymorphism surface utilities. Box-shadow only — radius is set with Tailwind
-   utilities on each component (utilities layer wins over components for radius). */
 @layer components {
-  /* Elevated card: clay shadow + a top sheen + a hairline so it reads as a real
-     surface even on the dark canvas. */
+  /* Frosted-glass panel — translucent, blurred, hairline border + soft drop.
+     Used by Card + Dialog (which drop their opaque bg so the frost shows). */
   .clay-surface {
-    box-shadow: var(--shadow-clay);
-    background-image: var(--clay-sheen);
-    border: 1px solid var(--clay-border);
+    background-color: var(--glass-bg);
+    background-image: var(--glass-sheen);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(135%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(135%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
   }
-  .clay-raised  { box-shadow: var(--shadow-clay-sm); transition: box-shadow 0.15s ease, filter 0.15s ease, transform 0.15s ease; }
-  .clay-inset   { box-shadow: var(--shadow-clay-inset); }
-  .clay-raised:active { box-shadow: var(--shadow-clay-inset); }
+  /* Solid raised control (buttons). */
+  .clay-raised { box-shadow: var(--shadow-raised); transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease; }
+  .clay-raised:active { box-shadow: var(--shadow-inset); transform: translateY(1px); }
+  /* Recessed control (inputs). */
+  .clay-inset { box-shadow: var(--shadow-inset); }
 
-  /* App canvas: muted base + a soft, fixed atmospheric glow. */
+  /* App canvas: muted base + soft, fixed atmospheric glow behind the glass. */
   .app-canvas {
     background-color: var(--color-surface-muted);
     background-image: var(--app-glow);
@@ -159,6 +146,6 @@ html[data-theme="dark"] {
   }
   .lift:hover {
     transform: translateY(-2px);
-    border-color: color-mix(in oklab, var(--color-brand) 45%, transparent);
+    border-color: color-mix(in oklab, var(--color-brand) 50%, transparent);
   }
 }
