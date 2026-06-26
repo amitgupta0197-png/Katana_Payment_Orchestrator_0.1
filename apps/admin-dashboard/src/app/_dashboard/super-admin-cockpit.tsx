@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { DashboardCharts } from "@/components/world-class/dashboard-charts";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { ActivityFeed } from "@/components/world-class/activity-feed";
 import { formatAmount } from "@/lib/utils";
@@ -99,6 +100,9 @@ export default function SuperAdminCockpit() {
         <KpiTile label="Settlement batches" value={s?.today.settlement_batches ?? 0} sublabel={`net ${formatAmount(s?.today.settlement_net ?? 0)}`} icon={Banknote} loading={q.isLoading} href="/settlement" />
         <KpiTile label="Approvals pending" value={s?.queue.maker_checker ?? 0} icon={ShieldCheck} variant={(s?.queue.maker_checker ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} href="/admin/maker-checker" />
       </div>
+
+      {/* Infographics */}
+      <DashboardCharts />
 
       {/* Queue + portfolio */}
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Queue depth</h2>
