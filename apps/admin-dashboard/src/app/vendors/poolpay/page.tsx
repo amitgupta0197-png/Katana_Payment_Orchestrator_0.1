@@ -12,7 +12,10 @@ import type { Column } from "@/components/ui/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataView } from "@/components/world-class/data-view";
 import { PoolPayCreateOrder } from "@/components/vendors/poolpay-create-order";
+import { PoolPayConfirm } from "@/components/vendors/poolpay-confirm";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+
+const TERMINAL = new Set(["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"]);
 
 interface Order { id: string; pay_id: string; order_id: string; amount: number; currency_code: string; channel: string; vendor_txn_id: string; rrn: string; response_code: string; status: string; created_at: string }
 interface Credential { id: string; vendor: string; env: string; pay_id: string; active: boolean; created_at: string }
@@ -34,8 +37,9 @@ export default function PoolPayCockpit() {
     { key: "response_code", header: "Code" },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "created_at", header: "Created", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
-    { key: "paylink", header: "Pay link", render: (r) => (
+    { key: "actions", header: "Actions", render: (r) => (
       <div className="flex items-center gap-1">
+        {!TERMINAL.has(r.status) && <PoolPayConfirm id={r.id} orderId={r.order_id} onDone={() => q.refetch()} />}
         <Button size="sm" variant="ghost" title="Copy customer payment link"
           onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/pay/${r.id}`); toast.success("Payment link copied"); }}>
           <Copy className="h-3.5 w-3.5" />
