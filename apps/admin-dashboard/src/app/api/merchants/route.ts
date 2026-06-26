@@ -58,6 +58,9 @@ const createSchema = z.object({
   contact_phone: z.string().optional(),
   website: z.string().url().optional(),
   registered_address: z.string().optional(),
+  // Optional: map this merchant under a provider at onboarding time.
+  // PROVIDER persona ignores this (auto-mapped to itself below); SUPER_ADMIN may pick any provider.
+  provider_id: z.string().uuid().optional(),
 });
 
 export async function POST(req: Request) {
@@ -70,11 +73,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
+    // A new merchant starts at stage APPLICATION with NO steps completed. The
+    // step_* flags mark a *transition* as done, so step_application must stay false
+    // until the APPLICATION→DOCS_PENDING advance — otherwise the frontend (which
+    // derives the next step from the flags) and the backend stage-gate desync and
+    // the first advance fails with "cannot advance ... from stage APPLICATION".
     const res = await rows<any>("merchant", `
       INSERT INTO merchants (tenant_id, merchant_code, legal_name, brand_name, business_type,
                              category_mcc, contact_email, contact_phone, website, registered_address,
-                             stage, step_application)
-      VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'APPLICATION', true)
+                             stage)
+      VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'APPLICATION')
       RETURNING id, merchant_code, stage
     `, [body.merchant_code, body.legal_name, body.brand_name ?? null, body.business_type ?? null,
         body.category_mcc ?? null, body.contact_email, body.contact_phone ?? null,
@@ -84,14 +92,18 @@ export async function POST(req: Request) {
       VALUES ($1::uuid, 'APPLICATION_SUBMITTED', $2, $3::jsonb)
     `, [res[0].id, s.email, JSON.stringify(body)]);
 
-    // Provider that creates a lead is auto-mapped to it.
-    // mappings.merchant_id is varchar (merchant_code), relation defaults to PRIMARY.
-    if (s.persona === "PROVIDER" && s.scope_id) {
+    // Map the new merchant under a provider for traceability.
+    // mappings.merchant_id is varchar (merchant_code); relation defaults to PRIMARY.
+    //  - PROVIDER persona is auto-mapped to itself (it can only ever onboard under itself).
+    //  - SUPER_ADMIN may pick any provider via body.provider_id.
+    // Who onboarded the merchant is captured in merchant_activity (actor = s.email) above.
+    const mapProviderId = s.persona === "PROVIDER" ? s.scope_id : body.provider_id;
+    if (mapProviderId) {
       await rows("provider", `
         INSERT INTO provider_merchant_mappings (provider_id, merchant_id, relation)
         VALUES ($1::uuid, $2, 'PRIMARY')
         ON CONFLICT (provider_id, merchant_id) DO NOTHING
-      `, [s.scope_id, res[0].merchant_code]).catch(() => {});
+      `, [mapProviderId, res[0].merchant_code]).catch(() => {});
     }
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy } from "lucide-react";
+import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -48,6 +49,79 @@ const STEPS = [
   { key: "step_config",       stage_from: "CONFIG",        stage_to: "CONFIG",        label: "Configuration",   description: "Main MID created. Rails enabled. Webhook URL set." },
   { key: "step_approval",     stage_from: "CONFIG",        stage_to: "LIVE",          label: "Approval & go-live", description: "Super-Admin final review. Sub-MIDs settlement-enabled. API key issued." },
 ] as const;
+
+// KYB document uploader shown in the DOCS_PENDING advance step. Lets the operator
+// attach PAN/GST/CIN/MOA/etc. before (or instead of just flag-toggling) advancing.
+function KybDocUploader({ merchantId }: { merchantId: string }) {
+  const qc = useQueryClient();
+  const [docType, setDocType] = useState("PAN");
+  const [file, setFile] = useState<File | null>(null);
+  const q = useQuery({
+    queryKey: ["merchant-kyb-docs", merchantId],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${merchantId}/documents`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d as { documents: any[]; doc_types: string[] };
+    },
+  });
+  const up = useMutation({
+    mutationFn: async () => {
+      if (!file) throw new Error("choose a file");
+      const fd = new FormData();
+      fd.append("doc_type", docType);
+      fd.append("file", file);
+      const r = await fetch(`/api/merchants/${merchantId}/documents`, { method: "POST", body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
+      return d;
+    },
+    onSuccess: () => { toast.success("Document uploaded"); setFile(null); qc.invalidateQueries({ queryKey: ["merchant-kyb-docs", merchantId] }); },
+    onError: (e: Error) => toast.error("Upload failed", { description: e.message }),
+  });
+  const types = q.data?.doc_types ?? ["PAN", "GST", "CIN", "MOA", "AOA", "BOARD_RESOLUTION", "BANK_STATEMENT", "MCC_DECLARATION", "OTHER"];
+  const docs = q.data?.documents ?? [];
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex items-center gap-2">
+        <Label>KYB documents</Label>
+        {docs.length > 0 && <Badge variant="info">{docs.length} uploaded</Badge>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={docType} onChange={(e) => setDocType(e.target.value)}
+          className="h-9 rounded-md border px-2 text-sm bg-[color:var(--color-surface)]"
+        >
+          {types.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+        </select>
+        <input
+          type="file" accept=".pdf,image/png,image/jpeg,image/webp"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="text-sm file:mr-2 file:rounded file:border-0 file:bg-[color:var(--color-muted)] file:px-2 file:py-1 file:text-sm"
+        />
+        <Button size="sm" type="button" variant="secondary" disabled={!file || up.isPending} onClick={() => up.mutate()}>
+          <Upload className="h-4 w-4" /> {up.isPending ? "Uploading…" : "Upload"}
+        </Button>
+      </div>
+      {docs.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {docs.map((d) => (
+            <li key={d.id} className="flex items-center gap-2">
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+              <Badge variant="success">{d.doc_type}</Badge>
+              <span className="truncate">{d.filename ?? "file"}</span>
+              <span className="font-mono text-[color:var(--color-text-muted)]">{String(d.sha256).slice(0, 10)}…</span>
+              <span className="ml-auto text-[color:var(--color-text-muted)]">{formatDateTime(d.created_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-[color:var(--color-text-muted)]">
+        PAN, GST, CIN, MOA, AOA, board resolution, bank statement, MCC declaration. PDF/PNG/JPEG/WEBP up to 12MB.
+      </p>
+    </div>
+  );
+}
 
 function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex: number }) {
   const qc = useQueryClient();
@@ -87,6 +161,7 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {step.key === "step_kyb_docs" && <KybDocUploader merchantId={merchant.id} />}
           {step.key === "step_screening" && (
             <div className="space-y-1.5">
               <Label>Risk tier (post-screening)</Label>
@@ -665,6 +740,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <ProviderAttributionCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
 
       <ApiKeysCard merchant={merchant} />
 

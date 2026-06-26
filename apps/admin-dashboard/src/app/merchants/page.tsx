@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Store, Plus, ChevronRight, ExternalLink } from "lucide-react";
+import { Store, Plus, ChevronRight, ExternalLink, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { DataView } from "@/components/world-class/data-view";
 import { RowActions } from "@/components/world-class/row-actions";
+import { AssignProviderDialog } from "@/components/merchant/assign-provider";
 import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -38,12 +39,24 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
     brand_name: "", business_type: "PRIVATE_LIMITED", category_mcc: "5411",
     contact_email: "ops@newmerchant.example", contact_phone: "9999900000",
     website: "https://newmerchant.example", registered_address: "Mumbai, India",
+    provider_id: "",
   });
+  // Providers to map this merchant under (SUPER_ADMIN sees all; PROVIDER sees only its own).
+  const providersQ = useQuery({
+    queryKey: ["providers"],
+    enabled: open,
+    queryFn: async () => {
+      const r = await fetch("/api/providers");
+      if (!r.ok) return { providers: [] as { id: string; code: string; legal_name: string }[] };
+      return (await r.json()) as { providers: { id: string; code: string; legal_name: string }[] };
+    },
+  });
+  const providers = providersQ.data?.providers ?? [];
   const m = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/merchants", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, provider_id: form.provider_id || undefined }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return r.json();
@@ -113,6 +126,19 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
             <Label>Registered address</Label>
             <Input value={form.registered_address} onChange={(e) => setForm({ ...form, registered_address: e.target.value })} />
           </div>
+          <div className="space-y-1.5 col-span-2">
+            <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">— map this merchant under a provider for traceability (optional)</span></Label>
+            <select
+              className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+              value={form.provider_id}
+              onChange={(e) => setForm({ ...form, provider_id: e.target.value })}
+            >
+              <option value="">— Direct (no provider) —</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
@@ -127,8 +153,10 @@ const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", 
 
 export default function MerchantsPage() {
   const canCreate = useCan("merchants", "create");
+  const canAssignProvider = useCan("providers", "create"); // assign endpoint is super-admin only
   const sp = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
+  const [assignFor, setAssignFor] = useState<Merchant | null>(null);
 
   useEffect(() => { if (sp.get("new") === "1" && canCreate) setCreateOpen(true); }, [sp, canCreate]);
 
@@ -211,11 +239,20 @@ export default function MerchantsPage() {
             openHref={`/merchants/${r.id}`}
             actions={[
               { label: "Open detail", icon: ExternalLink, onClick: () => (window.location.href = `/merchants/${r.id}`) },
+              ...(canAssignProvider ? [{ label: "Assign provider", icon: Link2, onClick: () => setAssignFor(r) }] : []),
             ]}
           />
         )}
       />
       <OnboardDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {assignFor && (
+        <AssignProviderDialog
+          merchantId={assignFor.id}
+          merchantCode={assignFor.merchant_code}
+          open={!!assignFor}
+          onOpenChange={(o) => { if (!o) setAssignFor(null); }}
+        />
+      )}
     </>
   );
 }
