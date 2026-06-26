@@ -34,7 +34,8 @@
 /* DARK theme (midnight navy + electric blue). Higher specificity than :root so
    it always wins regardless of layer/source order. */
 html.dark,
-html[data-theme="dark"] {
+html[data-theme="dark"],
+.force-dark {
   --color-brand: #3b82f6;
   --color-brand-2: #2563eb;
   --color-brand-fg: #ffffff;

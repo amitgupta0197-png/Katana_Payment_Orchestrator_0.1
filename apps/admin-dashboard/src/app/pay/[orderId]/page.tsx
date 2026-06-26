@@ -5,7 +5,7 @@
 // Shows amount, a scannable UPI QR, Paytm / PhonePe / generic-UPI buttons, and a
 // live status that polls the public /api/pay-status endpoint until terminal.
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
@@ -55,7 +55,7 @@ function PaymentInner({ orderId }: { orderId: string }) {
   const copy = () => { navigator.clipboard?.writeText(upi); setCopied(true); setTimeout(() => setCopied(false), 1500); };
 
   return (
-    <main className="app-canvas flex min-h-screen items-center justify-center px-4 py-10">
+    <main className="force-dark app-canvas flex min-h-screen items-center justify-center px-4 py-10 text-[color:var(--color-text)]">
       <div className="clay-surface w-full max-w-md rounded-3xl p-6 text-[color:var(--color-text)]">
         <div className="mb-5 flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] shadow-[0_8px_20px_-8px_var(--color-brand)]">
@@ -144,8 +144,6 @@ export default function PublicPayPage({ params }: { params: Promise<{ orderId: s
   // Self-contained QueryClient — this public page renders outside the admin
   // Providers tree (it's a standalone shell).
   const [qc] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }));
-  // Default this page to the dark theme regardless of the operator's toggle.
-  useEffect(() => { document.documentElement.classList.add("dark"); }, []);
   return (
     <QueryClientProvider client={qc}>
       <PaymentInner orderId={orderId} />

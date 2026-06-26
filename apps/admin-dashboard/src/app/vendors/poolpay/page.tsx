@@ -3,9 +3,11 @@
 // L1 — PoolPay vendor cockpit. Tabbed (Orders / Credentials).
 
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, KeyRound } from "lucide-react";
+import { CreditCard, KeyRound, Copy, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { Column } from "@/components/ui/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataView } from "@/components/world-class/data-view";
@@ -32,6 +34,17 @@ export default function PoolPayCockpit() {
     { key: "response_code", header: "Code" },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "created_at", header: "Created", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
+    { key: "paylink", header: "Pay link", render: (r) => (
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant="ghost" title="Copy customer payment link"
+          onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/pay/${r.id}`); toast.success("Payment link copied"); }}>
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        <Button asChild size="sm" variant="ghost" title="Open payment page">
+          <a href={`/pay/${r.id}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /></a>
+        </Button>
+      </div>
+    ) },
   ];
   const credCols: Column<Credential>[] = [
     { key: "env", header: "Env" },
