@@ -79,7 +79,7 @@ const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 const SUPER_ADMIN_UI = [
   "/admin", "/tenants", "/routing", "/pg-adapter", "/bank-adapter",
   "/crypto-rail", "/integrations", "/vendors", "/channels", "/fund",
-  "/admin-log", "/agents", "/events",
+  "/admin-log", "/agents", "/events", "/p2p",
 ];
 
 const SUPER_ADMIN_API = [
@@ -87,7 +87,7 @@ const SUPER_ADMIN_API = [
   "/api/bank-adapter", "/api/crypto-rail", "/api/integrations", "/api/channels",
   "/api/settlement/trigger", "/api/svc-tables", "/api/events",
   "/api/admin/routing", "/api/admin/webhooks",
-  "/api/admin/slos", "/api/admin/incidents", "/api/recon/run",
+  "/api/admin/slos", "/api/admin/incidents", "/api/recon/run", "/api/p2p",
 ];
 
 const PROVIDER_PORTAL_UI = "/provider-portal";

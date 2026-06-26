@@ -40,7 +40,8 @@ export type DbKey =
   | "vendorGateway"
   | "provider"
   | "mid"
-  | "fifo";
+  | "fifo"
+  | "p2p";
 
 const DB_NAMES: Record<DbKey, string> = {
   ledger: "ledgerservice_db",
@@ -70,6 +71,7 @@ const DB_NAMES: Record<DbKey, string> = {
   provider: "providerservice_db",
   mid: "midservice_db",
   fifo: "fifoservice_db",
+  p2p: "p2pservice_db",
 };
 
 export function db(key: DbKey): Pool {

@@ -135,6 +135,7 @@ export const navItems: NavItem[] = [
   { href: "/fifo-reconciliation", label: "FIFO Reconciliation", icon: GitMerge, status: "live", group: "Operations" },
   { href: "/fifo-settlements", label: "FIFO Settlements", icon: Banknote, status: "live", group: "Operations" },
   { href: "/agents", label: "Agents & Franchise", icon: Users, status: "live", group: "Operations" },
+  { href: "/p2p", label: "P2P Traders", icon: Users, status: "live", group: "Operations" },
   { href: "/commission", label: "Commission", icon: Percent, status: "live", group: "Operations" },
   { href: "/events", label: "Event stream", icon: Activity, status: "live", group: "Operations" },
   { href: "/reporting", label: "Reporting", icon: BarChart3, status: "read-only", group: "Operations" },
