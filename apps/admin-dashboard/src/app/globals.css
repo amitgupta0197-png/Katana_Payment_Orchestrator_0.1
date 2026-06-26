@@ -60,12 +60,46 @@ html[data-theme="dark"] {
   --color-info: oklch(0.70 0.15 290);
   --color-info-muted: oklch(0.32 0.08 290);
 
+  /* Claymorphism shadows — dark: deep drop + faint light inner highlight. */
+  --shadow-clay:
+    12px 12px 28px -8px rgba(0, 0, 0, 0.62),
+    -6px -6px 18px -10px rgba(255, 255, 255, 0.06),
+    inset 2px 2px 8px rgba(255, 255, 255, 0.06),
+    inset -6px -6px 16px rgba(0, 0, 0, 0.55);
+  --shadow-clay-sm:
+    6px 6px 16px -6px rgba(0, 0, 0, 0.6),
+    -3px -3px 10px -6px rgba(255, 255, 255, 0.05),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.08),
+    inset -3px -3px 8px rgba(0, 0, 0, 0.5);
+  --shadow-clay-inset:
+    inset 4px 4px 9px rgba(0, 0, 0, 0.55),
+    inset -2px -2px 7px rgba(255, 255, 255, 0.05);
+
   color-scheme: dark;
 }
 
 @layer base {
   :root {
     color-scheme: light;
+
+    /* Claymorphism radii (theme-independent). */
+    --radius-clay: 1.5rem;
+    --radius-clay-sm: 0.9rem;
+
+    /* Claymorphism shadows — light: soft violet drop + bright inner highlight. */
+    --shadow-clay:
+      12px 12px 26px -8px rgba(90, 50, 150, 0.20),
+      -8px -8px 20px -6px rgba(255, 255, 255, 0.92),
+      inset 3px 3px 8px rgba(255, 255, 255, 0.9),
+      inset -6px -6px 14px rgba(120, 80, 180, 0.14);
+    --shadow-clay-sm:
+      6px 6px 14px -6px rgba(90, 50, 150, 0.26),
+      -4px -4px 10px -5px rgba(255, 255, 255, 0.9),
+      inset 2px 2px 5px rgba(255, 255, 255, 0.55),
+      inset -3px -3px 8px rgba(80, 40, 140, 0.18);
+    --shadow-clay-inset:
+      inset 4px 4px 9px rgba(120, 80, 180, 0.16),
+      inset -3px -3px 8px rgba(255, 255, 255, 0.92);
   }
   * {
     border-color: var(--color-border);
@@ -80,4 +114,13 @@ html[data-theme="dark"] {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
   }
+}
+
+/* Claymorphism surface utilities. Box-shadow only — radius is set with Tailwind
+   utilities on each component (utilities layer wins over components for radius). */
+@layer components {
+  .clay-surface { box-shadow: var(--shadow-clay); }
+  .clay-raised  { box-shadow: var(--shadow-clay-sm); transition: box-shadow 0.15s ease, filter 0.15s ease; }
+  .clay-inset   { box-shadow: var(--shadow-clay-inset); }
+  .clay-raised:active { box-shadow: var(--shadow-clay-inset); }
 }

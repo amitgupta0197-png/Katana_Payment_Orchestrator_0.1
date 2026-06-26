@@ -4,14 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)] focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-[color:var(--color-brand)] bg-gradient-to-b from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] shadow-[0_8px_24px_-10px_var(--color-brand)] hover:brightness-110 active:brightness-95",
-        secondary: "bg-[color:var(--color-surface)] text-[color:var(--color-text)] border border-[color:var(--color-border-strong)] hover:bg-[color:var(--color-surface-muted)]",
+        default: "clay-raised bg-[color:var(--color-brand)] bg-gradient-to-b from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] hover:brightness-110",
+        secondary: "clay-raised bg-[color:var(--color-surface)] text-[color:var(--color-text)] hover:brightness-105",
         ghost: "text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-muted)]",
-        danger: "bg-[color:var(--color-danger)] text-white hover:bg-[color:var(--color-danger)]/90",
+        danger: "clay-raised bg-[color:var(--color-danger)] text-white hover:brightness-110",
         link: "text-[color:var(--color-brand)] underline-offset-4 hover:underline",
       },
       size: {
