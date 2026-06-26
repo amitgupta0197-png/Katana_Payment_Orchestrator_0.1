@@ -5,7 +5,7 @@
 // with a one-click VPA failover and the shareable pay link. Admin-visible.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Copy, ExternalLink, SkipForward, QrCode, Smartphone } from "lucide-react";
+import { Copy, ExternalLink, SkipForward, QrCode, Smartphone, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,16 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
     },
     onSuccess: (d) => { toast.success(`Failed over to ${d.active_vpa}`, { description: `${d.remaining} backup VPA(s) left` }); qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] }); },
     onError: (e: Error) => toast.error("Cannot fail over", { description: e.message }),
+  });
+
+  const refresh = useMutation({
+    mutationFn: async (orderId: string) => {
+      const r = await fetch(`/api/vendors/poolpay/order/${orderId}/refresh`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json() as Promise<{ status: string; changed: boolean }>;
+    },
+    onSuccess: (d) => { toast[d.changed ? "success" : "info"](`Status: ${d.status}`); qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] }); },
+    onError: (e: Error) => toast.error("Refresh failed", { description: e.message }),
   });
 
   const live = q.data?.live ?? [];
@@ -81,6 +91,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
                   <div className="flex items-center gap-1">
                     <Button size="sm" variant="ghost" title="Copy pay link" onClick={() => copyLink(o.id)}><Copy className="h-3.5 w-3.5" /></Button>
                     <Button asChild size="sm" variant="ghost" title="Open payment page"><a href={`/pay/${o.id}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /></a></Button>
+                    <Button size="sm" variant="ghost" title="Force status refresh" disabled={refresh.isPending} onClick={() => refresh.mutate(o.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>
                     <Button size="sm" variant="secondary" disabled={o.vpa_remaining < 1 || advance.isPending}
                       title={o.vpa_remaining < 1 ? "No backup VPA left" : "VPA can't receive — fail over to next"}
                       onClick={() => advance.mutate(o.id)}>

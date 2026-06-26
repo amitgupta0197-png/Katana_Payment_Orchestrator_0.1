@@ -68,7 +68,7 @@ const PUBLIC_UI = ["/login"];
 // response-hash authenticated) bypass the session gate.
 // /api/v1/webhooks/payment-status (HMAC x-signature) and /api/v1/cron/daily
 // (x-cron-key secret) authenticate themselves, so they bypass the session gate.
-const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay", "/api/v1/poolpay/order", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/cron/daily"];
+const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/pay", "/api/v1/poolpay/order", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/cron/daily", "/api/v1/cron/status-sweep"];
 // Prefix-matched public surfaces: the customer-facing PoolPay payment page and
 // its status endpoint (the order id in the URL is the capability).
 const PUBLIC_UI_PREFIX = ["/pay"];

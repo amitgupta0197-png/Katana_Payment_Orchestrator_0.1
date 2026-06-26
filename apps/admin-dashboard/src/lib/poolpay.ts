@@ -44,6 +44,7 @@ export function buildDeeplinks(query: string): DeepLinks {
 // tester can force outcomes, with a time-based settle for the happy path.
 //   ...13  -> FAILED (customer declined / U30)
 //   ...11  -> EXPIRED (collect request lapsed / U69)
+//   ...07  -> stays PENDING forever (models a hung payment → hits pending-expiry)
 //   else   -> PENDING for ~8s, then SUCCESS (collected)
 export function decidePoolPayStatus(
   amountMinor: number,
@@ -51,6 +52,7 @@ export function decidePoolPayStatus(
 ): { status: "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED"; response_code: string } {
   if (amountMinor % 100 === 13) return { status: "FAILED", response_code: "U30" };
   if (amountMinor % 100 === 11) return { status: "EXPIRED", response_code: "U69" };
+  if (amountMinor % 100 === 7) return { status: "PENDING", response_code: "U17" }; // never auto-settles
   if (ageSeconds >= 8) return { status: "SUCCESS", response_code: "00" };
   return { status: "PENDING", response_code: "U17" };
 }
@@ -62,6 +64,31 @@ export function genRrn(seed: string): string {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 1_000_000_000_000;
   return h.toString().padStart(12, "0");
+}
+
+// Status-intelligence rules ------------------------------------------------
+// Pending-expiry: a pay-in still PENDING past this age is force-EXPIRED so it
+// never hangs forever (sandbox 15 min; tune per provider SLA when live).
+export const PENDING_EXPIRY_SECONDS = 900;
+
+// Single source of truth for resolving a PoolPay order's status. Enforces the
+// final-status lock (terminal never re-resolves), then the deterministic sandbox
+// decision, then the pending-expiry rule. Used by the status enquiry, the cron
+// sweep poller, and the force-refresh action so they can never disagree.
+export function resolvePoolPay(
+  currentStatus: string,
+  amountMinor: number,
+  ageSeconds: number,
+): { status: string; response_code: string; changed: boolean } {
+  if (POOLPAY_TERMINAL.has(currentStatus)) {
+    return { status: currentStatus, response_code: "", changed: false }; // final-status lock
+  }
+  const d = decidePoolPayStatus(amountMinor, ageSeconds);
+  let status = d.status, code = d.response_code;
+  if (status === "PENDING" && ageSeconds >= PENDING_EXPIRY_SECONDS) {
+    status = "EXPIRED"; code = "U69"; // pending-expiry
+  }
+  return { status, response_code: code, changed: status !== currentStatus };
 }
 
 // ---------------------------------------------------------------------------
