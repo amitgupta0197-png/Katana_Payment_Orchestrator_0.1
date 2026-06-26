@@ -1,16 +1,16 @@
-// PoolPay S2S order creation (PRODUCT_VISION §3.6).
+// PoolPay S2S order creation — COCKPIT test endpoint (session-gated).
 //   SUPER_ADMIN / MERCHANT — create a pay-in order; returns the deeplink response
 //   (Paytm / PhonePe / generic UPI + QR payload) the payment page renders.
 //
-// Sandbox: the order is persisted at PENDING and settled by the status-enquiry
-// endpoint. Real PoolPay integration would POST to their S2S /order/create here.
+// The production path is the merchant-signed POST /api/v1/poolpay/order. Both
+// share createPoolPayOrder() so the deeplink/insert logic lives in one place.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { rows, pgError } from "@/lib/pg";
+import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote } from "@/lib/poolpay";
+import { createPoolPayOrder } from "@/lib/poolpay-order";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +23,6 @@ const schema = z.object({
   channel: z.string().default("UPI_INTENT"),
 });
 
-function shortId(prefix: string) {
-  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
-}
-
 export async function POST(req: Request) {
   const g = await gateOrResponse(["SUPER_ADMIN", "MERCHANT"]);
   if ("response" in g) return g.response;
@@ -38,38 +34,18 @@ export async function POST(req: Request) {
   try {
     const orderId = body.order_ref?.trim()
       || `PP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
-    const note = `Order ${orderId}`;
 
-    // Real PoolPay when configured (POOLPAY_MODE=live); deterministic sandbox otherwise.
-    let payId: string, vendorTxnId: string, deeplinks, upiIntent: string, status = "PENDING";
-    if (poolpayLive()) {
-      const r = await createOrderRemote({
-        orderId, amount: body.amount, currency: body.currency,
-        customerVpa: body.customer_vpa, customerPhone: body.customer_phone, note,
-      });
-      payId = r.payId; vendorTxnId = r.vendorTxnId; deeplinks = r.deeplinks; upiIntent = r.upiIntent; status = r.status || "PENDING";
-    } else {
-      payId = shortId("pay");
-      vendorTxnId = shortId("ppx");
-      const query = buildUpiQuery({ orderId, amount: body.amount, note });
-      deeplinks = buildDeeplinks(query);
-      upiIntent = deeplinks.upi;
-    }
-    const meta = { deeplinks, upi_intent: upiIntent, qr_payload: upiIntent };
+    const r = await createPoolPayOrder({
+      orderId,
+      amount: body.amount,
+      currency: body.currency,
+      channel: body.channel,
+      customerVpa: body.customer_vpa ?? null,
+      customerPhone: body.customer_phone ?? null,
+    });
+    if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
+    if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
-    const res = await rows<any>("vendorGateway", `
-      INSERT INTO vendor_payin_orders
-        (tenant_id, vendor, pay_id, order_id, amount, currency_code, channel,
-         vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta)
-      VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,'U17',$10,$7,$8,$9::jsonb)
-      ON CONFLICT (vendor, order_id) DO NOTHING
-      RETURNING id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel, status, created_at
-    `, [payId, orderId, body.amount, body.currency, body.channel, vendorTxnId,
-        body.customer_vpa ?? null, body.customer_phone ?? null, JSON.stringify(meta), status]);
-
-    if (!res.length)
-      return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
-
-    return NextResponse.json({ order: res[0], deeplinks, upi_intent: upiIntent, qr_payload: upiIntent });
+    return NextResponse.json({ order: r.order, deeplinks: r.deeplinks, upi_intent: r.upiIntent, qr_payload: r.upiIntent });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

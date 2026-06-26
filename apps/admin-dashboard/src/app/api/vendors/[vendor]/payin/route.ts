@@ -13,7 +13,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ vendor:
     const orders = await rows<any>("vendorGateway", `
       SELECT id::text, tenant_id, vendor, pay_id, order_id, amount, currency_code,
              channel, COALESCE(vendor_txn_id,'') AS vendor_txn_id,
-             COALESCE(rrn,'') AS rrn, response_code, status, created_at
+             COALESCE(rrn,'') AS rrn, response_code, status,
+             COALESCE(merchant_id,'') AS merchant_id, created_at
         FROM vendor_payin_orders WHERE vendor = $1
        ORDER BY created_at DESC LIMIT 200
     `, [vendor]).catch(() => []);
