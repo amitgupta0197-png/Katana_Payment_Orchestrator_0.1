@@ -30,7 +30,8 @@ export async function GET() {
              s.status, s.tenant_id, s.merchant_id, s.requested_at, s.approved_at,
              COALESCE(s.approved_by,'') AS approved_by,
              m.mid_code AS main_mid_code,
-             COALESCE(s.provider_id::text,'') AS provider_id
+             COALESCE(s.provider_id::text,'') AS provider_id,
+             COALESCE(s.active_payin,false) AS active_payin
         FROM sub_mids s JOIN main_mids m ON m.id = s.main_mid_id
        WHERE ${subWhere}
        ORDER BY s.requested_at DESC LIMIT 200

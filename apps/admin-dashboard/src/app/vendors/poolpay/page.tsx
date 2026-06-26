@@ -17,7 +17,7 @@ import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 const TERMINAL = new Set(["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"]);
 
-interface Order { id: string; pay_id: string; order_id: string; merchant_id: string; amount: number; currency_code: string; channel: string; vendor_txn_id: string; rrn: string; response_code: string; status: string; created_at: string }
+interface Order { id: string; pay_id: string; order_id: string; merchant_id: string; sub_mid_code: string; amount: number; currency_code: string; channel: string; vendor_txn_id: string; rrn: string; response_code: string; status: string; created_at: string }
 interface Credential { id: string; vendor: string; env: string; pay_id: string; active: boolean; created_at: string }
 
 export default function PoolPayCockpit() {
@@ -31,6 +31,7 @@ export default function PoolPayCockpit() {
   const cols: Column<Order>[] = [
     { key: "order_id", header: "Order", render: (r) => <span className="font-mono text-xs">{r.order_id}</span> },
     { key: "merchant_id", header: "Merchant", render: (r) => r.merchant_id ? <span className="font-mono text-xs">{r.merchant_id}</span> : <span className="text-xs text-[color:var(--color-text-subtle)]">test</span> },
+    { key: "sub_mid_code", header: "Sub-MID", render: (r) => r.sub_mid_code ? <Badge variant="info">{r.sub_mid_code}</Badge> : <span className="text-xs text-[color:var(--color-text-subtle)]">—</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency_code)}</span> },
     { key: "channel", header: "Channel" },
     { key: "vendor_txn_id", header: "Vendor txn", render: (r) => r.vendor_txn_id ? <span className="font-mono text-xs">{r.vendor_txn_id}</span> : "—" },

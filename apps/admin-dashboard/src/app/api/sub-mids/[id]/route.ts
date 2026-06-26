@@ -17,7 +17,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       SELECT s.id::text, s.sub_mid_code, s.traffic_mode, s.kyc_status, s.settlement_enabled,
              s.status, s.tenant_id, s.merchant_id, s.requested_at, s.approved_at,
              COALESCE(s.approved_by,'') AS approved_by, m.mid_code AS main_mid_code,
-             COALESCE(s.provider_id::text,'') AS provider_id
+             COALESCE(s.provider_id::text,'') AS provider_id,
+             COALESCE(s.active_payin,false) AS active_payin
         FROM sub_mids s JOIN main_mids m ON m.id = s.main_mid_id
        WHERE s.id = $1::uuid
     `, [id]);
@@ -43,7 +44,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 const patchSchema = z.object({
-  action: z.enum(["approve_kyc", "enable_settlement", "approve_and_enable", "suspend", "terminate"]).optional(),
+  action: z.enum([
+    "approve_kyc", "enable_settlement", "approve_and_enable", "suspend", "terminate",
+    "assign_provider", "set_active_payin", "clear_active_payin",
+  ]).optional(),
+  provider_id: z.string().uuid().nullable().optional(),
   notes: z.string().optional().default(""),
 });
 
@@ -59,8 +64,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   try {
-    const cur = await rows<any>("mid", `SELECT kyc_status, settlement_enabled, status, traffic_mode FROM sub_mids WHERE id = $1::uuid`, [id]);
+    const cur = await rows<any>("mid", `SELECT kyc_status, settlement_enabled, status, traffic_mode, merchant_id, COALESCE(provider_id::text,'') AS provider_id, active_payin FROM sub_mids WHERE id = $1::uuid`, [id]);
     if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    // One-click: map this sub-MID to a provider (or clear with provider_id=null).
+    if (body.action === "assign_provider") {
+      const r = await rows<any>("mid",
+        `UPDATE sub_mids SET provider_id = $2::uuid WHERE id = $1::uuid RETURNING id::text, COALESCE(provider_id::text,'') AS provider_id`,
+        [id, body.provider_id ?? null]);
+      return NextResponse.json(r[0]);
+    }
+
+    // Make this the active pay-in target for its merchant (new payins route here).
+    // The partial unique index allows only one active per merchant, so clear first.
+    if (body.action === "set_active_payin") {
+      await rows("mid", `UPDATE sub_mids SET active_payin = false WHERE merchant_id = $1 AND active_payin`, [cur[0].merchant_id]);
+      const r = await rows<any>("mid",
+        `UPDATE sub_mids SET active_payin = true WHERE id = $1::uuid RETURNING id::text, sub_mid_code, active_payin`, [id]);
+      return NextResponse.json(r[0]);
+    }
+    if (body.action === "clear_active_payin") {
+      const r = await rows<any>("mid",
+        `UPDATE sub_mids SET active_payin = false WHERE id = $1::uuid RETURNING id::text, sub_mid_code, active_payin`, [id]);
+      return NextResponse.json(r[0]);
+    }
 
     let sql = "";
     const args: unknown[] = [id];

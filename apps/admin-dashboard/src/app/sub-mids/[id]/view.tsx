@@ -14,8 +14,68 @@ import { formatDateTime, statusVariant } from "@/lib/utils";
 interface SubMid {
   id: string; sub_mid_code: string; main_mid_code: string; merchant_id: string;
   provider_id: string; traffic_mode: string; kyc_status: string;
-  settlement_enabled: boolean; status: string;
+  settlement_enabled: boolean; status: string; active_payin?: boolean;
   requested_at: string; approved_at?: string; approved_by: string;
+}
+
+// One-click: assign this sub-MID to a provider + toggle it as the active pay-in
+// target for its merchant (new payins route through and are attributed to it).
+function ProviderRoutingCard({ sub }: { sub: SubMid }) {
+  const qc = useQueryClient();
+  const provQ = useQuery({
+    queryKey: ["providers"],
+    queryFn: async () => {
+      const r = await fetch("/api/providers");
+      if (!r.ok) return { providers: [] as { id: string; code: string; legal_name: string }[] };
+      return (await r.json()) as { providers: { id: string; code: string; legal_name: string }[] };
+    },
+  });
+  const providers = provQ.data?.providers ?? [];
+  const m = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const r = await fetch(`/api/sub-mids/${sub.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sub-mid", sub.id] }); qc.invalidateQueries({ queryKey: ["sub-mids"] }); },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+  const selClass = "flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]";
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">Provider & pay-in routing</CardTitle>
+          <CardDescription>Assign to a provider; make active so new payins route through this sub-MID.</CardDescription>
+        </div>
+        <Badge variant={sub.active_payin ? "success" : "default"}>{sub.active_payin ? "active payin" : "inactive"}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="space-y-1.5">
+          <span className="text-[color:var(--color-text-muted)]">Provider</span>
+          <select className={selClass} value={sub.provider_id || ""}
+            onChange={(e) => m.mutate({ action: "assign_provider", provider_id: e.target.value || null })} disabled={m.isPending}>
+            <option value="">— Unassigned —</option>
+            {providers.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          {sub.active_payin ? (
+            <Button size="sm" variant="secondary" onClick={() => m.mutate({ action: "clear_active_payin" })} disabled={m.isPending}>
+              Stop routing payins here
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => m.mutate({ action: "set_active_payin" })} disabled={m.isPending}>
+              Route new payins through this sub-MID
+            </Button>
+          )}
+          <span className="text-xs text-[color:var(--color-text-muted)]">One active sub-MID per merchant ({sub.merchant_id}).</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 interface Limits { id: string; per_txn_max: number; daily_amount: number; daily_count: number; monthly_amount: number; created_at: string }
 interface HistoryRow { id: string; from_status: string; to_status: string; from_mode: string; to_mode: string; actor: string; notes: string; created_at: string }
@@ -123,6 +183,8 @@ export default function SubMidDetailView({ id }: { id: string }) {
         </CardHeader>
         <CardContent><ActionButtons sub={sub} /></CardContent>
       </Card>
+
+      <ProviderRoutingCard sub={sub} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-4">
         <Card>

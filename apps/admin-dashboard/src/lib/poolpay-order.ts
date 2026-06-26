@@ -32,6 +32,19 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const orderId = input.orderId;
   const note = `Order ${orderId}`;
 
+  // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses
+  // the parent merchant's API key but carries its own identity, so payin volume is
+  // attributable per sub-MID. Best-effort: never block order creation on this.
+  let subMidCode: string | null = null;
+  if (input.merchantId) {
+    const sm = await rows<{ sub_mid_code: string }>(
+      "mid",
+      `SELECT sub_mid_code FROM sub_mids WHERE merchant_id = $1 AND active_payin = true LIMIT 1`,
+      [input.merchantId],
+    ).catch(() => []);
+    subMidCode = sm[0]?.sub_mid_code ?? null;
+  }
+
   // Real PoolPay when configured (POOLPAY_MODE=live); deterministic sandbox otherwise.
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string, status = "PENDING";
   if (poolpayLive()) {
@@ -42,7 +55,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     payId = r.payId; vendorTxnId = r.vendorTxnId; deeplinks = r.deeplinks; upiIntent = r.upiIntent; status = r.status || "PENDING";
   } else {
     payId = shortId("pay");
-    vendorTxnId = shortId("ppx");
+    // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
+    // produces a distinct transaction identity (and is greppable per sub-MID).
+    vendorTxnId = `${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("ppx")}`;
     const query = buildUpiQuery({ payeeVpa: input.receiverVpa || undefined, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
@@ -50,16 +65,17 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
     receiver_vpa: input.receiverVpa ?? null, sender_vpa: input.customerVpa ?? null,
+    sub_mid_code: subMidCode,
   };
 
   const inserted = await rows<any>("vendorGateway", `
     INSERT INTO vendor_payin_orders
-      (tenant_id, vendor, merchant_id, pay_id, order_id, amount, currency_code, channel,
+      (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta)
-    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,'U17',$8,$9,$10,$11::jsonb)
+    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb)
     ON CONFLICT (vendor, order_id) DO NOTHING
-    RETURNING id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel, status, created_at
-  `, [input.merchantId ?? null, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
+    RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at
+  `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta)]);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false };
