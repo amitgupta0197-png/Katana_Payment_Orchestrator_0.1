@@ -31,7 +31,7 @@ export function Sidebar() {
       className="hidden md:flex md:w-64 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
     >
       <div className="flex h-16 items-center gap-3 px-5 border-b">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[color:var(--color-brand)] text-[color:var(--color-brand-fg)]">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] shadow-[0_6px_18px_-6px_var(--color-brand)]">
           <Swords className="h-4 w-4" />
         </span>
         <div className="flex flex-col">
@@ -63,9 +63,9 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                          "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all",
                           active
-                            ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]"
+                            ? "bg-gradient-to-r from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] shadow-[0_8px_20px_-8px_var(--color-brand)]"
                             : "text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-muted)]"
                         )}
                       >

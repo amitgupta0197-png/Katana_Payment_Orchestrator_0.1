@@ -52,7 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   id="main-content"
                   role="main"
                   tabIndex={-1}
-                  className="flex-1 overflow-y-auto px-6 py-8 bg-[color:var(--color-surface-muted)]"
+                  className="app-canvas flex-1 overflow-y-auto px-6 py-8"
                 >
                   <div className="mx-auto max-w-7xl">{children}</div>
                 </main>

@@ -1,6 +1,7 @@
 "use client";
 
-// Dashboard KPI tile — label, value, optional trend indicator + sublabel.
+// Dashboard KPI tile — premium stat card: accent-chipped icon, large value,
+// optional trend + sublabel, subtle accent glow per variant, hover lift.
 // Used by all 3 persona dashboards to keep the L0 visual language identical.
 
 import * as React from "react";
@@ -25,11 +26,12 @@ interface KpiTileProps {
   className?: string;
 }
 
-const VARIANT: Record<NonNullable<KpiTileProps["variant"]>, string> = {
-  default: "",
-  warning: "border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)]/40",
-  danger:  "border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger-muted)]/40",
-  success: "border-[color:var(--color-success)]/40 bg-[color:var(--color-success-muted)]/40",
+// Per-variant accent color token (drives the icon chip + value + glow).
+const ACCENT: Record<NonNullable<KpiTileProps["variant"]>, string> = {
+  default: "var(--color-brand)",
+  warning: "var(--color-warning)",
+  danger: "var(--color-danger)",
+  success: "var(--color-success)",
 };
 
 export function KpiTile({
@@ -38,15 +40,48 @@ export function KpiTile({
 }: KpiTileProps) {
   const TrendIcon = trend === undefined ? null : trend > 0 ? ArrowUpRight : trend < 0 ? ArrowDownRight : Minus;
   const trendClass = trend === undefined ? "" : trend > 0 ? "text-[color:var(--color-success)]" : trend < 0 ? "text-[color:var(--color-danger)]" : "text-[color:var(--color-text-muted)]";
+  const accent = ACCENT[variant];
+  // Inline accent vars keep the per-variant color in one place and let us tint
+  // the chip background, border, value, and glow consistently via color-mix.
+  const accentStyle = { "--kpi-accent": accent } as React.CSSProperties;
 
   const body = (
-    <Card className={cn("flex flex-col gap-1 p-4 transition-shadow hover:shadow-sm", VARIANT[variant], href && "cursor-pointer", className)}>
-      <div className="flex items-center justify-between gap-2 text-xs text-[color:var(--color-text-muted)]">
-        <span className="truncate uppercase tracking-wide">{label}</span>
-        {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
+    <Card
+      style={accentStyle}
+      className={cn(
+        "lift group relative flex flex-col gap-3 overflow-hidden p-4",
+        href && "cursor-pointer",
+        className,
+      )}
+    >
+      {/* corner accent glow */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full opacity-60 blur-2xl transition-opacity group-hover:opacity-90"
+        style={{ background: "color-mix(in oklab, var(--kpi-accent) 35%, transparent)" }}
+      />
+      <div className="flex items-start justify-between gap-2">
+        <span className="truncate pt-1 text-[11px] font-medium uppercase tracking-wider text-[color:var(--color-text-muted)]">
+          {label}
+        </span>
+        {Icon && (
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+            style={{
+              background: "color-mix(in oklab, var(--kpi-accent) 16%, transparent)",
+              color: "var(--kpi-accent)",
+              boxShadow: "inset 0 0 0 1px color-mix(in oklab, var(--kpi-accent) 30%, transparent)",
+            }}
+          >
+            <Icon className="h-4 w-4" />
+          </span>
+        )}
       </div>
-      <div className="text-2xl font-semibold tabular-nums leading-tight">
-        {loading ? <span className="inline-block h-7 w-20 animate-pulse rounded bg-[color:var(--color-surface-muted)]" /> : value}
+      <div
+        className="text-3xl font-bold tabular-nums leading-none"
+        style={variant === "default" ? undefined : { color: "var(--kpi-accent)" }}
+      >
+        {loading ? <span className="inline-block h-8 w-20 animate-pulse rounded bg-[color:var(--color-surface-muted)]" /> : value}
       </div>
       {(trend !== undefined || sublabel) && (
         <div className="flex items-center gap-1.5 text-xs">

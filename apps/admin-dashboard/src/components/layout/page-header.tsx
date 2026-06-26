@@ -15,7 +15,7 @@ export function PageHeader({ title, description, icon: Icon, actions, className 
     <div className={cn("mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between", className)}>
       <div className="flex items-start gap-3 min-w-0">
         {Icon && (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--color-brand)] to-[var(--color-brand-2)] text-[color:var(--color-brand-fg)] shadow-[0_10px_24px_-10px_var(--color-brand)]">
             <Icon className="h-5 w-5" aria-hidden />
           </span>
         )}

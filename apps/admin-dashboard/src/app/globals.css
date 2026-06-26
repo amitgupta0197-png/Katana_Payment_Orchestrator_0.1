@@ -75,6 +75,14 @@ html[data-theme="dark"] {
     inset 4px 4px 9px rgba(0, 0, 0, 0.55),
     inset -2px -2px 7px rgba(255, 255, 255, 0.05);
 
+  /* Surface sheen + hairline + atmospheric canvas glow (dark). */
+  --clay-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 46%);
+  --clay-border: rgba(255, 255, 255, 0.08);
+  --app-glow:
+    radial-gradient(900px 520px at 8% -10%, rgba(150, 92, 240, 0.20), transparent 60%),
+    radial-gradient(820px 600px at 100% -6%, rgba(86, 116, 240, 0.13), transparent 55%),
+    radial-gradient(700px 700px at 90% 110%, rgba(150, 92, 240, 0.10), transparent 60%);
+
   color-scheme: dark;
 }
 
@@ -100,6 +108,13 @@ html[data-theme="dark"] {
     --shadow-clay-inset:
       inset 4px 4px 9px rgba(120, 80, 180, 0.16),
       inset -3px -3px 8px rgba(255, 255, 255, 0.92);
+
+    /* Surface sheen + hairline + atmospheric canvas glow (light). */
+    --clay-sheen: linear-gradient(180deg, rgba(120, 80, 180, 0.05), rgba(255, 255, 255, 0) 42%);
+    --clay-border: rgba(90, 50, 150, 0.10);
+    --app-glow:
+      radial-gradient(900px 480px at 8% -10%, rgba(168, 120, 230, 0.13), transparent 60%),
+      radial-gradient(820px 560px at 100% -4%, rgba(120, 140, 240, 0.09), transparent 55%);
   }
   * {
     border-color: var(--color-border);
@@ -119,8 +134,31 @@ html[data-theme="dark"] {
 /* Claymorphism surface utilities. Box-shadow only — radius is set with Tailwind
    utilities on each component (utilities layer wins over components for radius). */
 @layer components {
-  .clay-surface { box-shadow: var(--shadow-clay); }
-  .clay-raised  { box-shadow: var(--shadow-clay-sm); transition: box-shadow 0.15s ease, filter 0.15s ease; }
+  /* Elevated card: clay shadow + a top sheen + a hairline so it reads as a real
+     surface even on the dark canvas. */
+  .clay-surface {
+    box-shadow: var(--shadow-clay);
+    background-image: var(--clay-sheen);
+    border: 1px solid var(--clay-border);
+  }
+  .clay-raised  { box-shadow: var(--shadow-clay-sm); transition: box-shadow 0.15s ease, filter 0.15s ease, transform 0.15s ease; }
   .clay-inset   { box-shadow: var(--shadow-clay-inset); }
   .clay-raised:active { box-shadow: var(--shadow-clay-inset); }
+
+  /* App canvas: muted base + a soft, fixed atmospheric glow. */
+  .app-canvas {
+    background-color: var(--color-surface-muted);
+    background-image: var(--app-glow);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  /* Interactive lift for cards/tiles. */
+  .lift {
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--color-brand) 45%, transparent);
+  }
 }
