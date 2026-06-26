@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { DashboardCharts } from "@/components/world-class/dashboard-charts";
+import { GrossByMethod } from "@/components/world-class/gross-by-method";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { ActivityFeed } from "@/components/world-class/activity-feed";
 import { formatAmount } from "@/lib/utils";
@@ -103,6 +104,9 @@ export default function SuperAdminCockpit() {
 
       {/* Infographics */}
       <DashboardCharts />
+
+      {/* Gross by method × merchant */}
+      <GrossByMethod />
 
       {/* Queue + portfolio */}
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Queue depth</h2>
