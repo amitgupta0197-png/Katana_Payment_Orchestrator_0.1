@@ -93,17 +93,17 @@ export async function POST(req: Request) {
     `, [res[0].id, s.email, JSON.stringify(body)]);
 
     // Map the new merchant under a provider for traceability.
-    // mappings.merchant_id is varchar (merchant_code); relation defaults to PRIMARY.
+    // provider_merchant_mappings.merchant_id is the merchant UUID (not merchant_code);
+    // status defaults to ACTIVE; mapped_by records who onboarded the merchant.
     //  - PROVIDER persona is auto-mapped to itself (it can only ever onboard under itself).
     //  - SUPER_ADMIN may pick any provider via body.provider_id.
-    // Who onboarded the merchant is captured in merchant_activity (actor = s.email) above.
     const mapProviderId = s.persona === "PROVIDER" ? s.scope_id : body.provider_id;
     if (mapProviderId) {
       await rows("provider", `
-        INSERT INTO provider_merchant_mappings (provider_id, merchant_id, relation)
-        VALUES ($1::uuid, $2, 'PRIMARY')
+        INSERT INTO provider_merchant_mappings (provider_id, merchant_id, mapped_by)
+        VALUES ($1::uuid, $2::uuid, $3)
         ON CONFLICT (provider_id, merchant_id) DO NOTHING
-      `, [mapProviderId, res[0].merchant_code]).catch(() => {});
+      `, [mapProviderId, res[0].id, s.email]).catch(() => {});
     }
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

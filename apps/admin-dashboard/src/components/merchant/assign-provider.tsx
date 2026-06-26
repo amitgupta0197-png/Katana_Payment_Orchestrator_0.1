@@ -18,7 +18,7 @@ import {
 import { formatDateTime } from "@/lib/utils";
 
 interface Provider { id: string; code: string; legal_name: string }
-interface Mapping { provider_id: string; code: string; legal_name: string; kind?: string; relation: string; created_at: string }
+interface Mapping { provider_id: string; code: string; legal_name: string; kind?: string; status: string; mapped_by: string; mapped_at: string }
 interface Attribution { merchant_code: string; mappings: Mapping[]; onboarded_by: string; onboarded_at: string | null }
 
 export function AssignProviderDialog({
@@ -149,11 +149,11 @@ export function ProviderAttributionCard({ merchantId, merchantCode }: { merchant
                 <div className="min-w-0">
                   <div className="font-medium truncate">{mp.code} — {mp.legal_name}</div>
                   <div className="text-xs text-[color:var(--color-text-muted)]">
-                    Mapped {formatDateTime(mp.created_at)}
+                    Mapped {formatDateTime(mp.mapped_at)}{mp.mapped_by ? ` · by ${mp.mapped_by}` : ""}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="default">{mp.relation}</Badge>
+                  <Badge variant={mp.status === "ACTIVE" ? "success" : "default"}>{mp.status}</Badge>
                   <Button size="sm" variant="ghost" disabled={unassign.isPending}
                     onClick={() => unassign.mutate(mp.provider_id)}>
                     Remove

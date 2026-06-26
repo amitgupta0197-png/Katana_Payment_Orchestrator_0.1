@@ -8,8 +8,9 @@
 //   PROVIDER    — read attribution for mapped merchants only.
 //   MERCHANT    — read own attribution only.
 //
-// mappings.merchant_id holds the merchant_code (varchar), not the uuid PK — the
-// [id] route param is the uuid, so we resolve the code first.
+// provider_merchant_mappings.merchant_id is the merchant UUID (same as the [id]
+// route param). Columns: (provider_id, merchant_id, status, mapped_by, mapped_at).
+// merchant_code is only resolved for display.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -45,12 +46,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const mappings = await rows<any>("provider", `
       SELECT m.provider_id::text AS provider_id, p.code, p.legal_name, p.kind,
-             m.relation, m.created_at
+             m.status, COALESCE(m.mapped_by,'') AS mapped_by, m.mapped_at
         FROM provider_merchant_mappings m
         JOIN providers p ON p.id = m.provider_id
-       WHERE m.merchant_id = $1
-       ORDER BY m.created_at ASC
-    `, [merchant.merchant_code]);
+       WHERE m.merchant_id = $1::uuid
+       ORDER BY m.mapped_at ASC
+    `, [id]);
 
     // Who onboarded the merchant (first APPLICATION_SUBMITTED actor) for reference.
     const onboarded = await rows<any>("merchant", `
@@ -71,7 +72,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const assignSchema = z.object({
   provider_id: z.string().uuid(),
-  relation: z.enum(["PRIMARY", "SECONDARY"]).default("PRIMARY"),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -93,16 +93,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!prov.length) return NextResponse.json({ error: "provider not found" }, { status: 404 });
 
     await rows("provider", `
-      INSERT INTO provider_merchant_mappings (provider_id, merchant_id, relation)
-      VALUES ($1::uuid, $2, $3)
-      ON CONFLICT (provider_id, merchant_id) DO NOTHING
-    `, [body.provider_id, merchant.merchant_code, body.relation]);
+      INSERT INTO provider_merchant_mappings (provider_id, merchant_id, mapped_by)
+      VALUES ($1::uuid, $2::uuid, $3)
+      ON CONFLICT (provider_id, merchant_id) DO UPDATE SET status = 'ACTIVE', mapped_by = EXCLUDED.mapped_by
+    `, [body.provider_id, id, s.email]);
 
     // Traceability: who assigned the merchant to this provider, and when.
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'PROVIDER_ASSIGNED', $2, $3::jsonb)
-    `, [id, s.email, JSON.stringify({ provider_id: body.provider_id, provider_code: prov[0].code, relation: body.relation })])
+    `, [id, s.email, JSON.stringify({ provider_id: body.provider_id, provider_code: prov[0].code })])
       .catch(() => {});
 
     return NextResponse.json({ ok: true, provider_id: body.provider_id, provider_code: prov[0].code });
@@ -119,12 +119,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const providerId = url.searchParams.get("provider_id");
   if (!providerId) return NextResponse.json({ error: "provider_id query param required" }, { status: 400 });
   try {
-    const merchant = await resolveMerchant(id);
-    if (!merchant) return NextResponse.json({ error: "not found" }, { status: 404 });
-
     await rows("provider", `
-      DELETE FROM provider_merchant_mappings WHERE provider_id = $1::uuid AND merchant_id = $2
-    `, [providerId, merchant.merchant_code]);
+      DELETE FROM provider_merchant_mappings WHERE provider_id = $1::uuid AND merchant_id = $2::uuid
+    `, [providerId, id]);
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'PROVIDER_UNASSIGNED', $2, $3::jsonb)
