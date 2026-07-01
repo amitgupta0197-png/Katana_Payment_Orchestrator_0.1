@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Katana Agent</string>
+    <string name="accessibility_desc">Reads the reference (RRN/UPI ref) shown on the Paytm transaction screen so incoming credits can be matched automatically. Only Paytm screens are read; no data leaves the device except the matched credit reference.</string>
+</resources>

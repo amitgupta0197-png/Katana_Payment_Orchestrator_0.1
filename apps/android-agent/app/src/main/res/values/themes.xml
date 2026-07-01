@@ -1,0 +1,20 @@
+<resources>
+    <style name="Theme.KatanaAgent" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/brand_on</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimaryContainer">@color/brand_on_container</item>
+        <item name="colorSecondary">@color/brand</item>
+        <item name="colorSecondaryContainer">@color/brand_container</item>
+        <item name="colorOnSecondaryContainer">@color/brand_on_container</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_variant</item>
+        <item name="colorOutline">@color/outline</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

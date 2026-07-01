@@ -14,6 +14,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { ProviderCharts } from "@/components/provider/portfolio-charts";
+import { ProviderCreateOrderCard } from "@/components/provider/create-order-card";
+import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
@@ -39,6 +42,22 @@ export default function ProviderDashboard() {
   const kyb = useQuery({
     queryKey: ["pp:kyb"],
     queryFn: async () => (await fetch("/api/kyb").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { cases: KybRow[] },
+  });
+  const vpaTxns = useQuery({
+    queryKey: ["pp:vpa-txns"],
+    queryFn: async () => (await fetch("/api/provider-portal/vpa-transactions").then((r) => r.json())) as {
+      totals?: { count: number; gross: number; confirmed: number; unmatched: number };
+      recent?: Array<{ id: string; amount: number; utr: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string }>;
+    },
+    refetchInterval: 30_000,
+  });
+  const txns = useQuery({
+    queryKey: ["pp:txns"],
+    queryFn: async () => (await fetch("/api/provider-portal/transactions").then((r) => r.json())) as {
+      totals?: { gross: number; success_count: number; pending_count: number; total_count: number };
+      recent?: Array<{ merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string }>;
+    },
+    refetchInterval: 30_000,
   });
 
   const allMerchants = merchants.data?.merchants ?? [];
@@ -66,7 +85,7 @@ export default function ProviderDashboard() {
     <>
       <PageHeader
         title="Provider dashboard"
-        description="Your mapped merchants, Sub-MID pipeline, KYB progress, and commission."
+        description="Your mapped branches, Sub-MID pipeline, KYB progress, and commission."
         icon={LayoutDashboard}
         actions={<Badge variant={merchants.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge>}
       />
@@ -79,8 +98,8 @@ export default function ProviderDashboard() {
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Portfolio</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Mapped merchants" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/provider-portal/merchants" />
-        <KpiTile label="Merchants live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/provider-portal/merchants" />
+        <KpiTile label="Mapped branches" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/provider-portal/merchants" />
+        <KpiTile label="Branches live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/provider-portal/merchants" />
         <KpiTile label="Sub-MIDs live" value={subMidsLive} sublabel={`${subMidsPending} pending KYC`} icon={Network} loading={subMids.isLoading} href="/provider-portal/sub-mids" />
         <KpiTile label="Open KYB cases" value={kybOpen} icon={FileCheck2} variant={kybOpen > 0 ? "warning" : "default"} loading={kyb.isLoading} />
       </div>
@@ -91,11 +110,86 @@ export default function ProviderDashboard() {
         <KpiTile label="YTD earned" value={formatAmount(commission.data?.ytd_earned ?? 0)} icon={Wallet} loading={commission.isLoading} href="/provider-portal/commission" />
       </div>
 
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Operations</h2>
+      <ProviderCreateOrderCard />
+
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Transactions</h2>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile label="Gross collected" value={formatAmount(txns.data?.totals?.gross ?? 0)} sublabel={`${txns.data?.totals?.success_count ?? 0} successful`} icon={Wallet} variant="success" loading={txns.isLoading} href="/provider-portal/transactions" />
+        <KpiTile label="Total transactions" value={txns.data?.totals?.total_count ?? 0} icon={Store} loading={txns.isLoading} href="/provider-portal/transactions" />
+        <KpiTile label="Pending" value={txns.data?.totals?.pending_count ?? 0} icon={Activity} variant={(txns.data?.totals?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={txns.isLoading} href="/provider-portal/transactions" />
+        <KpiTile label="Branches with volume" value={new Set((txns.data?.recent ?? []).map((r) => r.merchant_id)).size} icon={Network} loading={txns.isLoading} href="/provider-portal/transactions" />
+      </div>
+      <Card className="mb-6">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>Latest collections across your branches (all channels).</CardDescription></div>
+          <Button variant="secondary" size="sm" asChild><Link href="/provider-portal/transactions">View all <ChevronRight className="h-3.5 w-3.5" /></Link></Button>
+        </CardHeader>
+        <CardContent>
+          {(txns.data?.recent ?? []).length === 0
+            ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">{txns.isLoading ? "Loading…" : "No transactions yet."}</div>
+            : (
+              <ol className="flex flex-col gap-2 text-sm">
+                {(txns.data?.recent ?? []).slice(0, 10).map((r, i) => (
+                  <li key={r.ref + i} className="flex items-center gap-3 rounded-md border px-3 py-2">
+                    <Badge variant="brand">{r.merchant_id}</Badge>
+                    <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">{r.channel}{r.method ? ` · ${r.method}` : ""} · <span className="font-mono">{r.ref}</span></span>
+                    <span className="tabular-nums font-medium">{formatAmount(r.amount)}</span>
+                    <Badge variant={r.status === "SUCCESS" || r.status === "SUCCEEDED" ? "success" : r.status === "FAILED" || r.status === "EXPIRED" ? "danger" : "warning"}>{r.status}</Badge>
+                    <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+        </CardContent>
+      </Card>
+
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">VPA credit transactions</h2>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile label="Total VPA credits" value={vpaTxns.data?.totals?.count ?? 0} icon={Wallet} loading={vpaTxns.isLoading} />
+        <KpiTile label="Gross received" value={formatAmount(vpaTxns.data?.totals?.gross ?? 0)} icon={Wallet} variant="success" loading={vpaTxns.isLoading} />
+        <KpiTile label="Confirmed" value={vpaTxns.data?.totals?.confirmed ?? 0} icon={Activity} variant="success" loading={vpaTxns.isLoading} />
+        <KpiTile label="Unmatched" value={vpaTxns.data?.totals?.unmatched ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.unmatched ?? 0) > 0 ? "warning" : "default"} loading={vpaTxns.isLoading} />
+      </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">VPA credits</CardTitle>
+          <CardDescription>Every UPI credit landing on your branches' settlement VPAs — payer, amount, UTR, and match.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {(vpaTxns.data?.recent ?? []).length === 0
+            ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">{vpaTxns.isLoading ? "Loading…" : "No VPA credits captured yet."}</div>
+            : (
+              <ol className="flex flex-col gap-2 text-sm">
+                {(vpaTxns.data?.recent ?? []).slice(0, 12).map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2">
+                    <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
+                    <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
+                      {r.payer_vpa ? <>from <span className="font-mono">{r.payer_vpa}</span> </> : null}
+                      → <span className="font-mono">{r.payee_vpa}</span>
+                      {r.utr ? <> · {/^\d{12}$/.test(r.utr) ? "RRN" : /^\d+$/.test(r.utr) ? "UTR" : "Order ID"} <span className="font-mono">{r.utr}</span></> : null}
+                      {r.matched_order_ref ? <> · Order ID <span className="font-mono">{r.matched_order_ref}</span></> : null}
+                    </span>
+                    <Badge variant={r.outcome === "CONFIRMED" ? "success" : r.outcome === "DUPLICATE" ? "danger" : "warning"}>{r.outcome}</Badge>
+                    <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+        </CardContent>
+      </Card>
+
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Katana Pay reconciliation</h2>
+      <PaymentFunnel description="Live Katana Pay pay-ins across all your branches — created → reconciled." />
+
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Insights</h2>
+      <ProviderCharts />
+
       {/* Onboarding pipeline funnel */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Onboarding funnel</CardTitle>
-          <CardDescription>Where your merchants are in the 6-stage pipeline.</CardDescription>
+          <CardDescription>Where your branches are in the 6-stage pipeline.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
@@ -116,12 +210,12 @@ export default function ProviderDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Recent merchants</CardTitle>
+            <CardTitle className="text-base">Recent branches</CardTitle>
             <CardDescription>Most recent additions to your portfolio.</CardDescription>
           </CardHeader>
           <CardContent>
             {allMerchants.slice(0, 10).length === 0
-              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No merchants mapped yet.</div>
+              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No branches mapped yet.</div>
               : (
                 <ol className="flex flex-col gap-2 text-sm">
                   {allMerchants.slice(0, 10).map((m) => (
@@ -142,7 +236,7 @@ export default function ProviderDashboard() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-2">
             <Button variant="secondary" asChild className="justify-between">
-              <Link href="/provider-portal/leads"><span className="inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Submit new merchant lead</span><ChevronRight className="h-3.5 w-3.5" /></Link>
+              <Link href="/provider-portal/leads"><span className="inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Submit new branch lead</span><ChevronRight className="h-3.5 w-3.5" /></Link>
             </Button>
             <Button variant="secondary" asChild className="justify-between">
               <Link href="/provider-portal/sub-mids"><span className="inline-flex items-center gap-2"><Network className="h-4 w-4" /> Request a Sub-MID</span><ChevronRight className="h-3.5 w-3.5" /></Link>
