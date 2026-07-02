@@ -159,8 +159,8 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:orientation="vertical">
-                        <TextView style="@style/PermTitle" android:text="Auto-open on payment" />
-                        <TextView style="@style/PermSub" android:text="Opens Paytm to grab the RRN instantly (dedicated device)" />
+                        <TextView style="@style/PermTitle" android:text="Auto-capture" />
+                        <TextView style="@style/PermSub" android:text="Keep Paytm open on the payments list — new transactions are read automatically" />
                     </LinearLayout>
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/autoOpen"

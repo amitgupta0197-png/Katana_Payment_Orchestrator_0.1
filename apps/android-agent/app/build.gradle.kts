@@ -18,12 +18,13 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
     }
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 
     signingConfigs {

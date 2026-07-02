@@ -316,18 +316,53 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   else if (!order) { outcome = "UNMATCHED"; detail = matchDetail; }
   else { outcome = "UNMATCHED"; detail = matchDetail; } // matched but blocked by policy → manual
 
+  // 1c) Enrich-merge: one payment can arrive on two channels — EMAIL (Order ID, no
+  // RRN) and ACCESSIBILITY (RRN off the Paytm screen, no Order ID). Rather than store
+  // two rows, fold the second into the first so the dashboard shows ONE row carrying
+  // both. Only when EXACTLY ONE recent complementary row exists for the same
+  // merchant+amount from a different channel — ambiguous same-amount bursts safely fall
+  // back to separate rows.
+  const rrn = utr && /^\d{12}$/.test(utr) ? utr : null;   // 12-digit UPI RRN
+  if (!duplicate && input.merchant_id && (rrn || orderRef)) {
+    const compl = await rows<{ id: string }>("vendorGateway", `
+      SELECT id::text FROM vendor_txn_alerts
+       WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
+         AND created_at >= now() - interval '15 minutes'
+         AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
+            OR ($5::text IS NOT NULL AND order_ref IS NULL) )
+       ORDER BY created_at DESC LIMIT 2
+    `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef]).catch(() => []);
+    if (compl.length === 1) {
+      const tgtId = compl[0].id;
+      await rows("vendorGateway", `
+        UPDATE vendor_txn_alerts SET
+          utr        = COALESCE($2, utr),
+          order_ref  = COALESCE(order_ref, $3),
+          payer_name = COALESCE(payer_name, $4),
+          payer_vpa  = COALESCE(payer_vpa, $5),
+          bank       = COALESCE(bank, $6),
+          detail     = COALESCE(detail,'') || ' · +' || $7
+        WHERE id = $1::uuid
+      `, [tgtId, rrn, orderRef, payerName, input.payer_vpa ?? null, input.bank ?? null, source]).catch(() => {});
+      await audit(actor, "ALERT_MERGED", "txn_alert", tgtId,
+        `enriched with ${rrn ? "RRN " + rrn : "order " + orderRef} from ${source}`);
+      return { alert_id: tgtId, outcome, confidence, matched_order_ref: order?.order_id ?? null,
+        device_status: deviceStatus, detail: `merged into existing alert (${rrn ? "RRN" : "Order ID"} added)` };
+    }
+  }
+
   // 2) Persist the raw alert + match outcome (append-only).
   const ins = (await rows<{ id: string }>("vendorGateway", `
     INSERT INTO vendor_txn_alerts
-      (source, device_id, bank, sender, direction, amount, utr, payer_vpa, payer_name, payee_vpa, narration, raw,
+      (source, device_id, bank, sender, direction, amount, utr, order_ref, payer_vpa, payer_name, payee_vpa, narration, raw,
        event_time, message_hash, nonce, parser_version, txn_type, device_status,
        matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, COALESCE($13::timestamptz, now()),
-            $14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, COALESCE($14::timestamptz, now()),
+            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
     RETURNING id::text
   `, [
     source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
-    amount.toFixed(2), storedRef, input.payer_vpa ?? null, payerName, payee, input.narration ?? null, raw,
+    amount.toFixed(2), storedRef, orderRef, input.payer_vpa ?? null, payerName, payee, input.narration ?? null, raw,
     input.event_time ?? null, messageHash, input.nonce ?? null, input.parser_version ?? null, "CREDIT", deviceStatus,
     order?.id ?? null, order?.order_id ?? null, confidence, outcome, detail, input.merchant_id ?? null,
   ]))[0];

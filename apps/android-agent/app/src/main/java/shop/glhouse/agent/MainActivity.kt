@@ -143,6 +143,7 @@ class MainActivity : AppCompatActivity() {
             else -> "$merchant (save to verify)"
         }
         b.details.text = buildString {
+            append("Version    ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")").append('\n')
             append("Endpoint   ").append(Prefs.baseUrl(this@MainActivity)).append("/api/v1/txn-alert").append('\n')
             append("Device     ").append(Prefs.deviceId(this@MainActivity)).append('\n')
             append("Merchant   ").append(mLabel).append('\n')

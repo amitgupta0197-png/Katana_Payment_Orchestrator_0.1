@@ -46,8 +46,8 @@ export default function ProviderDashboard() {
   const vpaTxns = useQuery({
     queryKey: ["pp:vpa-txns"],
     queryFn: async () => (await fetch("/api/provider-portal/vpa-transactions").then((r) => r.json())) as {
-      totals?: { count: number; gross: number; confirmed: number; unmatched: number };
-      recent?: Array<{ id: string; amount: number; utr: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string }>;
+      totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number };
+      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string }>;
     },
     refetchInterval: 30_000,
   });
@@ -145,11 +145,12 @@ export default function ProviderDashboard() {
       </Card>
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">VPA credit transactions</h2>
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <KpiTile label="Total VPA credits" value={vpaTxns.data?.totals?.count ?? 0} icon={Wallet} loading={vpaTxns.isLoading} />
         <KpiTile label="Gross received" value={formatAmount(vpaTxns.data?.totals?.gross ?? 0)} icon={Wallet} variant="success" loading={vpaTxns.isLoading} />
         <KpiTile label="Confirmed" value={vpaTxns.data?.totals?.confirmed ?? 0} icon={Activity} variant="success" loading={vpaTxns.isLoading} />
         <KpiTile label="Unmatched" value={vpaTxns.data?.totals?.unmatched ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.unmatched ?? 0) > 0 ? "warning" : "default"} loading={vpaTxns.isLoading} />
+        <KpiTile label="Missing RRN" value={vpaTxns.data?.totals?.missingRrn ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.missingRrn ?? 0) > 0 ? "warning" : "success"} loading={vpaTxns.isLoading} />
       </div>
       <Card className="mb-6">
         <CardHeader>
@@ -161,19 +162,30 @@ export default function ProviderDashboard() {
             ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">{vpaTxns.isLoading ? "Loading…" : "No VPA credits captured yet."}</div>
             : (
               <ol className="flex flex-col gap-2 text-sm">
-                {(vpaTxns.data?.recent ?? []).slice(0, 12).map((r) => (
+                {(vpaTxns.data?.recent ?? []).slice(0, 12).map((r) => {
+                  // RRN = the 12-digit UPI reference; UTR = any other all-digit bank ref.
+                  const rrn = r.utr && /^\d{12}$/.test(r.utr) ? r.utr : null;
+                  const utr = !rrn && r.utr && /^\d+$/.test(r.utr) ? r.utr : null;
+                  // Order ID from the merged order_ref, the non-numeric utr (email standalone),
+                  // or a matched Katana order — de-duped against whatever is already shown.
+                  const utrOrderId = r.utr && !/^\d+$/.test(r.utr) ? r.utr : null;
+                  const orderId = [r.order_ref, utrOrderId, r.matched_order_ref].find((v) => v && v !== r.utr) ?? null;
+                  return (
                   <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2">
                     <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
                     <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
                       {r.payer_vpa ? <>from <span className="font-mono">{r.payer_vpa}</span> </> : null}
                       → <span className="font-mono">{r.payee_vpa}</span>
-                      {r.utr ? <> · {/^\d{12}$/.test(r.utr) ? "RRN" : /^\d+$/.test(r.utr) ? "UTR" : "Order ID"} <span className="font-mono">{r.utr}</span></> : null}
-                      {r.matched_order_ref ? <> · Order ID <span className="font-mono">{r.matched_order_ref}</span></> : null}
+                      {rrn ? <> · RRN <span className="font-mono">{rrn}</span></> : null}
+                      {utr ? <> · UTR <span className="font-mono">{utr}</span></> : null}
+                      {orderId ? <> · Order ID <span className="font-mono">{orderId}</span></> : null}
+                      {!rrn ? <> · <span className="text-[color:var(--color-warning,#b45309)]">no RRN</span></> : null}
                     </span>
                     <Badge variant={r.outcome === "CONFIRMED" ? "success" : r.outcome === "DUPLICATE" ? "danger" : "warning"}>{r.outcome}</Badge>
                     <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
                   </li>
-                ))}
+                  );
+                })}
               </ol>
             )}
         </CardContent>
