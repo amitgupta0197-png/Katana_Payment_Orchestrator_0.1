@@ -10,6 +10,7 @@ data class ParsedTxn(
     val payerName: String?,
     val bank: String?,
     val raw: String,
+    val orderRef: String? = null,   // Paytm Order ID (from the detail screen) — merge key
 )
 
 // Heuristic parser for Indian bank UPI-credit alerts. Handles the common shapes

@@ -13,6 +13,8 @@
          notification listener (Paytm/PhonePe-for-Business pushes have no SMS). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Shizuku: shell-level input injection (taps Paytm can't reject like accessibility). -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <application
         android:allowBackup="true"
@@ -69,6 +71,15 @@
             android:name=".KeepAliveService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Shizuku provider — required for the Shizuku API to bind. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Screen-reader capture — scrapes the RRN off the Paytm transaction-detail
              screen (the notification omits it). Requires the user to grant Accessibility

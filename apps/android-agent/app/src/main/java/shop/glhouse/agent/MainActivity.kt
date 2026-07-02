@@ -32,10 +32,12 @@ class MainActivity : AppCompatActivity() {
         b.baseUrl.setText(Prefs.baseUrl(this))
         b.deviceId.setText(Prefs.deviceId(this))
         b.merchantCode.setText(Prefs.merchantCode(this))
+        b.rowPos.setText(Prefs.rowPositionsRaw(this))
         b.enabled.isChecked = Prefs.enabled(this)
 
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
+            Prefs.setRowPositions(this, b.rowPos.text.toString())
             toast("Settings saved")
             refreshState()
             AgentWorker.schedule(this)
@@ -57,6 +59,11 @@ class MainActivity : AppCompatActivity() {
         b.autoOpen.isChecked = Prefs.autoOpen(this)
         b.autoOpen.setOnCheckedChangeListener { _, v -> Prefs.setAutoOpen(this, v) }
         b.testBtn.setOnClickListener { sendTestAlert() }
+        b.debugBtn.setOnClickListener {
+            Prefs.setDebugDumpUntil(this, System.currentTimeMillis() + 60_000)
+            toast("Debug ON 60s — open Paytm list + a transaction now")
+        }
+        b.shizukuBtn.setOnClickListener { enableShizuku() }
 
         b.emailAddr.setText(Prefs.emailAddr(this))
         b.emailStatus.text = if (Prefs.emailConnected(this)) "✓ Connected: ${Prefs.emailAddr(this)}" else "Not connected"
@@ -70,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshState()
         refreshLog()
+        refreshShizuku()
         if (Prefs.enabled(this)) {
             AlertUploader.heartbeat(this, notifAccessGranted())
             thread { AlertUploader.flushOutbox(this) }
@@ -182,6 +190,23 @@ class MainActivity : AppCompatActivity() {
                 if (ok) b.emailPass.setText("")
                 toast(if (ok) "Gmail connected" else "Failed — check the app password & IMAP")
             }
+        }
+    }
+
+    private fun enableShizuku() {
+        when {
+            !ShizukuTap.available() -> toast("Install & start the Shizuku app first, then tap again")
+            ShizukuTap.granted() -> toast("Shell-tap ready ✓")
+            else -> { ShizukuTap.requestPermission(); toast("Approve the Shizuku permission popup") }
+        }
+        Handler(Looper.getMainLooper()).postDelayed({ refreshShizuku() }, 800)
+    }
+
+    private fun refreshShizuku() {
+        b.shizukuStatus.text = when {
+            ShizukuTap.granted() -> "Shell-tap: ✓ ready (taps bypass Paytm's block)"
+            ShizukuTap.available() -> "Shell-tap: Shizuku running, permission not granted"
+            else -> "Shell-tap: Shizuku not running (optional — install Shizuku to enable)"
         }
     }
 

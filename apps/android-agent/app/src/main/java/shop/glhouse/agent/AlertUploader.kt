@@ -39,6 +39,7 @@ object AlertUploader {
             sender?.let { put("sender", it) }
             txn.bank?.let { put("bank", it) }
             txn.utr?.let { put("utr", it) }
+            txn.orderRef?.let { put("order_ref", it) }
             txn.payerVpa?.let { put("payer_vpa", it) }
             txn.payerName?.let { put("payer_name", it) }
             put("raw", txn.raw.take(2000))
@@ -153,6 +154,21 @@ object AlertUploader {
                     }
                 }
             }
+        })
+    }
+
+    // Debug: upload a captured accessibility node tree for offline inspection.
+    fun uploadDebugTree(ctx: Context, label: String, body: String) {
+        val json = JSONObject().apply {
+            put("device_id", Prefs.deviceId(ctx))
+            Prefs.merchantCode(ctx).takeIf { it.isNotBlank() }?.let { put("merchant_id", it) }
+            put("label", label)
+            put("body", body)
+        }.toString()
+        val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/agent-debug"
+        client.newCall(alertRequest(url, json)).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) { response.close() }
         })
     }
 

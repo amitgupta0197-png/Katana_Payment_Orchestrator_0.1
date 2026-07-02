@@ -187,6 +187,16 @@
                 <com.google.android.material.textfield.TextInputLayout style="@style/Field" android:hint="Merchant code">
                     <com.google.android.material.textfield.TextInputEditText android:id="@+id/merchantCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" android:importantForAutofill="no" />
                 </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout style="@style/Field" android:hint="Auto-capture row positions (% from top)">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/rowPos" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" android:importantForAutofill="no" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Where transaction rows sit on the Paytm list. Tune per phone model if auto-capture opens the wrong things. E.g. 68,72,78,82,86,90"
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="11sp"
+                    android:paddingBottom="6dp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -291,6 +301,25 @@
                     android:layout_height="wrap_content"
                     app:icon="@drawable/ic_send"
                     android:text="Send test alert" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/debugBtn"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Capture Paytm screens (debug 60s)" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/shizukuBtn"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Enable shell-tap (Shizuku)" />
+                <TextView
+                    android:id="@+id/shizukuStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="12sp" />
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

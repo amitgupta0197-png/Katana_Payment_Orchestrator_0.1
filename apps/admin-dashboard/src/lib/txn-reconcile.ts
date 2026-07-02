@@ -323,17 +323,35 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   // merchant+amount from a different channel — ambiguous same-amount bursts safely fall
   // back to separate rows.
   const rrn = utr && /^\d{12}$/.test(utr) ? utr : null;   // 12-digit UPI RRN
-  if (!duplicate && input.merchant_id && (rrn || orderRef)) {
-    const compl = await rows<{ id: string }>("vendorGateway", `
-      SELECT id::text FROM vendor_txn_alerts
-       WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
-         AND created_at >= now() - interval '15 minutes'
-         AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
-            OR ($5::text IS NOT NULL AND order_ref IS NULL) )
-       ORDER BY created_at DESC LIMIT 2
-    `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef]).catch(() => []);
-    if (compl.length === 1) {
-      const tgtId = compl[0].id;
+  if (!duplicate && (rrn || orderRef)) {
+    let tgtId: string | null = null;
+    // Strongest key: the SAME Order ID on a row that still lacks its RRN. Unique per
+    // payment, so this merges the retrospective screen-scrape onto the email row even
+    // when many payments share an amount (24h window). Email stores the Order ID in
+    // both order_ref and utr, so match either.
+    if (orderRef) {
+      const byOrder = await rows<{ id: string }>("vendorGateway", `
+        SELECT id::text FROM vendor_txn_alerts
+         WHERE direction = 'CREDIT' AND (order_ref = $1 OR utr = $1)
+           AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
+           AND created_at >= now() - interval '24 hours'
+         ORDER BY created_at DESC LIMIT 2
+      `, [orderRef]).catch(() => []);
+      if (byOrder.length === 1) tgtId = byOrder[0].id;
+    }
+    // Fallback: same merchant+amount within a short window, exactly one complementary.
+    if (!tgtId && input.merchant_id) {
+      const compl = await rows<{ id: string }>("vendorGateway", `
+        SELECT id::text FROM vendor_txn_alerts
+         WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
+           AND created_at >= now() - interval '15 minutes'
+           AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
+              OR ($5::text IS NOT NULL AND order_ref IS NULL) )
+         ORDER BY created_at DESC LIMIT 2
+      `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef]).catch(() => []);
+      if (compl.length === 1) tgtId = compl[0].id;
+    }
+    if (tgtId) {
       await rows("vendorGateway", `
         UPDATE vendor_txn_alerts SET
           utr        = COALESCE($2, utr),
