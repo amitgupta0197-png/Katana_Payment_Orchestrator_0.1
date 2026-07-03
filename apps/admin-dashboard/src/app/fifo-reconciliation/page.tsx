@@ -1,6 +1,6 @@
 "use client";
 
-// FIFO reconciliation (PayTech BRD §21, AC-007). Run a pass that matches completed
+// FIFO reconciliation (Katana BRD §21, AC-007). Run a pass that matches completed
 // orders against the ledger and classifies mismatches into buckets.
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";

@@ -1,6 +1,6 @@
 "use client";
 
-// Operator Console (PayTech BRD §16). Work the FIFO queue: claim head-of-line,
+// Operator Console (Katana BRD §16). Work the FIFO queue: claim head-of-line,
 // accept → process → upload proof → complete. Read-only view of the queue tail.
 
 import { useEffect, useRef, useState } from "react";

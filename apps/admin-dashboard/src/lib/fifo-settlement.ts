@@ -1,4 +1,4 @@
-// FIFO settlement batches (PayTech BRD §19, §22, §20). Nets a merchant's
+// FIFO settlement batches (Katana BRD §19, §22, §20). Nets a merchant's
 // completed-but-unsettled pay-ins into a batch following the §22 formula, then
 // moves MERCHANT_PAYABLE → SETTLEMENT_PAYABLE on the ledger and marks the orders
 // SETTLED. Large batches or any manual adjustment require maker-checker (§9) — the

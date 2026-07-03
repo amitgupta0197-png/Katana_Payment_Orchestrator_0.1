@@ -1,4 +1,4 @@
-// Forensic Evidence Pack generator (PayTech BRD §25, FR-010, §30 Forensic Report).
+// Forensic Evidence Pack generator (Katana BRD §25, FR-010, §30 Forensic Report).
 //
 // Assembles a single tamper-evident bundle for an order from data already held
 // across the FIFO + ledger stores: order summary, status timeline, queue/operator

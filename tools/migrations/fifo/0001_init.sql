@@ -1,4 +1,4 @@
--- fifoservice_db: FIFO Payment Operations Module (PayTech BRD §15/§16).
+-- fifoservice_db: FIFO Payment Operations Module (Katana BRD §15/§16).
 -- Operator-driven pay-in/payout requests processed through a timestamped FIFO
 -- queue with assignment, SLA, proof upload and an auditable status lifecycle.
 

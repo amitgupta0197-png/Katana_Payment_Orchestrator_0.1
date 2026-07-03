@@ -1,6 +1,6 @@
 "use client";
 
-// Compliance case management (PayTech BRD §23). Open cases, add notes/evidence,
+// Compliance case management (Katana BRD §23). Open cases, add notes/evidence,
 // place the linked order on hold, and close.
 
 import { useState } from "react";

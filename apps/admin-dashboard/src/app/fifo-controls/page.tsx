@@ -1,6 +1,6 @@
 "use client";
 
-// Merchant controls (PayTech BRD FR-003, §11.A, §27): transaction limits and the
+// Merchant controls (Katana BRD FR-003, §11.A, §27): transaction limits and the
 // approved line-of-business (purpose) allow-list per merchant.
 
 import { useState } from "react";

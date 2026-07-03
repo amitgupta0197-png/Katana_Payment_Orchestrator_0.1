@@ -1,4 +1,4 @@
-// FIFO reconciliation engine (PayTech BRD §21, AC-007). Compares completed orders
+// FIFO reconciliation engine (Katana BRD §21, AC-007). Compares completed orders
 // against the immutable ledger (and, optionally, an imported gateway/bank/USDT
 // report) and classifies each into a mismatch bucket. Internal ledger recon needs
 // no external file and directly satisfies AC-007 ("no mismatch between ledger and

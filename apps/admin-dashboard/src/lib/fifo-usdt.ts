@@ -1,4 +1,4 @@
-// USDT settlement controls (PayTech BRD §11.C, §22, FR-008): network whitelist,
+// USDT settlement controls (Katana BRD §11.C, §22, FR-008): network whitelist,
 // rate capture + lock, and amount computation. Wallet whitelisting is enforced via
 // the beneficiary registry (APPROVED status). tx_hash is required to complete a
 // USDT transfer (enforced in the order action route).

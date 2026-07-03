@@ -1,6 +1,6 @@
 "use client";
 
-// FIFO settlement batches (PayTech BRD §19/§22). Net a merchant's completed
+// FIFO settlement batches (Katana BRD §19/§22). Net a merchant's completed
 // pay-ins into a batch; large/adjusted batches route to maker-checker.
 
 import { useState } from "react";

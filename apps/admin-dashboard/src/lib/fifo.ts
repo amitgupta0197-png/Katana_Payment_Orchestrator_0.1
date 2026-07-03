@@ -1,4 +1,4 @@
-// FIFO Payment Operations engine (PayTech BRD §15/§16).
+// FIFO Payment Operations engine (Katana BRD §15/§16).
 //
 // Order intake -> validate -> risk -> FIFO queue -> operator assignment, with an
 // append-only status lifecycle. Operators claim the head of the queue (highest

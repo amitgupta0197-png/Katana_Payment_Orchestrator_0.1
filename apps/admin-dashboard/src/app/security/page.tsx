@@ -1,6 +1,6 @@
 "use client";
 
-// Security center (PayTech BRD SEC-003/004). Enrol/disable TOTP MFA and review the
+// Security center (Katana BRD SEC-003/004). Enrol/disable TOTP MFA and review the
 // devices bound to your account.
 
 import { useState } from "react";

@@ -1,4 +1,4 @@
-// MFA + device binding engine (PayTech BRD SEC-003, SEC-004). Non-breaking:
+// MFA + device binding engine (Katana BRD SEC-003, SEC-004). Non-breaking:
 // enforcement is env-gated (FIFO_MFA_ENFORCE, default off) so live logins keep
 // working until users enrol. When a user has MFA enabled, a TOTP code is always
 // required regardless of the enforce flag.

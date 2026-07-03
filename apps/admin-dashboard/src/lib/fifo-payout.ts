@@ -1,4 +1,4 @@
-// FIFO payout + beneficiary registry + maker-checker (PayTech BRD §18, §9, §11.B,
+// FIFO payout + beneficiary registry + maker-checker (Katana BRD §18, §9, §11.B,
 // FR-007). Payout orders reuse fifo_orders (direction='PAYOUT'); they validate an
 // APPROVED (whitelisted) beneficiary, check the merchant's payable balance, and
 // route high-value requests through a maker-checker approval before queuing.

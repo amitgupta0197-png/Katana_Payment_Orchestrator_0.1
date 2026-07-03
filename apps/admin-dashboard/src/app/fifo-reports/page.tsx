@@ -1,6 +1,6 @@
 "use client";
 
-// FIFO reports (PayTech BRD §30). Merchant txn / operator performance / settlement
+// FIFO reports (Katana BRD §30). Merchant txn / operator performance / settlement
 // / risk / forensic — viewable as a filterable, density-adjustable table and
 // exportable to CSV. Filtering/density are client-side (presentation only).
 

@@ -1,6 +1,6 @@
 "use client";
 
-// Payout & beneficiary console (PayTech BRD §18, §9, §11.B). Register beneficiaries
+// Payout & beneficiary console (Katana BRD §18, §9, §11.B). Register beneficiaries
 // (maker-checker whitelist), raise payouts (balance-checked; high-value → approval),
 // and clear the maker-checker queue. Account numbers are masked.
 

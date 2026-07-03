@@ -1,4 +1,4 @@
-// Merchant status callbacks (PayTech BRD §19, AC-006). On a final status the
+// Merchant status callbacks (Katana BRD §19, AC-006). On a final status the
 // module POSTs a signed payload to the order's callback_url. The signature is
 // HMAC-SHA256 over the canonical body, so merchants can verify authenticity.
 

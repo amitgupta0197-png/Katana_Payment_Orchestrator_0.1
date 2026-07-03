@@ -1,4 +1,4 @@
-// FIFO reports (PayTech BRD §30). Each report returns a {columns, rows} shape the
+// FIFO reports (Katana BRD §30). Each report returns a {columns, rows} shape the
 // UI renders as a table and exports to CSV. Fee/reserve mirror the settlement
 // posting in settlePayinToLedger (MDR 1.95%, rolling reserve 5%).
 

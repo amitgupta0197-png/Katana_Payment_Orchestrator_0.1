@@ -1,6 +1,6 @@
 "use client";
 
-// FIFO operations dashboard (PayTech BRD §31). Persona widgets in one view:
+// FIFO operations dashboard (Katana BRD §31). Persona widgets in one view:
 // admin throughput, queue/SLA, operators, risk alerts and finance balances.
 
 import { useQuery } from "@tanstack/react-query";

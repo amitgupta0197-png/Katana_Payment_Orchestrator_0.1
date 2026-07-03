@@ -1,4 +1,4 @@
-// Anomaly detection for the FIFO module (PayTech BRD Phase 3 "AI anomaly alerts").
+// Anomaly detection for the FIFO module (Katana BRD Phase 3 "AI anomaly alerts").
 // A statistical scanner over recent orders that flags outliers the deterministic
 // rules (velocity/duplicate-UTR) miss: amount outliers (per-merchant z-score),
 // short-window volume spikes, and off-hours high-value activity. Findings are

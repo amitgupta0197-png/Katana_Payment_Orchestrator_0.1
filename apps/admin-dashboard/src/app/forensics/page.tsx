@@ -1,6 +1,6 @@
 "use client";
 
-// Forensic console (PayTech BRD §25/§30, FR-010). Compliance/Risk view: browse
+// Forensic console (Katana BRD §25/§30, FR-010). Compliance/Risk view: browse
 // fraud alerts and generate a tamper-evident Evidence Pack for any order —
 // order summary, status timeline, proof hashes, ledger entries, device/IP and a
 // SHA-256 report hash, downloadable as JSON.

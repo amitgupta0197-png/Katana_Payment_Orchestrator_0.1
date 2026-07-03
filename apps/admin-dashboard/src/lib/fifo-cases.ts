@@ -1,4 +1,4 @@
-// Compliance case management (PayTech BRD §23). A case bundles notes + evidence
+// Compliance case management (Katana BRD §23). A case bundles notes + evidence
 // references and can place its linked order on HOLD.
 
 import { rows } from "@/lib/pg";
