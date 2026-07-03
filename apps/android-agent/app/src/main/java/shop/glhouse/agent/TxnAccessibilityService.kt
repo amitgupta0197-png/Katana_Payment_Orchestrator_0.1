@@ -128,6 +128,22 @@ class TxnAccessibilityService : AccessibilityService() {
             when (lastScreen) {
                 "detail" -> main.postDelayed(this, 700)        // capture+back in progress; wait
                 "list" -> {
+                    // 1) Prefer a REAL accessibility click on the actual row node. Unlike a
+                    //    dispatchGesture (a synthetic touch Paytm rejects), ACTION_CLICK is an
+                    //    accessibility action the app honours — so it opens the transaction with
+                    //    NO Shizuku required. Falls back to a coordinate tap only if the list
+                    //    exposes no clickable row node.
+                    val root = rootInActiveWindow
+                    val row = root?.let { findClickableUnseenRow(it) }
+                    if (row != null) {
+                        seenRows.add(row.first); capSeen()
+                        autoOpenedDetail = true
+                        val ok = row.second.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        AlertStore.log(applicationContext, "${nowTag()} ↳ node-click${if (ok) "" else " failed"}: ${row.first.take(40)}")
+                        main.postDelayed(this, TAP_COOLDOWN_MS)
+                        return
+                    }
+                    // 2) Fallback: blind coordinate tap (needs Shizuku to beat Paytm's gesture block).
                     if (blindIndex >= positions.size) return   // pass complete; re-enter list to redo
                     val (w, h) = realSize()
                     val x = w / 2
@@ -251,6 +267,34 @@ class TxnAccessibilityService : AccessibilityService() {
                 null, null,
             )
         } catch (e: Exception) { false }
+    }
+
+    // Find the next un-opened transaction row as a CLICKABLE accessibility node. Anchors on
+    // a row's clock time ("12:56 PM"), then climbs to the nearest clickable ancestor (the row
+    // container). Returns its dedup key + node so the caller can performAction(ACTION_CLICK) —
+    // a real accessibility click that opens the detail with no Shizuku and no coordinates.
+    private fun findClickableUnseenRow(root: AccessibilityNodeInfo): Pair<String, AccessibilityNodeInfo>? {
+        var count = 0
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        while (stack.isNotEmpty() && count < MAX_NODES) {
+            val node = stack.removeLast(); count++
+            val own = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
+            if (ROW_TIME.containsMatchIn(own)) {
+                var anc: AccessibilityNodeInfo? = node
+                var hops = 0
+                while (anc != null && hops < 10) {
+                    if (anc.isClickable) {
+                        val key = subtreeText(anc).trim().replace(Regex("\\s+"), " ").take(80)
+                        if (key.isNotBlank() && key !in seenRows) return key to anc
+                        break   // nearest clickable row already opened — keep scanning for others
+                    }
+                    anc = anc.parent; hops++
+                }
+            }
+            for (i in 0 until node.childCount) node.getChild(i)?.let { stack.addLast(it) }
+        }
+        return null
     }
 
     // Find transaction rows by anchoring on a clock time ("12:56 PM"), then climbing to

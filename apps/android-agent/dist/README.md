@@ -1,8 +1,11 @@
 # Katana Agent — prebuilt APK
 
-`katana-agent-v2.6-debug.apk` — debug build, package `shop.glhouse.agent`, versionName **2.6** (versionCode 17).
+`katana-agent-v2.7-debug.apk` — debug build, package `shop.glhouse.agent`, versionName **2.7** (versionCode 18).
 
-Includes the widened Paytm detail-screen detection (RRN / UTR / UPI Ref / Transaction ID).
+Includes the widened Paytm detail-screen detection (RRN / UTR / UPI Ref / Transaction ID)
+and **node-click navigation** — the auto-sweep now opens transactions via a real
+accessibility click (`ACTION_CLICK`) instead of a synthetic gesture Paytm rejects, so
+hands-free capture works **without Shizuku**. Coordinate taps remain a fallback.
 
 ## Install (sideload)
 1. Download the `.apk` onto the phone (or `adb install -r katana-agent-v2.6-debug.apk`).
