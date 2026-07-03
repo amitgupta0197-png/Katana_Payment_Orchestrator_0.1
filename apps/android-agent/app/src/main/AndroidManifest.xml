@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Shizuku: shell-level input injection (taps Paytm can't reject like accessibility). -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- "Display over other apps" — grants background-activity-start so the accessibility
+         service can launch the invisible clipboard-reader activity to capture a MASKED RRN
+         (Paytm shows "209…975768"; the full value is only readable off the clipboard). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -80,6 +84,18 @@
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- Invisible focused trampoline that reads a MASKED RRN off the clipboard (the
+             accessibility service taps Paytm's "Copy", this reads it, then vanishes). Transparent,
+             no history, kept out of Recents so it's an imperceptible ~0.3s blip. -->
+        <activity
+            android:name=".RrnClipboardActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
 
         <!-- Screen-reader capture — scrapes the RRN off the Paytm transaction-detail
              screen (the notification omits it). Requires the user to grant Accessibility

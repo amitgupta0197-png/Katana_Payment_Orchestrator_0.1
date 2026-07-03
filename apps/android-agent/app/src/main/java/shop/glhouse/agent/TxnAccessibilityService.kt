@@ -2,10 +2,12 @@ package shop.glhouse.agent
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -25,6 +27,27 @@ class TxnAccessibilityService : AccessibilityService() {
     private var lastDetailHash = 0
     private var loggedPkg = false
 
+    // Notification-tap state (Android-14/15 bypass): when a Paytm credit push arrives,
+    // TxnNotificationListener asks us to open the shade and TAP the notification — a REAL
+    // tap fires its contentIntent → the exact receipt, which the OS forbids us to fire from
+    // the background. See requestNotificationTap / clickNotification.
+    @Volatile private var pendingTapHint: String? = null
+    @Volatile private var pendingTapAt = 0L
+
+    // Masked-RRN clipboard-capture session state (see captureMaskedRrn / maskedScanAndTap).
+    @Volatile private var maskedRunning = false
+    private var mAmount = 0.0
+    private var mOrderRef: String? = null
+    private var mPayer: String? = null
+    private var mPkg: String? = null
+    private var mHints: String? = null
+    private var mStartAt = 0L
+    private var mLastTapAt = 0L
+    private var mLastScanAt = 0L
+    private var mScrolls = 0
+    private var mNextTap = 0
+    private var mJit = 0
+
     // Auto-sweep state.
     private val seenRows = LinkedHashSet<String>()   // transaction rows already handled
     private var baselined = false                    // ignore the backlog present on first sight
@@ -35,13 +58,40 @@ class TxnAccessibilityService : AccessibilityService() {
     private var blindIndex = 0                       // next fixed position to blind-tap
     private var positions: List<Double> = emptyList() // tuned row tap positions (from Prefs)
 
-    private companion object {
+    companion object {
         const val MIN_SCAN_GAP_MS = 600L
         const val TAP_COOLDOWN_MS = 2500L            // pace row taps so navigation settles
         const val MAX_NODES = 4000
         const val MAX_SEEN = 600
+
+        // Live instance so TxnNotificationListener (notification-tap) and RrnClipboardActivity
+        // (masked-RRN success signal) can drive the running service.
+        @Volatile private var instance: TxnAccessibilityService? = null
+
+        // Cross-process success signal: RrnClipboardActivity calls noteCaptured() the instant it
+        // forwards a valid RRN, so the masked session stops retrying the moment we succeed.
+        @Volatile var sMaskedCapturedAt = 0L
+        fun noteCaptured() { sMaskedCapturedAt = SystemClock.uptimeMillis() }
+
+        // Open the notification shade and tap the just-arrived credit notification — its real tap
+        // fires the contentIntent → the exact Paytm receipt (blocked if we fire it ourselves on 14+).
+        fun requestNotificationTap(hint: String?) { instance?.doRequestNotificationTap(hint) }
+
+        // Small rotating offsets applied to each retried Copy tap, so if a button's real touch
+        // target is a few px off from its reported centre, successive retries sweep it and one lands.
+        val TAP_JITTER = arrayOf(intArrayOf(0, 0), intArrayOf(0, -14), intArrayOf(0, 14), intArrayOf(12, 0), intArrayOf(-12, 0))
+
+        // A MASKED reference as Paytm Business shows it ("209…975768"): digits · ellipsis · digits.
+        val MASKED_REF = Regex("[0-9]{2,4}\\s*[.·•…]{2,}\\s*[0-9]{4,8}")
+        // Split a masked ref into visible leading + trailing digits, to fingerprint the full value.
+        val MASK_SPLIT = Regex("([0-9]+)[.·•…]+([0-9]+)")
+
         val RRN_LABELLED = Regex("(?:rrn|utr|upi\\s*ref(?:\\s*no)?)[^0-9]{0,24}([0-9]{12})", RegexOption.IGNORE_CASE)
         val RRN_BARE = Regex("\\b([0-9]{12})\\b")
+        // Marks a transaction-DETAIL screen. Kept in sync with what RRN_LABELLED can extract — the
+        // old gate only matched "RRN"/"Transaction ID" and silently missed relabeled receipts that
+        // say "UPI Ref No"/"Bank Ref"/"Reference ID".
+        val DETAIL_MARKER = Regex("rrn|transaction\\s*id|upi\\s*ref|bank\\s*ref|reference\\s*(?:id|no)|\\butr\\b", RegexOption.IGNORE_CASE)
         // Full Order ID after the "Order ID" label (only matches when Paytm renders the
         // full value in node text, not a masked "T26…749211" stub) — a unique merge key.
         val ORDER_ID = Regex("order\\s*id[:\\s#]*([A-Za-z0-9][A-Za-z0-9-]{9,39})", RegexOption.IGNORE_CASE)
@@ -54,11 +104,43 @@ class TxnAccessibilityService : AccessibilityService() {
         val PAYER = Regex("\\bfrom\\s+((?:mr|mrs|ms|dr|m/s)\\.?\\s+)?([a-z][a-z .&'-]{1,40}?)(?=\\s*(?:paid|using|via|·|\\||,|$))", RegexOption.IGNORE_CASE)
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        AlertStore.log(applicationContext, "${nowTag()} 👁 screen-reader connected")
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         if (!Prefs.enabled(applicationContext)) return
         val pkg = event.packageName?.toString() ?: return
+        val type = event.eventType
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+
+        // PENDING NOTIFICATION TAP: a Paytm credit push just arrived and we opened the shade —
+        // when systemui is showing, find + tap that credit notification. The real tap fires its
+        // contentIntent → the exact Paytm receipt (which the scraper below then reads for the RRN).
+        if (pendingTapAt > 0 && SystemClock.uptimeMillis() - pendingTapAt < 9000 &&
+            pkg.contains("systemui")) {
+            val sr = rootInActiveWindow
+            if (sr != null && clickNotification(sr, pendingTapHint)) {
+                pendingTapAt = 0
+                AlertStore.log(applicationContext, "${nowTag()} 👆 tapped credit notif → opening receipt")
+            }
+            return
+        }
+
         if (!pkg.contains("paytm", ignoreCase = true)) return
+
+        // During a masked-RRN session THIS callback is the only place the reference "Copy" bounds
+        // read as real coordinates (a timer read gets clamped). Scan+tap here on each event, then bail.
+        if (maskedRunning) { maskedScanAndTap(); return }
 
         if (!loggedPkg) {
             loggedPkg = true
@@ -70,22 +152,35 @@ class TxnAccessibilityService : AccessibilityService() {
         lastScanAt = now
 
         val root = rootInActiveWindow ?: return
-        val text = dumpText(root)   // may be blank/sparse — Paytm's list is an opaque surface
+        // Read EVERY window (like uiautomator) — Paytm renders the receipt in a window that
+        // rootInActiveWindow can return empty for, but getWindows() sees. Falls back to the
+        // active root when the multi-window read is sparse.
+        val text = readAllWindows(pkg).ifBlank { dumpText(root) }
 
         // Debug: upload the full node tree of each distinct Paytm screen while armed.
         if (System.currentTimeMillis() < Prefs.debugDumpUntil(applicationContext)) maybeDumpTree(root, text)
 
-        val isDetail = text.contains("RRN", ignoreCase = true) || text.contains("Transaction ID", ignoreCase = true)
+        val isDetail = DETAIL_MARKER.containsMatchIn(text)
 
         if (isDetail) {
             // De-dup identical detail screens so we don't re-send on every content event.
             val h = text.hashCode()
             if (h != lastDetailHash) {
                 lastDetailHash = h
-                captureDetail(text, pkg)
+                // SAFETY: never forward the merchant's OWN outgoing payment (debit/refund/sent) as
+                // a credit RRN — the detail path reads a bare 12-digit number that could just as
+                // easily sit on a debit receipt.
+                if (isDebit(text)) {
+                    AlertStore.log(applicationContext, "${nowTag()} ⤴ skipped outgoing/debit screen")
+                } else if (!captureDetail(text, pkg)) {
+                    // Plain RRN absent → if the receipt only shows a MASKED RRN ("209…975768"),
+                    // start the clipboard sweep (tap its "Copy" → focused read).
+                    maybeCaptureMasked(text, pkg)
+                }
             }
-            // If WE opened this via the sweep, return to the list to pick up the next row.
-            if (autoOpenedDetail && Prefs.autoOpen(applicationContext)) {
+            // If WE opened this via the sweep, return to the list to pick up the next row — but
+            // NOT while a masked-RRN Copy sweep is still scrolling/tapping this very receipt.
+            if (autoOpenedDetail && !maskedRunning && Prefs.autoOpen(applicationContext)) {
                 autoOpenedDetail = false
                 main.postDelayed({ try { performGlobalAction(GLOBAL_ACTION_BACK) } catch (e: Exception) {} }, 900)
             }
@@ -202,21 +297,36 @@ class TxnAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) node.getChild(i)?.let { dumpTree(it, sb, depth + 1, count) }
     }
 
-    // Read amount + RRN off a transaction-detail screen and forward it.
-    private fun captureDetail(text: String, pkg: String) {
-        val rrn = RRN_LABELLED.find(text)?.groupValues?.get(1) ?: RRN_BARE.find(text)?.groupValues?.get(1) ?: return
+    // Read amount + a PLAIN (unmasked) RRN off a transaction-detail screen and forward it.
+    // Returns true if it forwarded or already handled this screen; false when no plain 12-digit
+    // RRN is present (→ the caller starts the masked clipboard sweep).
+    private fun captureDetail(text: String, pkg: String): Boolean {
+        val rrn = RRN_LABELLED.find(text)?.groupValues?.get(1)
+            ?: RRN_BARE.find(text)?.groupValues?.get(1) ?: return false
         val amount = extractAmount(text)
         if (amount == null || amount <= 0.0) {
             AlertStore.log(applicationContext, "${nowTag()} 🔎 RRN $rrn but amount unreadable")
-            return
+            return true
         }
         val key = "$amount|$rrn"
-        if (AlertStore.seenRecently(applicationContext, key)) return
+        if (AlertStore.seenRecently(applicationContext, key)) return true
         val payer = extractPayer(text)
         val orderRef = ORDER_ID.find(text)?.groupValues?.get(1)   // full Order ID (merge key), if readable
         val txn = ParsedTxn(amount = amount, utr = rrn, payerVpa = null, payerName = payer, bank = "PAYTM",
             raw = "PAYTM detail RRN=$rrn amt=$amount", orderRef = orderRef)
         AlertUploader.send(applicationContext, txn, "ACCESSIBILITY", pkg)
+        return true
+    }
+
+    // True when the screen clearly shows the merchant's OWN outgoing money (debit / refund / sent),
+    // never an incoming credit — so a 12-digit number on such a receipt is never mistaken for a
+    // received-payment RRN. Only rejects CLEAR debits; it never requires positive credit wording
+    // (which would drop legitimate credits whose receipt omits the word "received").
+    private fun isDebit(text: String): Boolean {
+        val s = text.lowercase()
+        return s.contains("paid to") || s.contains("sent to") || s.contains("you paid") ||
+            s.contains("debited") || s.contains("money sent") || s.contains("payment sent") ||
+            s.contains("refund")
     }
 
     // When Paytm DOES expose readable rows: tap the next un-captured one by coordinate.
@@ -343,6 +453,264 @@ class TxnAccessibilityService : AccessibilityService() {
             for (i in 0 until n.childCount) n.getChild(i)?.let { stack.addLast(it) }
         }
         return sb.toString()
+    }
+
+    // ─────────────────────────── Notification-tap auto-open ───────────────────────────
+    // A background app on Android 14/15 may NOT fire someone else's contentIntent, so a
+    // Paytm credit push can't be opened with contentIntent.send(). Instead we open the shade
+    // and dispatch a REAL tap on the credit notification — that IS allowed, and it fires the
+    // intent → the exact receipt, which the scraper above then reads for the RRN.
+
+    private fun doRequestNotificationTap(hint: String?) {
+        pendingTapHint = hint?.lowercase()
+        pendingTapAt = SystemClock.uptimeMillis()
+        main.post { try { performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) } catch (e: Exception) {} }
+    }
+
+    // In the shade, find the CREDIT notification (a clickable node with credit wording + a
+    // rupee amount) and click it. Skips debit/marketing rows.
+    private fun clickNotification(node: AccessibilityNodeInfo, hint: String?): Boolean {
+        try {
+            if (node.isClickable) {
+                val t = subtreeText(node).lowercase()
+                val credit = t.contains("received") || t.contains("credited") ||
+                    t.contains("prapt") || t.contains("paid you")
+                val hintHit = hint != null && hint.length > 10 &&
+                    t.contains(hint.substring(0, minOf(20, hint.length)))
+                val debit = t.contains("you paid") || t.contains("paid to") ||
+                    t.contains("sent") || t.contains("debited")
+                if ((credit || hintHit) && !debit && AMOUNT.containsMatchIn(t) && t.length < 300) {
+                    return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+            }
+            for (i in 0 until node.childCount) {
+                val c = node.getChild(i) ?: continue
+                if (clickNotification(c, hint)) return true
+            }
+        } catch (e: Exception) {}
+        return false
+    }
+
+    // ─────────────────────────── Full multi-window read ───────────────────────────
+    // Read the node text of EVERY window belonging to the payment app (like uiautomator) —
+    // Paytm renders receipt content in a window that rootInActiveWindow returns empty for,
+    // but getWindows() sees. Requires flagRetrieveInteractiveWindows in the a11y config.
+    private fun readAllWindows(pkg: String): String {
+        val sb = StringBuilder()
+        try {
+            for (w in windows.orEmpty()) {
+                val wr = w?.root ?: continue
+                if (wr.packageName?.toString() == pkg) collectInto(wr, sb)
+            }
+        } catch (e: Exception) {}
+        return sb.toString()
+    }
+
+    private fun collectInto(root: AccessibilityNodeInfo, sb: StringBuilder) {
+        var count = 0
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        while (stack.isNotEmpty() && count < MAX_NODES) {
+            val n = stack.removeLast(); count++
+            n.text?.let { if (it.isNotBlank()) sb.append(it).append(' ') }
+            n.contentDescription?.let { if (it.isNotBlank()) sb.append(it).append(' ') }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { stack.addLast(it) }
+        }
+    }
+
+    // ─────────────────────────── Masked-RRN clipboard capture ───────────────────────────
+    // Paytm Business masks the RRN on its receipt ("209…975768"); the full value is only
+    // obtainable by tapping its "Copy" button (→ clipboard) and reading it from a focused app.
+    // The Copy buttons often sit below the fold and their bounds read as real coordinates ONLY
+    // inside an accessibility-event callback — so this is event-driven: a heartbeat scrolls the
+    // reference block into view and keeps nudging so fresh events arrive; maskedScanAndTap (run
+    // from onAccessibilityEvent) taps each Copy for real and launches RrnClipboardActivity, which
+    // reads the clipboard and forwards through AlertUploader. Layout-agnostic — no field-order or
+    // geometry assumptions; the trampoline keeps only a 12-digit value matching a mask fingerprint.
+
+    private fun maybeCaptureMasked(text: String, pkg: String) {
+        if (maskedRunning) return
+        val amount = extractAmount(text) ?: return
+        if (amount <= 0.0) return
+        val hints = maskedHints(text)
+        if (hints.isEmpty() || !text.contains("copy", ignoreCase = true)) return
+        mAmount = amount
+        mOrderRef = ORDER_ID.find(text)?.groupValues?.get(1)
+        mPayer = extractPayer(text)
+        mPkg = pkg
+        mHints = hints
+        mStartAt = SystemClock.uptimeMillis(); mLastTapAt = 0L; mLastScanAt = 0L
+        mScrolls = 0; mNextTap = 0; mJit = 0
+        sMaskedCapturedAt = 0L
+        maskedRunning = true
+        AlertStore.log(applicationContext, "${nowTag()} 🎯 masked-RRN sweep start hints=[$hints]")
+        maskedTick()
+    }
+
+    // Heartbeat: scroll the reference block into view (until the first tap), then keep nudging so
+    // fresh events keep arriving for maskedScanAndTap. Enforces timeout, early-exits on success.
+    private fun maskedTick() {
+        if (!maskedRunning) return
+        if (sMaskedCapturedAt > mStartAt) { endMasked("captured"); return }
+        val now = SystemClock.uptimeMillis()
+        if (now - mStartAt > 22000) { endMasked("timeout"); return }
+        val root = rootInActiveWindow
+        if (root != null) {
+            if (mLastTapAt == 0L) {
+                if (mScrolls < 6) { scrollForward(root); mScrolls++ } else { nudge((mScrolls++ and 1) == 0) }
+            } else if (now - mLastTapAt > 1600) {
+                nudge((mScrolls++ and 1) == 0)
+            }
+        }
+        val delay = if (mLastTapAt == 0L && mScrolls <= 6) 1100L else 700L
+        main.postDelayed({ maskedTick() }, delay)
+    }
+
+    // Called from onAccessibilityEvent DURING a session — the one place node bounds are real.
+    // Round-robin taps the reference Copies (one per event, spaced so the trampoline reads each
+    // clipboard) and KEEPS cycling until RrnClipboardActivity confirms a valid RRN, or timeout.
+    private fun maskedScanAndTap() {
+        if (!maskedRunning) return
+        if (sMaskedCapturedAt > mStartAt) { endMasked("captured"); return }
+        val now = SystemClock.uptimeMillis()
+        if (now - mLastTapAt < 1500) return   // let the trampoline read the previous copy first
+        if (now - mLastScanAt < 150) return   // don't churn on rapid-fire events
+        mLastScanAt = now
+        val root = rootInActiveWindow ?: return
+        val copies = ArrayList<AccessibilityNodeInfo>()
+        val masks = ArrayList<String>()
+        collectRefCopies(root, arrayOfNulls<String>(1), copies, masks)
+        if (copies.isEmpty()) return
+        for (k in copies.indices) {
+            val i = (mNextTap + k) % copies.size
+            val pt = realTapPoint(copies[i]) ?: continue
+            mNextTap = i + 1; mLastTapAt = now
+            val jt = TAP_JITTER[mJit++ % TAP_JITTER.size]
+            val tx = pt[0] + jt[0]; val ty = pt[1] + jt[1]
+            AlertStore.log(applicationContext, "${nowTag()} 📎 tap Copy #$i [${masks[i]}] @$tx,$ty")
+            tapAt(tx, ty)
+            main.postDelayed({ launchRrnCapture() }, 450)
+            return
+        }
+    }
+
+    private fun endMasked(why: String) {
+        maskedRunning = false
+        AlertStore.log(applicationContext, "${nowTag()} 🎯 masked-RRN sweep end — $why")
+    }
+
+    // DFS: collect every "Copy" node whose nearest preceding value is a numeric reference. No
+    // geometry — Paytm's webview reports bogus bounds, so we rely on structure/order only.
+    private fun collectRefCopies(
+        node: AccessibilityNodeInfo?, lastRef: Array<String?>,
+        copies: ArrayList<AccessibilityNodeInfo>, masks: ArrayList<String>,
+    ) {
+        if (node == null || copies.size >= 8) return
+        try {
+            val t = (node.text?.toString() ?: node.contentDescription?.toString() ?: "").trim()
+            if (t.isNotEmpty()) {
+                if (t.equals("copy", ignoreCase = true)) {
+                    lastRef[0]?.let { copies.add(node); masks.add(it); lastRef[0] = null }
+                } else if (looksLikeRef(t)) {
+                    lastRef[0] = t.replace(Regex("\\s+"), "")
+                }
+            }
+            for (i in 0 until node.childCount) collectRefCopies(node.getChild(i), lastRef, copies, masks)
+        } catch (e: Exception) {}
+    }
+
+    // A masked ("209…975768") or mostly-digits reference — NOT an amount and NOT an order-id.
+    private fun looksLikeRef(v: String): Boolean {
+        if (v.length > 40) return false
+        val low = v.lowercase()
+        if (v.contains('₹') || low.contains("rs") || low.contains("inr")) return false
+        if (MASKED_REF.containsMatchIn(v)) return true
+        val digits = v.replace(Regex("[^0-9]"), "")
+        return digits.length >= 8 && v.replace(Regex("[0-9\\s.·•…\\-]"), "").isEmpty()
+    }
+
+    // Real tap point for a Copy actually on screen: walk up to a button-sized box within the
+    // visible content band; off-screen Copies (bounds clamped, height 0) return null.
+    private fun realTapPoint(node: AccessibilityNodeInfo): IntArray? {
+        val (w, h) = realSize()
+        var n: AccessibilityNodeInfo? = node
+        var g = 0
+        val r = Rect()
+        while (n != null && g++ < 4) {
+            try { n.getBoundsInScreen(r) } catch (e: Exception) { break }
+            if (r.width() > 0 && r.height() > 0 && r.width() < w * 0.7 &&
+                r.centerY() > h * 0.08 && r.centerY() < h * 0.90) {
+                return intArrayOf(r.centerX(), r.centerY())
+            }
+            n = n.parent
+        }
+        return null
+    }
+
+    // Tiny scroll to fire a fresh accessibility event without meaningfully moving the block.
+    private fun nudge(down: Boolean) {
+        try {
+            val (w, h) = realSize()
+            val cx = w / 2
+            val d = maxOf(40, (h * 0.025).toInt())
+            val y0 = (h * 0.45).toInt()
+            val y1 = y0 + if (down) -d else d
+            val p = Path().apply { moveTo(cx.toFloat(), y0.toFloat()); lineTo(cx.toFloat(), y1.toFloat()) }
+            dispatchGesture(GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(p, 0L, 90L)).build(), null, null)
+        } catch (e: Exception) {}
+    }
+
+    // Scroll the receipt down: prefer ACTION_SCROLL_FORWARD, else a real drag from mid-content up.
+    private fun scrollForward(root: AccessibilityNodeInfo) {
+        findScrollAction(root)?.let {
+            try { if (it.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return } catch (e: Exception) {}
+        }
+        try {
+            val (w, h) = realSize()
+            val cx = w / 2
+            val p = Path().apply { moveTo(cx.toFloat(), h * 0.60f); lineTo(cx.toFloat(), h * 0.18f) }
+            dispatchGesture(GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(p, 0L, 280L)).build(), null, null)
+        } catch (e: Exception) {}
+    }
+
+    private fun findScrollAction(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (node == null) return null
+        try {
+            if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD }) return node
+            for (i in 0 until node.childCount) {
+                val r = findScrollAction(node.getChild(i)); if (r != null) return r
+            }
+        } catch (e: Exception) {}
+        return null
+    }
+
+    // Fingerprint every masked ref as "lead|trail" (e.g. "209|975768"), comma-joined. The
+    // trampoline accepts a 12-digit clipboard value only if it starts/ends with one of these.
+    private fun maskedHints(screen: String): String {
+        val sb = StringBuilder()
+        for (m in MASKED_REF.findAll(screen)) {
+            val p = MASK_SPLIT.find(m.value.replace(Regex("\\s+"), "")) ?: continue
+            if (sb.isNotEmpty()) sb.append(',')
+            sb.append(p.groupValues[1]).append('|').append(p.groupValues[2])
+        }
+        return sb.toString()
+    }
+
+    // Launch the invisible focused trampoline to read the just-copied RRN off the clipboard.
+    private fun launchRrnCapture() {
+        try {
+            val i = Intent(this, RrnClipboardActivity::class.java)
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            i.putExtra("captureRrn", true)
+            i.putExtra("amount", mAmount)
+            i.putExtra("orderRef", mOrderRef)
+            i.putExtra("pkg", mPkg)
+            i.putExtra("payer", mPayer)
+            i.putExtra("hints", mHints)
+            startActivity(i)
+        } catch (e: Exception) {}
     }
 
     private fun nowTag(): String =

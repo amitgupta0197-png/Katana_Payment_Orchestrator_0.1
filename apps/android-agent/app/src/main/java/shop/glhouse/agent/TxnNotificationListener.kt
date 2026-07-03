@@ -63,12 +63,19 @@ class TxnNotificationListener : NotificationListenerService() {
             AlertStore.log(applicationContext, "${nowTag()} 🔔 paytm-notif: ${content.take(90)}")
         }
 
-        // Auto-open BEFORE the credit-parse: any Paytm notification that looks payment-
-        // ish opens its detail screen so the screen-reader can scrape the RRN with zero
-        // navigation. Firing here (not after the parse) means a "Payment received" push
-        // whose wording the credit parser doesn't recognise STILL triggers capture.
+        // Auto-open BEFORE the credit-parse: any Paytm notification that looks payment-ish
+        // opens its detail screen so the screen-reader can scrape the RRN with zero navigation.
+        // Firing here (not after the parse) means a "Payment received" push whose wording the
+        // credit parser doesn't recognise STILL triggers capture.
         if (Prefs.autoOpen(applicationContext) && isPaytm && looksPaymentish(content)) {
-            try { sbn.notification?.contentIntent?.send() } catch (e: Exception) {}
+            // PRIMARY (Android 14/15): a background app may NOT fire someone else's contentIntent,
+            // so open the shade and TAP the notification instead — a real tap fires the intent →
+            // the exact receipt, which the screen-reader then scrapes for the RRN.
+            TxnAccessibilityService.requestNotificationTap(content)
+            // FALLBACK (Android < 14, where a background contentIntent send still works).
+            if (android.os.Build.VERSION.SDK_INT < 34) {
+                try { sbn.notification?.contentIntent?.send() } catch (e: Exception) {}
+            }
         }
 
         val txn = TxnParser.parse(content, sbn.packageName) ?: return
