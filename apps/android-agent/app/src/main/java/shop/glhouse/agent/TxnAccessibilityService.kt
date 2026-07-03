@@ -42,6 +42,11 @@ class TxnAccessibilityService : AccessibilityService() {
         const val MAX_SEEN = 600
         val RRN_LABELLED = Regex("(?:rrn|utr|upi\\s*ref(?:\\s*no)?)[^0-9]{0,24}([0-9]{12})", RegexOption.IGNORE_CASE)
         val RRN_BARE = Regex("\\b([0-9]{12})\\b")
+        // Marks a screen as a transaction-detail screen. MUST cover the same label
+        // vocabulary as RRN_LABELLED (rrn / utr / upi ref) plus "Transaction ID" — else a
+        // detail screen whose RRN the extractor CAN read (e.g. labelled only "UPI Ref No")
+        // is never recognised as a detail and gets skipped entirely.
+        val DETAIL_MARKER = Regex("\\brrn\\b|\\butr\\b|upi\\s*ref(?:\\s*no)?|transaction\\s*id", RegexOption.IGNORE_CASE)
         // Full Order ID after the "Order ID" label (only matches when Paytm renders the
         // full value in node text, not a masked "T26…749211" stub) — a unique merge key.
         val ORDER_ID = Regex("order\\s*id[:\\s#]*([A-Za-z0-9][A-Za-z0-9-]{9,39})", RegexOption.IGNORE_CASE)
@@ -75,7 +80,7 @@ class TxnAccessibilityService : AccessibilityService() {
         // Debug: upload the full node tree of each distinct Paytm screen while armed.
         if (System.currentTimeMillis() < Prefs.debugDumpUntil(applicationContext)) maybeDumpTree(root, text)
 
-        val isDetail = text.contains("RRN", ignoreCase = true) || text.contains("Transaction ID", ignoreCase = true)
+        val isDetail = DETAIL_MARKER.containsMatchIn(text)
 
         if (isDetail) {
             // De-dup identical detail screens so we don't re-send on every content event.
@@ -171,7 +176,7 @@ class TxnAccessibilityService : AccessibilityService() {
         val h = text.hashCode() * 31 + root.childCount
         if (!dumpedHashes.add(h)) return
         val label = when {
-            text.contains("RRN", true) || text.contains("Transaction ID", true) -> "detail"
+            DETAIL_MARKER.containsMatchIn(text) -> "detail"
             isPaytmList(text) -> "list"
             else -> "other"
         }
