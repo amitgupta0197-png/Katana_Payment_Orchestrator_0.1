@@ -53,7 +53,7 @@ export function AssignProviderDialog({
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Merchant assigned to provider");
+      toast.success("Branch assigned to provider");
       onOpenChange(false);
       setProviderId("");
       qc.invalidateQueries({ queryKey: ["merchants"] });
@@ -129,7 +129,7 @@ export function ProviderAttributionCard({ merchantId, merchantCode }: { merchant
       <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
         <div>
           <CardTitle className="text-base">Provider attribution</CardTitle>
-          <CardDescription>Which provider sourced this merchant, and who onboarded it.</CardDescription>
+          <CardDescription>Which provider sourced this branch, and who onboarded it.</CardDescription>
         </div>
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
           <Link2 className="h-4 w-4" /> {mappings.length ? "Change / add" : "Assign provider"}

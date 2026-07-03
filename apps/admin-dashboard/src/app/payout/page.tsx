@@ -25,7 +25,7 @@ export default function PayoutPage() {
 
   const cols: Column<Payout>[] = [
     { key: "payout_ref", header: "Ref", render: (r) => r.payout_ref ? <span className="font-mono text-xs">{r.payout_ref}</span> : "—" },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "beneficiary_vpa", header: "VPA", render: (r) => r.beneficiary_vpa ?? "—" },
     { key: "beneficiary_ifsc", header: "IFSC", render: (r) => r.beneficiary_ifsc ?? "—" },
@@ -37,7 +37,7 @@ export default function PayoutPage() {
     <>
       <PageHeader title="Payouts (gRPC)" description="Per-vendor payout dispatch — internal gRPC service." icon={Send} />
       <DataView rows={rows} columns={cols} rowKey={(r) => r.id} loading={q.isLoading}
-        search={{ placeholder: "Search by ref / merchant / VPA…", fields: ["payout_ref", "merchant_id", "beneficiary_vpa", "beneficiary_ifsc"] }}
+        search={{ placeholder: "Search by ref / branch / VPA…", fields: ["payout_ref", "merchant_id", "beneficiary_vpa", "beneficiary_ifsc"] }}
         filters={[
           { key: "completed", label: "Completed", predicate: (r: Payout) => r.status === "COMPLETED" || r.status === "PAID" },
           { key: "pending",   label: "Pending",   predicate: (r: Payout) => r.status === "PENDING" || r.status === "PROCESSING" || r.status === "REQUESTED" },

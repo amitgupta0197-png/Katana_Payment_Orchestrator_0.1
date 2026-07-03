@@ -10,8 +10,10 @@
 // PoolPay's S2S /order/create and /order/status endpoints and parse their
 // deeplink payload — the shapes below already match that contract.
 
+import { signPoolPay } from "@/lib/provider-integration";
+
 const PAYEE_VPA = "poolpay.sandbox@upi"; // gateway collect VPA (payee)
-const PAYEE_NAME = "PoolPay";
+const PAYEE_NAME = "Katana Pay";
 
 export interface DeepLinks {
   paytm: string;
@@ -40,24 +42,47 @@ export function buildDeeplinks(query: string): DeepLinks {
   };
 }
 
-// Sandbox status decision. Deterministic on amount (last two minor digits) so a
-// tester can force outcomes, with a time-based settle for the happy path.
-//   ...13  -> FAILED (customer declined / U30)
+// Sandbox status decision. An S2S order does NOT settle on its own — like the real
+// flow, it stays PENDING until the payer pays and a webhook/UTR confirms it (the
+// /confirm endpoint or the vendor callback). Only the pending-expiry rule and the
+// amount-forced test outcomes change status automatically:
+//   ...13  -> FAILED  (customer declined / U30)
 //   ...11  -> EXPIRED (collect request lapsed / U69)
-//   ...07  -> stays PENDING forever (models a hung payment → hits pending-expiry)
-//   else   -> PENDING for ~8s, then SUCCESS (collected)
+//   ...99  -> SUCCESS (forced success, ~8s — for testing the happy path)
+//   else   -> PENDING (awaits confirmation / webhook / pending-expiry)
+//
+// CRITICAL: these amount-based outcomes are TEST hooks only. On real merchant
+// traffic they would auto-FAIL / auto-EXPIRE / auto-SUCCEED any order whose amount
+// happens to end in .13 / .11 / .99 paise — with NO payment ever made. They are
+// therefore gated behind POOLPAY_SANDBOX_OUTCOMES=1 and are OFF by default (and in
+// production). With them off, an order stays PENDING until a REAL confirmation
+// (agent bank-credit alert, vendor webhook, or manual ops) or the pending-expiry
+// timeout — it never changes state on its own.
+function sandboxOutcomesEnabled(): boolean {
+  return process.env.POOLPAY_SANDBOX_OUTCOMES === "1";
+}
 export function decidePoolPayStatus(
   amountMinor: number,
   ageSeconds: number,
 ): { status: "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED"; response_code: string } {
-  if (amountMinor % 100 === 13) return { status: "FAILED", response_code: "U30" };
-  if (amountMinor % 100 === 11) return { status: "EXPIRED", response_code: "U69" };
-  if (amountMinor % 100 === 7) return { status: "PENDING", response_code: "U17" }; // never auto-settles
-  if (ageSeconds >= 8) return { status: "SUCCESS", response_code: "00" };
-  return { status: "PENDING", response_code: "U17" };
+  if (sandboxOutcomesEnabled()) {
+    if (amountMinor % 100 === 13) return { status: "FAILED", response_code: "U30" };
+    if (amountMinor % 100 === 11) return { status: "EXPIRED", response_code: "U69" };
+    if (amountMinor % 100 === 99 && ageSeconds >= 8) return { status: "SUCCESS", response_code: "00" }; // forced test success
+  }
+  return { status: "PENDING", response_code: "U17" }; // default: awaits real confirmation
 }
 
 export const POOLPAY_TERMINAL = new Set(["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"]);
+
+// Auto-resolution pause. The status enquiry / poller normally advances a PENDING
+// order over time (sandbox amount rule + pending-expiry). It must NOT do so while
+// the order is parked for a human decision: a high-amount hold (meta.hold) or a
+// sender payment proof awaiting ops verification (meta.review === 'PROOF_SUBMITTED').
+// Pausing here stops a proof-bearing order from silently expiring before review.
+export function autoResolvePaused(meta: { hold?: boolean; review?: string } | null | undefined): boolean {
+  return meta?.hold === true || meta?.review === "PROOF_SUBMITTED";
+}
 
 // Stable 12-digit RRN derived from the order id (so repeated enquiries match).
 export function genRrn(seed: string): string {
@@ -109,28 +134,78 @@ export function poolpayLive(): boolean {
   return process.env.POOLPAY_MODE === "live" && !!process.env.POOLPAY_BASE_URL;
 }
 
-function poolpayHeaders(): Record<string, string> {
+// Per-call config override resolved from the provider's integration row (cascade).
+// When present it takes precedence over the POOLPAY_* env vars so each branch
+// signs/routes with ITS provider's credentials. See resolvePoolPayConfig().
+export interface RemoteOverride {
+  baseUrl?: string | null;
+  secret?: string | null;   // SECRET_KEY for the SHA256 hash
+  payId?: string | null;
+  clientId?: string | null;
+  apiKey?: string | null;
+  returnUrl?: string | null;
+}
+
+function poolpayHeaders(ov?: RemoteOverride): Record<string, string> {
   return {
     "content-type": "application/json",
-    "x-client-id": process.env.POOLPAY_CLIENT_ID ?? "",
-    authorization: `Bearer ${process.env.POOLPAY_API_KEY ?? ""}`,
+    "x-client-id": ov?.clientId ?? process.env.POOLPAY_CLIENT_ID ?? "",
+    authorization: `Bearer ${ov?.apiKey ?? process.env.POOLPAY_API_KEY ?? ""}`,
   };
 }
 
 export interface RemoteOrderInput {
   orderId: string; amount: number; currency: string;
   customerVpa?: string; customerPhone?: string; note?: string;
+  customerName?: string; customerEmail?: string; userId?: string;
 }
 export interface RemoteOrderResult {
   payId: string; vendorTxnId: string; deeplinks: DeepLinks; upiIntent: string; status: string;
 }
 
-export async function createOrderRemote(input: RemoteOrderInput): Promise<RemoteOrderResult> {
-  const base = process.env.POOLPAY_BASE_URL!;
+export async function createOrderRemote(input: RemoteOrderInput, ov?: RemoteOverride): Promise<RemoteOrderResult> {
+  const base = (ov?.baseUrl ?? process.env.POOLPAY_BASE_URL)!;
+
+  // When a SECRET_KEY + PAY_ID are configured we follow the documented PoolPay
+  // AUTO payment-request contract: POST /api/v1/payin/paymentrequest with a
+  // SHA256-signed HASH over the sorted params. Otherwise fall back to the generic
+  // S2S scaffold shape.
+  if (ov?.secret && ov?.payId) {
+    const params: Record<string, string> = {
+      PAY_ID: ov.payId,
+      ORDER_ID: input.orderId,
+      TXNTYPE: "SALE",
+      RETURN_URL: ov.returnUrl ?? process.env.POOLPAY_RETURN_URL ?? "",
+      CUST_NAME: input.customerName ?? "Customer",
+      USER_ID: input.userId ?? input.orderId,
+      CUST_PHONE: input.customerPhone ?? "",
+      CUST_EMAIL: input.customerEmail ?? "",
+      AMOUNT: String(input.amount),
+      CURRENCY_CODE: input.currency === "INR" ? "356" : input.currency,
+      ORDER_DESC: input.note ?? `Order ${input.orderId}`,
+    };
+    const HASH = signPoolPay(params, ov.secret);
+    const res = await fetch(`${base}/api/v1/payin/paymentrequest`, {
+      method: "POST",
+      headers: poolpayHeaders(ov),
+      body: JSON.stringify({ ...params, HASH }),
+    });
+    if (!res.ok) throw new Error(`PoolPay payment-request failed: HTTP ${res.status}`);
+    const d: any = await res.json();
+    const upi = d?.deeplinks?.upi ?? d?.intent_url ?? d?.pay_url ?? "";
+    return {
+      payId: d?.PAY_ID ?? d?.pay_id ?? ov.payId,
+      vendorTxnId: d?.TXN_ID ?? d?.txn_id ?? "",
+      deeplinks: { paytm: d?.deeplinks?.paytm ?? upi, phonepe: d?.deeplinks?.phonepe ?? upi, upi },
+      upiIntent: upi,
+      status: d?.STATUS ?? d?.status ?? "PENDING",
+    };
+  }
+
   // TODO(poolpay): align path/body with PoolPay's real S2S order-create contract.
   const res = await fetch(`${base}/v1/order/create`, {
     method: "POST",
-    headers: poolpayHeaders(),
+    headers: poolpayHeaders(ov),
     body: JSON.stringify({
       order_id: input.orderId, amount: input.amount, currency: input.currency,
       customer_vpa: input.customerVpa, customer_phone: input.customerPhone, note: input.note,

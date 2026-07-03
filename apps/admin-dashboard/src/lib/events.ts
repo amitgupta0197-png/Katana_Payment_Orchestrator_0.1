@@ -18,6 +18,7 @@ export type EventType =
   | "reconciliation.break_opened"
   | "risk.alert"
   | "provider.kyc_decided"
+  | "provider.integration.updated"
   | "maker_checker.requested"
   | "maker_checker.decided"
   | "auth.session_started"

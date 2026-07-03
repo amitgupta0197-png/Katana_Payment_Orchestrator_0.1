@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -60,7 +61,7 @@ export default function ProviderPortalMerchantDetailView({ id }: { id: string })
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Merchant not found</CardTitle>
+          <CardTitle>Branch not found</CardTitle>
           <CardDescription>This merchant isn't mapped to your provider, or doesn't exist.</CardDescription>
         </CardHeader>
       </Card>
@@ -88,6 +89,10 @@ export default function ProviderPortalMerchantDetailView({ id }: { id: string })
             <DataTable columns={reserveCols} rows={mReserves} rowKey={(r) => r.id} emptyState="No reserve holds." />
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
       </div>
     </>
   );

@@ -126,7 +126,7 @@ export default function ApiKeysPage() {
       <Card>
         <CardHeader>
           <CardTitle>{(q.data?.keys ?? []).length} keys</CardTitle>
-          <CardDescription>Keys are scoped to your merchant only.</CardDescription>
+          <CardDescription>Keys are scoped to your branch only.</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable

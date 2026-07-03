@@ -102,7 +102,7 @@ export default function KybPage() {
   const cases = q.data?.cases ?? [];
 
   const cols: Column<KybCase>[] = [
-    { key: "merchant_id", header: "Merchant",
+    { key: "merchant_id", header: "Branch",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/kyb/${r.id}`}>{r.merchant_id}</Link> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "risk_tier", header: "Risk", render: (r) => r.risk_tier ? <Badge variant={statusVariant(r.risk_tier)}>{r.risk_tier}</Badge> : "—" },
@@ -126,7 +126,7 @@ export default function KybPage() {
         rowKey={(r) => r.id}
         loading={q.isLoading}
         href={(r) => `/kyb/${r.id}`}
-        search={{ placeholder: "Search by merchant id…", fields: ["merchant_id", "decided_by", "status"] }}
+        search={{ placeholder: "Search by branch id…", fields: ["merchant_id", "decided_by", "status"] }}
         filters={[
           { key: "open",       label: "Open",       predicate: (r) => r.status !== "APPROVED" && r.status !== "REJECTED" && r.status !== "EXPIRED" },
           { key: "in-review",  label: "In review",  predicate: (r) => r.status === "IN_REVIEW" },

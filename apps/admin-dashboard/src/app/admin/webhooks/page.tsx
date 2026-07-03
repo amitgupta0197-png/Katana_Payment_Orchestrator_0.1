@@ -110,7 +110,7 @@ function CreateWebhookDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Merchant ID</Label>
+                <Label>Branch ID</Label>
                 <Input value={form.merchant_id} onChange={(e) => setForm({ ...form, merchant_id: e.target.value })} placeholder="M10001" />
               </div>
               <div className="space-y-1.5">
@@ -253,7 +253,7 @@ export default function WebhooksPage() {
   const configCols: Column<ConfigRow>[] = [
     { key: "updated_at", header: "Created on",
       render: (r) => <div className="text-xs"><div>{formatDateTime(r.updated_at)}</div></div> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "target_url", header: "URL",
       render: (r) => (
         <div className="flex items-center gap-1.5">
@@ -269,7 +269,7 @@ export default function WebhooksPage() {
   const pendingCols: Column<OutboxRow>[] = [
     { key: "created_at", header: "Created", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
     { key: "event_type", header: "Event", render: (r) => <Badge variant="brand">{r.event_type}</Badge> },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "target_url", header: "Target", render: (r) => <span className="font-mono text-xs">{r.target_url.slice(0, 36)}</span> },
     { key: "attempts", header: "Attempts", render: (r) => <span className="tabular-nums">{r.attempts}</span> },
     { key: "next_attempt_at", header: "Next try", render: (r) => <span className="text-xs">{formatDateTime(r.next_attempt_at)}</span> },
@@ -279,7 +279,7 @@ export default function WebhooksPage() {
   const dlqCols: Column<OutboxRow>[] = [
     { key: "dead_lettered_at", header: "DLQ at", render: (r) => <span className="text-xs">{formatDateTime(r.dead_lettered_at!)}</span> },
     { key: "event_type", header: "Event", render: (r) => <Badge variant="danger">{r.event_type}</Badge> },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "attempts", header: "Attempts", render: (r) => <span className="tabular-nums">{r.attempts}</span> },
     { key: "last_error", header: "Final error", render: (r) => <span className="text-xs text-[color:var(--color-danger)]">{r.last_error}</span> },
     { key: "target_url", header: "Target", render: (r) => <span className="font-mono text-xs">{r.target_url.slice(0, 36)}</span> },
@@ -288,7 +288,7 @@ export default function WebhooksPage() {
   const recentCols: Column<OutboxRow>[] = [
     { key: "delivered_at", header: "Delivered", render: (r) => <span className="text-xs">{formatDateTime(r.delivered_at!)}</span> },
     { key: "event_type", header: "Event" },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "attempts", header: "Attempts", render: (r) => <span className="tabular-nums">{r.attempts}</span> },
     { key: "target_url", header: "Target", render: (r) => <span className="font-mono text-xs">{r.target_url.slice(0, 36)}</span> },
   ];
@@ -342,7 +342,7 @@ export default function WebhooksPage() {
 
         <TabsContent value="configs">
           <DataView rows={configs} columns={configCols} rowKey={(r) => r.config_id} loading={q.isLoading}
-            search={{ placeholder: "Search by merchant id or URL…", fields: ["merchant_id", "target_url"] }}
+            search={{ placeholder: "Search by branch id or URL…", fields: ["merchant_id", "target_url"] }}
             filters={[
               { key: "on",  label: "Enabled",  predicate: (r: ConfigRow) => r.enabled },
               { key: "off", label: "Disabled", predicate: (r: ConfigRow) => !r.enabled },
@@ -367,7 +367,7 @@ export default function WebhooksPage() {
 
         <TabsContent value="pending">
           <DataView rows={pending} columns={pendingCols} rowKey={(r) => r.outbox_id} loading={q.isLoading}
-            search={{ placeholder: "Search by event / merchant…", fields: ["event_type", "merchant_id", "target_url"] }}
+            search={{ placeholder: "Search by event / branch…", fields: ["event_type", "merchant_id", "target_url"] }}
             savedViewKey="webhooks-pending"
             emptyTitle="Queue is empty" emptyDescription="Trigger any merchant-bound event to enqueue."
             rowActions={(r) => (

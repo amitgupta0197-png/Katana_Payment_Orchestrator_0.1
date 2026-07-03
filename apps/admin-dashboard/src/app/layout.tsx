@@ -15,17 +15,22 @@ export const metadata: Metadata = {
 
 // Persona portals + login own their chrome. Sniff the path Next.js sets in
 // request headers so the SUPER_ADMIN sidebar/header don't leak into them.
-const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal", "/pay"];
+const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal", "/pay", "/developers"];
 
 async function isStandaloneShell(): Promise<boolean> {
   const h = await headers();
-  const path =
-    h.get("x-invoke-path") ??
-    h.get("next-url") ??
-    h.get("x-pathname") ??
-    h.get("x-matched-path") ??
-    "";
-  return STANDALONE_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
+  // Check ALL known path headers (not first-non-null): in some Next versions an
+  // internal header like x-invoke-path / next-url is present but doesn't carry the
+  // real pathname, which would shadow our own reliable middleware-set x-pathname and
+  // wrongly wrap a portal in the admin shell (double sidebar).
+  const candidates = [
+    h.get("x-pathname"),     // set by our middleware — most reliable
+    h.get("x-invoke-path"),
+    h.get("next-url"),
+    h.get("x-matched-path"),
+  ].filter((p): p is string => !!p);
+  return candidates.some((path) =>
+    STANDALONE_PREFIXES.some((p) => path === p || path.startsWith(p + "/")));
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

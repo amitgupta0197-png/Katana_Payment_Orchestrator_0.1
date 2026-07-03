@@ -11,7 +11,7 @@ export async function Header() {
   await headers();
   const session = await getSession();
   const personaLabel: Record<string, string> = {
-    SUPER_ADMIN: "Super Admin", PROVIDER: "Provider", MERCHANT: "Merchant",
+    SUPER_ADMIN: "Super Admin", PROVIDER: "Provider", MERCHANT: "Branch",
   };
 
   return (

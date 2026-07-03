@@ -1,11 +1,13 @@
-// POST /api/auth/login — email + (demo) password → signed cookie session.
-// Demo mode: password "demo" works for the seeded users (admin/provider/merchant @katana.dev).
-// Production: replace with bcrypt against users.password_hash + rate limit + MFA.
+// POST /api/auth/login — email + password → signed cookie session.
+// Real passwords: when the user has a scrypt password_hash we verify against it.
+// Accounts not yet migrated to a real password (null / "demo-mode" hash) fall back
+// to the shared DEMO_PASSWORD so the seeded demo logins keep working.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { setSessionCookie } from "@/lib/auth";
+import { verifyPassword, isRealHash } from "@/lib/password";
 import { publish } from "@/lib/events";
 import { getMfa, checkLoginCode, deviceHash, recordDevice, isSensitiveRole, MFA_ENFORCED } from "@/lib/fifo-mfa";
 
@@ -20,16 +22,20 @@ export async function POST(req: Request) {
   try { body = schema.parse(await req.json()); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-  if (body.password !== (process.env.DEMO_PASSWORD ?? "demo")) {
-    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
-  }
   try {
     const u = await rows<any>("auth", `
-      SELECT id::text, email::text, COALESCE(full_name,'') AS full_name, status
+      SELECT id::text, email::text, COALESCE(full_name,'') AS full_name, status, password_hash
         FROM users WHERE email = $1
     `, [body.email]);
-    if (!u.length) return NextResponse.json({ error: "user not found" }, { status: 401 });
+    if (!u.length) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
     if (u[0].status !== "active") return NextResponse.json({ error: "user disabled" }, { status: 403 });
+
+    // Verify against the real password hash when set; otherwise accept the shared
+    // demo password (un-migrated seeded accounts).
+    const passwordOk = isRealHash(u[0].password_hash)
+      ? verifyPassword(body.password, u[0].password_hash)
+      : body.password === (process.env.DEMO_PASSWORD ?? "demo");
+    if (!passwordOk) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
 
     const personas = await rows<any>("iam", `
       SELECT persona_kind, COALESCE(scope_id,'') AS scope_id, COALESCE(scope_label,'') AS scope_label, is_primary

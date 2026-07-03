@@ -31,7 +31,7 @@ export function DashboardCharts() {
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-base">Transactions · last 14 days</CardTitle>
-          <CardDescription>Daily volume (checkout + PoolPay pay-ins). Line = successful.</CardDescription>
+          <CardDescription>Daily volume (checkout + Katana Pay pay-ins). Line = successful.</CardDescription>
         </CardHeader>
         <CardContent>
           {d ? <AreaChart series={d.txn_series} /> : <ChartSkeleton h={180} />}
@@ -50,8 +50,8 @@ export function DashboardCharts() {
 
       <Card className="lg:col-span-3">
         <CardHeader>
-          <CardTitle className="text-base">Merchant onboarding funnel</CardTitle>
-          <CardDescription>Merchants by stage.</CardDescription>
+          <CardTitle className="text-base">Branch onboarding funnel</CardTitle>
+          <CardDescription>Branches by stage.</CardDescription>
         </CardHeader>
         <CardContent>
           {d ? <FunnelBars funnel={d.funnel} /> : <ChartSkeleton h={140} />}

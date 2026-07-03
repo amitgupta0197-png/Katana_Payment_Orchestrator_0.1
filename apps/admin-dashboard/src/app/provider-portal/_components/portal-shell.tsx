@@ -4,21 +4,24 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt,
+  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Banknote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const NAV = [
   { href: "/provider-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
   { href: "/provider-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/provider-portal/merchants",  label: "Merchants",  icon: Store,           exact: false },
+  { href: "/provider-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
   { href: "/provider-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
+  { href: "/provider-portal/settlements", label: "Settlements", icon: Banknote,       exact: false },
   { href: "/provider-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
   { href: "/provider-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/provider-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
   { href: "/provider-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
+  { href: "/provider-portal/help",       label: "Help & guide", icon: HelpCircle,    exact: false },
 ];
 
 export function ProviderPortalShell({
@@ -91,6 +94,7 @@ export function ProviderPortalShell({
               <span className="font-medium text-[color:var(--color-text)]">{fullName}</span>
               <span className="text-[color:var(--color-text-muted)]">{email}</span>
             </div>
+            <ThemeToggle />
             <Button variant="secondary" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4" /> Logout
             </Button>

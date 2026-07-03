@@ -4,9 +4,10 @@
 // Create order -> deeplink response -> Paytm / PhonePe / QR-UPI buttons ->
 // poll status enquiry until final status. Used on the PoolPay cockpit.
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Copy, Smartphone, QrCode, ExternalLink } from "lucide-react";
+import { Plus, Copy, QrCode, ExternalLink } from "lucide-react";
+import { PaytmLogo, PhonePeLogo, GooglePayLogo } from "@/components/icons/upi-apps";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { formatAmount, statusVariant } from "@/lib/utils";
+import { openUpiApp } from "@/lib/upi";
 
 interface DeepLinks { paytm: string; phonepe: string; upi: string }
 interface CreatedOrder {
@@ -28,14 +30,25 @@ interface CreatedOrder {
 
 const MUTED = "text-[color:var(--color-text-muted)]";
 
-export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
+// `endpoint` lets this same module be reused outside the vendor cockpit — e.g. the
+// merchant detail page passes /api/merchants/[id]/payin-orders so the created order
+// is scoped to that merchant (sub-MID routing + risk rules). Both endpoints accept
+// the same body and return the same { order, deeplinks, upi_intent } shape.
+export function PoolPayCreateOrder({
+  onChange, endpoint = "/api/vendors/poolpay/order", buttonLabel = "Create S2S order", receiverPlaceholder,
+}: {
+  onChange?: () => void;
+  endpoint?: string;
+  buttonLabel?: string;
+  receiverPlaceholder?: string;
+}) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ amount: "499", receiver_vpas: "", customer_vpa: "", customer_phone: "", order_ref: "", mode: "QR" });
   const [active, setActive] = useState<CreatedOrder | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/vendors/poolpay/order", {
+      const r = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: form.amount,
@@ -50,7 +63,7 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
       return (await r.json()) as CreatedOrder;
     },
     onSuccess: (data) => {
-      toast.success("PoolPay order created — deeplinks ready");
+      toast.success("Katana Pay order created — deeplinks ready");
       setCreateOpen(false);
       setActive(data);
       onChange?.();
@@ -60,12 +73,12 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
 
   return (
     <>
-      <Button onClick={() => setCreateOpen(true)}><Plus /> Create S2S order</Button>
+      <Button onClick={() => setCreateOpen(true)}><Plus /> {buttonLabel}</Button>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create PoolPay S2S order</DialogTitle>
+            <DialogTitle>Create Katana Pay S2S order</DialogTitle>
             <DialogDescription>Server-to-server pay-in. Returns Paytm / PhonePe / UPI deeplinks for the payment page.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -100,7 +113,7 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
                 className="flex min-h-[84px] w-full rounded-xl border px-3 py-2 text-sm bg-[color:var(--color-surface)]"
                 value={form.receiver_vpas}
                 onChange={(e) => setForm({ ...form, receiver_vpas: e.target.value })}
-                placeholder={"merchant1@upi\nmerchant2@upi\nmerchant3@upi"}
+                placeholder={receiverPlaceholder ?? "merchant1@upi\nmerchant2@upi\nmerchant3@upi"}
               />
               <p className={`text-xs ${MUTED}`}>If a VPA can&apos;t receive, operations fail it over to the next backup.</p>
             </div>
@@ -114,7 +127,7 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
                 <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="9XXXXXXXXX" />
               </div>
             </div>
-            <p className={`text-xs ${MUTED}`}>Sandbox tip: amounts ending in .13 fail, .11 expire, others settle after ~8s.</p>
+            <p className={`text-xs ${MUTED}`}>Orders stay PENDING until paid &amp; confirmed (webhook / UTR). Sandbox: amounts ending .13 fail, .11 expire, .99 force-succeed; others await confirmation.</p>
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -132,22 +145,57 @@ export function PoolPayCreateOrder({ onChange }: { onChange?: () => void }) {
 
 function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: () => void }) {
   const id = created.order.id;
+  // Poll the public pay-status endpoint — it's readable by every persona (the order
+  // id in the URL is the capability) so this panel works from the cockpit AND the
+  // merchant/provider-scoped merchant page without an auth mismatch.
   const q = useQuery({
-    queryKey: ["poolpay-order", id],
+    queryKey: ["pay-status", id],
     queryFn: async () => {
-      const r = await fetch(`/api/vendors/poolpay/order/${id}`);
+      const r = await fetch(`/api/pay-status/${id}`);
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return (await r.json()) as { status: string; terminal: boolean; order: { rrn?: string } };
+      return (await r.json()) as { status: string; terminal: boolean; rrn?: string | null };
     },
     refetchInterval: (query) => (query.state.data?.terminal ? false : 3000),
-    initialData: { status: created.order.status, terminal: false, order: {} },
+    initialData: { status: created.order.status, terminal: false, rrn: null },
   });
   const status = q.data?.status ?? created.order.status;
   const terminal = q.data?.terminal ?? false;
-  const dl = created.deeplinks;
-  const rrn = q.data?.order?.rrn;
+  const rrn = q.data?.rrn;
   const payLink = `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${created.order.id}`;
   const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
+
+  // Auto-close on a successful payment: once the order settles to SUCCESS, show the
+  // "Payment received" state briefly, then dismiss the dialog automatically (~2s) so
+  // the operator doesn't have to click Close. Only auto-closes on success — FAILED /
+  // EXPIRED stay open so the operator sees the outcome and dismisses it themselves.
+  const autoClosed = useRef(false);
+  useEffect(() => {
+    if (autoClosed.current) return;
+    if (status === "SUCCESS" || status === "SUCCEEDED") {
+      autoClosed.current = true;
+      toast.success("Payment received — closing");
+      const t = setTimeout(() => onClose(), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [status, onClose]);
+
+  // Sandbox: simulate the bank-credit transaction alert (Android agent) so the
+  // reconciler matches it to this order and confirms it — the panel then flips to
+  // "Payment received" on the next poll.
+  const sim = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/vendors/poolpay/order/${id}/simulate-credit`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { outcome: string; detail?: string };
+    },
+    onSuccess: (d) => {
+      if (d.outcome === "CONFIRMED") toast.success("Bank credit matched — order confirmed");
+      else toast.info(`Alert ${String(d.outcome).toLowerCase()}`, { description: d.detail });
+      q.refetch();
+    },
+    onError: (e: Error) => toast.error("Simulate failed", { description: e.message }),
+  });
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -172,14 +220,17 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
               </div>
               <div className={`mt-2 text-xs ${MUTED}`}>Scan with any UPI app</div>
             </div>
-            <Button asChild variant="secondary" className="w-full justify-start">
-              <a href={dl.paytm}><Smartphone /> Pay with Paytm</a>
+            <Button variant="secondary" className="w-full justify-start gap-2" onClick={() => openUpiApp("paytm", created.upi_intent)}>
+              <PaytmLogo /> Pay with Paytm
             </Button>
-            <Button asChild variant="secondary" className="w-full justify-start">
-              <a href={dl.phonepe}><Smartphone /> Pay with PhonePe</a>
+            <Button variant="secondary" className="w-full justify-start gap-2" onClick={() => openUpiApp("phonepe", created.upi_intent)}>
+              <PhonePeLogo /> Pay with PhonePe
             </Button>
-            <Button asChild variant="secondary" className="w-full justify-start">
-              <a href={dl.upi}><QrCode /> QR / Generic UPI</a>
+            <Button variant="secondary" className="w-full justify-start gap-2" onClick={() => openUpiApp("gpay", created.upi_intent)}>
+              <GooglePayLogo /> Pay with Google Pay
+            </Button>
+            <Button variant="secondary" className="w-full justify-start" onClick={() => openUpiApp("any", created.upi_intent)}>
+              <QrCode /> QR / Generic UPI
             </Button>
             <div className="min-w-0 overflow-hidden rounded-md border bg-[color:var(--color-surface-muted)] p-2">
               <div className={`mb-1 text-xs ${MUTED}`}>Customer payment link (share with the payer):</div>
@@ -190,6 +241,9 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
               </div>
             </div>
             <p className={`text-xs ${MUTED}`}>Waiting for the customer to pay — status updates automatically.</p>
+            <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => sim.mutate()} disabled={sim.isPending}>
+              {sim.isPending ? "Simulating bank credit…" : "Simulate bank credit (sandbox)"}
+            </Button>
           </div>
         ) : (
           <div className="rounded-md border p-3 text-sm">

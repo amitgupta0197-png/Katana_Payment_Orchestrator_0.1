@@ -57,7 +57,7 @@ function CreateMainMidDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Merchant code</Label>
+            <Label>Branch code</Label>
             <Input value={form.merchant_id} onChange={(e) => setForm({ ...form, merchant_id: e.target.value.toUpperCase() })} placeholder="M-0001" />
           </div>
           <div className="space-y-1.5">
@@ -127,7 +127,7 @@ function OnboardSubMidDialog({ open, onOpenChange, mains }: { open: boolean; onO
                 <option key={mm.id} value={mm.mid_code}>{mm.mid_code} · {mm.merchant_id}</option>
               ))}
             </select>
-            {selectedMain && <p className="text-xs text-[color:var(--color-text-muted)]">Merchant: <span className="font-mono">{selectedMain.merchant_id}</span></p>}
+            {selectedMain && <p className="text-xs text-[color:var(--color-text-muted)]">Branch: <span className="font-mono">{selectedMain.merchant_id}</span></p>}
           </div>
           <div className="space-y-1.5">
             <Label>Sub-MID code</Label>
@@ -172,7 +172,7 @@ export default function AdminSubMidsPage() {
 
   const mainCols: Column<MainMid>[] = [
     { key: "mid_code", header: "MID code" },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "sub_mid_count", header: "Sub-MIDs", render: (r) => <span className="tabular-nums">{r.sub_mid_count}</span> },
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
@@ -180,7 +180,7 @@ export default function AdminSubMidsPage() {
     { key: "sub_mid_code", header: "Sub-MID",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/sub-mids/${r.id}`}>{r.sub_mid_code}</Link> },
     { key: "main_mid_code", header: "Main MID" },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "traffic_mode", header: "Mode", render: (r) => <Badge variant={statusVariant(r.traffic_mode)}>{r.traffic_mode}</Badge> },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
@@ -189,7 +189,7 @@ export default function AdminSubMidsPage() {
 
   return (
     <>
-      <PageHeader title="Main + Sub-MID engine" description="MID surface for all merchants (PRODUCT_VISION §3.2)." icon={Network} />
+      <PageHeader title="Main + Sub-MID engine" description="MID surface for all branches (PRODUCT_VISION §3.2)." icon={Network} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Button variant="secondary" onClick={() => setMainOpen(true)}><Plus /> New main MID</Button>
@@ -213,7 +213,7 @@ export default function AdminSubMidsPage() {
         rowKey={(r) => r.id}
         loading={q.isLoading}
         href={(r) => `/sub-mids/${r.id}`}
-        search={{ placeholder: "Search by sub-MID / main MID / merchant…", fields: ["sub_mid_code", "main_mid_code", "merchant_id"] }}
+        search={{ placeholder: "Search by sub-MID / main MID / branch…", fields: ["sub_mid_code", "main_mid_code", "merchant_id"] }}
         filters={[
           { key: "kyc-pending",  label: "KYC pending",   predicate: (r: SubMid) => r.kyc_status === "PENDING" || r.kyc_status === "IN_REVIEW" },
           { key: "kyc-approved", label: "KYC approved",  predicate: (r: SubMid) => r.kyc_status === "APPROVED" },

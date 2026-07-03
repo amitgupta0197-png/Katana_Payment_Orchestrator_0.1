@@ -4,21 +4,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, Receipt, Banknote, BookOpen, CreditCard,
-  KeyRound, ShieldAlert, UserCog, LogOut,
+  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const NAV = [
   { href: "/merchant-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
   { href: "/merchant-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
   { href: "/merchant-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
+  { href: "/merchant-portal/provider-settlements", label: "Provider settlements", icon: Landmark, exact: false },
   { href: "/merchant-portal/reserves",    label: "Reserves",    icon: BookOpen,        exact: false },
   { href: "/merchant-portal/sub-mids",    label: "Sub-MIDs",    icon: CreditCard,      exact: false },
   { href: "/merchant-portal/api-keys",    label: "API keys",    icon: KeyRound,        exact: false },
+  { href: "/merchant-portal/integration", label: "Integration", icon: Plug,            exact: false },
   { href: "/merchant-portal/disputes",    label: "Disputes",    icon: ShieldAlert,     exact: false },
   { href: "/merchant-portal/profile",     label: "Profile",     icon: UserCog,         exact: false },
+  { href: "/merchant-portal/help",        label: "Help & guide",icon: HelpCircle,      exact: false },
 ];
 
 export function MerchantPortalShell({
@@ -36,7 +40,7 @@ export function MerchantPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Merchant navigation"
+        aria-label="Branch navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -46,7 +50,7 @@ export function MerchantPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Merchant portal
+              Branch portal
             </span>
           </div>
         </div>
@@ -73,7 +77,7 @@ export function MerchantPortalShell({
           })}
         </nav>
         <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · merchant
+          v0.1.0 · branch
         </div>
       </aside>
 
@@ -84,13 +88,14 @@ export function MerchantPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Merchant</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Branch</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
               <span className="font-medium text-[color:var(--color-text)]">{fullName}</span>
               <span className="text-[color:var(--color-text-muted)]">{email}</span>
             </div>
+            <ThemeToggle />
             <Button variant="secondary" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4" /> Logout
             </Button>

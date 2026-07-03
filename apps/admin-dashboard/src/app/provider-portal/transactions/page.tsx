@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
-import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
 
 interface Totals { gross: number; success_count: number; failed_count: number; pending_count: number; total_count: number }
 interface ByMerchant { merchant_id: string; gross: number; count: number; success: number }
@@ -31,15 +31,15 @@ export default function ProviderTransactionsPage() {
   const t = d?.totals;
 
   const merCols: Column<ByMerchant>[] = [
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "count", header: "Txns", render: (r) => <span className="tabular-nums">{r.count}</span> },
     { key: "success", header: "Successful", render: (r) => <span className="tabular-nums">{r.success}</span> },
     { key: "gross", header: "Gross (reimbursable)", render: (r) => <span className="font-medium tabular-nums">{formatAmount(r.gross)}</span> },
   ];
   const recentCols: Column<Txn>[] = [
     { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
-    { key: "channel", header: "Channel", render: (r) => <Badge variant="brand">{r.channel}</Badge> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "channel", header: "Channel", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -49,7 +49,7 @@ export default function ProviderTransactionsPage() {
     <>
       <PageHeader
         title="Transactions & Reimbursement"
-        description="Gross value across all channels for your assigned merchants. Successful collections are reimbursable."
+        description="Gross value across all channels for your assigned branches. Successful collections are reimbursable."
         icon={Receipt}
       />
 
@@ -57,24 +57,24 @@ export default function ProviderTransactionsPage() {
         <KpiTile label="Gross (reimbursable)" value={formatAmount(t?.gross ?? 0)} sublabel={`${t?.success_count ?? 0} successful`} icon={TrendingUp} variant="success" loading={q.isLoading} />
         <KpiTile label="Total transactions" value={t?.total_count ?? 0} icon={Receipt} loading={q.isLoading} />
         <KpiTile label="Pending" value={t?.pending_count ?? 0} variant={(t?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Merchants" value={d?.merchants.length ?? 0} icon={Store} loading={q.isLoading} />
+        <KpiTile label="Branches" value={d?.merchants.length ?? 0} icon={Store} loading={q.isLoading} />
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Gross by merchant</CardTitle>
-            <CardDescription>Reimbursable gross per assigned merchant.</CardDescription>
+            <CardTitle className="text-base">Gross by branch</CardTitle>
+            <CardDescription>Reimbursable gross per assigned branch.</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable columns={merCols} rows={d?.by_merchant ?? []} rowKey={(r) => r.merchant_id} loading={q.isLoading}
-              emptyState="No transactions yet for your merchants." />
+              emptyState="No transactions yet for your branches." />
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Gross by channel</CardTitle>
-            <CardDescription>PoolPay · Quickpay · PayU · Cashfree · Razorpay …</CardDescription>
+            <CardDescription>Katana Pay · Quickpay · PayU · Cashfree · Razorpay …</CardDescription>
           </CardHeader>
           <CardContent>
             {(d?.by_channel ?? []).length === 0 ? (
@@ -86,7 +86,7 @@ export default function ProviderTransactionsPage() {
                   return (
                     <li key={c.channel}>
                       <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="inline-flex items-center gap-2"><Network className="h-3.5 w-3.5 text-[color:var(--color-brand)]" />{c.channel}</span>
+                        <span className="inline-flex items-center gap-2"><Network className="h-3.5 w-3.5 text-[color:var(--color-brand)]" />{railLabel(c.channel)}</span>
                         <span className="tabular-nums font-medium">{formatAmount(c.gross)} <span className="text-[color:var(--color-text-muted)]">· {c.count}</span></span>
                       </div>
                       <div className="h-2 w-full rounded-full bg-[color:var(--color-surface-muted)]">

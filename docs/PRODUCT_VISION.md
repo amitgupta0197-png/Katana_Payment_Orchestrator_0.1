@@ -8,7 +8,7 @@
 
 ## 1. Vision
 
-Katana is a multi-tenant **payment orchestration platform** that lets a Super Admin operator (Katana itself) bring multiple **Providers/Agents** onto the platform; each Provider sources **Merchants**; each Merchant operates one Main MID and many Sub-MIDs across multiple payment rails (UPI Intent / Collect / Card / Net Banking / Wallet / QR / Crypto). Money flows in via PG vendors (PoolPay, Quickpay, Razorpay, PayU, Cashfree…), gets routed, risk-checked, ledgered, and flows out via Bank Payouts (RazorpayX, Cashfree Payouts, ICICI CE-Connect, PoolPay/Quickpay payout) and Crypto VASPs (Binance OTC, OKX, Bitget, OnMeta, Transak…). Every event is monitored by Agentic AI agents that report into Telegram groups.
+Katana is a multi-tenant **payment orchestration platform** that lets a Super Admin operator (Katana itself) bring multiple **Providers/Agents** onto the platform; each Provider sources **Merchants**; each Merchant operates one Main MID and many Sub-MIDs across multiple payment rails (UPI Intent / Collect / Card / Net Banking / Wallet / QR / Crypto). Money flows in via PG vendors (Katana Pay, Quickpay, Razorpay, PayU, Cashfree…), gets routed, risk-checked, ledgered, and flows out via Bank Payouts (RazorpayX, Cashfree Payouts, ICICI CE-Connect, Katana Pay/Quickpay payout) and Crypto VASPs (Binance OTC, OKX, Bitget, OnMeta, Transak…). Every event is monitored by Agentic AI agents that report into Telegram groups.
 
 ### 1.1 Three first-class personas
 
@@ -63,7 +63,7 @@ Katana is a multi-tenant **payment orchestration platform** that lets a Super Ad
 
 For each integration in `/integrations`, the onboarding flow is:
 
-1. **Vendor row created** by Super Admin (already seeded for PoolPay + Quickpay).
+1. **Vendor row created** by Super Admin (already seeded for Katana Pay + Quickpay).
 2. **Secrets stored** via Vault path reference, never plaintext (`vault://poolpay/live/secret`).
 3. **IP whitelisted** at vendor side (egress IP of Katana's outbound NAT).
 4. **Sandbox smoke test** (POST a 100 INR payin → callback round-trip → status enquiry).
@@ -120,9 +120,9 @@ For every page in Katana we describe 5 layers:
 - **L2** `checkout_orders` (tenant_id, merchant_id, client_ref, txn_id, amount, currency, method, selected_rail, status).
 - **L3** Super Admin: R ✓ all. Provider: R mapped merchants only. Merchant: C ✓ own, R own only.
 - **L4** State machine: `INITIATED → PENDING → SUCCEEDED / FAILED / CANCELLED → REFUND_INITIATED → REFUNDED → CHARGEBACK`. Validation: `amount > 0`, `currency = INR` (v1), method matches an enabled rail at routing time. Idempotency: (tenant, idempotency_key).
-- **L5** Calls routing-engine for rail pick → calls vendor-gateway (PoolPay/Quickpay) → vendor callback → ledger posting → optional refund flow. Events: `order.created`, `order.routed`, `order.callback.received`, `order.captured`, `order.refunded`.
+- **L5** Calls routing-engine for rail pick → calls vendor-gateway (Katana Pay/Quickpay) → vendor callback → ledger posting → optional refund flow. Events: `order.created`, `order.routed`, `order.callback.received`, `order.captured`, `order.refunded`.
 
-### 3.6 `/vendors/[vendor]` — PoolPay / Quickpay cockpit
+### 3.6 `/vendors/[vendor]` — Katana Pay / Quickpay cockpit
 
 - **L1** Per-vendor adapter cockpit (sandbox dispatcher + production observability).
 - **L2** `vendor_credentials`, `vendor_payin_orders`, `vendor_payout_orders`, `vendor_callbacks`, `vendor_balance_snapshots`.
@@ -255,7 +255,7 @@ Every transition writes a `workflow_transitions` row with `(workflow_kind, subje
 | **Compliance** | PCI-DSS scope statement (we don't store PAN; document) | TODO |
 | **Compliance** | GDPR / DPDP data-subject access flow | TODO |
 | **Reliability** | Chaos test: kill Postgres replica during settlement run | TODO |
-| **Reliability** | Vendor outage simulation (PoolPay returns 5xx for 10min) | TODO |
+| **Reliability** | Vendor outage simulation (Katana Pay returns 5xx for 10min) | TODO |
 | **Reliability** | Webhook retry queue with exponential backoff | TODO |
 | **Reliability** | Idempotency replay tests | TODO |
 | **Performance** | 1K concurrent payins p95 < 200ms | Local: 89ms for 50 ✓; need scaled rig |
@@ -278,7 +278,7 @@ Every transition writes a `workflow_transitions` row with `(workflow_kind, subje
 |---|---|---|
 | Path 0 (baseline) | Dashboard skeleton + 32 pages + BFF | ✓ (commit 477d4d8) |
 | Path 1 | 5 scaffolds→live + 9 RO→mutating | ✓ (dd95a89, 3c93e1e) |
-| Path 2A | Vendor adapters (PoolPay + Quickpay) | ✓ (f1d13e3) |
+| Path 2A | Vendor adapters (Katana Pay + Quickpay) | ✓ (f1d13e3) |
 | Path 2B | Provider + Sub-MID | ✓ (c06f320) |
 | Path 2C | Partner Data + Reserve | ✓ (66c047c) |
 | Path 2 Auth | Persona schema + auth API + integrations | ✓ (ed5ee19) |
@@ -298,7 +298,7 @@ Every transition writes a `workflow_transitions` row with `(workflow_kind, subje
 2. **Settlement frequency.** Today's BP assumes T+1; do we offer T+0 for premium merchants with a higher reserve %?
 3. **Reserve formula.** Flat % or dynamic (chargeback-history adjusted)?
 4. **Refund SLA.** How aggressively do we surface refund age in merchant portal?
-5. **Vendor failover.** If PoolPay returns 5xx, do we silently failover to Quickpay or surface to merchant?
+5. **Vendor failover.** If Katana Pay returns 5xx, do we silently failover to Quickpay or surface to merchant?
 6. **Sub-MID limit auto-tune.** Should declared_avg_ticket auto-set per_txn_max with X% headroom, or always require manual entry?
 7. **Provider commission floor.** Minimum commission earn-out per Sub-MID before it pays out?
 8. **Merchant API rate limits.** Per-Sub-MID or per-merchant?

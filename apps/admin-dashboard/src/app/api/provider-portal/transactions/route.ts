@@ -26,7 +26,7 @@ export async function GET() {
     // mapped merchants gets an empty dashboard rather than everyone's data.
     const scoped = s.persona === "PROVIDER";
     if (scoped && !codes.length) {
-      return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], recent: [] });
+      return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], recent: [], series: [] });
     }
 
     const coFilter = scoped ? "WHERE merchant_id = ANY($1::text[])" : "";
@@ -82,8 +82,31 @@ export async function GET() {
       by_merchant: [...byMerchant.values()].sort((a, b) => b.gross - a.gross),
       by_channel: [...byChannel.values()].sort((a, b) => b.gross - a.gross),
       recent,
+      series: buildDaySeries(all),
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+}
+
+// Last-N-day daily rollup for the dashboard trend charts.
+function buildDaySeries(all: Txn[], days = 14) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const buckets: { label: string; total: number; success: number; failed: number; gross: number }[] = [];
+  const index = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 86400000);
+    index.set(d.toDateString(), buckets.length);
+    buckets.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, total: 0, success: 0, failed: 0, gross: 0 });
+  }
+  for (const t of all) {
+    const k = new Date(t.created_at); k.setHours(0, 0, 0, 0);
+    const idx = index.get(k.toDateString());
+    if (idx === undefined) continue;
+    const b = buckets[idx];
+    b.total++;
+    if (SUCCESS.has(t.status)) { b.success++; b.gross += t.amount; }
+    else if (FAILED.has(t.status)) b.failed++;
+  }
+  return buckets;
 }
 
 function empty() {

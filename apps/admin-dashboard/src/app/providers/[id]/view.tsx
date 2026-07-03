@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   UserPlus, ShieldCheck, AlertTriangle, FileCheck2, Users, Activity, Settings,
-  AlertOctagon, Receipt, Network, Plus, CheckCircle2, Circle, Pause, Play, XOctagon, ExternalLink,
+  AlertOctagon, Receipt, Network, Plus, CheckCircle2, Circle, Pause, Play, XOctagon, ExternalLink, Plug,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,10 @@ import { InlineEdit } from "@/components/world-class/inline-edit";
 import { RowActions, ACT } from "@/components/world-class/row-actions";
 import { EmptyState } from "@/components/world-class/empty-state";
 import { ProviderOnboardMerchant } from "@/components/merchant/provider-onboard-merchant";
+import { IntegrationConfigCard } from "@/components/provider/integration-config-card";
+import { ProviderKycDocsCard } from "@/components/provider/kyc-docs-card";
+import { PaymentFunnel } from "@/components/integrations/payment-funnel";
+import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { useCan } from "@/lib/use-access";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -45,7 +49,7 @@ interface Provider {
 interface User { id: string; email: string; name: string; role: string; created_at: string }
 interface Doc { id: string; doc_type: string; uri: string; sha256: string; verified_at: string; verified_by: string; created_at: string }
 interface Commission { id: string; rule_kind: string; rate_bps: number; fixed_fee: number; currency: string; valid_from: string; valid_to?: string }
-interface Mapping { id: string; merchant_id: string; relation: string; created_at: string }
+interface Mapping { id: string; merchant_id: string; merchant_uuid: string; merchant_code: string | null; merchant_name: string | null; relation: string; created_at: string }
 
 const REQUIRED_DOCS = ["PAN", "GST", "CIN", "MOA", "AOA", "BOARD_RESOLUTION", "ADDRESS_PROOF", "BANK_STATEMENT"] as const;
 
@@ -193,12 +197,6 @@ export default function ProviderDetailView({ id }: { id: string }) {
     { key: "role", header: "Role", render: (r) => <Badge variant="brand">{r.role}</Badge> },
     { key: "created_at", header: "Added", render: (r) => formatDateTime(r.created_at) },
   ];
-  const docCols: Column<Doc>[] = [
-    { key: "doc_type", header: "Type" },
-    { key: "sha256", header: "Hash", render: (r) => <span className="font-mono text-xs">{r.sha256.slice(0,12)}…</span> },
-    { key: "verified_at", header: "Verified", render: (r) => r.verified_at ? <Badge variant="success">{formatDateTime(r.verified_at)}</Badge> : <Badge variant="warning">pending</Badge> },
-    { key: "verified_by", header: "By", render: (r) => r.verified_by || "—" },
-  ];
   const commCols: Column<Commission>[] = [
     { key: "rule_kind", header: "Kind" },
     { key: "rate_bps", header: "Rate (bps)" },
@@ -207,14 +205,19 @@ export default function ProviderDetailView({ id }: { id: string }) {
     { key: "valid_to", header: "To", render: (r) => r.valid_to ? formatDateTime(r.valid_to) : "—" },
   ];
   const mapCols: Column<Mapping>[] = [
-    { key: "merchant_id", header: "Merchant", render: (r) => <button onClick={() => setMerchantDrawer(r)} className="font-mono text-xs text-[color:var(--color-brand)] hover:underline">{r.merchant_id}</button> },
+    { key: "merchant_id", header: "Branch", render: (r) => (
+      <button onClick={() => setMerchantDrawer(r)} className="text-left text-[color:var(--color-brand)] hover:underline">
+        <span className="font-medium">{r.merchant_name ?? r.merchant_code ?? r.merchant_id}</span>
+        {r.merchant_code && r.merchant_name && <span className="ml-1.5 font-mono text-xs text-[color:var(--color-text-muted)]">{r.merchant_code}</span>}
+      </button>
+    ) },
     { key: "relation", header: "Relation", render: (r) => <Badge variant="brand">{r.relation}</Badge> },
     { key: "created_at", header: "Mapped", render: (r) => formatDateTime(r.created_at) },
     { key: "actions", header: "", render: (r) => (
       <RowActions
         actions={[
           { label: "Open in drawer", icon: ExternalLink, onClick: () => setMerchantDrawer(r) },
-          { label: "Open merchant page", icon: ExternalLink, onClick: () => window.open(`/merchants?q=${r.merchant_id}`, "_blank") },
+          { label: "Open branch page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
         ]}
       />
     )},
@@ -223,6 +226,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   // ---- Tabs ----
   const tabs = [
     { key: "overview", label: "Overview", icon: UserPlus, content: (
+      <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Identity & bank</CardTitle></CardHeader>
@@ -281,21 +285,17 @@ export default function ProviderDetailView({ id }: { id: string }) {
           </CardContent>
         </Card>
       </div>
+      <SetLoginPasswordCard
+        email={provider.contact_email}
+        kind="PROVIDER"
+        scopeId={provider.id}
+        scopeLabel={provider.code}
+        fullName={provider.legal_name}
+      />
+      </div>
     )},
     { key: "docs", label: "KYC docs", icon: FileCheck2, count: docs.length, content: (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div><CardTitle className="text-base">Documents ({docs.length})</CardTitle></div>
-          {canUpdate && (
-            <Button size="sm" onClick={() => toast.info("Doc upload UI lands in WC-6 propagate")}><Plus className="h-4 w-4" /> Upload</Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {docs.length === 0
-            ? <EmptyState icon={FileCheck2} title="No documents uploaded" description="Upload PAN/GST/MOA/AOA/Board Resolution to start the KYC workflow." />
-            : <DataTable columns={docCols} rows={docs} rowKey={(r) => r.id} />}
-        </CardContent>
-      </Card>
+      <ProviderKycDocsCard providerId={id} docs={docs} canEdit={canUpdate} canVerify={canAdmin} />
     )},
     { key: "users", label: "Users", icon: Users, count: users.length, content: (
       <Card>
@@ -327,20 +327,30 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
     )},
-    { key: "merchants", label: "Merchants", icon: Network, count: mappings.length, content: (
+    { key: "merchants", label: "Branches", icon: Network, count: mappings.length, content: (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
           {canMerchantCreate && (
-            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard merchant</Button>
+            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
           )}
         </CardHeader>
         <CardContent>
           {mappings.length === 0
-            ? <EmptyState icon={Network} title="No merchants mapped" description="Onboard merchants under this provider to start volume." action={canMerchantCreate ? { label: "Onboard merchant", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
+            ? <EmptyState icon={Network} title="No branches mapped" description="Onboard branches under this provider to start volume." action={canMerchantCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
             : <DataTable columns={mapCols} rows={mappings} rowKey={(r) => r.id} onRowClick={(r) => setMerchantDrawer(r)} />}
         </CardContent>
       </Card>
+    )},
+    { key: "integration", label: "Integration", icon: Plug, content: (
+      <div className="space-y-4">
+        <IntegrationConfigCard providerId={id} canEdit={canAdmin} />
+        <PaymentFunnel
+          providerId={id}
+          title="Branch reconciliation funnel"
+          description="Live Katana Pay pay-ins across every branch under this provider."
+        />
+      </div>
     )},
     { key: "activity", label: "Activity", icon: Activity, content: (
       <ActivityFeed resourceType="provider" resourceId={id} />
@@ -376,7 +386,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
             <div className="flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-danger)]/20 bg-[color:var(--color-danger-muted)]/30 p-3">
               <div>
                 <div className="text-sm font-medium">Terminate provider</div>
-                <div className="text-xs text-[color:var(--color-text-muted)]">Provider can no longer transact. Active merchants must be re-mapped first.</div>
+                <div className="text-xs text-[color:var(--color-text-muted)]">Provider can no longer transact. Active branches must be re-mapped first.</div>
               </div>
               <Button variant="danger" onClick={() => { if (confirm(`Terminate ${provider.code}? This cannot be reversed without a maker-checker request.`)) statusMut.mutate("TERMINATED"); }}>
                 <XOctagon className="h-4 w-4" /> Terminate
@@ -443,7 +453,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
       <Drawer open={!!merchantDrawer} onOpenChange={(o) => !o && setMerchantDrawer(null)}>
         <DrawerContent size="md">
           <DrawerHeader>
-            <DrawerTitle>Merchant {merchantDrawer?.merchant_id}</DrawerTitle>
+            <DrawerTitle>{merchantDrawer?.merchant_name ?? merchantDrawer?.merchant_code ?? `Merchant ${merchantDrawer?.merchant_id}`}</DrawerTitle>
             <DrawerDescription>Mapped to {provider.code} · {merchantDrawer?.relation} · since {merchantDrawer ? formatDateTime(merchantDrawer.created_at) : ""}</DrawerDescription>
           </DrawerHeader>
           <DrawerBody>
@@ -452,7 +462,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
                 <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3">
                   <div className="text-[color:var(--color-text-muted)] text-xs uppercase tracking-wide mb-1">Mapping</div>
                   <div className="flex items-center justify-between">
-                    <span>Merchant ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
+                    <span>Branch ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Relation</span><Badge variant="brand">{merchantDrawer.relation}</Badge>
@@ -466,7 +476,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
                   <ActivityFeed resourceType="merchant" resourceId={merchantDrawer.merchant_id} limit={10} />
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <Button asChild className="flex-1"><Link href={`/merchants?q=${merchantDrawer.merchant_id}`}>Open merchant page</Link></Button>
+                  <Button asChild className="flex-1"><Link href={`/merchants/${merchantDrawer.merchant_uuid ?? merchantDrawer.merchant_id}`}>Open branch page</Link></Button>
                 </div>
               </div>
             )}

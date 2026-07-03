@@ -23,22 +23,22 @@ export default function MerchantWalletPage() {
   const totalAll = rows.reduce((s, b) => s + Number(b.balance || 0), 0);
 
   const cols: Column<Balance>[] = [
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "currency", header: "Currency", render: (r) => <Badge variant="brand">{r.currency}</Badge> },
     { key: "balance", header: "Balance", render: (r) => <span className="tabular-nums font-medium">{formatAmount(r.balance, r.currency)}</span> },
   ];
 
   return (
     <>
-      <PageHeader title="Merchant wallet" description="Per-merchant funded balance, derived from journal_entries." icon={Wallet} />
+      <PageHeader title="Branch wallet" description="Per-branch funded balance, derived from journal_entries." icon={Wallet} />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Merchants" value={new Set(rows.map((r) => r.merchant_id)).size} loading={q.isLoading} />
+        <KpiTile label="Branches" value={new Set(rows.map((r) => r.merchant_id)).size} loading={q.isLoading} />
         <KpiTile label="Currencies" value={currencies.length} loading={q.isLoading} />
         <KpiTile label="Balances" value={rows.length} loading={q.isLoading} />
         <KpiTile label="Aggregate" value={formatAmount(totalAll)} variant="success" loading={q.isLoading} />
       </div>
       <DataView rows={rows} columns={cols} rowKey={(r) => `${r.merchant_id}-${r.currency}`} loading={q.isLoading}
-        search={{ placeholder: "Search by merchant…", fields: ["merchant_id", "currency"] }}
+        search={{ placeholder: "Search by branch…", fields: ["merchant_id", "currency"] }}
         filters={currencies.slice(0, 4).map((c) => ({ key: `c-${c}`, label: c, predicate: (r: Balance) => r.currency === c }))}
         savedViewKey="merchant-wallet" refresh={() => q.refetch()}
         emptyTitle="No wallet activity yet" />

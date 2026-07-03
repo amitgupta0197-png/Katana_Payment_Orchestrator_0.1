@@ -116,7 +116,7 @@ export default function DisputesPage() {
     { key: "status", header: "State", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "txn_id", header: "TXN",
       render: (r) => <Link href={`/disputes/${r.dispute_id}`} className="font-mono text-xs text-[color:var(--color-brand)] hover:underline">{r.txn_id}</Link> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "reason_code", header: "Reason" },
     { key: "amount_minor", header: "Amount", render: (r) => <span className="tabular-nums">{fmtMoney(r.amount_minor, r.currency)}</span> },
     { key: "deadline_at", header: "Deadline", render: (r) => {
@@ -142,7 +142,7 @@ export default function DisputesPage() {
         rowKey={(r) => r.dispute_id}
         loading={q.isLoading}
         href={(r) => `/disputes/${r.dispute_id}`}
-        search={{ placeholder: "Search by txn id, merchant, reason…", fields: ["txn_id", "merchant_id", "reason_code", "opened_by"] }}
+        search={{ placeholder: "Search by txn id, branch, reason…", fields: ["txn_id", "merchant_id", "reason_code", "opened_by"] }}
         filters={[
           { key: "open",          label: "Open",           predicate: (r: Dispute) => r.status === "DISPUTE_OPEN" },
           { key: "represent",     label: "In representment", predicate: (r: Dispute) => r.status === "REPRESENTMENT" },

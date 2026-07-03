@@ -56,7 +56,7 @@ function RequestDialog({ mains, merchants }: { mains: MainMid[]; merchants: Merc
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5 col-span-2">
-            <Label>merchant</Label>
+            <Label>branch</Label>
             <select
               className="flex h-9 w-full rounded-md border px-3 py-1 text-sm"
               value={form.merchant_id}
@@ -125,7 +125,7 @@ export default function SubMidsPage() {
     <>
       <PageHeader
         title="Sub-MIDs"
-        description="Sub-MIDs across your mapped merchants. Request new ones here; Super Admin approves."
+        description="Sub-MIDs across your mapped branches. Request new ones here; Super Admin approves."
         icon={CreditCard}
         actions={<RequestDialog mains={q.data?.main_mids ?? []} merchants={merchants.data?.merchants ?? []} />}
       />

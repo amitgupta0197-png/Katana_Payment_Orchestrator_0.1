@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const TYPES = [
-  { key: "merchant", label: "Merchant txns" },
+  { key: "merchant", label: "Branch txns" },
   { key: "operator", label: "Operator performance" },
   { key: "settlement", label: "Settlement" },
   { key: "risk", label: "Risk" },

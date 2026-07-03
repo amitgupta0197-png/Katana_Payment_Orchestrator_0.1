@@ -32,7 +32,7 @@ export default function PayoutOrderPage() {
 
   const cols: Column<Payout>[] = [
     { key: "payout_ref", header: "Ref", render: (r) => r.payout_ref ? <span className="font-mono text-xs">{r.payout_ref}</span> : "—" },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "beneficiary_vpa", header: "Beneficiary", render: (r) => r.beneficiary_vpa ?? "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -54,7 +54,7 @@ export default function PayoutOrderPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by ref, merchant, VPA, IFSC…", fields: ["payout_ref", "merchant_id", "beneficiary_vpa", "beneficiary_ifsc"] }}
+        search={{ placeholder: "Search by ref, branch, VPA, IFSC…", fields: ["payout_ref", "merchant_id", "beneficiary_vpa", "beneficiary_ifsc"] }}
         filters={[
           { key: "completed", label: "Completed", predicate: (r: Payout) => r.status === "COMPLETED" || r.status === "PAID" },
           { key: "pending",   label: "Pending",   predicate: (r: Payout) => r.status === "PENDING" || r.status === "PROCESSING" || r.status === "REQUESTED" },

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Store, Plus, ChevronRight, ExternalLink, Link2 } from "lucide-react";
+import { Store, Plus, ChevronRight, ExternalLink, Link2, Copy, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,10 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
     },
   });
   const providers = providersQ.data?.providers ?? [];
+  // Holds the login credentials returned by the create call so the admin can copy
+  // and share them with the new merchant (the password is shown only once).
+  const [created, setCreated] = useState<null | { merchant_code: string; login?: { email: string; password: string | null; existing: boolean } }>(null);
+  const closeAll = () => { setCreated(null); setOpen(false); };
   const m = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/merchants", {
@@ -61,29 +65,83 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return r.json();
     },
-    onSuccess: () => {
-      toast.success("Merchant onboarded — APPLICATION stage");
-      setOpen(false);
+    onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["merchants"] });
+      if (d?.login?.password) {
+        toast.success("Branch onboarded — share the login below");
+        setCreated(d);
+      } else {
+        toast.success(d?.login?.existing ? "Branch onboarded — login already existed for this email" : "Branch onboarded — APPLICATION stage");
+        setOpen(false);
+      }
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
+  const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
+
+  if (created?.login) {
+    const { email, password } = created.login;
+    return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) closeAll(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Branch login created</DialogTitle>
+            <DialogDescription>
+              Share these credentials with the branch. The password is shown <strong>only once</strong> — copy it now.
+              They can change it later under Profile → Change password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Login URL</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs">{typeof window !== "undefined" ? window.location.origin : ""}/login</code>
+                <Button size="sm" variant="ghost" onClick={() => copy(`${window.location.origin}/login`)}><Copy className="h-4 w-4" /></Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs">{email}</code>
+                <Button size="sm" variant="ghost" onClick={() => copy(email)}><Copy className="h-4 w-4" /></Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Temporary password</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs font-semibold">{password}</code>
+                <Button size="sm" variant="ghost" onClick={() => copy(password!)}><Copy className="h-4 w-4" /></Button>
+              </div>
+            </div>
+            <Button variant="secondary" className="w-full" onClick={() => copy(`Katana login\nURL: ${window.location.origin}/login\nEmail: ${email}\nPassword: ${password}`)}>
+              <Copy className="h-4 w-4" /> Copy all
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={closeAll}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {controlledOpen === undefined && (
-        <DialogTrigger asChild><Button><Plus /> Onboard merchant</Button></DialogTrigger>
+        <DialogTrigger asChild><Button><Plus /> Onboard branch</Button></DialogTrigger>
       )}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Onboard merchant — Step 1: Application</DialogTitle>
+          <DialogTitle>Onboard branch — Step 1: Application</DialogTitle>
           <DialogDescription>
             Per PRODUCT_VISION §2.2 step 1. Stage starts at APPLICATION. KYB documents,
             screening, bank verification, config, and approval happen in subsequent stages.
+            A branch login is created automatically.
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Merchant code</Label>
+            <Label>Branch code</Label>
             <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} />
           </div>
           <div className="space-y-1.5">
@@ -127,7 +185,7 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
             <Input value={form.registered_address} onChange={(e) => setForm({ ...form, registered_address: e.target.value })} />
           </div>
           <div className="space-y-1.5 col-span-2">
-            <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">— map this merchant under a provider for traceability (optional)</span></Label>
+            <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">— map this branch under a provider for traceability (optional)</span></Label>
             <select
               className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
               value={form.provider_id}
@@ -182,7 +240,7 @@ export default function MerchantsPage() {
   return (
     <>
       <PageHeader
-        title="Merchants"
+        title="Branches"
         description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
         icon={Store}
       />
@@ -190,7 +248,7 @@ export default function MerchantsPage() {
         <Card className="mb-4">
           <CardHeader>
             <CardTitle className="text-base">Onboarding funnel</CardTitle>
-            <CardDescription>Quick visual of where merchants sit. Use filter chips below the toolbar to drill in.</CardDescription>
+            <CardDescription>Quick visual of where branches sit. Use filter chips below the toolbar to drill in.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -229,7 +287,7 @@ export default function MerchantsPage() {
             <div className="mt-0.5 truncate text-xs text-[color:var(--color-text-muted)]">{r.contact_email}</div>
           </Link>
         )}
-        fab={canCreate ? { label: "Onboard merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="merchants"
         emptyTitle="No merchants onboarded yet"

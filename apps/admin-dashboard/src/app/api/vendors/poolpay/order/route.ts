@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
   try {
     const orderId = body.order_ref?.trim()
-      || `PP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
+      || `KP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
 
     const r = await createPoolPayOrder({
       orderId,

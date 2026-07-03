@@ -141,7 +141,7 @@ function Simulator() {
           <div><Label>Method</Label><Input value={method} onChange={(e) => setMethod(e.target.value)} /></div>
           <div><Label>Amount</Label><Input value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
           <div><Label>Currency</Label><Input value={currency} onChange={(e) => setCurrency(e.target.value)} /></div>
-          <div><Label>Merchant ID</Label><Input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} /></div>
+          <div><Label>Branch ID</Label><Input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} /></div>
         </div>
         <Button onClick={() => m.mutate()} disabled={m.isPending}>
           <Play className="h-4 w-4" /> {m.isPending ? "Simulating…" : "Simulate"}

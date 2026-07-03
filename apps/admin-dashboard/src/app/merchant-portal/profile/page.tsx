@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserCog } from "lucide-react";
+import { UserCog, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -71,17 +71,68 @@ export default function ProfilePage() {
           </div>
           <div className="space-y-1.5">
             <Label>Webhook URL (must be HTTPS)</Label>
-            <Input value={form.webhook_url} onChange={(e) => setForm({ ...form, webhook_url: e.target.value })} placeholder="https://api.your-merchant.com/katana/webhook" />
+            <Input value={form.webhook_url} onChange={(e) => setForm({ ...form, webhook_url: e.target.value })} placeholder="https://api.your-branch.com/katana/webhook" />
           </div>
           <div className="space-y-1.5">
             <Label>Return URL</Label>
-            <Input value={form.return_url} onChange={(e) => setForm({ ...form, return_url: e.target.value })} placeholder="https://checkout.your-merchant.com/return" />
+            <Input value={form.return_url} onChange={(e) => setForm({ ...form, return_url: e.target.value })} placeholder="https://checkout.your-branch.com/return" />
           </div>
           <div className="pt-2">
             <Button onClick={() => m.mutate()} disabled={m.isPending || !me}>{m.isPending ? "Saving…" : "Save"}</Button>
           </div>
         </CardContent>
       </Card>
+
+      <ChangePasswordCard />
     </>
+  );
+}
+
+function ChangePasswordCard() {
+  const [pw, setPw] = useState({ current_password: "", new_password: "", confirm: "" });
+
+  const change = useMutation({
+    mutationFn: async () => {
+      if (pw.new_password !== pw.confirm) throw new Error("new passwords do not match");
+      const r = await fetch("/api/me/password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: pw.current_password, new_password: pw.new_password }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return r.json();
+    },
+    onSuccess: () => { toast.success("Password changed"); setPw({ current_password: "", new_password: "", confirm: "" }); },
+    onError: (e: Error) => toast.error("Could not change password", { description: e.message }),
+  });
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Change password</CardTitle>
+        <CardDescription>Update the password you use to sign in.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label>Current password</Label>
+          <Input type="password" autoComplete="current-password" value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>New password</Label>
+          <Input type="password" autoComplete="new-password" value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} placeholder="at least 6 characters" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Confirm new password</Label>
+          <Input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
+        </div>
+        <div className="pt-2">
+          <Button
+            onClick={() => change.mutate()}
+            disabled={change.isPending || !pw.current_password || pw.new_password.length < 6 || !pw.confirm}
+          >
+            {change.isPending ? "Changing…" : "Change password"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -106,7 +106,7 @@ export default function ProvidersPage() {
     { key: "kind", header: "Kind" },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-    { key: "merchant_count", header: "Merchants" },
+    { key: "merchant_count", header: "Branches" },
     { key: "contact_email", header: "Contact" },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];

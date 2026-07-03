@@ -36,7 +36,7 @@ export default function RiskPage() {
 
   const cbCols: Column<Chargeback>[] = [
     { key: "id", header: "Case", render: (r) => <span className="font-mono text-xs">{r.id?.slice(0, 8)}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
     { key: "reason_code", header: "Reason", render: (r) => <Badge variant="warning">{r.reason_code}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -74,7 +74,7 @@ export default function RiskPage() {
 
         <TabsContent value="chargebacks">
           <DataView rows={cbRows} columns={cbCols} rowKey={(r) => r.id} loading={cb.isLoading}
-            search={{ placeholder: "Search by merchant / reason…", fields: ["merchant_id", "reason_code", "status"] }}
+            search={{ placeholder: "Search by branch / reason…", fields: ["merchant_id", "reason_code", "status"] }}
             filters={[
               { key: "open",     label: "Open",     predicate: (r: Chargeback) => r.status !== "WON" && r.status !== "LOST" && r.status !== "EXPIRED" },
               { key: "won",      label: "Won",      predicate: (r: Chargeback) => r.status === "WON" },

@@ -17,7 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
 import { PaymentMethodsCard, PoolPayConfigCard } from "@/components/merchant/payment-config";
-import { PayinOperationsCard } from "@/components/merchant/payin-operations";
+import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merchant/payin-operations";
+import { MerchantAgentCard } from "@/components/merchant/agent-permission";
+import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -44,7 +46,7 @@ interface CheckoutCredsStatus {
 }
 
 const STEPS = [
-  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic merchant details captured." },
+  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic branch details captured." },
   { key: "step_kyb_docs",     stage_from: "DOCS_PENDING",  stage_to: "SCREENING",     label: "KYB documents",   description: "PAN, GST, CIN, MOA, AOA, board resolution, bank statement, MCC declaration uploaded." },
   { key: "step_screening",    stage_from: "SCREENING",     stage_to: "BANK_VERIFY",   label: "Screening",       description: "OFAC / UN / EU / FATF sanctions screening. Risk tier assigned." },
   { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "CONFIG",        label: "Bank verify",     description: "Penny-drop on settlement account. Beneficiary name-match validated." },
@@ -203,7 +205,7 @@ function RejectButton({ merchant }: { merchant: Merchant }) {
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Merchant rejected");
+      toast.success("Branch rejected");
       qc.invalidateQueries({ queryKey: ["merchant", merchant.id] });
       qc.invalidateQueries({ queryKey: ["merchants"] });
     },
@@ -310,7 +312,7 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
           <CardTitle className="text-base">API keys</CardTitle>
-          <CardDescription>Live secret keys for this merchant. Only the prefix is stored — copy the full secret when it’s issued.</CardDescription>
+          <CardDescription>Live secret keys for this branch. Only the prefix is stored — copy the full secret when it’s issued.</CardDescription>
         </div>
         {isLive && <IssueApiKeyDialog merchant={merchant} />}
       </CardHeader>
@@ -319,7 +321,7 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
           <DataTable columns={cols} rows={keys} loading={keysQ.isLoading} rowKey={(r) => r.id} emptyState="No API keys yet. Click “Generate API key” to issue one." />
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
-            API keys can be generated once the merchant reaches the LIVE stage.
+            API keys can be generated once the branch reaches the LIVE stage.
           </div>
         )}
       </CardContent>
@@ -378,7 +380,7 @@ function CheckoutKeyCard({ merchant }: { merchant: Merchant }) {
             <DialogHeader>
               <DialogTitle>{status?.configured ? "Regenerate" : "Generate"} checkout Key + Salt</DialogTitle>
               <DialogDescription>
-                For <span className="font-mono">{merchant.merchant_code}</span>. The Salt is shown once — give both to the merchant for their checkout config. Regenerating invalidates the previous pair.
+                For <span className="font-mono">{merchant.merchant_code}</span>. The Salt is shown once — give both to the branch for their checkout config. Regenerating invalidates the previous pair.
               </DialogDescription>
             </DialogHeader>
             {issued ? (
@@ -387,14 +389,14 @@ function CheckoutKeyCard({ merchant }: { merchant: Merchant }) {
                   Generated. Copy the Salt now — it won’t be shown again.
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Merchant Key</Label>
+                  <Label>Branch Key</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.key}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.key)}><Copy className="h-4 w-4" /></Button>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Merchant Salt</Label>
+                  <Label>Branch Salt</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.salt}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.salt)}><Copy className="h-4 w-4" /></Button>
@@ -506,7 +508,7 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
                   <div className="space-y-1.5"><Label>Gateway</Label><Input value={form.gateway} onChange={(e) => setForm({ ...form, gateway: e.target.value })} placeholder="PAYU" /></div>
                   <div className="space-y-1.5"><Label>Main MID code</Label><Input value={form.mid_code} onChange={(e) => setForm({ ...form, mid_code: e.target.value })} placeholder="MID-…" /></div>
                 </div>
-                <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway merchant key" /></div>
+                <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway branch key" /></div>
                 <div className="space-y-1.5"><Label>Salt</Label><Input value={form.salt} onChange={(e) => setForm({ ...form, salt: e.target.value })} placeholder="gateway salt" /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -599,7 +601,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
     <Card className="mb-4">
       <CardHeader>
         <CardTitle className="text-base">Test checkout</CardTitle>
-        <CardDescription>Run a payment for this merchant straight from the dashboard — no external checkout page needed.</CardDescription>
+        <CardDescription>Run a payment for this branch straight from the dashboard — no external checkout page needed.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
@@ -648,8 +650,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
   if (!merchant) {
     return (
       <>
-        <PageHeader title="Merchant not found" description="" icon={Store} />
-        <Card><CardContent className="py-8 text-center"><Link className="text-[color:var(--color-brand)] hover:underline" href="/merchants">← back to merchants</Link></CardContent></Card>
+        <PageHeader title="Branch not found" description="" icon={Store} />
+        <Card><CardContent className="py-8 text-center"><Link className="text-[color:var(--color-brand)] hover:underline" href="/merchants">← back to branches</Link></CardContent></Card>
       </>
     );
   }
@@ -709,12 +711,12 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </ol>
           {nextStep === null && merchant.stage !== "REJECTED" && (
             <div className="mt-4 rounded-md border border-[color:var(--color-success)]/30 bg-[color:var(--color-success-muted)] px-3 py-2 text-xs text-[color:var(--color-success)]">
-              All six onboarding steps complete. Merchant is LIVE.
+              All six onboarding steps complete. Branch is LIVE.
             </div>
           )}
           {merchant.stage === "REJECTED" && (
             <div className="mt-4 rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
-              Merchant onboarding was rejected. No further advancement possible.
+              Branch onboarding was rejected. No further advancement possible.
             </div>
           )}
         </CardContent>
@@ -747,9 +749,21 @@ export default function MerchantDetailView({ id }: { id: string }) {
 
       <PayinOperationsCard merchantId={merchant.id} />
 
+      <MerchantTransactionsCard merchantId={merchant.id} />
+
+      <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+
       <PaymentMethodsCard merchantId={merchant.id} />
 
       <PoolPayConfigCard merchantId={merchant.id} />
+
+      <SetLoginPasswordCard
+        email={merchant.contact_email}
+        kind="MERCHANT"
+        scopeId={merchant.merchant_code}
+        scopeLabel={`${merchant.merchant_code} — ${merchant.legal_name}`}
+        fullName={merchant.brand_name || merchant.legal_name}
+      />
 
       <ApiKeysCard merchant={merchant} />
 
@@ -760,7 +774,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <TestCheckoutCard merchant={merchant} />
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this merchant.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this branch.</CardDescription></CardHeader>
         <CardContent>
           <DataTable columns={subCols} rows={ownSubs} loading={subMidsQ.isLoading} rowKey={(r) => r.id} emptyState="No Sub-MIDs yet. Create one at /sub-mids after CONFIG stage." />
         </CardContent>

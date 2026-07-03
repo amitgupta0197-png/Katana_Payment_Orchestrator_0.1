@@ -117,7 +117,9 @@ export function DetailShell({
       {/* Body: tabs (left) + sticky side rail */}
       <div className={cn("flex flex-col gap-6", sideActions.length > 0 && "lg:grid lg:grid-cols-[1fr_18rem]")}>
         <Tabs defaultValue={initial} className="min-w-0">
-          <TabsList className="flex-wrap">
+          {/* h-auto + gap-y so wrapped tab rows grow the bar instead of
+              overflowing the fixed h-9 and overlapping the content below. */}
+          <TabsList className="h-auto flex-wrap gap-y-1">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
               return (

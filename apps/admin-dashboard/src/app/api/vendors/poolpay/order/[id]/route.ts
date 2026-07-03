@@ -6,7 +6,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { resolvePoolPay, genRrn, POOLPAY_TERMINAL } from "@/lib/poolpay";
+import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused } from "@/lib/poolpay";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
 
     let order = found[0];
-    if (!(order.meta?.hold === true)) { // held high-amount orders await manual confirm
+    if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
       const amountMinor = Math.round(Number(order.amount) * 100);
       const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds);
       if (decision.changed) {

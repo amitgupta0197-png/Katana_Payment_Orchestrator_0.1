@@ -64,7 +64,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 
   const block = useMutation({
     mutationFn: (next: boolean) => patch({ blocked: next }),
-    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Merchant blocked — new pay-ins rejected" : "Merchant unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
+    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Branch blocked — new pay-ins rejected" : "Branch unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -78,7 +78,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Payment collection methods</CardTitle>
-          <CardDescription>Which methods this merchant can collect payments through. Tap to toggle.</CardDescription>
+          <CardDescription>Which methods this branch can collect payments through. Tap to toggle.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           {blocked && <Badge variant="danger">BLOCKED</Badge>}
@@ -144,7 +144,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return (await r.json()) as Config;
     },
-    onSuccess: (d) => { toast.success("PoolPay configuration saved"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
+    onSuccess: (d) => { toast.success("Katana Pay configuration saved"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -152,24 +152,24 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">PoolPay configuration</CardTitle>
-          <CardDescription>PG pay-in (UPI) settings for this merchant.</CardDescription>
+          <CardTitle className="text-base">Katana Pay configuration</CardTitle>
+          <CardDescription>PG pay-in (UPI) settings for this branch.</CardDescription>
         </div>
         <Badge variant={form.enabled ? "success" : "default"}>{form.enabled ? "enabled" : "disabled"}</Badge>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-          Enable PoolPay collection for this merchant
+          Enable Katana Pay collection for this branch
         </label>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>PoolPay Pay ID</Label>
+            <Label>Katana Pay ID</Label>
             <Input value={form.pay_id} onChange={(e) => setForm({ ...form, pay_id: e.target.value })} placeholder="pay_…" />
           </div>
           <div className="space-y-1.5">
             <Label>Settlement VPA</Label>
-            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="merchant@upi" />
+            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="branch@upi" />
           </div>
           <div className="space-y-1.5">
             <Label>Environment</Label>
@@ -188,7 +188,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Saving…" : "Save PoolPay config"}</Button>
+          <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Saving…" : "Save Katana Pay config"}</Button>
         </div>
       </CardContent>
     </Card>

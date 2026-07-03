@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import type { Column } from "@/components/ui/data-table";
 import { DataView } from "@/components/world-class/data-view";
-import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
 
 interface Txn {
   katana_order_id: string; source: string; provider: string; provider_txn_id: string;
@@ -30,8 +30,8 @@ export default function TransactionsPage() {
 
   const cols: Column<Txn>[] = [
     { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id || "—"}</span> },
-    { key: "provider", header: "Provider / channel", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id || "—"}</span> },
+    { key: "provider", header: "Provider / channel", render: (r) => <Badge variant="brand">{railLabel(r.provider)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "sub_mid", header: "Sub-MID", render: (r) => r.sub_mid ? <Badge variant="info">{r.sub_mid}</Badge> : "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
@@ -44,7 +44,7 @@ export default function TransactionsPage() {
     <>
       <PageHeader
         title="Transactions (universal)"
-        description="One normalized view across all channels — PoolPay, Quickpay, PayU, Cashfree, Razorpay. Canonical katana_order_id · provider · UTR · status."
+        description="One normalized view across all channels — Katana Pay, Quickpay, PayU, Cashfree, Razorpay. Canonical katana_order_id · provider · UTR · status."
         icon={Receipt}
       />
       <DataView
@@ -52,7 +52,7 @@ export default function TransactionsPage() {
         columns={cols}
         rowKey={(r) => `${r.source}:${r.katana_order_id}`}
         loading={q.isLoading}
-        search={{ placeholder: "Search order id / provider txn / UTR / merchant / sub-MID…", fields: ["katana_order_id", "provider_txn_id", "utr", "merchant_id", "sub_mid", "provider"] }}
+        search={{ placeholder: "Search order id / provider txn / UTR / branch / sub-MID…", fields: ["katana_order_id", "provider_txn_id", "utr", "merchant_id", "sub_mid", "provider"] }}
         filters={STATUSES.map((st) => ({ key: st, label: st, predicate: (r: Txn) => r.status === st }))}
         savedViewKey="universal-txns"
         refresh={() => q.refetch()}

@@ -25,6 +25,7 @@ export async function GET() {
     disputesOpen,
     riskCases,
     todayOrders, failedToday,
+    todayPayin, failedPayinToday,
     settlementToday,
   ] = await Promise.all([
     safe(rows<{ n: number }>("provider", `SELECT COUNT(*)::int AS n FROM providers WHERE tenant_id='tenant-default'`), [{ n: 0 }]),
@@ -40,12 +41,19 @@ export async function GET() {
       `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM checkout_orders WHERE created_at >= $1`, [todayIso]), [{ n: 0, gross: 0 }]),
     safe(rows<{ n: number }>("checkout",
       `SELECT COUNT(*)::int AS n FROM checkout_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED')`, [todayIso]), [{ n: 0 }]),
+    // Katana Pay (PoolPay) pay-ins are tracked in vendor_payin_orders — include them
+    // so the "today" KPIs reflect S2S/QR pay-ins, not just checkout-gateway orders.
+    safe(rows<{ n: number; gross: number }>("vendorGateway",
+      `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM vendor_payin_orders WHERE created_at >= $1`, [todayIso]), [{ n: 0, gross: 0 }]),
+    safe(rows<{ n: number }>("vendorGateway",
+      `SELECT COUNT(*)::int AS n FROM vendor_payin_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED')`, [todayIso]), [{ n: 0 }]),
     safe(rows<{ batches: number; net: number }>("settlement",
       `SELECT COUNT(*)::int AS batches, COALESCE(SUM(net_amount)::float,0) AS net FROM settlement_batches WHERE batch_date >= $1`, [todayIso]), [{ batches: 0, net: 0 }]),
   ]);
 
-  const txnCount = todayOrders[0]?.n ?? 0;
-  const failedCount = failedToday[0]?.n ?? 0;
+  const txnCount = (todayOrders[0]?.n ?? 0) + (todayPayin[0]?.n ?? 0);
+  const grossTotal = (todayOrders[0]?.gross ?? 0) + (todayPayin[0]?.gross ?? 0);
+  const failedCount = (failedToday[0]?.n ?? 0) + (failedPayinToday[0]?.n ?? 0);
   const successRate = txnCount > 0 ? Math.round(((txnCount - failedCount) / txnCount) * 1000) / 10 : null;
 
   return NextResponse.json({
@@ -67,7 +75,7 @@ export async function GET() {
       transactions: txnCount,
       failed:       failedCount,
       success_rate: successRate,
-      gross:        todayOrders[0]?.gross ?? 0,
+      gross:        grossTotal,
       settlement_batches: settlementToday[0]?.batches ?? 0,
       settlement_net:     settlementToday[0]?.net ?? 0,
     },

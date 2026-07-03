@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Pay — Integration Guide</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  h2 { font-size:21px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--bd); }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--bd); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .brand { color:var(--brand); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  .step { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:50%; font-size:13px; margin-right:8px; }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  @media print { body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Katana Pay — Integration Guide</h1>
+  <div class="sub">Hosted-checkout pay-ins for any platform · Base URL <code>https://glhouse.shop</code> · v1</div>
+</header>
+
+<div class="note">
+  <b>What you'll do:</b> your server creates a <b>signed order</b> → you redirect the customer to our <b>hosted payment page</b> → the customer pays by UPI → we <b>POST a signed status callback</b> to your server <i>and</i> redirect the customer back to your <code>return_url</code>. You verify every signature with the <b>Key + Salt</b> we issue you.
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <a href="#creds">1. Credentials (Key + Salt)</a>
+  <a href="#endpoints">2. Endpoints</a>
+  <a href="#create">3. Create an order</a>
+  <a href="#sign">4. Sign the request</a>
+  <a href="#redirect">5. Redirect to the payment page</a>
+  <a href="#callback">6. Receive the status callback</a>
+  <a href="#enquiry">7. Status enquiry</a>
+  <a href="#codes">8. Status &amp; response codes</a>
+  <a href="#samples">9. Sample code (PHP / Node / Python)</a>
+  <a href="#golive">10. Go-live checklist</a>
+</div>
+
+<h2 id="creds">1. Credentials (Key + Salt)</h2>
+<p>Each integrating account gets a <b>Key</b> and a <b>Salt</b>, issued from the Katana dashboard
+(<b>Branch portal → Integration → Generate Key + Salt</b>, or ask your Katana admin).</p>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td><code>Key</code></td><td>Public-ish identifier (<code>mk_…</code>) sent with every request.</td></tr>
+  <tr><td><code>Salt</code></td><td><b>Secret.</b> Shown only once at issue. Used to sign requests and to verify callbacks. Never expose it in client-side code.</td></tr>
+  <tr><td><code>Scheme</code></td><td>Signing algorithm: <code>HMAC_SHA256</code> (recommended) or <code>PAYU_SHA512</code>.</td></tr>
+</table>
+<div class="note warnbox"><b>Keep the Salt safe.</b> If lost, regenerate — which <b>invalidates the old pair</b>, so update your server immediately. One active Key per account.</div>
+
+<h2 id="endpoints">2. Endpoints</h2>
+<table>
+  <tr><th>Purpose</th><th>Method</th><th>URL</th></tr>
+  <tr><td>Create order (server-to-server)</td><td><b>POST</b></td><td><code>https://glhouse.shop/api/v1/katana-pay/order</code></td></tr>
+  <tr><td>Hosted payment page (browser)</td><td>GET</td><td><code>https://glhouse.shop/pay/{order_id}</code></td></tr>
+  <tr><td>Status enquiry</td><td>GET</td><td><code>https://glhouse.shop/api/pay-status/{order_id}</code></td></tr>
+</table>
+<div class="note warnbox"><b>Production:</b> your server's outbound IP must be <b>IP-whitelisted</b> by Katana before live calls are accepted.</div>
+
+<h2 id="create">3. Create an order</h2>
+<p><code>POST /api/v1/katana-pay/order</code> with a JSON body. Idempotent on <code>txnid</code>.</p>
+<h3>Request fields</h3>
+<table>
+  <tr><th>Field</th><th>Req</th><th>Description</th></tr>
+  <tr><td><code>key</code></td><td>yes</td><td>Your Key.</td></tr>
+  <tr><td><code>txnid</code></td><td>yes</td><td>Your unique order reference (≤ 60 chars).</td></tr>
+  <tr><td><code>amount</code></td><td>yes</td><td>Amount in rupees, e.g. <code>"100"</code> or <code>"100.50"</code>.</td></tr>
+  <tr><td><code>hash</code></td><td>yes</td><td>Signature over the order (see §4).</td></tr>
+  <tr><td><code>productinfo</code></td><td>no</td><td>Order description (part of the signature).</td></tr>
+  <tr><td><code>firstname</code></td><td>no</td><td>Customer name (part of the PAYU signature).</td></tr>
+  <tr><td><code>email</code></td><td>no</td><td>Customer email (part of the signature).</td></tr>
+  <tr><td><code>phone</code></td><td>no</td><td>Customer phone.</td></tr>
+  <tr><td><code>return_url</code></td><td>no</td><td>Browser redirect target after payment. Overrides your saved default.</td></tr>
+  <tr><td><code>notify_url</code></td><td>no</td><td>Server-to-server status-callback target. Overrides your saved webhook URL.</td></tr>
+  <tr><td><code>currency</code></td><td>no</td><td>Defaults to <code>INR</code>.</td></tr>
+  <tr><td><code>mode</code></td><td>no</td><td><code>QR</code> or <code>INTENT</code>.</td></tr>
+</table>
+<h3>Response (HTTP 201 new / 200 reused)</h3>
+<pre>{
+  "verified": true,
+  "merchant": "UK-108",
+  "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "amount": 100, "status": "PENDING", … },
+  "pay_url": "https://glhouse.shop/pay/8d20c0b6-…",   // redirect the customer here
+  "deeplinks": { "upi": "upi://pay?…", "paytm": "…", "phonepe": "…" },
+  "upi_intent": "upi://pay?…",
+  "qr_payload": "upi://pay?…"
+}</pre>
+<table>
+  <tr><th>Error</th><th>Meaning</th></tr>
+  <tr><td><code>401 invalid key</code></td><td>Unknown Key.</td></tr>
+  <tr><td><code>401 signature mismatch</code></td><td>Hash didn't match — check your signing string.</td></tr>
+  <tr><td><code>403</code></td><td>Account blocked.</td></tr>
+  <tr><td><code>400 invalid amount</code></td><td>Amount missing / not positive.</td></tr>
+</table>
+
+<h2 id="sign">4. Sign the request</h2>
+<p>Compute <code>hash</code> with your <b>scheme</b>, then send it as the <code>hash</code> field.</p>
+<h3>HMAC_SHA256 (recommended)</h3>
+<pre>message = txnid + "|" + amount + "|" + productinfo + "|" + email
+hash    = HMAC_SHA256( key = KEY + SALT , message )      // lowercase hex</pre>
+<h3>PAYU_SHA512</h3>
+<pre>seq  = KEY |txnid|amount|productinfo|firstname|email|||||||||||SALT   // 5 udf + 5 reserved blanks
+hash = SHA512(seq)                                       // lowercase hex</pre>
+
+<h2 id="redirect">5. Redirect to the payment page</h2>
+<p>Send the customer's browser to the <code>pay_url</code> from the response. The hosted page shows a UPI QR plus Paytm / PhonePe / GPay buttons and live status. When the payment is confirmed it automatically redirects back to your <code>return_url</code> with query params:</p>
+<pre>https://your-site.com/return?order_id=ORDER-1001&amp;status=SUCCESS&amp;rrn=123456789012</pre>
+<div class="note">Always re-confirm server-side (callback or status enquiry) before fulfilling — the browser redirect is informational only.</div>
+
+<h2 id="callback">6. Receive the status callback</h2>
+<p>On every terminal status we <b>POST</b> a JSON body to your <code>notify_url</code> (or your saved webhook URL). Reply <code>HTTP 200</code>. We retry with backoff until you do.</p>
+<h3>Callback body</h3>
+<pre>{
+  "PAY_ID": "…", "ORDER_ID": "ORDER-1001", "TXN_ID": "…",
+  "AMOUNT": "100", "CURRENCY_CODE": "356",
+  "STATUS": "Captured", "RESPONSE_CODE": "000",
+  "RRN": "123456789012", "RESPONSE_DATE_TIME": "2026-07-01T…Z",
+  "HASH": "716346F5…EC21"
+}</pre>
+<h3>Verify the HASH (with your Salt)</h3>
+<ol>
+  <li>Take every field <b>except</b> <code>HASH</code>.</li>
+  <li>Sort the keys <b>ascending</b>; join as <code>KEY=value</code> with <code>~</code> between pairs.</li>
+  <li>Append your <code>SALT</code> directly to the end of that string.</li>
+  <li><code>SHA256</code> it → hex → <b>UPPERCASE</b>. It must equal <code>HASH</code>.</li>
+</ol>
+<p><b>Paid</b> = <code>STATUS</code> is <code>Captured</code> and <code>RESPONSE_CODE</code> is <code>000</code>.</p>
+
+<h2 id="enquiry">7. Status enquiry</h2>
+<p>At any time: <code>GET /api/pay-status/{order_id}</code> → <code>{ status, amount, rrn, terminal, … }</code>. Use it as a fallback if a callback was missed.</p>
+
+<h2 id="codes">8. Status &amp; response codes</h2>
+<table>
+  <tr><th>STATUS</th><th>RESPONSE_CODE</th><th>Meaning</th></tr>
+  <tr><td class="ok">Captured</td><td>000</td><td>Paid — fulfil the order.</td></tr>
+  <tr><td class="warn">Pending</td><td>005</td><td>Awaiting payment.</td></tr>
+  <tr><td>Failed</td><td>004</td><td>Declined / failed.</td></tr>
+  <tr><td>Expired</td><td>003</td><td>Payment request lapsed.</td></tr>
+</table>
+
+<h2 id="samples">9. Sample code</h2>
+<h3>PHP — create order</h3>
+<pre>$key="mk_xxx"; $salt="your_salt";
+$o = ["txnid"=>"ORDER-1001","amount"=>"100","productinfo"=>"Order 1001","email"=>"d@e.com"];
+$msg = $o["txnid"]."|".$o["amount"]."|".$o["productinfo"]."|".$o["email"];
+$o["hash"] = hash_hmac("sha256", $msg, $key.$salt);
+$o["key"]=$key; $o["return_url"]="https://you.com/return"; $o["notify_url"]="https://you.com/callback";
+$ch=curl_init("https://glhouse.shop/api/v1/katana-pay/order");
+curl_setopt_array($ch,[CURLOPT_POST=>1,CURLOPT_RETURNTRANSFER=>1,
+  CURLOPT_HTTPHEADER=>["Content-Type: application/json"],CURLOPT_POSTFIELDS=>json_encode($o)]);
+$res=json_decode(curl_exec($ch),true);
+header("Location: ".$res["pay_url"]);   // redirect customer</pre>
+<h3>Node.js — create order</h3>
+<pre>import crypto from "crypto";
+const key="mk_xxx", salt="your_salt";
+const o={ txnid:"ORDER-1001", amount:"100", productinfo:"Order 1001", email:"d@e.com" };
+const msg=[o.txnid,o.amount,o.productinfo,o.email].join("|");
+o.hash=crypto.createHmac("sha256",key+salt).update(msg).digest("hex");
+const r=await fetch("https://glhouse.shop/api/v1/katana-pay/order",{method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({...o,key,return_url:"https://you.com/return",notify_url:"https://you.com/callback"})});
+const data=await r.json();   // redirect customer to data.pay_url</pre>
+<h3>Python — create order</h3>
+<pre>import hmac,hashlib,requests
+key,salt="mk_xxx","your_salt"
+o={"txnid":"ORDER-1001","amount":"100","productinfo":"Order 1001","email":"d@e.com"}
+msg="|".join([o["txnid"],o["amount"],o["productinfo"],o["email"]])
+o["hash"]=hmac.new((key+salt).encode(),msg.encode(),hashlib.sha256).hexdigest()
+o.update(key=key, return_url="https://you.com/return", notify_url="https://you.com/callback")
+data=requests.post("https://glhouse.shop/api/v1/katana-pay/order",json=o).json()
+# redirect customer to data["pay_url"]</pre>
+<h3>Verify a callback (Node.js)</h3>
+<pre>function verify(body, salt){
+  const got=body.HASH; const f={...body}; delete f.HASH;
+  const str=Object.keys(f).sort().map(k=>`${k}=${f[k]==null?"":f[k]}`).join("~")+salt;
+  const exp=crypto.createHash("sha256").update(str,"utf8").digest("hex").toUpperCase();
+  return exp===got;   // true → trust it; then check STATUS==="Captured"
+}</pre>
+<h3>Verify a callback (PHP)</h3>
+<pre>function verify($body,$salt){
+  $got=$body["HASH"]; unset($body["HASH"]); ksort($body);
+  $parts=[]; foreach($body as $k=>$v){$parts[]="$k=".($v??"");}
+  $str=implode("~",$parts).$salt;
+  return strtoupper(hash("sha256",$str))===$got;
+}</pre>
+
+<h2 id="golive">10. Go-live checklist</h2>
+<ul>
+  <li>Generate your <b>Key + Salt</b> and store the Salt securely (server-side only).</li>
+  <li>Set your default <b>return_url</b> and <b>webhook URL</b> in the dashboard (or pass them per order).</li>
+  <li>Send your server's <b>public IP</b> to Katana for whitelisting.</li>
+  <li>Test with a small amount; confirm you receive the callback and the <b>HASH verifies</b>.</li>
+  <li>Treat callbacks as idempotent (same <code>ORDER_ID</code> may arrive more than once).</li>
+  <li>Always confirm <b>server-side</b> before fulfilling — never trust the browser redirect alone.</li>
+</ul>
+
+<p class="sub" style="margin-top:40px;border-top:1px solid var(--bd);padding-top:16px">Katana Pay · integration support: contact your Katana account manager.</p>
+</div>
+</body>
+</html>

@@ -41,13 +41,13 @@ export default function FifoControlsPage() {
 
   return (
     <>
-      <PageHeader title="Merchant Controls" description="Transaction limits and approved line-of-business per merchant (BRD FR-003, §11.A, §27)." icon={SlidersHorizontal} />
+      <PageHeader title="Branch Controls" description="Transaction limits and approved line-of-business per branch (BRD FR-003, §11.A, §27)." icon={SlidersHorizontal} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Transaction limits</CardTitle><CardDescription>Blank = no limit on that dimension. Amounts in ₹.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
-            <Input className="h-9" placeholder="merchant code e.g. M10001" value={lim.merchant_id} onChange={(e) => setLim({ ...lim, merchant_id: e.target.value })} />
+            <Input className="h-9" placeholder="branch code e.g. M10001" value={lim.merchant_id} onChange={(e) => setLim({ ...lim, merchant_id: e.target.value })} />
             <div className="grid grid-cols-3 gap-2">
               <MoneyInput placeholder="per-txn" value={lim.per_txn} onChange={(v) => setLim({ ...lim, per_txn: v })} />
               <MoneyInput placeholder="daily" value={lim.daily} onChange={(v) => setLim({ ...lim, daily: v })} />
@@ -68,7 +68,7 @@ export default function FifoControlsPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">Approved line-of-business</CardTitle><CardDescription>Comma-separated purposes. Orders with an off-list purpose are flagged.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
-            <Input className="h-9" placeholder="merchant code" value={lob.merchant_id} onChange={(e) => setLob({ ...lob, merchant_id: e.target.value })} />
+            <Input className="h-9" placeholder="branch code" value={lob.merchant_id} onChange={(e) => setLob({ ...lob, merchant_id: e.target.value })} />
             <Input className="h-9" placeholder="allowed purposes e.g. service_payment, recharge" value={lob.allowed_purposes} onChange={(e) => setLob({ ...lob, allowed_purposes: e.target.value })} />
             <Input className="h-9" placeholder="MCC (optional)" value={lob.mcc} onChange={(e) => setLob({ ...lob, mcc: e.target.value })} />
             <Button size="sm" onClick={() => saveLob.mutate()} disabled={!lob.merchant_id || saveLob.isPending}><Save className="h-4 w-4" /> Save LOB</Button>

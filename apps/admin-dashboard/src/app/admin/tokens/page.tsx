@@ -102,7 +102,7 @@ export default function TokensPage() {
   const tokenCols: Column<Token>[] = [
     { key: "token_id", header: "Token", render: (r) => <span className="font-mono text-xs">{r.token_id.slice(0, 8)}</span> },
     { key: "customer_ref", header: "Customer", render: (r) => <span className="font-mono text-xs">{r.customer_ref}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "method", header: "Method" },
     { key: "brand", header: "Brand", render: (r) => r.brand ?? "—" },
@@ -140,7 +140,7 @@ export default function TokensPage() {
         </TabsList>
         <TabsContent value="tokens">
           <DataView rows={tokens} columns={tokenCols} rowKey={(r) => r.token_id} loading={tQ.isLoading}
-            search={{ placeholder: "Search by customer / merchant / brand / last4…", fields: ["customer_ref", "merchant_id", "provider", "brand", "last4"] }}
+            search={{ placeholder: "Search by customer / branch / brand / last4…", fields: ["customer_ref", "merchant_id", "provider", "brand", "last4"] }}
             filters={[
               { key: "active",  label: "Active",  predicate: (r: Token) => r.status === "ACTIVE" },
               { key: "revoked", label: "Revoked", predicate: (r: Token) => r.status === "REVOKED" },

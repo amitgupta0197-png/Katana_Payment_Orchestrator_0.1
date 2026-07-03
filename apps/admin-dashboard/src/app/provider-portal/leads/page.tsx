@@ -58,8 +58,8 @@ function NewLeadDialog() {
       <DialogTrigger asChild><Button><Plus /> New lead</Button></DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create merchant lead</DialogTitle>
-          <DialogDescription>Per §2.2 step 1. The merchant starts in APPLICATION stage and is auto-mapped to your provider.</DialogDescription>
+          <DialogTitle>Create branch lead</DialogTitle>
+          <DialogDescription>Per §2.2 step 1. The branch starts in APPLICATION stage and is auto-mapped to your provider.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           {(Object.keys(form) as Array<keyof typeof form>).map((k) => (
@@ -101,8 +101,8 @@ export default function LeadsPage() {
   return (
     <>
       <PageHeader
-        title="Merchant leads"
-        description="Merchants you've sourced that are still in onboarding (APPLICATION → IN_REVIEW). Super Admin approves at /kyb."
+        title="Branch leads"
+        description="Branches you've sourced that are still in onboarding (APPLICATION → IN_REVIEW). Super Admin approves at /kyb."
         icon={UserPlus}
         actions={<NewLeadDialog />}
       />

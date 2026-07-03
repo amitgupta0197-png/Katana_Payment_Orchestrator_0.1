@@ -7,7 +7,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -16,21 +15,47 @@ interface Order {
   method: string; selected_rail?: string; status: string; created_at: string;
 }
 
-const STATUSES = ["", "INITIATED", "PENDING", "SUCCEEDED", "FAILED", "CANCELLED", "REFUNDED", "CHARGEBACK"] as const;
+const STATUSES = ["", "PENDING", "SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED", "INITIATED", "CANCELLED", "REFUNDED", "CHARGEBACK"] as const;
 
 export default function TransactionsPage() {
   const [status, setStatus] = useState<string>("");
-  const q = useQuery({
-    queryKey: ["mp:orders", status],
-    queryFn: async () => {
-      const url = status ? `/api/checkout?status=${status}` : "/api/checkout";
-      return (await fetch(url).then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] };
-    },
+
+  // The merchant's own row (id + code) — needed to fetch Katana Pay pay-ins, which
+  // are keyed by merchant code, not the session UUID.
+  const meQ = useQuery({
+    queryKey: ["mp:me"],
+    queryFn: async () => (await fetch("/api/merchants").then((r) => r.json())) as { merchants: { id: string; merchant_code: string }[] },
+  });
+  const meId = meQ.data?.merchants?.[0]?.id;
+
+  // Checkout-gateway orders (filtered client-side below so both rails share one filter).
+  const checkoutQ = useQuery({
+    queryKey: ["mp:orders"],
+    queryFn: async () => (await fetch("/api/checkout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] },
   });
 
+  // Katana Pay (PoolPay) pay-ins for this merchant.
+  const payinQ = useQuery({
+    queryKey: ["mp:payins", meId],
+    enabled: !!meId,
+    queryFn: async () => (await fetch(`/api/merchants/${meId}/payin-orders`).then((r) => r.json())) as { all: Array<{ id: string; order_id: string; amount: number; currency_code: string; status: string; rrn?: string; mode?: string; active_vpa?: string | null; created_at: string }> },
+  });
+
+  const payinRows: Order[] = (payinQ.data?.all ?? []).map((p) => ({
+    id: p.id, client_ref: p.order_id, txn_id: p.rrn || undefined,
+    amount: Number(p.amount || 0), currency: p.currency_code || "INR",
+    method: p.mode === "QR" ? "UPI QR" : "UPI Intent", selected_rail: "Katana Pay",
+    status: p.status, created_at: p.created_at,
+  }));
+
+  const all = [...(checkoutQ.data?.orders ?? []), ...payinRows]
+    .filter((o) => !status || o.status === status)
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  const loading = checkoutQ.isLoading || payinQ.isLoading;
+
   const cols: Column<Order>[] = [
-    { key: "client_ref", header: "Ref" },
-    { key: "txn_id", header: "TXN ID", render: (r) => r.txn_id ?? "—" },
+    { key: "client_ref", header: "Ref", render: (r) => <span className="font-mono text-xs">{r.client_ref}</span> },
+    { key: "txn_id", header: "UTR / TXN", render: (r) => r.txn_id ? <span className="font-mono text-xs">{r.txn_id}</span> : "—" },
     { key: "amount", header: "Amount", render: (r) => formatAmount(r.amount, r.currency) },
     { key: "method", header: "Method" },
     { key: "selected_rail", header: "Rail", render: (r) => r.selected_rail ?? "—" },
@@ -58,12 +83,12 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle>{(q.data?.orders ?? []).length} orders</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{all.length} orders</CardTitle></CardHeader>
         <CardContent>
           <DataTable
             columns={cols}
-            rows={q.data?.orders ?? []}
-            loading={q.isLoading}
+            rows={all}
+            loading={loading}
             rowKey={(r) => r.id}
             emptyState="No transactions match this filter."
           />

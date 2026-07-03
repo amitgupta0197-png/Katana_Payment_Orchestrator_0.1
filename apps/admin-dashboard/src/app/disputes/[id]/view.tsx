@@ -191,7 +191,7 @@ export default function DisputeDetailView({ id }: { id: string }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Dispute</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Merchant</span><span className="font-mono">{dispute.merchant_id}</span></div>
+            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Branch</span><span className="font-mono">{dispute.merchant_id}</span></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Transaction</span><span className="font-mono text-xs">{dispute.txn_id}</span></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Reason code</span><Badge variant="warning">{dispute.reason_code}</Badge></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Amount</span><span className="font-medium tabular-nums">{fmtMoney(dispute.amount_minor, dispute.currency)}</span></div>

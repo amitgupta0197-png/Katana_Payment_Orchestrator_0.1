@@ -39,7 +39,7 @@ export default function PartnerDataPage() {
     <>
       <PageHeader title="Partner data" description="Pulled UTR / payout-ref / TXID from settlement partners (PRODUCT_VISION §3.7)." icon={GitMerge} />
       <DataView rows={rows} columns={cols} rowKey={(r) => r.id} loading={q.isLoading}
-        search={{ placeholder: "Search by UTR / TXID / merchant…", fields: ["utr", "payout_ref", "txid", "merchant_id", "partner"] }}
+        search={{ placeholder: "Search by UTR / TXID / branch…", fields: ["utr", "payout_ref", "txid", "merchant_id", "partner"] }}
         filters={[
           { key: "matched",   label: "Matched",   predicate: (r: Record) => r.match_status === "MATCHED" },
           { key: "unmatched", label: "Unmatched", predicate: (r: Record) => r.match_status === "UNMATCHED" },

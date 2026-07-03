@@ -44,3 +44,16 @@ export function statusVariant(status: string | null | undefined): StatusVariant 
   if (!status) return "default";
   return STATUS_MAP[status.toUpperCase()] ?? "default";
 }
+
+// Display label for a payment rail / vendor code. The stored vendor identifier
+// stays "POOLPAY" (DB value + API contract), but the product is branded "Katana
+// Pay" in the UI — so map it here at render time. Unknown codes pass through.
+const RAIL_LABELS: Record<string, string> = {
+  POOLPAY: "Katana Pay",
+  POOLPAY_PO: "Katana Pay Payout",
+};
+
+export function railLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return RAIL_LABELS[code.toUpperCase()] ?? code;
+}

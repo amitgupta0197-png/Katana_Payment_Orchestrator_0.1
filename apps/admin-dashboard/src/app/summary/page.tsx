@@ -28,7 +28,7 @@ export default function SummaryPage() {
 
   const cols: Column<DailyRow>[] = [
     { key: "day", header: "Day", render: (r) => <span className="text-xs">{formatDateTime(r.day)}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "kind", header: "Kind", render: (r) => <Badge variant="brand">{r.kind}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "txn_count", header: "Txns", render: (r) => <span className="tabular-nums">{r.txn_count}</span> },
@@ -38,14 +38,14 @@ export default function SummaryPage() {
 
   return (
     <>
-      <PageHeader title="Summary" description="Platform-wide roll-up of pay-in volume by day + merchant." icon={BarChart3} />
+      <PageHeader title="Summary" description="Platform-wide roll-up of pay-in volume by day + branch." icon={BarChart3} />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <KpiTile label="Total transactions" value={totalTxn} loading={q.isLoading} />
         <KpiTile label="Total gross" value={formatAmount(totalGross)} loading={q.isLoading} />
         <KpiTile label="Total fees" value={formatAmount(totalFee)} loading={q.isLoading} />
       </div>
       <DataView rows={daily} columns={cols} rowKey={(r) => `${r.merchant_id}|${r.day}|${r.kind}|${r.status}|${r.currency}`} loading={q.isLoading}
-        search={{ placeholder: "Search by merchant / kind / status…", fields: ["merchant_id", "kind", "status"] }}
+        search={{ placeholder: "Search by branch / kind / status…", fields: ["merchant_id", "kind", "status"] }}
         savedViewKey="summary" refresh={() => q.refetch()}
         emptyTitle="No reporting data yet" />
     </>

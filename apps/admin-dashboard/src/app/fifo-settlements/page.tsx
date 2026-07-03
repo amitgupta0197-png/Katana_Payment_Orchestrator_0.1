@@ -47,9 +47,9 @@ export default function FifoSettlementsPage() {
       <PageHeader title="FIFO Settlements" description="Net completed pay-ins into settlement batches (BRD §22). Large/adjusted batches need approval." icon={Banknote} />
 
       <Card className="mb-4">
-        <CardHeader><CardTitle className="text-base">Create settlement batch</CardTitle><CardDescription>Nets all COMPLETED, unsettled pay-ins for the merchant. Optional chargeback hold / approved adjustment (₹).</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Create settlement batch</CardTitle><CardDescription>Nets all COMPLETED, unsettled pay-ins for the branch. Optional chargeback hold / approved adjustment (₹).</CardDescription></CardHeader>
         <CardContent className="flex flex-wrap items-end gap-2">
-          <Input className="h-9 w-48" placeholder="merchant code e.g. M10001" value={f.merchant_id} onChange={(e) => setF({ ...f, merchant_id: e.target.value })} />
+          <Input className="h-9 w-48" placeholder="branch code e.g. M10001" value={f.merchant_id} onChange={(e) => setF({ ...f, merchant_id: e.target.value })} />
           <MoneyInput className="w-40" placeholder="chargeback hold" value={f.chargeback_hold} onChange={(v) => setF({ ...f, chargeback_hold: v })} />
           <Input className="h-9 w-40" placeholder="adjustment ± ₹" value={f.adjustment} onChange={(e) => setF({ ...f, adjustment: e.target.value })} />
           <Button size="sm" onClick={() => create.mutate()} disabled={!f.merchant_id || create.isPending}><Plus className="h-4 w-4" /> Create batch</Button>
@@ -59,10 +59,10 @@ export default function FifoSettlementsPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Settlement batches ({batches.length})</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
-          {batches.length === 0 ? <EmptyState icon={Banknote} title="No settlement batches yet" description="Enter a merchant code above and create a batch to net their completed pay-ins into a payout. Large or adjusted batches go to maker-checker." /> : (
+          {batches.length === 0 ? <EmptyState icon={Banknote} title="No settlement batches yet" description="Enter a branch code above and create a batch to net their completed pay-ins into a payout. Large or adjusted batches go to maker-checker." /> : (
             <table className="w-full text-xs">
               <thead><tr className="border-b text-left text-[color:var(--color-text-muted)]">
-                <th className="px-2 py-1.5">batch</th><th className="px-2 py-1.5">merchant</th><th className="px-2 py-1.5">orders</th>
+                <th className="px-2 py-1.5">batch</th><th className="px-2 py-1.5">branch</th><th className="px-2 py-1.5">orders</th>
                 <th className="px-2 py-1.5">gross</th><th className="px-2 py-1.5">MDR</th><th className="px-2 py-1.5">reserve</th>
                 <th className="px-2 py-1.5">GST</th><th className="px-2 py-1.5">hold</th><th className="px-2 py-1.5">adj</th>
                 <th className="px-2 py-1.5">net</th><th className="px-2 py-1.5">status</th><th className="px-2 py-1.5">when</th>

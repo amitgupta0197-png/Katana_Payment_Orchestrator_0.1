@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { hashPassword, generatePassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ const createSchema = z.object({
   category_mcc: z.string().optional(),
   contact_email: z.string().email(),
   contact_phone: z.string().optional(),
-  website: z.string().url().optional(),
+  website: z.string().url().optional().or(z.literal("")),
   registered_address: z.string().optional(),
   // Optional: map this merchant under a provider at onboarding time.
   // PROVIDER persona ignores this (auto-mapped to itself below); SUPER_ADMIN may pick any provider.
@@ -105,6 +106,38 @@ export async function POST(req: Request) {
         ON CONFLICT (provider_id, merchant_id) DO NOTHING
       `, [mapProviderId, res[0].id, s.email]).catch(() => {});
     }
-    return NextResponse.json(res[0]);
+    // Provision a MERCHANT login so the new merchant can sign in immediately.
+    // Creating a merchant record alone never made an account, so this closes that
+    // gap. A brand-new email gets a one-time initial password returned ONCE to the
+    // admin to hand to the merchant; an existing email is just granted the persona.
+    let login: { email: string; password: string | null; existing: boolean } | null = null;
+    try {
+      const existing = await rows<{ id: string }>("auth", `SELECT id::text FROM users WHERE email = $1`, [body.contact_email]);
+      let userId: string;
+      let tempPassword: string | null = null;
+      if (existing.length) {
+        userId = existing[0].id;
+      } else {
+        tempPassword = generatePassword();
+        const created = await rows<{ id: string }>("auth", `
+          INSERT INTO users (id, email, full_name, password_hash, status)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'active') RETURNING id::text
+        `, [body.contact_email, body.brand_name || body.legal_name, hashPassword(tempPassword)]);
+        userId = created[0].id;
+      }
+      // Ensure a MERCHANT persona scoped to this merchant (idempotent).
+      // Cross-service merchant identity is the merchant_code (varchar), not the uuid
+      // PK — scope_id MUST be the code or every merchant-scoped query returns nothing.
+      await rows("iam", `
+        INSERT INTO user_personas (id, user_id, persona_kind, scope_id, scope_label, is_primary, granted_by)
+        SELECT gen_random_uuid(), $1::uuid, 'MERCHANT', $2, $3, true, $4
+        WHERE NOT EXISTS (
+          SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND persona_kind = 'MERCHANT' AND scope_id = $2
+        )
+      `, [userId, res[0].merchant_code, `${res[0].merchant_code} — ${body.legal_name}`, s.email]);
+      login = { email: body.contact_email, password: tempPassword, existing: existing.length > 0 };
+    } catch { /* non-fatal: the merchant exists even if login provisioning fails */ }
+
+    return NextResponse.json({ ...res[0], login });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

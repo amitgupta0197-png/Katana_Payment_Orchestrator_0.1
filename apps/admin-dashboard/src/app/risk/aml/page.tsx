@@ -70,7 +70,7 @@ function ScreeningForm() {
           <div><Label>Entity type</Label>
             <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
                     value={entityType} onChange={(e) => setEntityType(e.target.value)}>
-              <option value="merchant">merchant</option>
+              <option value="merchant">branch</option>
               <option value="beneficiary">beneficiary</option>
               <option value="customer">customer</option>
               <option value="director">director</option>

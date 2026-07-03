@@ -50,10 +50,35 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       SELECT id::text, rule_kind, rate_bps, fixed_fee, currency, valid_from, valid_to
         FROM provider_commission_rules WHERE provider_id = $1::uuid ORDER BY valid_from DESC
     `, [id]).catch(() => []);
+    // NB: this table's columns are status / mapped_at (not relation / created_at).
+    // Selecting the wrong names threw, and the silent catch below swallowed it —
+    // making every provider show "0 merchants" even with mappings present.
     const mappings = await rows<any>("provider", `
-      SELECT id::text, merchant_id, relation, created_at
-        FROM provider_merchant_mappings WHERE provider_id = $1::uuid ORDER BY created_at DESC
+      SELECT id::text, merchant_id::text AS merchant_id, status AS relation, mapped_at AS created_at
+        FROM provider_merchant_mappings WHERE provider_id = $1::uuid ORDER BY mapped_at DESC
     `, [id]).catch(() => []);
+
+    // Enrich each mapping with the merchant's name/code. merchants live in a
+    // separate service DB (no cross-DB join), so resolve them in one batch query.
+    // merchant_id is the merchant UUID on newer rows; very old rows may hold the
+    // merchant_code — match on either so both resolve.
+    if (mappings.length) {
+      const keys = mappings.map((m: any) => m.merchant_id);
+      const merchants = await rows<any>("merchant", `
+        SELECT id::text, merchant_code, legal_name, COALESCE(brand_name,'') AS brand_name
+          FROM merchants WHERE id::text = ANY($1::text[]) OR merchant_code = ANY($1::text[])
+      `, [keys]).catch(() => []);
+      const byKey = new Map<string, any>();
+      for (const mc of merchants) { byKey.set(mc.id, mc); byKey.set(mc.merchant_code, mc); }
+      for (const m of mappings) {
+        const mc = byKey.get(m.merchant_id);
+        m.merchant_code = mc?.merchant_code ?? null;
+        m.merchant_name = mc ? (mc.brand_name || mc.legal_name) : null;
+        // The merchant detail page is keyed by UUID; resolve it so the link works
+        // even for legacy rows whose merchant_id holds the merchant_code.
+        m.merchant_uuid = mc?.id ?? m.merchant_id;
+      }
+    }
     const auditLog = await rows<any>("provider", `
       SELECT id, actor, action, before_state, after_state, occurred_at
         FROM provider_audit_logs WHERE provider_id = $1::uuid

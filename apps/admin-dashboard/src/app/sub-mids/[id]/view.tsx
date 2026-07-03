@@ -192,7 +192,7 @@ export default function SubMidDetailView({ id }: { id: string }) {
           <CardContent className="text-sm space-y-1">
             <div><span className="text-[color:var(--color-text-muted)]">Sub-MID code:</span> <span className="font-mono">{sub.sub_mid_code}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Main MID:</span> <span className="font-mono">{sub.main_mid_code}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Merchant:</span> <span className="font-mono">{sub.merchant_id}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Branch:</span> <span className="font-mono">{sub.merchant_id}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Provider:</span> <span className="font-mono">{sub.provider_id || "—"}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Requested:</span> {formatDateTime(sub.requested_at)}</div>
             <div><span className="text-[color:var(--color-text-muted)]">Approved:</span> {sub.approved_at ? formatDateTime(sub.approved_at) : "—"}</div>

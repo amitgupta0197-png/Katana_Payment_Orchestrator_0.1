@@ -8,9 +8,9 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rows, pgError } from "@/lib/pg";
+import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { genRrn, POOLPAY_TERMINAL } from "@/lib/poolpay";
+import { confirmPoolPayOrder } from "@/lib/poolpay-order";
 
 export const dynamic = "force-dynamic";
 
@@ -32,41 +32,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
-    const cur = await rows<any>("vendorGateway",
-      `SELECT id::text, order_id, status, meta FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
-    if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
-    const order = cur[0];
-    if (POOLPAY_TERMINAL.has(order.status))
-      return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
-
-    // Risk: duplicate-UTR blocking — a UTR/RRN may settle exactly one order.
-    if (body.outcome === "SUCCESS" && body.utr?.trim()) {
-      const dup = await rows<{ order_id: string }>("vendorGateway",
-        `SELECT order_id FROM vendor_payin_orders WHERE rrn = $1 AND id <> $2::uuid LIMIT 1`,
-        [body.utr.trim(), id]);
-      if (dup.length)
-        return NextResponse.json({ error: `duplicate UTR — already used by order ${dup[0].order_id}` }, { status: 409 });
-    }
-
-    const rrn = body.outcome === "SUCCESS" ? (body.utr?.trim() || genRrn(order.id)) : null;
-    const responseCode = body.outcome === "SUCCESS" ? "00" : "U30";
-    const meta = {
-      ...(order.meta ?? {}),
-      confirmation: {
-        by: s.email,
-        at: new Date().toISOString(),
-        evidence: body.evidence,
-        utr: body.utr ?? null,
-        note: body.note ?? null,
-      },
-    };
-    const upd = await rows<any>("vendorGateway", `
-      UPDATE vendor_payin_orders
-         SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), meta = $5::jsonb, updated_at = now()
-       WHERE id = $1::uuid
-      RETURNING id::text, order_id, status, COALESCE(rrn,'') AS rrn
-    `, [id, body.outcome, responseCode, rrn, JSON.stringify(meta)]);
-
-    return NextResponse.json({ ok: true, order: upd[0] });
+    const r = await confirmPoolPayOrder({
+      id, outcome: body.outcome, utr: body.utr ?? null, note: body.note ?? null,
+      evidence: body.evidence, actor: s.email,
+    });
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+    return NextResponse.json({ ok: true, order: r.order });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

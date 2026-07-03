@@ -27,7 +27,7 @@ export default function ReportingPage() {
 
   const dCols: Column<DailyRow>[] = [
     { key: "day", header: "Day", render: (r) => <span className="text-xs">{formatDateTime(r.day)}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "kind", header: "Kind", render: (r) => <Badge variant="brand">{r.kind}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "txn_count", header: "Count", render: (r) => <span className="tabular-nums">{r.txn_count}</span> },
@@ -36,7 +36,7 @@ export default function ReportingPage() {
   ];
   const fCols: Column<Fact>[] = [
     { key: "occurred_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.occurred_at)}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "kind", header: "Kind" },
     { key: "rail", header: "Rail" },
     { key: "method", header: "Method" },
@@ -46,7 +46,7 @@ export default function ReportingPage() {
 
   return (
     <>
-      <PageHeader title="Reporting" description="Daily merchant roll-ups + recent transaction facts (PRODUCT_VISION §3.11)." icon={BarChart3} />
+      <PageHeader title="Reporting" description="Daily branch roll-ups + recent transaction facts (PRODUCT_VISION §3.11)." icon={BarChart3} />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <KpiTile label="Daily rows" value={daily.length} loading={q.isLoading} />
         <KpiTile label="Total gross" value={formatAmount(totalGross)} loading={q.isLoading} />
@@ -63,13 +63,13 @@ export default function ReportingPage() {
         </TabsList>
         <TabsContent value="daily">
           <DataView rows={daily} columns={dCols} rowKey={(r) => `${r.merchant_id}|${r.day}|${r.kind}|${r.status}|${r.currency}`} loading={q.isLoading}
-            search={{ placeholder: "Search by merchant / kind…", fields: ["merchant_id", "kind", "status"] }}
+            search={{ placeholder: "Search by branch / kind…", fields: ["merchant_id", "kind", "status"] }}
             savedViewKey="reporting-daily" refresh={() => q.refetch()}
             emptyTitle="No daily rows" />
         </TabsContent>
         <TabsContent value="facts">
           <DataView rows={facts} columns={fCols} rowKey={(r) => r.id}
-            search={{ placeholder: "Search by merchant / rail / kind…", fields: ["merchant_id", "kind", "rail", "method"] }}
+            search={{ placeholder: "Search by branch / rail / kind…", fields: ["merchant_id", "kind", "rail", "method"] }}
             savedViewKey="reporting-facts"
             emptyTitle="No fact rows" />
         </TabsContent>

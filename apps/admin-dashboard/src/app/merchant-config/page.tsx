@@ -38,7 +38,7 @@ export default function MerchantConfigPage() {
 
   return (
     <>
-      <PageHeader title="Merchant config" description="Feature-flag overrides per merchant (PRODUCT_VISION §3.11)." icon={Sliders} />
+      <PageHeader title="Branch config" description="Feature-flag overrides per branch (PRODUCT_VISION §3.11)." icon={Sliders} />
       <Tabs defaultValue="flags">
         <TabsList>
           <TabsTrigger value="flags"><FlagIcon className="h-3.5 w-3.5" /> Flags

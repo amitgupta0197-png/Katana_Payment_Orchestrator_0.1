@@ -29,7 +29,7 @@ export default function ReservesPage() {
   const now = Date.now();
 
   const cols: Column<Reserve>[] = [
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "hold_amount", header: "Held", render: (r) => <span className="tabular-nums">{formatAmount(r.hold_amount, r.currency)}</span> },
     { key: "released_amount", header: "Released", render: (r) => <span className="tabular-nums">{formatAmount(r.released_amount, r.currency)}</span> },
     { key: "hold_percent_bps", header: "%", render: (r) => <span className="tabular-nums">{(r.hold_percent_bps / 100).toFixed(2)}%</span> },
@@ -46,7 +46,7 @@ export default function ReservesPage() {
 
   return (
     <>
-      <PageHeader title="Reserves" description="Rolling-reserve ledger across all merchants (PRODUCT_VISION §3.8)." icon={BookOpen} />
+      <PageHeader title="Reserves" description="Rolling-reserve ledger across all branches (PRODUCT_VISION §3.8)." icon={BookOpen} />
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiTile label="Total held" value={formatAmount(stats?.total_held ?? 0)} loading={q.isLoading} />
         <KpiTile label="Releasing this week" value={formatAmount(stats?.releasing_this_week ?? 0)} variant="warning" loading={q.isLoading} />
@@ -57,7 +57,7 @@ export default function ReservesPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by merchant…", fields: ["merchant_id"] }}
+        search={{ placeholder: "Search by branch…", fields: ["merchant_id"] }}
         filters={[
           { key: "due-now",   label: "Due now",   predicate: (r: Reserve) => r.release_status !== "RELEASED" && new Date(r.release_date).getTime() <= now },
           { key: "due-7d",    label: "Due ≤7d",   predicate: (r: Reserve) => r.release_status !== "RELEASED" && new Date(r.release_date).getTime() - now <= 7 * 86400_000 },

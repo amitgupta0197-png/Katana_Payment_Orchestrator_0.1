@@ -61,19 +61,19 @@ export function ProviderOnboardMerchant({
   return (
     <>
       {!isControlled && (
-        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard merchant</Button>
+        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Onboard merchant under {providerLabel ?? "this provider"}</DialogTitle>
             <DialogDescription>
-              Creates a merchant at APPLICATION stage, mapped to this provider for traceability.
+              Creates a branch at APPLICATION stage, mapped to this provider for traceability.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Merchant code</Label>
+              <Label>Branch code</Label>
               <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} placeholder="M-0001" />
             </div>
             <div className="space-y-1.5">

@@ -23,8 +23,8 @@ export function GrossByMethod() {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle className="text-base">Gross by payment method × merchant</CardTitle>
-        <CardDescription>Which method each merchant collects through, by successful gross value.</CardDescription>
+        <CardTitle className="text-base">Gross by payment method × branch</CardTitle>
+        <CardDescription>Which method each branch collects through, by successful gross value.</CardDescription>
       </CardHeader>
       <CardContent>
         {q.isLoading ? (
@@ -36,7 +36,7 @@ export function GrossByMethod() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[color:var(--color-border)] text-left text-xs uppercase tracking-wide text-[color:var(--color-text-muted)]">
-                  <th className="py-2 pr-4 font-medium">Merchant</th>
+                  <th className="py-2 pr-4 font-medium">Branch</th>
                   {methods.map((m) => <th key={m} className="px-3 py-2 text-right font-medium">{m}</th>)}
                   <th className="pl-3 py-2 text-right font-medium">Total</th>
                 </tr>

@@ -79,7 +79,7 @@ export default function RefundsPage() {
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "partial", header: "Type", render: (r) => r.partial ? <Badge variant="warning">partial</Badge> : <Badge variant="default">full</Badge> },
     { key: "txn_id", header: "TXN", render: (r) => <span className="font-mono text-xs">{r.txn_id}</span> },
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "amount_minor", header: "Amount", render: (r) => <span className="tabular-nums">{r.currency} {r.amount_minor}</span> },
     { key: "reason", header: "Reason" },
     { key: "journal_id", header: "Journal", render: (r) => <span className="font-mono text-xs">{r.journal_id?.slice(0, 8) ?? "—"}</span> },
@@ -98,7 +98,7 @@ export default function RefundsPage() {
         columns={cols}
         rowKey={(r) => r.refund_id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by txn id, merchant, reason…", fields: ["txn_id", "merchant_id", "reason", "requested_by"] }}
+        search={{ placeholder: "Search by txn id, branch, reason…", fields: ["txn_id", "merchant_id", "reason", "requested_by"] }}
         filters={[
           { key: "posted",   label: "Posted",   predicate: (r: Refund) => r.status === "REFUNDED" || r.status === "PARTIALLY_REFUNDED" },
           { key: "pending",  label: "Pending",  predicate: (r: Refund) => r.status === "PENDING" || r.status === "PROCESSING" },

@@ -53,8 +53,8 @@ export default function MappedMerchantsPage() {
   return (
     <>
       <PageHeader
-        title="Mapped merchants"
-        description="Approved & live merchants under your provider."
+        title="Mapped branches"
+        description="Approved & live branches under your provider."
         icon={Store}
       />
       <Card>
@@ -65,7 +65,7 @@ export default function MappedMerchantsPage() {
             rows={live}
             loading={merchants.isLoading}
             rowKey={(r) => r.id}
-            emptyState="No live merchants yet. Approved leads will appear here."
+            emptyState="No live branches yet. Approved leads will appear here."
           />
         </CardContent>
       </Card>

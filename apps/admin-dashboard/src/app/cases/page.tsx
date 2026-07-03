@@ -64,7 +64,7 @@ export default function CasesPage() {
         <CardHeader><CardTitle className="text-base">Open a case</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap items-end gap-2">
           <Input className="h-9 w-64" placeholder="Subject *" value={nc.subject} onChange={(e) => setNc({ ...nc, subject: e.target.value })} />
-          <Input className="h-9 w-40" placeholder="merchant code" value={nc.merchant_id} onChange={(e) => setNc({ ...nc, merchant_id: e.target.value })} />
+          <Input className="h-9 w-40" placeholder="branch code" value={nc.merchant_id} onChange={(e) => setNc({ ...nc, merchant_id: e.target.value })} />
           <Input className="h-9 w-44" placeholder="order ref (optional)" value={nc.order_ref} onChange={(e) => setNc({ ...nc, order_ref: e.target.value })} />
           <select className="h-9 rounded-md border bg-transparent px-2 text-sm" value={nc.severity} onChange={(e) => setNc({ ...nc, severity: e.target.value })}>
             {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => <option key={s} value={s}>{s}</option>)}
@@ -77,7 +77,7 @@ export default function CasesPage() {
         <Card>
           <CardHeader><CardTitle className="text-base">Cases ({cases.length})</CardTitle></CardHeader>
           <CardContent className="space-y-1">
-            {cases.length === 0 && <EmptyState icon={Briefcase} title="No cases open" description="Open a case above to investigate a flagged order or merchant — attach notes/evidence and place the order on hold." />}
+            {cases.length === 0 && <EmptyState icon={Briefcase} title="No cases open" description="Open a case above to investigate a flagged order or branch — attach notes/evidence and place the order on hold." />}
             {cases.map((c) => (
               <button key={c.id} onClick={() => setSel(c.id)} className={`flex w-full flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-[color:var(--color-surface-muted)] ${sel === c.id ? "border-[color:var(--color-brand)]" : ""}`}>
                 <div className="flex flex-wrap items-center gap-2">

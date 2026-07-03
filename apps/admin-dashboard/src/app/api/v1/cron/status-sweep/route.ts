@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { resolvePoolPay, genRrn } from "@/lib/poolpay";
+import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
            SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
          WHERE id = $1::uuid
       `, [o.id, d.status, d.response_code, rrn]).catch(() => {});
+      sendPayinCallback(o.id).catch(() => {});   // notify merchant of the terminal status
       swept++;
       if (d.status === "SUCCESS") settled++;
       else if (d.status === "FAILED") failed++;

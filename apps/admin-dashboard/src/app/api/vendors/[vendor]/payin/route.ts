@@ -14,7 +14,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ vendor:
       SELECT id::text, tenant_id, vendor, pay_id, order_id, amount, currency_code,
              channel, COALESCE(vendor_txn_id,'') AS vendor_txn_id,
              COALESCE(rrn,'') AS rrn, response_code, status,
-             COALESCE(merchant_id,'') AS merchant_id, COALESCE(sub_mid_code,'') AS sub_mid_code, created_at
+             COALESCE(merchant_id,'') AS merchant_id, COALESCE(sub_mid_code,'') AS sub_mid_code,
+             COALESCE(meta->>'review','') AS review,
+             COALESCE(meta->'proof'->>'utr','') AS proof_utr,
+             COALESCE(meta->'confirmation'->>'evidence','') AS confirm_evidence,
+             created_at
         FROM vendor_payin_orders WHERE upper(vendor) = upper($1)
        ORDER BY created_at DESC LIMIT 200
     `, [vendor]).catch(() => []);

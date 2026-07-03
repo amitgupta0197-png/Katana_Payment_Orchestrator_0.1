@@ -35,7 +35,7 @@ export default function AdminCommissionPage() {
 
   return (
     <>
-      <PageHeader title="Commission" description="Provider commission rules across the platform (PRODUCT_VISION §3.11). Active rules accrue against merchant volume." icon={Percent} />
+      <PageHeader title="Commission" description="Provider commission rules across the platform (PRODUCT_VISION §3.11). Active rules accrue against branch volume." icon={Percent} />
       <DataView
         rows={rules}
         columns={cols}

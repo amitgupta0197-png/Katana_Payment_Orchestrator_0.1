@@ -76,7 +76,7 @@ export default function SettlementPage() {
   const pending = batches.filter((b) => b.status !== "COMPLETED" && b.status !== "PAID").length;
 
   const cols: Column<Batch>[] = [
-    { key: "merchant_id", header: "Merchant",
+    { key: "merchant_id", header: "Branch",
       render: (r) => <button onClick={() => setDrawer(r)} className="text-[color:var(--color-brand)] hover:underline">{r.merchant_id}</button> },
     { key: "period_start", header: "Date",
       render: (r) => <span className="text-xs">{formatDateTime(r.period_start)}</span> },
@@ -92,7 +92,7 @@ export default function SettlementPage() {
     <>
       <PageHeader
         title="Settlements"
-        description="Per-merchant settlement batches. Open a row to see breakdown + journal trace."
+        description="Per-branch settlement batches. Open a row to see breakdown + journal trace."
         icon={Banknote}
         actions={
           <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
@@ -113,7 +113,7 @@ export default function SettlementPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by merchant or UTR…", fields: ["merchant_id", "utr", "payout_ref"] }}
+        search={{ placeholder: "Search by branch or UTR…", fields: ["merchant_id", "utr", "payout_ref"] }}
         filters={[
           { key: "pending",   label: "Pending",   predicate: (r: Batch) => r.status !== "COMPLETED" && r.status !== "PAID" },
           { key: "completed", label: "Completed", predicate: (r: Batch) => r.status === "COMPLETED" || r.status === "PAID" },

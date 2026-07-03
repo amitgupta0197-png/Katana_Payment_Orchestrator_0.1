@@ -68,9 +68,9 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // to their job. Nothing is removed from the app — every page stays reachable by URL
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
-  OPERATOR:   ["/", "/operator", "/status-intelligence", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/status-intelligence", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/security"],
-  RISK:       ["/", "/status-intelligence", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
+  OPERATOR:   ["/", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/security"],
+  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
 };
@@ -92,13 +92,13 @@ export const navItems: NavItem[] = [
 
   { href: "/providers",        label: "Providers",       icon: UserPlus, status: "live", group: "Payment Management" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
-  { href: "/merchants",        label: "Merchant",        icon: Store,    status: "live", group: "Payment Management" },
-  { href: "/merchant-config",  label: "Merchant Config", icon: Sliders,  status: "live", group: "Payment Management" },
+  { href: "/merchants",        label: "Branch",          icon: Store,    status: "live", group: "Payment Management" },
+  { href: "/merchant-config",  label: "Branch Config",   icon: Sliders,  status: "live", group: "Payment Management" },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/payin-order",      label: "Payin Order",     icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/summary",          label: "Summary",         icon: BarChart3,status: "live", group: "Payment Management" },
   { href: "/payout-order",     label: "Payout Order",    icon: Send,     status: "live", group: "Payment Management" },
-  { href: "/merchant-wallet",  label: "Merchant Wallet", icon: Wallet,   status: "live", group: "Payment Management" },
+  { href: "/merchant-wallet",  label: "Branch Wallet",   icon: Wallet,   status: "live", group: "Payment Management" },
   { href: "/fund",             label: "Fund",            icon: Cash,     status: "live", group: "Payment Management" },
   { href: "/payin-data",       label: "Payin Data",      icon: Activity, status: "live", group: "Payment Management" },
   { href: "/payout-data",      label: "Payout Data",     icon: Activity, status: "live", group: "Payment Management" },
@@ -107,13 +107,14 @@ export const navItems: NavItem[] = [
   { href: "/ledger", label: "Ledger", icon: BookOpen, status: "live", group: "Money Movement" },
   { href: "/payout", label: "Payouts (gRPC)", icon: Send, status: "live", group: "Money Movement" },
   { href: "/settlement", label: "Settlements", icon: Banknote, status: "live", group: "Money Movement" },
+  { href: "/branch-settlements", label: "Branch Settlements", icon: Banknote, status: "live", group: "Money Movement" },
   { href: "/collections", label: "Collections", icon: Inbox, status: "live", group: "Money Movement" },
   { href: "/checkout", label: "Checkout", icon: CreditCard, status: "live", group: "Money Movement" },
   { href: "/routing", label: "Routing Engine", icon: Workflow, status: "live", group: "Money Movement" },
   { href: "/pg-adapter", label: "PG Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/bank-adapter", label: "Bank Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/crypto-rail", label: "Crypto Rails", icon: Coins, status: "live", group: "Money Movement" },
-  { href: "/vendors/poolpay", label: "PoolPay", icon: CreditCard, status: "live", group: "Money Movement" },
+  { href: "/vendors/poolpay", label: "Katana Pay", icon: CreditCard, status: "live", group: "Money Movement" },
   { href: "/vendors/quickpay", label: "Quickpay", icon: CreditCard, status: "live", group: "Money Movement" },
 
   { href: "/partner-data", label: "Partner Data", icon: GitMerge, status: "live", group: "Money Movement" },
@@ -130,6 +131,7 @@ export const navItems: NavItem[] = [
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   { href: "/payouts", label: "Payouts & Beneficiaries", icon: Send, status: "live", group: "Operations" },
   { href: "/status-intelligence", label: "Status Intelligence", icon: Activity, status: "live", group: "Operations" },
+  { href: "/transaction-intel", label: "Transaction Intel", icon: ShieldAlert, status: "live", group: "Operations" },
   { href: "/fifo-dashboard", label: "FIFO Dashboard", icon: LayoutDashboard, status: "live", group: "Operations" },
   { href: "/fifo-reports", label: "FIFO Reports", icon: BarChart3, status: "live", group: "Operations" },
   { href: "/fifo-reconciliation", label: "FIFO Reconciliation", icon: GitMerge, status: "live", group: "Operations" },
@@ -156,7 +158,7 @@ export const navItems: NavItem[] = [
   { href: "/admin/hardening",      label: "Hardening", icon: Shield, status: "live", group: "Admin" },
   { href: "/integrations",         label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
   { href: "/security",             label: "Security (MFA)", icon: Shield, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "PROVIDER", "MERCHANT", "OPERATOR"] },
-  { href: "/fifo-controls",        label: "Merchant Controls", icon: Sliders, status: "live", group: "Admin" },
+  { href: "/fifo-controls",        label: "Branch Controls", icon: Sliders, status: "live", group: "Admin" },
 ];
 
 export const navGroups = ["Overview", "Payment Management", "Money Movement", "Risk & Compliance", "Operations", "Admin"] as const;

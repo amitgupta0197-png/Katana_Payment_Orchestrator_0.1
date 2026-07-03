@@ -28,7 +28,7 @@ export default function PayinOrderPage() {
   const cols: Column<Order>[] = [
     { key: "client_ref", header: "Ref",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/checkout/${r.id}`}>{r.client_ref}</Link> },
-    { key: "merchant_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "method", header: "Method" },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -37,14 +37,14 @@ export default function PayinOrderPage() {
 
   return (
     <>
-      <PageHeader title="Pay-in orders" description="All incoming order intake across merchants." icon={Receipt} />
+      <PageHeader title="Pay-in orders" description="All incoming order intake across branches." icon={Receipt} />
       <DataView
         rows={rows}
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
         href={(r) => `/checkout/${r.id}`}
-        search={{ placeholder: "Search by ref, txn, merchant…", fields: ["client_ref", "txn_id", "merchant_id", "method"] }}
+        search={{ placeholder: "Search by ref, txn, branch…", fields: ["client_ref", "txn_id", "merchant_id", "method"] }}
         filters={[
           { key: "succeeded", label: "Succeeded", predicate: (r: Order) => r.status === "SUCCEEDED" },
           { key: "failed",    label: "Failed",    predicate: (r: Order) => r.status === "FAILED" || r.status === "EXPIRED" },

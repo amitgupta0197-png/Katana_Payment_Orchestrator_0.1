@@ -48,7 +48,7 @@ export default function AiOpsPage() {
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2"><Terminal className="h-4 w-4" /> Slash command</CardTitle>
-          <CardDescription>Try: /merchant tenant-default · /provider POOLPAY · /txn TXN-XXX · /exceptions · /treasury</CardDescription>
+          <CardDescription>Try: /branch tenant-default · /provider POOLPAY · /txn TXN-XXX · /exceptions · /treasury</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-2">

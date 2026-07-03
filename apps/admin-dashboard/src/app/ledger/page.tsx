@@ -52,14 +52,14 @@ export default function LedgerPage() {
     { key: "closed", header: "Closed", render: (r) => r.closed ? <Badge variant="warning">closed</Badge> : <Badge variant="success">open</Badge> },
   ];
   const bCols: Column<Balance>[] = [
-    { key: "merchant_id", header: "Merchant" },
+    { key: "merchant_id", header: "Branch" },
     { key: "currency", header: "Cur" },
     { key: "balance", header: "Balance", render: (r) => <span className="tabular-nums font-medium">{formatAmount(r.balance, r.currency)}</span> },
   ];
 
   return (
     <>
-      <PageHeader title="Ledger" description="Double-entry journal, account map, and merchant balances." icon={BookOpen} />
+      <PageHeader title="Ledger" description="Double-entry journal, account map, and branch balances." icon={BookOpen} />
       <Tabs defaultValue="journals">
         <TabsList>
           <TabsTrigger value="journals"><FileText className="h-3.5 w-3.5" /> Journals
@@ -103,7 +103,7 @@ export default function LedgerPage() {
         <TabsContent value="balances">
           <DataView
             rows={bRows} columns={bCols} rowKey={(r) => `${r.merchant_id}-${r.currency}`} loading={balances.isLoading}
-            search={{ placeholder: "Search by merchant…", fields: ["merchant_id", "currency"] }}
+            search={{ placeholder: "Search by branch…", fields: ["merchant_id", "currency"] }}
             savedViewKey="ledger-balances"
             refresh={() => balances.refetch()}
             emptyTitle="No balances yet"

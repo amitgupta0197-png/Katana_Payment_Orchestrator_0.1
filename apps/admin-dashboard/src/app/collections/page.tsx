@@ -24,7 +24,7 @@ export default function CollectionsPage() {
   const banks = Array.from(new Set(rows.map((v) => v.bank))).slice(0, 5);
 
   const cols: Column<VA>[] = [
-    { key: "counterparty", header: "Merchant" },
+    { key: "counterparty", header: "Branch" },
     { key: "bank", header: "Bank", render: (r) => <Badge variant="brand">{r.bank}</Badge> },
     { key: "va_account_no", header: "Account", render: (r) => <span className="font-mono text-xs">{r.va_account_no}</span> },
     { key: "va_ifsc", header: "IFSC" },
@@ -36,9 +36,9 @@ export default function CollectionsPage() {
 
   return (
     <>
-      <PageHeader title="Collections (VA)" description="Virtual-account mappings per merchant." icon={Inbox} />
+      <PageHeader title="Collections (VA)" description="Virtual-account mappings per branch." icon={Inbox} />
       <DataView rows={rows} columns={cols} rowKey={(r) => r.id} loading={q.isLoading}
-        search={{ placeholder: "Search by merchant / VA / IFSC / VPA…", fields: ["counterparty", "va_account_no", "va_ifsc", "va_upi_vpa"] }}
+        search={{ placeholder: "Search by branch / VA / IFSC / VPA…", fields: ["counterparty", "va_account_no", "va_ifsc", "va_upi_vpa"] }}
         filters={[
           { key: "active",   label: "Active",   predicate: (r: VA) => r.active },
           { key: "inactive", label: "Inactive", predicate: (r: VA) => !r.active },
