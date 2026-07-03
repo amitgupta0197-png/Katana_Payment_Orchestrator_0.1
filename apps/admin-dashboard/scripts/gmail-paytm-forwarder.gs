@@ -97,7 +97,12 @@ function post(url, body, contentType) {
   } catch (e) { Logger.log("POST failed @ " + url + ": " + e); return false; }
 }
 
-/** Run ONCE to schedule both jobs. Payments every minute; reports every hour. */
+/**
+ * Run ONCE to schedule both jobs. Payments every minute; reports every 5 minutes.
+ * (Apps Script time-triggers only allow 1/5/10/15/30-min intervals — 3 min isn't
+ * selectable, so reports use the 5-min slot. Change everyMinutes(5)→(1) for faster.)
+ * NOTE: actual RRN freshness = how often Paytm emails the report, not this interval.
+ */
 function installTrigger() {
   var keep = { forwardPaytmPayments: 1, forwardPaytmReports: 1 };
   var existing = ScriptApp.getProjectTriggers();
@@ -105,6 +110,6 @@ function installTrigger() {
     if (keep[existing[i].getHandlerFunction()]) ScriptApp.deleteTrigger(existing[i]);
   }
   ScriptApp.newTrigger("forwardPaytmPayments").timeBased().everyMinutes(1).create();
-  ScriptApp.newTrigger("forwardPaytmReports").timeBased().everyHours(1).create();
-  Logger.log("Triggers installed — payments every minute, reports every hour.");
+  ScriptApp.newTrigger("forwardPaytmReports").timeBased().everyMinutes(5).create();
+  Logger.log("Triggers installed — payments every minute, reports every 5 minutes.");
 }
