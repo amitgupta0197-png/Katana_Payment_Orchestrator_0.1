@@ -30,6 +30,7 @@ class KeepAliveService : Service() {
             startForeground(NOTIF_ID, n)
         }
         CommandPoller.start(applicationContext)   // poll for on-demand RRN capture requests
+        runCatching { ShizukuTap.bind() }         // prime the shell-UID user service for hands-free taps
         return START_STICKY   // ask the OS to restart us if it kills the process
     }
 

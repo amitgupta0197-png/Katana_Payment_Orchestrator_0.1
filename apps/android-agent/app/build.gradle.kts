@@ -18,13 +18,14 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.18"
+        versionCode = 30
+        versionName = "2.19"
     }
 
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        aidl = true   // IUserService — the Shizuku shell-UID user service
     }
 
     signingConfigs {

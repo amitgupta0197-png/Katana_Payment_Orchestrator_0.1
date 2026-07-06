@@ -217,20 +217,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun shizukuInstalled(): Boolean = try {
+        packageManager.getPackageInfo("moe.shizuku.privileged.api", 0); true
+    } catch (e: Exception) { false }
+
     private fun enableShizuku() {
         when {
-            !ShizukuTap.available() -> toast("Install & start the Shizuku app first, then tap again")
-            ShizukuTap.granted() -> toast("Shell-tap ready ✓")
+            !shizukuInstalled() -> {
+                toast("Install Shizuku, then come back")
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"))) }
+                catch (e: Exception) {}
+            }
+            !ShizukuTap.available() ->
+                toast("Open the Shizuku app and Start it (via wireless debugging), then tap again")
+            ShizukuTap.granted() -> {
+                ShizukuTap.bind()
+                thread {
+                    val ok = ShizukuTap.shell("echo ok")   // forces a bind + real round-trip
+                    runOnUiThread { toast(if (ok) "Hands-free ready ✓" else "Binding… tap again in a moment"); refreshShizuku() }
+                }
+            }
             else -> { ShizukuTap.requestPermission(); toast("Approve the Shizuku permission popup") }
         }
-        Handler(Looper.getMainLooper()).postDelayed({ refreshShizuku() }, 800)
+        Handler(Looper.getMainLooper()).postDelayed({ refreshShizuku() }, 1200)
     }
 
     private fun refreshShizuku() {
+        if (ShizukuTap.granted()) ShizukuTap.bind()   // prime the shell-UID user service
         b.shizukuStatus.text = when {
-            ShizukuTap.granted() -> "Shell-tap: ✓ ready (taps bypass Paytm's block)"
-            ShizukuTap.available() -> "Shell-tap: Shizuku running, permission not granted"
-            else -> "Shell-tap: Shizuku not running (optional — install Shizuku to enable)"
+            ShizukuTap.ready() -> "Hands-free: ✓ ready (agent taps Copy itself)"
+            ShizukuTap.granted() -> "Hands-free: Shizuku granted — binding service, tap to finish"
+            ShizukuTap.available() -> "Hands-free: Shizuku running — tap to grant permission"
+            shizukuInstalled() -> "Hands-free: open Shizuku & Start it (wireless debugging), then tap"
+            else -> "Hands-free (optional): tap to install Shizuku for no-touch capture"
         }
     }
 
