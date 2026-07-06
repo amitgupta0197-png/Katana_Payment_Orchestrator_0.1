@@ -18,8 +18,8 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 26
-        versionName = "2.15"
+        versionCode = 28
+        versionName = "2.17"
     }
 
     buildFeatures {

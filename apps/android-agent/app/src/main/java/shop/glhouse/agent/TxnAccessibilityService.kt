@@ -89,10 +89,13 @@ class TxnAccessibilityService : AccessibilityService() {
 
         // A MASKED reference as Paytm Business shows it ("209…975768"): digits · ellipsis · digits.
         val MASKED_REF = Regex("[0-9]{2,4}\\s*[.·•…]{2,}\\s*[0-9]{4,8}")
-        // The payer's masked UPI ID as the receipt shows it ("9183***771@waaxis", "78***41@ptyes").
-        // Its leading digits + bank domain are the reliable key to match against the dashboard's
-        // masked VPA credit ("9183XX@waaxis") — payer names don't align across channels.
-        val MASKED_VPA = Regex("[0-9][0-9*x]{2,}@[a-z]{2,}", RegexOption.IGNORE_CASE)
+        // The payer's masked UPI ID as the receipt shows it ("9183***771@waaxis", "78***41@ptyes",
+        // "ashe***h21@nyes" — the visible prefix may be LETTERS, not just digits). Its leading
+        // prefix + bank domain are the reliable key to match against the dashboard's masked VPA
+        // credit ("9183XX@waaxis" / "asheXX@nyes") — payer names don't align across channels.
+        // Mask chars: receipt uses "***"; email-style uses capital "XX" — lowercase x is NOT a mask
+        // (it appears in real handles), so it must not truncate the visible prefix.
+        val MASKED_VPA = Regex("[A-Za-z0-9][A-Za-z0-9.\\-]*[*X•·…]{2,}[A-Za-z0-9.\\-]*@[A-Za-z][A-Za-z0-9.]+")
         // Split a masked ref into visible leading + trailing digits, to fingerprint the full value.
         val MASK_SPLIT = Regex("([0-9]+)[.·•…]+([0-9]+)")
 
@@ -206,6 +209,11 @@ class TxnAccessibilityService : AccessibilityService() {
                 // easily sit on a debit receipt.
                 if (isDebit(text)) {
                     AlertStore.log(applicationContext, "${nowTag()} ⤴ skipped outgoing/debit screen")
+                } else if (isSettlement(text)) {
+                    // Settlement screens list a bank UTR + the batch amount — a bare 12-digit
+                    // there is NOT a customer RRN (live junk capture ₹70,786 on 06 Jul 2026).
+                    // Receipts only ever say "Settled Amount"/"Settle Now", never "settlement".
+                    AlertStore.log(applicationContext, "${nowTag()} ⤴ skipped settlement screen")
                 } else if (!captureDetail(text, pkg)) {
                     // Plain RRN absent → if the receipt only shows a MASKED RRN ("209…975768"),
                     // start the clipboard sweep (tap its "Copy" → focused read).
@@ -346,11 +354,19 @@ class TxnAccessibilityService : AccessibilityService() {
         if (AlertStore.seenRecently(applicationContext, key)) return true
         val payer = extractPayer(text)
         val orderRef = ORDER_ID.find(text)?.groupValues?.get(1)   // full Order ID (merge key), if readable
-        val txn = ParsedTxn(amount = amount, utr = rrn, payerVpa = null, payerName = payer, bank = "PAYTM",
+        // The masked payer VPA is the server's cross-channel merge key — without it a same-amount
+        // credit arriving minutes later can be folded onto the wrong payment (live mis-merge 2026-07-06).
+        val payerVpa = MASKED_VPA.find(text)?.value
+        val txn = ParsedTxn(amount = amount, utr = rrn, payerVpa = payerVpa, payerName = payer, bank = "PAYTM",
             raw = "PAYTM detail RRN=$rrn amt=$amount", orderRef = orderRef)
         AlertUploader.send(applicationContext, txn, "ACCESSIBILITY", pkg)
         return true
     }
+
+    // A settlement summary/detail screen — its "UTR" + amount are the merchant's own bank-batch
+    // payout, never a customer credit. "settlement" does not appear on payment receipts (they say
+    // "Settled Amount" / "Settle Now" / "Amount to be settled", none of which contain it).
+    private fun isSettlement(text: String): Boolean = text.contains("settlement", ignoreCase = true)
 
     // True when the screen clearly shows the merchant's OWN outgoing money (debit / refund / sent),
     // never an incoming credit — so a 12-digit number on such a receipt is never mistaken for a

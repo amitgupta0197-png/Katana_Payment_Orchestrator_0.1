@@ -340,6 +340,10 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
       if (byOrder.length === 1) tgtId = byOrder[0].id;
     }
     // Fallback: same merchant+amount within a short window, exactly one complementary.
+    // VPA guard: when BOTH sides carry a payer VPA, their visible prefix + bank domain must
+    // agree — same-amount payments arrive seconds apart in live traffic, and "exactly one
+    // complementary row" alone once folded an email onto a DIFFERENT payment's RRN row
+    // (live mis-merge 2026-07-06). Rows missing a VPA on either side still merge as before.
     if (!tgtId && input.merchant_id) {
       const compl = await rows<{ id: string }>("vendorGateway", `
         SELECT id::text FROM vendor_txn_alerts
@@ -347,8 +351,16 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
            AND created_at >= now() - interval '15 minutes'
            AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
               OR ($5::text IS NOT NULL AND order_ref IS NULL) )
+           AND ( $6::text IS NULL OR payer_vpa IS NULL
+              OR ( lower(split_part(payer_vpa, '@', 2)) = lower(split_part($6::text, '@', 2))
+               -- Visible-prefix LENGTHS differ per channel (receipt "96***53@axl" vs email
+               -- "9611XX@axl") — one stripped prefix must be a prefix of the other, not equal.
+               AND ( regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '')
+                       LIKE regexp_replace(split_part($6::text, '@', 1), '[X*].*$', '') || '%'
+                  OR regexp_replace(split_part($6::text, '@', 1), '[X*].*$', '')
+                       LIKE regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') || '%' ) ) )
          ORDER BY created_at DESC LIMIT 2
-      `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef]).catch(() => []);
+      `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef, input.payer_vpa ?? null]).catch(() => []);
       if (compl.length === 1) tgtId = compl[0].id;
     }
     // BACKFILL: a one-tapped RRN for an OLDER payment (past the 15-min live window). Match the
@@ -367,7 +379,10 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
              AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
              AND created_at >= now() - interval '14 days'
              AND lower(split_part(payer_vpa, '@', 2)) = $4
-             AND regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') = $5
+             -- Prefix-of-prefix, not equality: the receipt and the email mask a different
+             -- number of leading chars ("96***53" strips to "96", "9611XX" strips to "9611").
+             AND ( regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') LIKE $5 || '%'
+                OR $5 LIKE regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') || '%' )
            ORDER BY created_at DESC LIMIT 1
         `, [input.merchant_id, amount.toFixed(2), source, domain, prefix]).catch(() => []);
         if (bf.length === 1) tgtId = bf[0].id;
