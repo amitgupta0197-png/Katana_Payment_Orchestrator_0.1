@@ -88,6 +88,16 @@ object Prefs {
         sp(ctx).edit().putString("email_addr", email.trim()).putBoolean("email_connected", connected).apply()
     }
 
+    // Capture-command ids already surfaced to the merchant, so the 15-second poll doesn't
+    // re-notify for a request the server keeps returning (SENT) until its RRN lands. Capped.
+    fun commandSeen(ctx: Context, id: String): Boolean = sp(ctx).getStringSet("cmd_seen", emptySet())?.contains(id) == true
+    fun markCommandSeen(ctx: Context, id: String) {
+        val cur = LinkedHashSet(sp(ctx).getStringSet("cmd_seen", emptySet()) ?: emptySet())
+        cur.add(id)
+        while (cur.size > 200) cur.remove(cur.iterator().next())
+        sp(ctx).edit().putStringSet("cmd_seen", cur).apply()
+    }
+
     fun save(ctx: Context, baseUrl: String, deviceId: String, merchantCode: String, enabled: Boolean) {
         sp(ctx).edit()
             .putString("base_url", baseUrl.trim().trimEnd('/'))

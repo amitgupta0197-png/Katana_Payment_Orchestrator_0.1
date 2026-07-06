@@ -133,6 +133,15 @@ async function audit(actor: string, action: string, entity: string, entityId: st
   `, [actor, action, entity, entityId, detail]).catch(() => {});
 }
 
+// Close any open on-demand RRN capture request against a credit once its RRN lands.
+// Best-effort: the table may not exist on an un-migrated env, so failures are swallowed.
+async function closeCaptureRequest(alertId: string) {
+  await rows("vendorGateway", `
+    UPDATE vendor_capture_requests SET status = 'DONE', fulfilled_at = now()
+     WHERE alert_id = $1::uuid AND status IN ('PENDING','SENT')
+  `, [alertId]).catch(() => {});
+}
+
 async function raiseSecurityAlert(
   deviceId: string | null, riskType: string, severity: string, detail: string, refAlertId: string | null,
 ): Promise<string | null> {
@@ -399,6 +408,9 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
           detail     = COALESCE(detail,'') || ' · +' || $7
         WHERE id = $1::uuid
       `, [tgtId, rrn, orderRef, payerName, input.payer_vpa ?? null, input.bank ?? null, source]).catch(() => {});
+      // An on-demand capture request against this credit is now fulfilled — close it so
+      // the dashboard button clears and the agent stops re-issuing it.
+      if (rrn) await closeCaptureRequest(tgtId);
       await audit(actor, "ALERT_MERGED", "txn_alert", tgtId,
         `enriched with ${rrn ? "RRN " + rrn : "order " + orderRef} from ${source}`);
       return { alert_id: tgtId, outcome, confidence, matched_order_ref: order?.order_id ?? null,

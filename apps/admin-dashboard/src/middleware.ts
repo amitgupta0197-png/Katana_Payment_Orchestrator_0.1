@@ -68,7 +68,7 @@ const PUBLIC_UI = ["/login", "/developers"];
 // response-hash authenticated) bypass the session gate.
 // /api/v1/webhooks/payment-status (HMAC x-signature) and /api/v1/cron/daily
 // (x-cron-key secret) authenticate themselves, so they bypass the session gate.
-const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/openapi", "/api/pay", "/api/v1/katana-pay/order", "/api/v1/poolpay/order", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/txn-alert", "/api/v1/device/heartbeat", "/api/v1/device/email-config", "/api/v1/agent-debug", "/api/v1/cron/daily", "/api/v1/cron/status-sweep", "/api/v1/cron/email-poll"];
+const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/openapi", "/api/pay", "/api/v1/katana-pay/order", "/api/v1/poolpay/order", "/api/gateway/payu/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/txn-alert", "/api/v1/text-alert", "/api/v1/device/heartbeat", "/api/v1/device/email-config", "/api/v1/agent-debug", "/api/v1/capture-rrn", "/api/v1/cron/daily", "/api/v1/cron/status-sweep", "/api/v1/cron/email-poll"];
 // Prefix-matched public surfaces: the customer-facing PoolPay payment page and
 // its status endpoint (the order id in the URL is the capability).
 const PUBLIC_UI_PREFIX = ["/pay"];
@@ -172,5 +172,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|map|apk|html)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|map|apk|pdf|html)$).*)"],
 };

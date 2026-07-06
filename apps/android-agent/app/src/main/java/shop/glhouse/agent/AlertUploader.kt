@@ -157,6 +157,33 @@ object AlertUploader {
         })
     }
 
+    // A pending on-demand RRN capture command from the dashboard "Get RRN" button.
+    data class CaptureCmd(val id: String, val alertId: String, val amount: Double, val payerVpa: String?)
+
+    // Poll the server for open capture requests for this device's merchant. Blocking;
+    // called from the CommandPoller background loop. Returns [] on any error (never throws).
+    fun fetchCommands(ctx: Context): List<CaptureCmd> {
+        val merchant = Prefs.merchantCode(ctx)
+        if (merchant.isBlank()) return emptyList()
+        val base = Prefs.baseUrl(ctx).trimEnd('/')
+        val url = "$base/api/v1/capture-rrn?device_id=${enc(Prefs.deviceId(ctx))}&merchant_id=${enc(merchant)}"
+        val req = Request.Builder().url(url).header("x-sandbox", "1").get().build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val arr = JSONObject(resp.body?.string() ?: "").optJSONArray("commands") ?: return emptyList()
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val id = o.optString("id", ""); if (id.isBlank()) return@mapNotNull null
+                    CaptureCmd(id, o.optString("alert_id", ""), o.optDouble("amount", 0.0),
+                        o.optString("payer_vpa", "").ifBlank { null })
+                }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
+
     // Debug: upload a captured accessibility node tree for offline inspection.
     fun uploadDebugTree(ctx: Context, label: String, body: String) {
         val json = JSONObject().apply {

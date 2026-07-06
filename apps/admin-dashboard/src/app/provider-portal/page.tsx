@@ -5,6 +5,7 @@
 // action; recent activity panel pulls WORM events scoped to the provider.
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import Link from "next/link";
 import {
   LayoutDashboard, Store, Network, FileCheck2, Percent, Plus, ChevronRight, Activity, Wallet,
@@ -25,6 +26,33 @@ interface SubMidRow { id: string; sub_mid_code: string; kyc_status: string; sett
 interface KybRow { id: string; status: string; merchant_id: string; opened_at: string }
 
 const PIPELINE_STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"];
+
+// Per-row "Get RRN" action on a no-RRN VPA credit. Raises an on-demand capture request;
+// the merchant's agent then prompts/executes the Paytm Copy tap and the RRN fills in.
+function CaptureRrnButton({ alertId }: { alertId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "requested" | "error">("idle");
+  const label = state === "requested" ? "Requested ✓" : state === "loading" ? "Requesting…" : state === "error" ? "Retry" : "Get RRN";
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={state === "loading" || state === "requested"}
+      onClick={async () => {
+        setState("loading");
+        try {
+          const r = await fetch("/api/provider-portal/capture-rrn", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ alert_id: alertId }),
+          });
+          setState(r.ok ? "requested" : "error");
+        } catch { setState("error"); }
+      }}
+    >
+      {label}
+    </Button>
+  );
+}
 
 export default function ProviderDashboard() {
   const merchants = useQuery({
@@ -183,6 +211,7 @@ export default function ProviderDashboard() {
                     </span>
                     <Badge variant={r.outcome === "CONFIRMED" ? "success" : r.outcome === "DUPLICATE" ? "danger" : "warning"}>{r.outcome}</Badge>
                     <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
+                    {!rrn ? <CaptureRrnButton alertId={r.id} /> : null}
                   </li>
                   );
                 })}

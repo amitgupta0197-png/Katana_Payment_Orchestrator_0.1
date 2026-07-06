@@ -29,7 +29,13 @@ class KeepAliveService : Service() {
         } else {
             startForeground(NOTIF_ID, n)
         }
+        CommandPoller.start(applicationContext)   // poll for on-demand RRN capture requests
         return START_STICKY   // ask the OS to restart us if it kills the process
+    }
+
+    override fun onDestroy() {
+        CommandPoller.stop()
+        super.onDestroy()
     }
 
     private fun buildNotification(): Notification {
