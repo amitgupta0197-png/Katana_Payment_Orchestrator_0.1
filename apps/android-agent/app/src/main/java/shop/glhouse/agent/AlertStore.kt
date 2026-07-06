@@ -36,6 +36,7 @@ object AlertStore {
 
     @Synchronized
     fun log(ctx: Context, line: String) {
+        android.util.Log.d("KatanaAgent", line)   // mirror to logcat for diagnostics
         val sp = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
         val cur = sp.getString(KEY_LOG, "") ?: ""
         val lines = (listOf(line) + cur.split("\n")).filter { it.isNotBlank() }.take(MAX_LOG)

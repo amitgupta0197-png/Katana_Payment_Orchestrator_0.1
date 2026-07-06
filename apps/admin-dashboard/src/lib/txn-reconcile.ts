@@ -351,6 +351,28 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
       `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef]).catch(() => []);
       if (compl.length === 1) tgtId = compl[0].id;
     }
+    // BACKFILL: a one-tapped RRN for an OLDER payment (past the 15-min live window). Match the
+    // "no RRN" VPA credit by merchant + amount + the masked payer VPA — its visible leading prefix
+    // ("9183…") and bank domain ("@waaxis") line up across channels even though the middle is masked
+    // differently ("9183XX@waaxis" vs "9183***771@waaxis"). Payer names don't align, so this is the
+    // reliable key. Wide 14-day window; newest matching row wins.
+    if (!tgtId && rrn && input.merchant_id && input.payer_vpa) {
+      const at = input.payer_vpa.indexOf("@");
+      const domain = at >= 0 ? input.payer_vpa.slice(at + 1).toLowerCase() : "";
+      const prefix = (at >= 0 ? input.payer_vpa.slice(0, at) : input.payer_vpa).replace(/[X*].*$/, "");
+      if (domain && prefix.length >= 2) {
+        const bf = await rows<{ id: string }>("vendorGateway", `
+          SELECT id::text FROM vendor_txn_alerts
+           WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
+             AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
+             AND created_at >= now() - interval '14 days'
+             AND lower(split_part(payer_vpa, '@', 2)) = $4
+             AND regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') = $5
+           ORDER BY created_at DESC LIMIT 1
+        `, [input.merchant_id, amount.toFixed(2), source, domain, prefix]).catch(() => []);
+        if (bf.length === 1) tgtId = bf[0].id;
+      }
+    }
     if (tgtId) {
       await rows("vendorGateway", `
         UPDATE vendor_txn_alerts SET

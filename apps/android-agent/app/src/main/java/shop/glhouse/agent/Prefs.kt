@@ -47,6 +47,10 @@ object Prefs {
     fun autoOpen(ctx: Context): Boolean = sp(ctx).getBoolean("auto_open", false)
     fun setAutoOpen(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("auto_open", v).apply()
 
+    // Keep the screen awake so capture keeps working on a dedicated / charging device.
+    fun keepAwake(ctx: Context): Boolean = sp(ctx).getBoolean("keep_awake", false)
+    fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("keep_awake", v).apply()
+
     // Auto-capture row tap positions — vertical % of the screen where the Paytm payments
     // list draws its transaction rows. Configurable so a different phone/layout can be
     // tuned without a new build. Accepts "68,72,78,..." (percent) or "0.68,0.72,..".

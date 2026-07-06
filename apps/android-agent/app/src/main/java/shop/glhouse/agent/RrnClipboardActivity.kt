@@ -21,6 +21,7 @@ class RrnClipboardActivity : Activity() {
     private var capOrderRef: String? = null
     private var capPkg: String? = null
     private var capPayer: String? = null
+    private var capPayerVpa: String? = null
     private var capHints: String? = null
 
     private companion object {
@@ -39,6 +40,7 @@ class RrnClipboardActivity : Activity() {
             capOrderRef = i.getStringExtra("orderRef")
             capPkg = i.getStringExtra("pkg")
             capPayer = i.getStringExtra("payer")
+            capPayerVpa = i.getStringExtra("payerVpa")
             capHints = i.getStringExtra("hints")
             pendingCapture = true   // read + post in onWindowFocusChanged (needs focus)
             return
@@ -62,7 +64,7 @@ class RrnClipboardActivity : Activity() {
             val key = "$capAmount|$rrn"
             if (!AlertStore.seenRecently(applicationContext, key)) {
                 val txn = ParsedTxn(
-                    amount = capAmount, utr = rrn, payerVpa = null, payerName = capPayer,
+                    amount = capAmount, utr = rrn, payerVpa = capPayerVpa, payerName = capPayer,
                     bank = "PAYTM", raw = "PAYTM masked-RRN copy=$rrn amt=$capAmount", orderRef = capOrderRef,
                 )
                 AlertUploader.send(applicationContext, txn, "ACCESSIBILITY", capPkg ?: "com.paytm.business")

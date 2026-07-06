@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -56,8 +57,18 @@ class MainActivity : AppCompatActivity() {
             try { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
             catch (e: Exception) { toast("Open Settings → Accessibility → Katana Agent") }
         }
+        b.overlayBtn.setOnClickListener {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+            catch (e: Exception) {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
+                catch (e2: Exception) { toast("Open Settings → Display over other apps → Katana Agent") }
+            }
+        }
         b.autoOpen.isChecked = Prefs.autoOpen(this)
         b.autoOpen.setOnCheckedChangeListener { _, v -> Prefs.setAutoOpen(this, v) }
+        b.keepAwake.isChecked = Prefs.keepAwake(this)
+        b.keepAwake.setOnCheckedChangeListener { _, v -> Prefs.setKeepAwake(this, v); applyKeepAwake(v) }
+        applyKeepAwake(Prefs.keepAwake(this))
         b.testBtn.setOnClickListener { sendTestAlert() }
         b.debugBtn.setOnClickListener {
             Prefs.setDebugDumpUntil(this, System.currentTimeMillis() + 60_000)
@@ -118,6 +129,18 @@ class MainActivity : AppCompatActivity() {
     private fun batteryExempt(): Boolean =
         (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
 
+    private fun overlayGranted(): Boolean = Settings.canDrawOverlays(this)
+
+    // Keep the screen from sleeping so capture keeps working on a dedicated device.
+    // FLAG_KEEP_SCREEN_ON holds our own window awake; if Shizuku is available we also set the
+    // system-wide "stay awake while charging" (svc power stayon), the only way to hold the
+    // screen on when Paytm is the foreground app.
+    private fun applyKeepAwake(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (ShizukuTap.granted()) thread { ShizukuTap.shell("svc power stayon " + if (on) "true" else "false") }
+    }
+
     private fun accessGranted(): Boolean {
         val svc = "$packageName/${TxnAccessibilityService::class.java.name}"
         val enabled = try {
@@ -138,6 +161,7 @@ class MainActivity : AppCompatActivity() {
         setRow(notif, b.notifCheck, b.notifBtn)
         setRow(batt, b.batteryCheck, b.batteryBtn)
         setRow(access, b.accessCheck, b.accessBtn)
+        setRow(overlayGranted(), b.overlayCheck, b.overlayBtn)
 
         val ready = Prefs.enabled(this) && (sms || notif)
         b.heroTitle.text = if (ready) "Agent active" else "Setup needed"

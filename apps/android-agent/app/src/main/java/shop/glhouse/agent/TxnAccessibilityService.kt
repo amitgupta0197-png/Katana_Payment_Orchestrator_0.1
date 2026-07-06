@@ -36,9 +36,15 @@ class TxnAccessibilityService : AccessibilityService() {
 
     // Masked-RRN clipboard-capture session state (see captureMaskedRrn / maskedScanAndTap).
     @Volatile private var maskedRunning = false
+    // One-tap capture (no Shizuku): armed while the merchant is on a masked-RRN receipt; their real
+    // "Copy" tap is read off the clipboard. See the copy-watch block in onAccessibilityEvent.
+    @Volatile private var copyWatchUntil = 0L
+    private var lastCopyCheckAt = 0L
+    private var copyChecks = 0
     private var mAmount = 0.0
     private var mOrderRef: String? = null
     private var mPayer: String? = null
+    private var mPayerVpa: String? = null
     private var mPkg: String? = null
     private var mHints: String? = null
     private var mStartAt = 0L
@@ -83,6 +89,10 @@ class TxnAccessibilityService : AccessibilityService() {
 
         // A MASKED reference as Paytm Business shows it ("209…975768"): digits · ellipsis · digits.
         val MASKED_REF = Regex("[0-9]{2,4}\\s*[.·•…]{2,}\\s*[0-9]{4,8}")
+        // The payer's masked UPI ID as the receipt shows it ("9183***771@waaxis", "78***41@ptyes").
+        // Its leading digits + bank domain are the reliable key to match against the dashboard's
+        // masked VPA credit ("9183XX@waaxis") — payer names don't align across channels.
+        val MASKED_VPA = Regex("[0-9][0-9*x]{2,}@[a-z]{2,}", RegexOption.IGNORE_CASE)
         // Split a masked ref into visible leading + trailing digits, to fingerprint the full value.
         val MASK_SPLIT = Regex("([0-9]+)[.·•…]+([0-9]+)")
 
@@ -121,7 +131,8 @@ class TxnAccessibilityService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         val type = event.eventType
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+            type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            type != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
         // PENDING NOTIFICATION TAP: a Paytm credit push just arrived and we opened the shade —
         // when systemui is showing, find + tap that credit notification. The real tap fires its
@@ -137,6 +148,29 @@ class TxnAccessibilityService : AccessibilityService() {
         }
 
         if (!pkg.contains("paytm", ignoreCase = true)) return
+
+        // ONE-TAP capture (no Shizuku): while armed, the merchant tapping "Copy" on the receipt puts
+        // the full RRN on the clipboard (a real finger-tap fires Paytm's copy, which our synthetic
+        // taps can't). Their tap fires a click / content event → launch the focused trampoline to
+        // read the clipboard and forward. Precise on TYPE_VIEW_CLICKED; a throttled fallback covers
+        // apps whose webview doesn't emit a click event.
+        if (copyWatchUntil > SystemClock.uptimeMillis()) {
+            if (sMaskedCapturedAt > 0L) {
+                copyWatchUntil = 0L
+            } else {
+                val t = SystemClock.uptimeMillis()
+                // A click is a deliberate action → read the clipboard immediately. Otherwise poll
+                // sparingly: the webview fires many content events while the merchant just reads, so
+                // cap the fallback to keep the trampoline flashes to a minimum.
+                val click = type == AccessibilityEvent.TYPE_VIEW_CLICKED
+                if ((click || (copyChecks < 6 && t - lastCopyCheckAt > 3500)) && t - lastCopyCheckAt > 600) {
+                    lastCopyCheckAt = t
+                    if (!click) copyChecks++
+                    main.postDelayed({ launchRrnCapture() }, 250)
+                }
+            }
+        }
+        if (type == AccessibilityEvent.TYPE_VIEW_CLICKED) return   // a click carries no screen text to scan
 
         // During a masked-RRN session THIS callback is the only place the reference "Copy" bounds
         // read as real coordinates (a timer read gets clamped). Scan+tap here on each event, then bail.
@@ -324,9 +358,10 @@ class TxnAccessibilityService : AccessibilityService() {
     // (which would drop legitimate credits whose receipt omits the word "received").
     private fun isDebit(text: String): Boolean {
         val s = text.lowercase()
+        // NB: do NOT match "refund" — every RECEIVED-payment detail carries a "Refund to
+        // Customer" action button, which would wrongly flag every legitimate credit as a debit.
         return s.contains("paid to") || s.contains("sent to") || s.contains("you paid") ||
-            s.contains("debited") || s.contains("money sent") || s.contains("payment sent") ||
-            s.contains("refund")
+            s.contains("debited") || s.contains("money sent") || s.contains("payment sent")
     }
 
     // When Paytm DOES expose readable rows: tap the next un-captured one by coordinate.
@@ -418,6 +453,10 @@ class TxnAccessibilityService : AccessibilityService() {
         val core = m.groupValues[2].trim()
         if (core.isEmpty() || core.contains("@")) return null
         val name = ((m.groupValues[1].trim() + " " + core)).replace(Regex("\\s+"), " ").trim()
+        // Reject receipt chrome that sits after a "from"/"To" label (e.g. Paytm's "Refund to
+        // Customer" action button), not an actual payer name.
+        val low = name.lowercase()
+        if (low.contains("refund") || low.contains("customer") || low.contains("merchant")) return null
         return if (name.length < 3) null else name.take(120)
     }
 
@@ -537,14 +576,25 @@ class TxnAccessibilityService : AccessibilityService() {
         mAmount = amount
         mOrderRef = ORDER_ID.find(text)?.groupValues?.get(1)
         mPayer = extractPayer(text)
+        mPayerVpa = MASKED_VPA.find(text)?.value
         mPkg = pkg
         mHints = hints
-        mStartAt = SystemClock.uptimeMillis(); mLastTapAt = 0L; mLastScanAt = 0L
-        mScrolls = 0; mNextTap = 0; mJit = 0
         sMaskedCapturedAt = 0L
-        maskedRunning = true
-        AlertStore.log(applicationContext, "${nowTag()} 🎯 masked-RRN sweep start hints=[$hints]")
-        maskedTick()
+        if (ShizukuTap.granted()) {
+            // HANDS-FREE (pre-configured device): the agent taps "Copy" itself via a shell-level touch.
+            mStartAt = SystemClock.uptimeMillis(); mLastTapAt = 0L; mLastScanAt = 0L
+            mScrolls = 0; mNextTap = 0; mJit = 0
+            maskedRunning = true
+            AlertStore.log(applicationContext, "${nowTag()} 🎯 masked-RRN sweep start hints=[$hints]")
+            maskedTick()
+        } else {
+            // ONE-TAP (self-install, no Shizuku): arm the copy-watch — the merchant taps "Copy" and
+            // we read the RRN off the clipboard. Synthetic taps can't fire Paytm's copy; a finger can.
+            copyWatchUntil = SystemClock.uptimeMillis() + 30000
+            lastCopyCheckAt = 0L
+            copyChecks = 0
+            AlertStore.log(applicationContext, "${nowTag()} 👆 tap ‘Copy’ on the RRN to capture it")
+        }
     }
 
     // Heartbeat: scroll the reference block into view (until the first tap), then keep nudging so
@@ -583,15 +633,44 @@ class TxnAccessibilityService : AccessibilityService() {
         if (copies.isEmpty()) return
         for (k in copies.indices) {
             val i = (mNextTap + k) % copies.size
-            val pt = realTapPoint(copies[i]) ?: continue
-            mNextTap = i + 1; mLastTapAt = now
-            val jt = TAP_JITTER[mJit++ % TAP_JITTER.size]
-            val tx = pt[0] + jt[0]; val ty = pt[1] + jt[1]
-            AlertStore.log(applicationContext, "${nowTag()} 📎 tap Copy #$i [${masks[i]}] @$tx,$ty")
-            tapAt(tx, ty)
-            main.postDelayed({ launchRrnCapture() }, 450)
-            return
+            val copy = copies[i]
+            // PRIMARY: a real touch at the button's on-screen centre (Shizuku shell-tap if granted,
+            // else an accessibility GESTURE). Webview "Copy" runs a JS handler that a semantic
+            // ACTION_CLICK does NOT trigger — only an actual touch does — so we tap for real.
+            val pt = realTapPoint(copy)
+            if (pt != null) {
+                mNextTap = i + 1; mLastTapAt = now
+                val jt = TAP_JITTER[mJit++ % TAP_JITTER.size]
+                val tx = pt[0] + jt[0]; val ty = pt[1] + jt[1]
+                AlertStore.log(applicationContext, "${nowTag()} 📎 tap Copy #$i [${masks[i]}] @$tx,$ty (${if (ShizukuTap.granted()) "shell" else "gesture"})")
+                tapAt(tx, ty)
+                main.postDelayed({ launchRrnCapture() }, 450)
+                return
+            }
+            // FALLBACK (button off-screen, bounds [0,0]): semantic ACTION_CLICK — accepted by the
+            // framework, though it may not fire the webview's copy JS.
+            if (clickNode(copy)) {
+                mNextTap = i + 1; mLastTapAt = now
+                AlertStore.log(applicationContext, "${nowTag()} 📎 ACTION_CLICK Copy #$i [${masks[i]}] (off-screen)")
+                main.postDelayed({ launchRrnCapture() }, 450)
+                return
+            }
         }
+    }
+
+    // Semantic click on a node (or its nearest clickable ancestor) via ACTION_CLICK — NOT a synthetic
+    // touch, so it isn't rejected like a gesture, and needs no coordinates. Returns true if performed.
+    private fun clickNode(node: AccessibilityNodeInfo): Boolean {
+        var n: AccessibilityNodeInfo? = node
+        var g = 0
+        while (n != null && g++ < 5) {
+            try {
+                if (n.isClickable && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            } catch (e: Exception) { return false }
+            n = n.parent
+        }
+        // Webview quirk: the Copy node may carry the click action without isClickable=true.
+        return try { node.performAction(AccessibilityNodeInfo.ACTION_CLICK) } catch (e: Exception) { false }
     }
 
     private fun endMasked(why: String) {
@@ -708,6 +787,7 @@ class TxnAccessibilityService : AccessibilityService() {
             i.putExtra("orderRef", mOrderRef)
             i.putExtra("pkg", mPkg)
             i.putExtra("payer", mPayer)
+            i.putExtra("payerVpa", mPayerVpa)
             i.putExtra("hints", mHints)
             startActivity(i)
         } catch (e: Exception) {}

@@ -146,6 +146,39 @@
                     <com.google.android.material.button.MaterialButton android:id="@+id/accessBtn" style="@style/PermBtn" android:text="Enable" />
                 </LinearLayout>
 
+                <!-- Display over other apps (needed to read the RRN off the clipboard) -->
+                <LinearLayout style="@style/PermRow">
+                    <ImageView style="@style/PermIcon" android:src="@drawable/ic_check" app:tint="@color/on_surface_variant" />
+                    <LinearLayout style="@style/PermText">
+                        <TextView style="@style/PermTitle" android:text="Display over other apps" />
+                        <TextView style="@style/PermSub" android:text="Needed to read the RRN off the clipboard" />
+                    </LinearLayout>
+                    <ImageView android:id="@+id/overlayCheck" style="@style/PermCheck" android:src="@drawable/ic_check" app:tint="@color/success" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/overlayBtn" style="@style/PermBtn" android:text="Allow" />
+                </LinearLayout>
+
+                <!-- Keep screen awake (dedicated / charging device) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="6dp">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="Keep screen awake" />
+                        <TextView style="@style/PermSub" android:text="Stop the screen turning off so capture keeps working (best on a charging device)" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/keepAwake"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
                 <!-- Auto-open Paytm on each payment (deep-link speed win) -->
                 <LinearLayout
                     android:layout_width="match_parent"

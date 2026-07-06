@@ -28,6 +28,13 @@ object ShizukuTap {
         return runShell("input tap $x $y")
     }
 
+    // Run an arbitrary shell command as the shell user (e.g. `svc power stayon true` to hold the
+    // screen awake system-wide). Returns true on exit 0. No-op if Shizuku isn't granted.
+    fun shell(cmd: String): Boolean {
+        if (!granted()) return false
+        return runShell(cmd)
+    }
+
     private fun runShell(cmd: String): Boolean = try {
         // Shizuku.newProcess is a restricted API — reach it via reflection to avoid the
         // lint gate. It returns a java.lang.Process running as the shell user.
