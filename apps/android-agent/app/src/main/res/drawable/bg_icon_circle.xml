@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Teal-tinted chip behind each row icon. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/accent_glow" />
+    <stroke android:width="1dp" android:color="@color/outline" />
+</shape>

@@ -1,6 +1,7 @@
 package shop.glhouse.agent
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -11,7 +12,6 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -33,12 +33,10 @@ class MainActivity : AppCompatActivity() {
         b.baseUrl.setText(Prefs.baseUrl(this))
         b.deviceId.setText(Prefs.deviceId(this))
         b.merchantCode.setText(Prefs.merchantCode(this))
-        b.rowPos.setText(Prefs.rowPositionsRaw(this))
         b.enabled.isChecked = Prefs.enabled(this)
 
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
-            Prefs.setRowPositions(this, b.rowPos.text.toString())
             toast("Settings saved")
             refreshState()
             AgentWorker.schedule(this)
@@ -64,17 +62,9 @@ class MainActivity : AppCompatActivity() {
                 catch (e2: Exception) { toast("Open Settings → Display over other apps → Katana Agent") }
             }
         }
-        b.autoOpen.isChecked = Prefs.autoOpen(this)
-        b.autoOpen.setOnCheckedChangeListener { _, v -> Prefs.setAutoOpen(this, v) }
-        b.keepAwake.isChecked = Prefs.keepAwake(this)
-        b.keepAwake.setOnCheckedChangeListener { _, v -> Prefs.setKeepAwake(this, v); applyKeepAwake(v) }
-        applyKeepAwake(Prefs.keepAwake(this))
+        b.autoCaptureSwitch.isChecked = Prefs.autoCapture(this)
+        b.autoCaptureSwitch.setOnCheckedChangeListener { _, v -> Prefs.setAutoCapture(this, v) }
         b.testBtn.setOnClickListener { sendTestAlert() }
-        b.debugBtn.setOnClickListener {
-            Prefs.setDebugDumpUntil(this, System.currentTimeMillis() + 60_000)
-            toast("Debug ON 60s — open Paytm list + a transaction now")
-        }
-        b.shizukuBtn.setOnClickListener { enableShizuku() }
 
         b.emailAddr.setText(Prefs.emailAddr(this))
         b.emailStatus.text = if (Prefs.emailConnected(this)) "✓ Connected: ${Prefs.emailAddr(this)}" else "Not connected"
@@ -88,7 +78,6 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshState()
         refreshLog()
-        refreshShizuku()
         if (Prefs.enabled(this)) {
             AlertUploader.heartbeat(this, notifAccessGranted())
             thread { AlertUploader.flushOutbox(this) }
@@ -131,22 +120,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun overlayGranted(): Boolean = Settings.canDrawOverlays(this)
 
-    // Keep the screen from sleeping so capture keeps working on a dedicated device.
-    // FLAG_KEEP_SCREEN_ON holds our own window awake; if Shizuku is available we also set the
-    // system-wide "stay awake while charging" (svc power stayon), the only way to hold the
-    // screen on when Paytm is the foreground app.
-    private fun applyKeepAwake(on: Boolean) {
-        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (ShizukuTap.granted()) thread { ShizukuTap.shell("svc power stayon " + if (on) "true" else "false") }
-    }
-
     private fun accessGranted(): Boolean {
-        val svc = "$packageName/${TxnAccessibilityService::class.java.name}"
+        // The system stores the component in either fully-qualified
+        // ("pkg/pkg.RrnAccessibilityService") or short ("pkg/.RrnAccessibilityService") form,
+        // so match on the parsed package + class rather than a raw string.
+        val want = ComponentName(this, RrnAccessibilityService::class.java)
         val enabled = try {
             Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
         } catch (e: Exception) { null } ?: ""
-        return enabled.split(':').any { it.equals(svc, ignoreCase = true) }
+        return enabled.split(':').any {
+            val cn = ComponentName.unflattenFromString(it) ?: return@any false
+            cn.packageName == want.packageName &&
+                cn.className.trimStart('.').let { c -> c == want.className || want.className.endsWith(".$c") }
+        }
     }
 
     private fun setRow(granted: Boolean, check: View, btn: View) {
@@ -156,16 +142,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshState() {
         val sms = smsGranted(); val notif = notifAccessGranted(); val batt = batteryExempt()
-        val access = accessGranted()
         setRow(sms, b.smsCheck, b.smsBtn)
         setRow(notif, b.notifCheck, b.notifBtn)
         setRow(batt, b.batteryCheck, b.batteryBtn)
-        setRow(access, b.accessCheck, b.accessBtn)
+        setRow(accessGranted(), b.accessCheck, b.accessBtn)
         setRow(overlayGranted(), b.overlayCheck, b.overlayBtn)
 
         val ready = Prefs.enabled(this) && (sms || notif)
+        val stateColor = ContextCompat.getColor(this, if (ready) R.color.success else R.color.warning)
         b.heroTitle.text = if (ready) "Agent active" else "Setup needed"
-        b.heroTitle.setTextColor(ContextCompat.getColor(this, if (ready) R.color.success else R.color.warning))
+        b.heroTitle.setTextColor(stateColor)
+        b.heroDot.setColorFilter(stateColor)
         b.heroDesc.text = if (ready) "Forwarding bank credits to Katana." else "Grant the permissions below to start."
 
         val merchant = Prefs.merchantCode(this).ifBlank { "—" }
@@ -214,42 +201,6 @@ class MainActivity : AppCompatActivity() {
                 if (ok) b.emailPass.setText("")
                 toast(if (ok) "Gmail connected" else "Failed — check the app password & IMAP")
             }
-        }
-    }
-
-    private fun shizukuInstalled(): Boolean = try {
-        packageManager.getPackageInfo("moe.shizuku.privileged.api", 0); true
-    } catch (e: Exception) { false }
-
-    private fun enableShizuku() {
-        when {
-            !shizukuInstalled() -> {
-                toast("Install Shizuku, then come back")
-                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"))) }
-                catch (e: Exception) {}
-            }
-            !ShizukuTap.available() ->
-                toast("Open the Shizuku app and Start it (via wireless debugging), then tap again")
-            ShizukuTap.granted() -> {
-                ShizukuTap.bind()
-                thread {
-                    val ok = ShizukuTap.shell("echo ok")   // forces a bind + real round-trip
-                    runOnUiThread { toast(if (ok) "Hands-free ready ✓" else "Binding… tap again in a moment"); refreshShizuku() }
-                }
-            }
-            else -> { ShizukuTap.requestPermission(); toast("Approve the Shizuku permission popup") }
-        }
-        Handler(Looper.getMainLooper()).postDelayed({ refreshShizuku() }, 1200)
-    }
-
-    private fun refreshShizuku() {
-        if (ShizukuTap.granted()) ShizukuTap.bind()   // prime the shell-UID user service
-        b.shizukuStatus.text = when {
-            ShizukuTap.ready() -> "Hands-free: ✓ ready (agent taps Copy itself)"
-            ShizukuTap.granted() -> "Hands-free: Shizuku granted — binding service, tap to finish"
-            ShizukuTap.available() -> "Hands-free: Shizuku running — tap to grant permission"
-            shizukuInstalled() -> "Hands-free: open Shizuku & Start it (wireless debugging), then tap"
-            else -> "Hands-free (optional): tap to install Shizuku for no-touch capture"
         }
     }
 

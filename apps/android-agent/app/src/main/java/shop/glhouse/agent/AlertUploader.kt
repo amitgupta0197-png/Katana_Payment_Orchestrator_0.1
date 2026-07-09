@@ -73,8 +73,57 @@ object AlertUploader {
         })
     }
 
+    // On-device RRN capture (accessibility engine) → same ingest pipe as a bank alert.
+    // The captured 12-digit RRN rides in as `utr` so the reconciler can attach it to the
+    // matching credit and close any open "Get RRN" request; tagged source=ACCESSIBILITY
+    // and stamped with the merchant code so the RRN maps to the right merchant.
+    fun sendCapture(ctx: Context, rec: RrnRecord) {
+        if (!Prefs.enabled(ctx)) return
+        val raw = listOf(rec.maskedRef, rec.paidAt).filter { it.isNotBlank() }.joinToString("  ·  ")
+        val txn = ParsedTxn(
+            amount = parseAmount(rec.amount),
+            utr = rec.rrn,
+            payerVpa = rec.upiId.ifBlank { null },
+            payerName = rec.payer.ifBlank { null },
+            bank = "PAYTM",
+            raw = raw.ifBlank { rec.rrn },
+        )
+        send(ctx, txn, "ACCESSIBILITY", "PAYTM")
+    }
+
+    // "₹3,000" / "₹1,234.56" → 3000.0 / 1234.56; 0.0 when no number is present.
+    private fun parseAmount(s: String): Double =
+        s.replace(",", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
+
     private fun alertRequest(url: String, body: String): Request =
         Request.Builder().url(url).header("x-sandbox", "1").post(body.toRequestBody(JSON)).build()
+
+    // A pending on-demand RRN capture request raised from the dashboard "Get RRN" button.
+    data class CaptureCmd(val id: String, val amount: Double, val payerVpa: String?)
+
+    // Poll the server for open capture requests for this device's merchant. Blocking;
+    // called from the CommandPoller loop. Returns [] on any error (never throws). The
+    // GET also atomically flips PENDING requests to SENT server-side.
+    fun fetchCommands(ctx: Context): List<CaptureCmd> {
+        val merchant = Prefs.merchantCode(ctx)
+        if (merchant.isBlank()) return emptyList()
+        val base = Prefs.baseUrl(ctx).trimEnd('/')
+        val url = "$base/api/v1/capture-rrn?device_id=${enc(Prefs.deviceId(ctx))}&merchant_id=${enc(merchant)}"
+        val req = Request.Builder().url(url).header("x-sandbox", "1").get().build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val arr = JSONObject(resp.body?.string() ?: "").optJSONArray("commands") ?: return emptyList()
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val id = o.optString("id", ""); if (id.isBlank()) return@mapNotNull null
+                    CaptureCmd(id, o.optDouble("amount", 0.0), o.optString("payer_vpa", "").ifBlank { null })
+                }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 
     // Blocking POST (for the background worker / outbox flush). Returns true on 2xx.
     private fun postSync(url: String, body: String): Boolean = try {
@@ -154,48 +203,6 @@ object AlertUploader {
                     }
                 }
             }
-        })
-    }
-
-    // A pending on-demand RRN capture command from the dashboard "Get RRN" button.
-    data class CaptureCmd(val id: String, val alertId: String, val amount: Double, val payerVpa: String?)
-
-    // Poll the server for open capture requests for this device's merchant. Blocking;
-    // called from the CommandPoller background loop. Returns [] on any error (never throws).
-    fun fetchCommands(ctx: Context): List<CaptureCmd> {
-        val merchant = Prefs.merchantCode(ctx)
-        if (merchant.isBlank()) return emptyList()
-        val base = Prefs.baseUrl(ctx).trimEnd('/')
-        val url = "$base/api/v1/capture-rrn?device_id=${enc(Prefs.deviceId(ctx))}&merchant_id=${enc(merchant)}"
-        val req = Request.Builder().url(url).header("x-sandbox", "1").get().build()
-        return try {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return emptyList()
-                val arr = JSONObject(resp.body?.string() ?: "").optJSONArray("commands") ?: return emptyList()
-                (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    val id = o.optString("id", ""); if (id.isBlank()) return@mapNotNull null
-                    CaptureCmd(id, o.optString("alert_id", ""), o.optDouble("amount", 0.0),
-                        o.optString("payer_vpa", "").ifBlank { null })
-                }
-            }
-        } catch (e: Exception) { emptyList() }
-    }
-
-    private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
-
-    // Debug: upload a captured accessibility node tree for offline inspection.
-    fun uploadDebugTree(ctx: Context, label: String, body: String) {
-        val json = JSONObject().apply {
-            put("device_id", Prefs.deviceId(ctx))
-            Prefs.merchantCode(ctx).takeIf { it.isNotBlank() }?.let { put("merchant_id", it) }
-            put("label", label)
-            put("body", body)
-        }.toString()
-        val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/agent-debug"
-        client.newCall(alertRequest(url, json)).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {}
-            override fun onResponse(call: Call, response: Response) { response.close() }
         })
     }
 

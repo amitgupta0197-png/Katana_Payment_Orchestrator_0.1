@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deep-space backdrop: a top-down gradient with a faint teal glow up top. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="@color/bg2"
+                android:endColor="@color/bg" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.5"
+                android:centerY="0.0"
+                android:gradientRadius="420dp"
+                android:startColor="@color/accent_glow"
+                android:endColor="@android:color/transparent" />
+        </shape>
+    </item>
+</layer-list>

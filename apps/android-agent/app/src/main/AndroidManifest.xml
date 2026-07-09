@@ -13,11 +13,8 @@
          notification listener (Paytm/PhonePe-for-Business pushes have no SMS). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- Shizuku: shell-level input injection (taps Paytm can't reject like accessibility). -->
-    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
-    <!-- "Display over other apps" — grants background-activity-start so the accessibility
-         service can launch the invisible clipboard-reader activity to capture a MASKED RRN
-         (Paytm shows "209…975768"; the full value is only readable off the clipboard). -->
+    <!-- "Display over other apps" — lets the accessibility service background-launch the
+         invisible clipboard reader that captures the full RRN off Paytm's "Copy" button. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
@@ -76,32 +73,23 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!-- Shizuku provider — required for the Shizuku API to bind. -->
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
-            android:multiprocess="false"
-            android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-
-        <!-- Invisible focused trampoline that reads a MASKED RRN off the clipboard (the
-             accessibility service taps Paytm's "Copy", this reads it, then vanishes). Transparent,
-             no history, kept out of Recents so it's an imperceptible ~0.3s blip. -->
+        <!-- Invisible focused trampoline that reads the full RRN off the clipboard (the
+             accessibility service taps Paytm's "Copy", this reads + validates it, forwards
+             it, then vanishes — an imperceptible ~0.3s blip). -->
         <activity
-            android:name=".RrnClipboardActivity"
+            android:name=".ClipReaderActivity"
             android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
+            android:theme="@style/Theme.Clip"
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:taskAffinity=""
             android:launchMode="singleInstance" />
 
-        <!-- Screen-reader capture — scrapes the RRN off the Paytm transaction-detail
-             screen (the notification omits it). Requires the user to grant Accessibility
+        <!-- Screen-reader capture — scrapes the full RRN off the Paytm transaction-detail
+             screen (the notification/SMS omits it). Requires the user to grant Accessibility
              access in system settings. -->
         <service
-            android:name=".TxnAccessibilityService"
+            android:name=".RrnAccessibilityService"
             android:exported="false"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

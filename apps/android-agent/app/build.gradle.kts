@@ -18,14 +18,13 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 30
-        versionName = "2.19"
+        versionCode = 32
+        versionName = "2.21"
     }
 
     buildFeatures {
         viewBinding = true
         buildConfig = true
-        aidl = true   // IUserService — the Shizuku shell-UID user service
     }
 
     signingConfigs {
@@ -66,8 +65,4 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    // Shizuku — run shell-level `input tap` so injected touches aren't rejected by Paytm
-    // the way AccessibilityService gestures are. Requires one-time on-device activation.
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

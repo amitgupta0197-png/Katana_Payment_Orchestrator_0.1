@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Screen-reader capture config for TxnAccessibilityService.
-     packageNames is intentionally omitted (listen to all, filter to Paytm in code) so a
-     re-branded / updated Paytm build is still captured and its package can be confirmed
-     from the in-app log. canRetrieveWindowContent is required to read screen text. -->
+<!-- Screen-reader capture config for RrnAccessibilityService. Scoped to Paytm Business
+     (both the current and legacy package names). canTakeScreenshot lets the engine
+     locate the blue "Copy" link by colour; canPerformGestures issues the real tap. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:accessibilityFlags="flagReportViewIds|flagIncludeNotImportantViews|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
-    android:notificationTimeout="300"
+    android:canTakeScreenshot="true"
+    android:notificationTimeout="100"
+    android:packageNames="net.one97.paytm.merchant,com.paytm.business"
     android:description="@string/accessibility_desc" />

@@ -41,35 +41,11 @@ object Prefs {
 
     fun enabled(ctx: Context): Boolean = sp(ctx).getBoolean("enabled", true)
 
-    // Auto-open the Paytm transaction screen on each payment so the screen-reader can
-    // scrape the RRN with no manual navigation. Default off (it takes over the
-    // foreground); intended for a dedicated capture device.
-    fun autoOpen(ctx: Context): Boolean = sp(ctx).getBoolean("auto_open", false)
-    fun setAutoOpen(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("auto_open", v).apply()
-
-    // Keep the screen awake so capture keeps working on a dedicated / charging device.
-    fun keepAwake(ctx: Context): Boolean = sp(ctx).getBoolean("keep_awake", false)
-    fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("keep_awake", v).apply()
-
-    // Auto-capture row tap positions — vertical % of the screen where the Paytm payments
-    // list draws its transaction rows. Configurable so a different phone/layout can be
-    // tuned without a new build. Accepts "68,72,78,..." (percent) or "0.68,0.72,..".
-    private const val DEFAULT_ROW_POS = "68,71,74,78,82,86,90"
-    fun rowPositionsRaw(ctx: Context): String = sp(ctx).getString("row_pos", "")?.ifBlank { DEFAULT_ROW_POS } ?: DEFAULT_ROW_POS
-    fun rowPositions(ctx: Context): List<Double> {
-        val parsed = rowPositionsRaw(ctx).split(",")
-            .mapNotNull { it.trim().toDoubleOrNull() }
-            .map { if (it > 1.0) it / 100.0 else it }
-            .filter { it in 0.05..0.98 }
-        return parsed.ifEmpty { DEFAULT_ROW_POS.split(",").map { it.toDouble() / 100.0 } }
-    }
-    fun setRowPositions(ctx: Context, s: String) = sp(ctx).edit().putString("row_pos", s.trim()).apply()
-
-    // Debug: when set to a future epoch-ms, the accessibility service uploads the full
-    // node tree (text + view-id + class + bounds) of each distinct Paytm screen so the
-    // real structure can be inspected server-side. Auto-expires.
-    fun debugDumpUntil(ctx: Context): Long = sp(ctx).getLong("debug_until", 0L)
-    fun setDebugDumpUntil(ctx: Context, until: Long) = sp(ctx).edit().putLong("debug_until", until).apply()
+    // Hands-free RRN capture: while Paytm Business is left on the payments list, the
+    // accessibility engine opens each new payment and captures its RRN automatically.
+    // Default off (it drives the foreground); intended for a dedicated capture phone.
+    fun autoCapture(ctx: Context): Boolean = sp(ctx).getBoolean("auto_capture", false)
+    fun setAutoCapture(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("auto_capture", v).apply()
 
     // Last server-reported merchant validation (from the heartbeat response).
     // 0 = unchecked, 1 = recognized, -1 = not recognized.
@@ -86,16 +62,6 @@ object Prefs {
     fun emailConnected(ctx: Context): Boolean = sp(ctx).getBoolean("email_connected", false)
     fun setEmailConnected(ctx: Context, email: String, connected: Boolean) {
         sp(ctx).edit().putString("email_addr", email.trim()).putBoolean("email_connected", connected).apply()
-    }
-
-    // Capture-command ids already surfaced to the merchant, so the 15-second poll doesn't
-    // re-notify for a request the server keeps returning (SENT) until its RRN lands. Capped.
-    fun commandSeen(ctx: Context, id: String): Boolean = sp(ctx).getStringSet("cmd_seen", emptySet())?.contains(id) == true
-    fun markCommandSeen(ctx: Context, id: String) {
-        val cur = LinkedHashSet(sp(ctx).getStringSet("cmd_seen", emptySet()) ?: emptySet())
-        cur.add(id)
-        while (cur.size > 200) cur.remove(cur.iterator().next())
-        sp(ctx).edit().putStringSet("cmd_seen", cur).apply()
     }
 
     fun save(ctx: Context, baseUrl: String, deviceId: String, merchantCode: String, enabled: Boolean) {

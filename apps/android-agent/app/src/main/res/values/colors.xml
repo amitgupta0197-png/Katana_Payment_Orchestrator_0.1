@@ -1,17 +1,21 @@
 <resources>
-    <color name="brand">#2DD4BF</color>
-    <color name="brand_on">#00201A</color>
-    <color name="brand_container">#103D35</color>
-    <color name="brand_on_container">#A7F3E4</color>
+    <!-- Neon accent (used sparingly) -->
+    <color name="brand">#35E9D8</color>
+    <color name="brand_on">#04211E</color>
+    <color name="brand_container">#0C2A2A</color>
+    <color name="brand_on_container">#9DF5EC</color>
+    <color name="accent_glow">#1A35E9D8</color>
 
-    <color name="bg">#0A0F0E</color>
-    <color name="surface">#121A18</color>
-    <color name="surface_variant">#18221F</color>
-    <color name="outline">#2A3A35</color>
-    <color name="on_surface">#E7F1ED</color>
-    <color name="on_surface_variant">#9BB2AB</color>
+    <!-- Deep-space surfaces -->
+    <color name="bg">#060910</color>
+    <color name="bg2">#0A0F1C</color>
+    <color name="surface">#0E1626</color>
+    <color name="surface_variant">#101C30</color>
+    <color name="outline">#1E2C44</color>
+    <color name="on_surface">#E7F0FF</color>
+    <color name="on_surface_variant">#8595B4</color>
 
-    <color name="success">#34D399</color>
+    <color name="success">#3FE0A0</color>
     <color name="warning">#FBBF24</color>
     <color name="danger">#F87171</color>
 </resources>

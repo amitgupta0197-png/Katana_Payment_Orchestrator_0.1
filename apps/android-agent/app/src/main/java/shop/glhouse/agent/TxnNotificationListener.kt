@@ -58,43 +58,18 @@ class TxnNotificationListener : NotificationListenerService() {
         val isPaytm = sbn.packageName?.contains("paytm", ignoreCase = true) == true
 
         // DIAGNOSTIC: log what Paytm actually posts, so we can confirm whether payment
-        // notifications reach us at all (the trigger for hands-free capture).
+        // notifications reach us at all.
         if (isPaytm) {
             AlertStore.log(applicationContext, "${nowTag()} 🔔 paytm-notif: ${content.take(90)}")
         }
 
-        // Auto-open BEFORE the credit-parse: any Paytm notification that looks payment-ish
-        // opens its detail screen so the screen-reader can scrape the RRN with zero navigation.
-        // Firing here (not after the parse) means a "Payment received" push whose wording the
-        // credit parser doesn't recognise STILL triggers capture.
-        if (Prefs.autoOpen(applicationContext) && isPaytm && looksPaymentish(content)) {
-            // PRIMARY (Android 14/15): a background app may NOT fire someone else's contentIntent,
-            // so open the shade and TAP the notification instead — a real tap fires the intent →
-            // the exact receipt, which the screen-reader then scrapes for the RRN.
-            TxnAccessibilityService.requestNotificationTap(content)
-            // FALLBACK (Android < 14, where a background contentIntent send still works).
-            if (android.os.Build.VERSION.SDK_INT < 34) {
-                try { sbn.notification?.contentIntent?.send() } catch (e: Exception) {}
-            }
-        }
-
         val txn = TxnParser.parse(content, sbn.packageName) ?: return
-
-        // Arm the screen-reader: record that a real payment for this amount just landed,
-        // so TxnAccessibilityService trusts an RRN it scrapes for the same amount and
-        // can label the amount even when the ₹ is an image on the detail screen.
-        PendingCredit.mark(txn.amount, txn.payerName)
 
         val key = "${txn.amount}|${txn.utr ?: content.hashCode()}"
         if (!AlertStore.seenRecently(applicationContext, key)) {
             AlertUploader.send(applicationContext, txn, "NOTIFICATION", sbn.packageName)
         }
     }
-
-    // Loose payment filter for auto-open — a ₹/amount or a payment keyword. Keeps promo
-    // pushes from opening Paytm while catching every "received/paid/credited" alert.
-    private fun looksPaymentish(s: String): Boolean =
-        Regex("₹|\\brs\\.?\\b|\\binr\\b|receiv|paid|credit|payment", RegexOption.IGNORE_CASE).containsMatchIn(s)
 
     private fun nowTag(): String =
         java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
