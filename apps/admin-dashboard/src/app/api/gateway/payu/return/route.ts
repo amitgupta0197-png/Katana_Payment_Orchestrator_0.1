@@ -30,7 +30,7 @@ function redirectTo(dest: string | null, base: string, params: Record<string, st
 }
 
 export async function POST(req: Request) {
-  const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+  const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
   let p: Record<string, string>;
   try { p = await parseBody(req); } catch { return new NextResponse("bad request", { status: 400 }); }
 
@@ -76,6 +76,6 @@ export async function POST(req: Request) {
 
 // Some PayU flows may GET the return URL; send the customer to the app root.
 export async function GET() {
-  const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+  const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
   return NextResponse.redirect(`${base}/`, 303);
 }

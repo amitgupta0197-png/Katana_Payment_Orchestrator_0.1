@@ -13,7 +13,7 @@ import { SIGNING_SCHEMES } from "@/lib/gateway-creds";
 
 export const dynamic = "force-dynamic";
 
-const BASE = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+const BASE = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
 
 async function ownMerchantCode(scopeId: string | null): Promise<string | null> {
   if (!scopeId) return null;

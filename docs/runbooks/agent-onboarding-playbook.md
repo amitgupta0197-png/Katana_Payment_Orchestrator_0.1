@@ -3,8 +3,8 @@
 How to make the system **capture real UPI payments and auto-close the QR** — device
 setup, enrolment, trust, the email fallback, testing, and troubleshooting.
 
-- **Dashboard:** https://glhouse.shop
-- **Agent APK:** https://glhouse.shop/katana-agent.apk  (current: v1.4 / versionCode 5)
+- **Dashboard:** https://katanapay.co
+- **Agent APK:** https://katanapay.co/katana-agent.apk  (current: v1.4 / versionCode 5)
 - **Agent app:** "Katana Agent" (`shop.glhouse.agent`)
 
 ---
@@ -48,11 +48,11 @@ always arrives.
 
 ## 3. Device setup — the phone (5 minutes)
 
-1. **Install** the agent: open https://glhouse.shop/katana-agent.apk on the phone,
+1. **Install** the agent: open https://katanapay.co/katana-agent.apk on the phone,
    download, install. Google Play Protect may warn on a sideloaded SMS app → tap
    **More details → Install anyway**.
 2. Open **Katana Agent** and fill **Connection**:
-   - **Orchestrator base URL:** `https://glhouse.shop` (leave as-is)
+   - **Orchestrator base URL:** `https://katanapay.co` (leave as-is)
    - **Device ID:** leave the auto-generated unique id (e.g. `agent-9cdb2cc8`), or set
      a friendly **unique** name (e.g. `uk108-phone1`). **Never reuse one ID on two
      phones.**
@@ -165,7 +165,7 @@ Manual cases** — an operator can **Confirm** the order there by hand.
 ## 9. Deploy & operate (admin)
 
 - **App lives at:** `/opt/katana/apps/admin-dashboard` on `root@72.61.227.233`,
-  served by systemd unit **`katana.service`**, behind nginx at **glhouse.shop**.
+  served by systemd unit **`katana.service`**, behind nginx at **katanapay.co**.
 - **Deploy:** rsync source (exclude `node_modules`, `.next`, `.env.local`) → `pnpm
   install` → `pnpm run build` → `systemctl restart katana`.
 - **Rebuild the agent APK:** in `apps/android-agent`, `./gradlew assembleRelease`

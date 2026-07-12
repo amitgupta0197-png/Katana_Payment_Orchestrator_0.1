@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   <h2 style="color:${ok ? "#0a7d2c" : "#b00020"}">Payment ${esc(status)}</h2>
   <p>Transaction: <code>${esc(txnid)}</code></p>
   ${error ? `<p style="color:#b00020">Note: ${esc(error)}</p>` : ""}
-  <p><a href="https://glhouse.shop/">Open Katana dashboard</a></p>
+  <p><a href="https://katanapay.co/">Open Katana dashboard</a></p>
 </body></html>`;
   return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

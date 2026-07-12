@@ -6,7 +6,7 @@
 // Config (.env.local on the VPS):
 //   GOOGLE_OAUTH_CLIENT_ID=...apps.googleusercontent.com
 //   GOOGLE_OAUTH_CLIENT_SECRET=...
-//   GOOGLE_OAUTH_REDIRECT=https://glhouse.shop/api/oauth/google/callback   (default)
+//   GOOGLE_OAUTH_REDIRECT=https://katanapay.co/api/oauth/google/callback   (default)
 
 import { signPayload } from "@/lib/fifo-notify";
 
@@ -20,7 +20,7 @@ export function oauthConfigured(): boolean {
   return !!(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
 }
 function redirectUri(): string {
-  return process.env.GOOGLE_OAUTH_REDIRECT || "https://glhouse.shop/api/oauth/google/callback";
+  return process.env.GOOGLE_OAUTH_REDIRECT || "https://katanapay.co/api/oauth/google/callback";
 }
 
 // State = base64url(payload) + "." + HMAC(payload), so the callback can trust the

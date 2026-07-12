@@ -1,8 +1,8 @@
 # Katana Pay — Integration Guide
 
-Hosted-checkout pay-ins for any platform. Base URL: `https://glhouse.shop` · v1
+Hosted-checkout pay-ins for any platform. Base URL: `https://katanapay.co` · v1
 
-> Shareable HTML version (printable to PDF, no login): `https://glhouse.shop/katana-pay-integration.html`
+> Shareable HTML version (printable to PDF, no login): `https://katanapay.co/katana-pay-integration.html`
 
 **Flow:** your server creates a **signed order** → you redirect the customer to our **hosted payment page** → the customer pays by UPI → we **POST a signed status callback** to your server *and* redirect the customer back to your `return_url`. You verify every signature with the **Key + Salt** we issue you.
 
@@ -24,9 +24,9 @@ Issued from the Katana dashboard (**Branch portal → Integration → Generate K
 
 | Purpose | Method | URL |
 |---|---|---|
-| Create order (S2S) | **POST** | `https://glhouse.shop/api/v1/katana-pay/order` |
-| Hosted payment page | GET | `https://glhouse.shop/pay/{order_id}` |
-| Status enquiry | GET | `https://glhouse.shop/api/pay-status/{order_id}` |
+| Create order (S2S) | **POST** | `https://katanapay.co/api/v1/katana-pay/order` |
+| Hosted payment page | GET | `https://katanapay.co/pay/{order_id}` |
+| Status enquiry | GET | `https://katanapay.co/api/pay-status/{order_id}` |
 
 > **Production:** your server's outbound IP must be **IP-whitelisted** by Katana first.
 
@@ -53,7 +53,7 @@ Issued from the Katana dashboard (**Branch portal → Integration → Generate K
 ```json
 { "verified": true, "merchant": "UK-108",
   "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "status": "PENDING" },
-  "pay_url": "https://glhouse.shop/pay/8d20c0b6-…",
+  "pay_url": "https://katanapay.co/pay/8d20c0b6-…",
   "deeplinks": { "upi": "upi://pay?…" }, "upi_intent": "upi://pay?…", "qr_payload": "upi://pay?…" }
 ```
 Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`.
@@ -116,7 +116,7 @@ import crypto from "crypto";
 const key="mk_xxx", salt="your_salt";
 const o={ txnid:"ORDER-1001", amount:"100", productinfo:"Order 1001", email:"d@e.com" };
 o.hash=crypto.createHmac("sha256",key+salt).update([o.txnid,o.amount,o.productinfo,o.email].join("|")).digest("hex");
-const r=await fetch("https://glhouse.shop/api/v1/katana-pay/order",{method:"POST",
+const r=await fetch("https://katanapay.co/api/v1/katana-pay/order",{method:"POST",
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({...o,key,return_url:"https://you.com/return",notify_url:"https://you.com/callback"})});
 const data=await r.json();   // redirect customer to data.pay_url
@@ -127,7 +127,7 @@ $key="mk_xxx"; $salt="your_salt";
 $o=["txnid"=>"ORDER-1001","amount"=>"100","productinfo"=>"Order 1001","email"=>"d@e.com"];
 $o["hash"]=hash_hmac("sha256",$o["txnid"]."|".$o["amount"]."|".$o["productinfo"]."|".$o["email"],$key.$salt);
 $o["key"]=$key; $o["return_url"]="https://you.com/return"; $o["notify_url"]="https://you.com/callback";
-$ch=curl_init("https://glhouse.shop/api/v1/katana-pay/order");
+$ch=curl_init("https://katanapay.co/api/v1/katana-pay/order");
 curl_setopt_array($ch,[CURLOPT_POST=>1,CURLOPT_RETURNTRANSFER=>1,
   CURLOPT_HTTPHEADER=>["Content-Type: application/json"],CURLOPT_POSTFIELDS=>json_encode($o)]);
 $res=json_decode(curl_exec($ch),true);
@@ -140,7 +140,7 @@ key,salt="mk_xxx","your_salt"
 o={"txnid":"ORDER-1001","amount":"100","productinfo":"Order 1001","email":"d@e.com"}
 o["hash"]=hmac.new((key+salt).encode(),"|".join([o["txnid"],o["amount"],o["productinfo"],o["email"]]).encode(),hashlib.sha256).hexdigest()
 o.update(key=key, return_url="https://you.com/return", notify_url="https://you.com/callback")
-data=requests.post("https://glhouse.shop/api/v1/katana-pay/order",json=o).json()
+data=requests.post("https://katanapay.co/api/v1/katana-pay/order",json=o).json()
 # redirect customer to data["pay_url"]
 ```
 **Verify a callback (Node.js)**

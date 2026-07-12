@@ -135,7 +135,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
                   onChange={(e) => set("return_url")(e.target.value)} />
               </Field>
               <Field label="Callback URL" icon={Webhook}>
-                <Input value={form.callback_url} disabled={!canEdit} placeholder="https://glhouse.shop/api/vendors/poolpay/callback"
+                <Input value={form.callback_url} disabled={!canEdit} placeholder="https://katanapay.co/api/vendors/poolpay/callback"
                   onChange={(e) => set("callback_url")(e.target.value)} />
               </Field>
               <Field label="Client ID (optional)">

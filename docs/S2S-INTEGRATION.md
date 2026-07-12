@@ -47,7 +47,7 @@ hash = sha512(seq)                                    // lowercase hex
 ## 2. Create the pay-in
 
 ```
-POST https://glhouse.shop/api/v1/katana-pay/order
+POST https://katanapay.co/api/v1/katana-pay/order
 Content-Type: application/json
 ```
 
@@ -86,7 +86,7 @@ Also accepts `application/x-www-form-urlencoded` (same fields).
   "deeplinks": { "upi": "upi://pay?...", "paytm": "paytmmp://pay?...", "phonepe": "phonepe://pay?..." },
   "upi_intent": "upi://pay?pa=...&am=10.00...",
   "qr_payload": "upi://pay?pa=...&am=10.00...",
-  "pay_url": "https://glhouse.shop/pay/<uuid>"
+  "pay_url": "https://katanapay.co/pay/<uuid>"
 }
 ```
 
@@ -128,7 +128,7 @@ dead-letter. Make your handler **fast (< 5s)** and **idempotent**.
 
 ### Option B — Poll
 ```
-GET https://glhouse.shop/api/pay-status/<order.id>
+GET https://katanapay.co/api/pay-status/<order.id>
 → { "order_id", "amount", "status", "terminal": true|false, "rrn": "<utr>" }
 ```
 Poll until `terminal: true`. `status` becomes `SUCCESS` / `FAILED` / `EXPIRED`.
@@ -143,7 +143,7 @@ credit SMS (auto-reconciliation), or when ops confirm it with a UTR.
 ```js
 import crypto from "crypto";
 
-const BASE = "https://glhouse.shop";
+const BASE = "https://katanapay.co";
 const KEY  = "mk_xxx";
 const SALT = process.env.KATANA_SALT;          // secret — never ship to the client
 

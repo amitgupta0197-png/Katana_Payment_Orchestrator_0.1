@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       const amountMinor = toMinor(amountStr, currency);
       const txnid = "TEST-" + Date.now();
-      const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
       const ret = `${base}/api/gateway/payu/return`;
       const result = `${base}/api/pay-result`;
       await rows("checkout", `

@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
-    const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+    const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
     return NextResponse.json({
       verified: true,
       merchant: merchantCode,

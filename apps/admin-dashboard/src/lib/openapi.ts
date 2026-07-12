@@ -29,7 +29,7 @@ export const openapiSpec = {
       "`.99` → success (~8s), `.11` → expired, `.13` → failed; anything else stays PENDING.",
     ].join("\n"),
   },
-  servers: [{ url: "https://glhouse.shop", description: "Production" }],
+  servers: [{ url: "https://katanapay.co", description: "Production" }],
   tags: [
     { name: "Pay-in", description: "Create and track S2S UPI pay-in orders" },
   ],
@@ -128,7 +128,7 @@ export const openapiSpec = {
           },
           upi_intent: { type: "string", example: "upi://pay?pa=...&am=499.00..." },
           qr_payload: { type: "string", description: "Render this string as a QR code.", example: "upi://pay?pa=...&am=499.00..." },
-          pay_url: { type: "string", description: "Hosted pay page — redirect the customer here.", example: "https://glhouse.shop/pay/<uuid>" },
+          pay_url: { type: "string", description: "Hosted pay page — redirect the customer here.", example: "https://katanapay.co/pay/<uuid>" },
         },
       },
       Order: {

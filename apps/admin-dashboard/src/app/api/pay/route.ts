@@ -105,7 +105,7 @@ export async function POST(req: Request) {
             body.email ?? null, body.surl ?? null, body.furl ?? null]).catch(() => {});
       }
 
-      const base = (process.env.PUBLIC_BASE_URL ?? "https://glhouse.shop").replace(/\/$/, "");
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
       const ret = `${base}/api/gateway/payu/return`;
       const html = payuAutoSubmitForm(gwMid, {
         txnid: body.txnid, amount: amountStr,
