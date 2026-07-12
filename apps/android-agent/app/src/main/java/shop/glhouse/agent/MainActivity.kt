@@ -37,13 +37,21 @@ class MainActivity : AppCompatActivity() {
 
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
-            toast("Settings saved")
             refreshState()
             AgentWorker.schedule(this)
             if (Prefs.enabled(this)) {
-                AlertUploader.heartbeat(this, notifAccessGranted())
+                toast("Saved — connecting to server…")
+                // Confirm the phone can actually reach Katana so the merchant sees a
+                // real result instead of a silent "(save to verify)".
+                AlertUploader.heartbeat(this, notifAccessGranted()) { reachable ->
+                    runOnUiThread {
+                        refreshState()
+                        toast(if (reachable) "Connected to server ✓" else "Can't reach server — check the phone's internet")
+                    }
+                }
                 KeepAliveService.start(this)
             } else {
+                toast("Settings saved")
                 KeepAliveService.stop(this)
             }
             Handler(Looper.getMainLooper()).postDelayed({ refreshState() }, 1600)
@@ -62,8 +70,20 @@ class MainActivity : AppCompatActivity() {
                 catch (e2: Exception) { toast("Open Settings → Display over other apps → Katana Agent") }
             }
         }
+        b.appPaytmSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_PAYTM)
+        b.appPaytmSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PAYTM, v) }
+        b.appAirtelSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_AIRTEL)
+        b.appAirtelSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_AIRTEL, v) }
+        b.appGpaySwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_GPAY)
+        b.appGpaySwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_GPAY, v) }
         b.autoCaptureSwitch.isChecked = Prefs.autoCapture(this)
         b.autoCaptureSwitch.setOnCheckedChangeListener { _, v -> Prefs.setAutoCapture(this, v) }
+        b.keepAwakeSwitch.isChecked = Prefs.keepAwake(this)
+        b.keepAwakeSwitch.setOnCheckedChangeListener { _, v ->
+            Prefs.setKeepAwake(this, v)
+            if (v && !Settings.canDrawOverlays(this)) toast("Enable 'Display over other apps' for keep-awake")
+            ScreenAwake.apply(this)
+        }
         b.testBtn.setOnClickListener { sendTestAlert() }
 
         b.emailAddr.setText(Prefs.emailAddr(this))
@@ -86,6 +106,15 @@ class MainActivity : AppCompatActivity() {
         } else {
             KeepAliveService.stop(this)
         }
+    }
+
+    // Toggle a payment app's capture engine; warn when the merchant turns everything
+    // off (screen capture then sits idle) and re-report the selection to the server.
+    private fun setCaptureApp(app: String, on: Boolean) {
+        Prefs.setCaptureApp(this, app, on)
+        if (Prefs.captureApps(this).isEmpty())
+            toast("No payment app selected — on-screen RRN capture is paused")
+        if (Prefs.enabled(this)) AlertUploader.heartbeat(this, notifAccessGranted())
     }
 
     private fun requestRuntimePerms() {
@@ -156,13 +185,17 @@ class MainActivity : AppCompatActivity() {
         b.heroDesc.text = if (ready) "Forwarding bank credits to Katana." else "Grant the permissions below to start."
 
         val merchant = Prefs.merchantCode(this).ifBlank { "—" }
-        val mLabel = when (Prefs.merchantState(this)) {
-            1 -> "${Prefs.merchantName(this).ifBlank { merchant }} ✓ verified"
-            -1 -> "$merchant ✗ not recognized"
+        val hasMerchant = Prefs.merchantCode(this).isNotBlank()
+        val mLabel = when {
+            // Reached the server and it validated the code.
+            Prefs.merchantState(this) == 1 -> "${Prefs.merchantName(this).ifBlank { merchant }} ✓ verified"
+            // Enrolled with a code but the phone can't reach the server — the actionable case.
+            hasMerchant && Prefs.enabled(this) && !Prefs.reachable(this) -> "$merchant ⚠ can't reach server — check internet"
+            Prefs.merchantState(this) == -1 -> "$merchant ✗ not recognized"
             else -> "$merchant (save to verify)"
         }
         b.details.text = buildString {
-            append("Version    ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")").append('\n')
+            append("Version    ").append(BuildConfig.VERSION_NAME).append('\n')
             append("Endpoint   ").append(Prefs.baseUrl(this@MainActivity)).append("/api/v1/txn-alert").append('\n')
             append("Device     ").append(Prefs.deviceId(this@MainActivity)).append('\n')
             append("Merchant   ").append(mLabel).append('\n')

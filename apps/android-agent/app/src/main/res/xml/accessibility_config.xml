@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Screen-reader capture config for RrnAccessibilityService. Scoped to Paytm Business
-     (both the current and legacy package names). canTakeScreenshot lets the engine
-     locate the blue "Copy" link by colour; canPerformGestures issues the real tap. -->
+     (masked-RRN tap/copy engine) and Airtel Payments Bank Merchant (com.apbl.merchant,
+     which shows the full RRN unmasked on its reports list — read directly). canTakeScreenshot
+     lets the Paytm engine locate the blue "Copy" link by colour; canPerformGestures issues the tap. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
@@ -10,5 +11,5 @@
     android:canPerformGestures="true"
     android:canTakeScreenshot="true"
     android:notificationTimeout="100"
-    android:packageNames="net.one97.paytm.merchant,com.paytm.business"
+    android:packageNames="net.one97.paytm.merchant,com.paytm.business,com.apbl.merchant,com.google.android.apps.nbu.paisa.merchant"
     android:description="@string/accessibility_desc" />

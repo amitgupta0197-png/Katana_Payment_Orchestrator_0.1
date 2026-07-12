@@ -47,6 +47,35 @@ object Prefs {
     fun autoCapture(ctx: Context): Boolean = sp(ctx).getBoolean("auto_capture", false)
     fun setAutoCapture(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("auto_capture", v).apply()
 
+    // Payment apps this merchant receives money on. The accessibility engine only
+    // engages the capture flow of the selected apps (Paytm = tap-copy, Airtel = list
+    // read), so a Paytm-only phone never reacts to Airtel screens and vice versa.
+    // Default: ALL supported apps on, so existing installs keep working unchanged.
+    const val APP_PAYTM = "PAYTM"
+    const val APP_AIRTEL = "AIRTEL"
+    const val APP_GPAY = "GPAY"
+    fun captureApps(ctx: Context): Set<String> =
+        sp(ctx).getStringSet("capture_apps", null)?.toSet() ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY)
+    fun captureAppOn(ctx: Context, app: String): Boolean = captureApps(ctx).contains(app)
+    fun setCaptureApp(ctx: Context, app: String, on: Boolean) {
+        val next = captureApps(ctx).toMutableSet().also { if (on) it.add(app) else it.remove(app) }
+        sp(ctx).edit().putStringSet("capture_apps", next).apply()
+    }
+
+    // Keep the screen awake so the accessibility engine can keep reading the Paytm screen
+    // on a dedicated capture phone (the screen must be on for on-device RRN capture).
+    // Implemented via an invisible FLAG_KEEP_SCREEN_ON overlay ([ScreenAwake]); needs the
+    // "Display over other apps" permission (same one auto-capture already requires).
+    // Default off. Intended for a phone left plugged in as the capture device.
+    fun keepAwake(ctx: Context): Boolean = sp(ctx).getBoolean("keep_awake", false)
+    fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("keep_awake", v).apply()
+
+    // Whether the last heartbeat actually reached the server. Surfaced in the UI so a
+    // merchant whose phone can't reach glhouse.shop sees "can't reach server" instead of
+    // a silent, permanent "(save to verify)". Default false until the first success.
+    fun reachable(ctx: Context): Boolean = sp(ctx).getBoolean("reachable", false)
+    fun setReachable(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("reachable", v).apply()
+
     // Last server-reported merchant validation (from the heartbeat response).
     // 0 = unchecked, 1 = recognized, -1 = not recognized.
     fun merchantState(ctx: Context): Int = sp(ctx).getInt("merchant_state", 0)

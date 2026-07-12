@@ -30,6 +30,7 @@ class KeepAliveService : Service() {
             startForeground(NOTIF_ID, n)
         }
         CommandPoller.start(applicationContext)   // poll for on-demand "Get RRN" requests
+        ScreenAwake.apply(applicationContext)      // hold the screen on if keep-awake is enabled
         return START_STICKY   // ask the OS to restart us if it kills the process
     }
 

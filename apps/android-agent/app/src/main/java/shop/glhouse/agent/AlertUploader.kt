@@ -85,10 +85,10 @@ object AlertUploader {
             utr = rec.rrn,
             payerVpa = rec.upiId.ifBlank { null },
             payerName = rec.payer.ifBlank { null },
-            bank = "PAYTM",
+            bank = rec.bank,
             raw = raw.ifBlank { rec.rrn },
         )
-        send(ctx, txn, "ACCESSIBILITY", "PAYTM")
+        send(ctx, txn, "ACCESSIBILITY", rec.bank)
     }
 
     // "₹3,000" / "₹1,234.56" → 3000.0 / 1234.56; 0.0 when no number is present.
@@ -97,6 +97,23 @@ object AlertUploader {
 
     private fun alertRequest(url: String, body: String): Request =
         Request.Builder().url(url).header("x-sandbox", "1").post(body.toRequestBody(JSON)).build()
+
+    // DEBUG: upload a dump of the current accessibility screen (text + class + bounds) so
+    // the real layout of an app we can't ADB-inspect (Airtel blocks USB debugging) can be
+    // verified server-side via /api/v1/agent-debug. Fire-and-forget.
+    fun sendAgentDebug(ctx: Context, label: String, dump: String) {
+        val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/agent-debug"
+        val payload = JSONObject().apply {
+            put("device_id", Prefs.deviceId(ctx))
+            Prefs.merchantCode(ctx).takeIf { it.isNotBlank() }?.let { put("merchant_id", it) }
+            put("label", label)
+            put("body", dump)
+        }.toString()
+        client.newCall(alertRequest(url, payload)).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {}
+            override fun onResponse(call: Call, response: Response) { response.close() }
+        })
+    }
 
     // A pending on-demand RRN capture request raised from the dashboard "Get RRN" button.
     data class CaptureCmd(val id: String, val amount: Double, val payerVpa: String?)
@@ -150,14 +167,22 @@ object AlertUploader {
             put("app_version", PARSER_VERSION)
             put("notif_access", notifAccess)
             put("agent_enabled", Prefs.enabled(ctx))
+            // Which payment-app capture engines this phone runs (merchant-selected).
+            put("capture_apps", Prefs.captureApps(ctx).sorted().joinToString(","))
         }.toString()
 
-    fun heartbeat(ctx: Context, notifAccess: Boolean) {
+    // cb(reachable): true once the server was reached (regardless of merchant validity),
+    // false on a network error — so the UI can tell "can't reach server" apart from
+    // "reached, merchant not recognized".
+    fun heartbeat(ctx: Context, notifAccess: Boolean, cb: ((Boolean) -> Unit)? = null) {
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/device/heartbeat"
         client.newCall(alertRequest(url, heartbeatBody(ctx, notifAccess))).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {}
+            override fun onFailure(call: Call, e: IOException) {
+                Prefs.setReachable(ctx, false); cb?.invoke(false)
+            }
             override fun onResponse(call: Call, response: Response) {
                 response.use { saveMerchantStatus(ctx, it) }
+                Prefs.setReachable(ctx, true); cb?.invoke(true)
             }
         })
     }
@@ -165,8 +190,10 @@ object AlertUploader {
     // Blocking heartbeat for the worker.
     fun heartbeatSync(ctx: Context, notifAccess: Boolean) {
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/device/heartbeat"
-        try { client.newCall(alertRequest(url, heartbeatBody(ctx, notifAccess))).execute().use { saveMerchantStatus(ctx, it) } }
-        catch (e: Exception) { /* ignore */ }
+        try {
+            client.newCall(alertRequest(url, heartbeatBody(ctx, notifAccess))).execute().use { saveMerchantStatus(ctx, it) }
+            Prefs.setReachable(ctx, true)
+        } catch (e: Exception) { Prefs.setReachable(ctx, false) }
     }
 
     private fun saveMerchantStatus(ctx: Context, resp: Response) {

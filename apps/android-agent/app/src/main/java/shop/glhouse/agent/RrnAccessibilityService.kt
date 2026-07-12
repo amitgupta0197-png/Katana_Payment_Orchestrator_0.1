@@ -1,6 +1,7 @@
 package shop.glhouse.agent
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Bitmap
@@ -85,13 +86,44 @@ class RrnAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         RrnStore.init(applicationContext)
-        Log.d(TAG, "service connected (sdk=${Build.VERSION.SDK_INT})")
+        // Set the watched package list at RUNTIME. Android caches the packageNames from the
+        // accessibility XML at first bind and does NOT reload it on app update, so a package
+        // added to the XML (e.g. GPay) never receives events until the service is toggled
+        // off/on. Setting it here guarantees the current list takes effect on every connect.
+        try {
+            serviceInfo = (serviceInfo ?: AccessibilityServiceInfo()).apply {
+                // Set ALL delivery-critical fields explicitly — only mutating packageNames can
+                // leave eventTypes cleared on some ROMs, silently stopping event delivery.
+                eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                    AccessibilityEvent.TYPE_VIEW_SCROLLED
+                feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+                flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
+                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+                notificationTimeout = 100
+                packageNames = arrayOf(
+                    "net.one97.paytm.merchant", "com.paytm.business", "com.apbl.merchant",
+                    "com.google.android.apps.nbu.paisa.merchant",
+                )
+            }
+        } catch (e: Exception) { Log.w(TAG, "setServiceInfo failed: ${e.message}") }
+        Log.d(TAG, "service connected (sdk=${Build.VERSION.SDK_INT}); watching ${serviceInfo?.packageNames?.joinToString()}")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val root = rootInActiveWindow ?: return
-        if (root.packageName?.toString() != "com.paytm.business") return
+        // Only run the engines for the payment apps this merchant selected in the UI —
+        // a Paytm-only phone never reacts to Airtel screens and vice versa.
+        when (root.packageName?.toString()) {
+            "com.paytm.business" -> if (Prefs.captureAppOn(this, Prefs.APP_PAYTM)) handlePaytm(root)
+            "com.apbl.merchant"  -> if (Prefs.captureAppOn(this, Prefs.APP_AIRTEL)) handleAirtel(root)   // Airtel Payments Bank Merchant
+            "com.google.android.apps.nbu.paisa.merchant" -> if (Prefs.captureAppOn(this, Prefs.APP_GPAY)) handleGpay(root)  // Google Pay for Business
+            else -> return
+        }
+    }
 
+    private fun handlePaytm(root: AccessibilityNodeInfo) {
         val autoMode = autoModeEnabled()
         if (!autoMode) { baselineDone = false; autoNavigating = false }
 
@@ -104,6 +136,176 @@ class RrnAccessibilityService : AccessibilityService() {
         } else if (autoMode) {
             handleList(ordered)
         }
+    }
+
+    // ------------------------------------------------------------------ Airtel
+    //
+    // Airtel Payments Bank Merchant (com.apbl.merchant) shows the FULL 12-digit UPI RRN
+    // unmasked, right on its reports/transactions list — no tap/copy needed. Incoming UPI
+    // credits carry an exactly-12-digit RRN; bank settlements carry 15-digit refs, so a
+    // strict 12-digit match captures real payments and skips settlements. Each visible RRN
+    // is paired with the nearest amount and payer name by on-screen vertical position.
+    // Passive read — no navigation — so it runs whenever the reports screen is visible.
+
+    // Capture ONLY the 12-digit UPI RRN (on "successful" payment rows). The 15-digit
+    // Airtel settlement reference used to be captured too and then hidden on the
+    // dashboard — dead weight. v2.33: skip it at the source (real payments are always the
+    // 12-digit UPI RRN; settlements are 15-digit).
+    private val airtelRrn = Regex("(?<!\\d)\\d{12}(?!\\d)")
+    private val airtelAmount = Regex("₹\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?")
+    private val airtelName = Regex("^[A-Za-z][A-Za-z .]{2,39}$")
+    private val airtelStop = setOf(
+        "reports", "business", "recharge", "select date", "from date", "to date", "search",
+        "total amount collected", "no. of payments", "successful", "settlement", "charges & gst",
+        "download", "share now", "home", "my qr", "get loan", "settlements", "view all transactions",
+        "today's collection", "last settlement", "soundbox", "payments bank", "nilam",
+    )
+    private var lastAirtelDump = 0L      // throttle the debug dump
+    private var lastAirtelRefresh = 0L   // throttle the hands-free "search" re-tap
+
+    // Click a node via its nearest clickable ancestor (ACTION_CLICK), falling back to a
+    // real tap gesture at its centre. Used to re-run Airtel's "search" for hands-free refresh.
+    private fun clickNode(node: AccessibilityNodeInfo): Boolean {
+        var n: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (n != null && depth < 6) {
+            if (n.isClickable) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true }
+            n = n.parent; depth++
+        }
+        val r = Rect().also { node.getBoundsInScreen(it) }
+        if (r.width() > 0 && r.height() > 0) { tap(r.exactCenterX(), r.exactCenterY()); return true }
+        return false
+    }
+
+    private fun handleAirtel(root: AccessibilityNodeInfo) {
+        if (!Prefs.enabled(this)) return
+        val ordered = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flatten(root, ordered)
+
+        // One-shot diagnostic: on a screen that has RRNs, upload the real node layout so it
+        // can be verified server-side (the Airtel app blocks ADB, so this is our only view).
+        // Throttled to once per 60s.
+        val now = System.currentTimeMillis()
+        if (ordered.any { airtelRrn.containsMatchIn(it.first) } && now - lastAirtelDump > 60_000L) {
+            lastAirtelDump = now
+            val dump = ordered.joinToString("\n") { (t, n) ->
+                val r = Rect().also { n.getBoundsInScreen(it) }
+                "\"$t\"  ${n.className}  [${r.left},${r.top}][${r.right},${r.bottom}]"
+            }
+            AlertUploader.sendAgentDebug(this, "airtel-reports", dump)
+        }
+
+        for (i in ordered.indices) {
+            for (match in airtelRrn.findAll(ordered[i].first)) {
+                val rrn = match.value   // always a 12-digit UPI RRN now
+
+                // Pair by flatten (traversal) order — reliable even when off-screen RecyclerView
+                // rows report clamped/degenerate bounds. Each card lists as:
+                //   date, time, [payer name], amount, RRN, "charges & GST"
+                // so scan backward from the RRN up to this card's time marker, collecting the
+                // amount and (for payment rows) the payer name.
+                var amount = ""
+                var payer = ""
+                var j = i - 1
+                while (j >= 0 && i - j <= 6) {
+                    val t = ordered[j].first.trim()
+                    if (timeRx.containsMatchIn(t)) break            // top of this card
+                    val tl = t.lowercase()
+                    if (amount.isEmpty() && !tl.contains("charge") && !tl.contains("gst") && !tl.contains("collected"))
+                        airtelAmount.find(t)?.let { amount = it.value }
+                    if (payer.isEmpty() && airtelName.matches(t) && tl !in airtelStop) payer = t
+                    j--
+                }
+
+                val fresh = RrnStore.record(RrnRecord(
+                    rrn = rrn, capturedAt = System.currentTimeMillis(),
+                    amount = amount, payer = payer, upiId = "",
+                    paidAt = "", maskedRef = rrn, bank = "AIRTEL",
+                ))
+                if (fresh) Log.d(TAG, "airtel: RRN $rrn amount=$amount payer=$payer")
+            }
+        }
+
+        // Hands-free auto-drive (auto-capture on): keep the app on the reports list and
+        // fresh, wherever the merchant left it.
+        //  • On the reports list ("search" present): re-run search every ~25s so new
+        //    payments (a static search result otherwise) show up on their own.
+        //  • On the home screen ("view all transactions", no "search"): open the
+        //    transactions list so capture can run — the home screen has no RRNs.
+        if (Prefs.autoCapture(this)) {
+            val nowR = System.currentTimeMillis()
+            val searchNode = ordered.firstOrNull { it.first.trim().equals("search", true) }?.second
+            val viewAllNode = ordered.firstOrNull { it.first.trim().equals("view all transactions", true) }?.second
+            when {
+                searchNode != null && nowR - lastAirtelRefresh > 10_000L -> {
+                    lastAirtelRefresh = nowR
+                    clickNode(searchNode)
+                    Log.d(TAG, "airtel: auto-refresh (search)")
+                }
+                searchNode == null && viewAllNode != null && nowR - lastAirtelRefresh > 8_000L -> {
+                    lastAirtelRefresh = nowR
+                    clickNode(viewAllNode)
+                    Log.d(TAG, "airtel: auto-nav home -> transactions")
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- Google Pay
+    //
+    // Google Pay for Business (com.google.android.apps.nbu.paisa.merchant) is a FLUTTER
+    // app: it exposes on-screen text as accessibility CONTENT-DESCRIPTIONS, not text nodes
+    // (the Paytm/Airtel engines read text, so we read descriptions here). The transaction
+    // DETAIL screen shows the real 12-digit UPI RRN in plain text — the whole block arrives
+    // as one description like:
+    //   "Transaction details … UPI Transaction ID\n310182347603\nGoogle Transaction ID\n
+    //    CICAg…\n … Customer paid\n₹15\nAmount you get\n₹15"
+    // We take the number after "UPI Transaction ID" (the "Google Transaction ID" is
+    // Google's internal ref — ignored). Passive read: capture whenever a detail screen is
+    // visible — no tap/copy needed. GPay's LIST rows don't carry the RRN, so the merchant
+    // (or a future auto-drive) opens each payment; on the detail screen this just reads it.
+    private val gpayAmount = Regex("₹\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?")
+
+    private fun handleGpay(root: AccessibilityNodeInfo) {
+        if (!Prefs.enabled(this)) return
+        val descs = ArrayList<String>()
+        collectDescs(root, descs)
+        // Join everything so we can index label→value across nodes whether GPay bundles the
+        // block into one description or splits it. Only proceed on a detail screen.
+        val lines = descs.joinToString("\n").split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
+        val idIdx = lines.indexOfFirst { it.equals("UPI Transaction ID", true) }
+        if (idIdx < 0 || idIdx + 1 >= lines.size) return   // not a transaction detail screen
+        val rrn = lines[idIdx + 1].filter { it.isDigit() }
+        if (!Regex("\\d{12}").matches(rrn)) return
+
+        // Amount the customer PAID (matches the order); fall back to "Amount you get" or a
+        // "₹X credited" summary line.
+        fun amtAfter(label: String): String? {
+            val i = lines.indexOfFirst { it.equals(label, true) }
+            if (i < 0 || i + 1 >= lines.size) return null
+            return gpayAmount.find(lines[i + 1])?.value
+        }
+        val amount = amtAfter("Customer paid") ?: amtAfter("Amount you get")
+            ?: lines.firstOrNull { it.contains("credited", true) }?.let { gpayAmount.find(it)?.value } ?: ""
+
+        // Payer: "Received from Shubham K".
+        val payer = lines.firstOrNull { it.startsWith("Received from", true) }
+            ?.replaceFirst(Regex("(?i)^received from"), "")?.trim() ?: ""
+
+        val fresh = RrnStore.record(RrnRecord(
+            rrn = rrn, capturedAt = System.currentTimeMillis(),
+            amount = amount, payer = payer, upiId = "",
+            paidAt = "", maskedRef = rrn, bank = "GPAY",
+        ))
+        if (fresh) Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer")
+    }
+
+    // Flutter semantics live in contentDescription; also fold in any real text nodes.
+    private fun collectDescs(node: AccessibilityNodeInfo?, out: MutableList<String>) {
+        if (node == null) return
+        node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+        node.text?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it) }
+        for (i in 0 until node.childCount) collectDescs(node.getChild(i), out)
     }
 
     // ---------------------------------------------------------------- detail

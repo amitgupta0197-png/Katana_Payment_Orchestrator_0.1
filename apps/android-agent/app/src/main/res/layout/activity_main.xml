@@ -153,6 +153,182 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Payment apps (capture engine selector) -->
+        <TextView style="@style/SectionLabel" android:text="PAYMENT APPS" />
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="6dp"
+                    android:paddingBottom="8dp"
+                    android:text="Select the app(s) you receive payments on — the agent runs only those capture flows."
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="12sp" />
+
+                <!-- Paytm for Business -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="8dp">
+                    <FrameLayout
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@drawable/bg_app_icon"
+                        android:backgroundTint="#00BAF2">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="P"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="Paytm for Business" />
+                        <TextView style="@style/PermSub" android:text="Masked RRN + Copy tap on the payment detail" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/appPaytmSwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- Airtel Merchant -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="8dp">
+                    <FrameLayout
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@drawable/bg_app_icon"
+                        android:backgroundTint="#E40000">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="A"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="Airtel Merchant" />
+                        <TextView style="@style/PermSub" android:text="Full RRN read straight off the reports list" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/appAirtelSwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- Google Pay Business -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="8dp">
+                    <FrameLayout
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@drawable/bg_app_icon"
+                        android:backgroundTint="#4285F4">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="G"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="Google Pay Business" />
+                        <TextView style="@style/PermSub" android:text="Full RRN read off the payment detail screen" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/appGpaySwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- PhonePe Business (coming soon) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="8dp"
+                    android:alpha="0.45">
+                    <FrameLayout
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@drawable/bg_app_icon"
+                        android:backgroundTint="#5F259F">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="पे"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="PhonePe Business" />
+                        <TextView style="@style/PermSub" android:text="Capture engine in development" />
+                    </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_soon_pill"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:text="SOON"
+                        android:textColor="@color/on_surface_variant"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.1" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- RRN capture -->
         <TextView style="@style/SectionLabel" android:text="RRN CAPTURE" />
         <com.google.android.material.card.MaterialCardView style="@style/Card">
@@ -167,7 +343,7 @@
                     <ImageView style="@style/PermIcon" android:src="@drawable/ic_eye" app:tint="@color/brand" />
                     <LinearLayout style="@style/PermText">
                         <TextView style="@style/PermTitle" android:text="Screen reader" />
-                        <TextView style="@style/PermSub" android:text="Capture RRN from Paytm screen" />
+                        <TextView style="@style/PermSub" android:text="Capture RRN from Paytm / Airtel screen" />
                     </LinearLayout>
                     <ImageView android:id="@+id/accessCheck" style="@style/PermCheck" android:src="@drawable/ic_check" app:tint="@color/success" />
                     <com.google.android.material.button.MaterialButton android:id="@+id/accessBtn" style="@style/PermBtn" android:text="Enable" />
@@ -198,10 +374,32 @@
                         android:layout_weight="1"
                         android:orientation="vertical">
                         <TextView style="@style/PermTitle" android:text="Auto-capture" />
-                        <TextView style="@style/PermSub" android:text="Keep Paytm open on the payments list — new payments are opened and their RRN captured automatically" />
+                        <TextView style="@style/PermSub" android:text="Keep the selected payment app open — new payments are found and their RRN captured automatically" />
                     </LinearLayout>
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/autoCaptureSwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- Keep screen awake -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="6dp">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="Keep screen awake" />
+                        <TextView style="@style/PermSub" android:text="Stops the screen from sleeping so capture keeps running — for a dedicated phone left on charge" />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/keepAwakeSwitch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
                 </LinearLayout>
