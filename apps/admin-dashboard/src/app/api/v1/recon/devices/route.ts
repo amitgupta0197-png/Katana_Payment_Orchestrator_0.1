@@ -16,7 +16,7 @@ export async function GET() {
   try {
     const devices = await rows<any>("vendorGateway", `
       SELECT device_id, COALESCE(label,'') AS label, COALESCE(merchant_id,'') AS merchant_id, status,
-             COALESCE(sim_id,'') AS sim_id, last_heartbeat, created_at
+             COALESCE(sim_id,'') AS sim_id, COALESCE(last_host,'') AS last_host, last_heartbeat, created_at
         FROM vendor_devices ORDER BY updated_at DESC LIMIT 500
     `).catch(() => []);
     return NextResponse.json({ devices });

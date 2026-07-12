@@ -32,6 +32,13 @@ export async function POST(req: Request) {
   }
   let body; try { body = schema.parse(JSON.parse(rawText)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 
+  // Which public domain this device actually contacted (nginx forwards the original
+  // Host). Recorded per-device so the glhouse.shop -> katanapay.co migration can be
+  // tracked: a device still seen on glhouse.shop is on a pre-cutover build. See the
+  // /api/v1/recon/legacy-domain report.
+  const host = (req.headers.get("x-forwarded-host") || req.headers.get("host") || "")
+    .split(",")[0].trim().split(":")[0].toLowerCase() || null;
+
   try {
     const prev = (await rows<{ sim_id: string | null }>("vendorGateway",
       `SELECT sim_id FROM vendor_devices WHERE device_id = $1`, [body.device_id]))[0];
@@ -45,8 +52,8 @@ export async function POST(req: Request) {
     }
 
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -55,9 +62,10 @@ export async function POST(req: Request) {
         app_version = COALESCE($6, vendor_devices.app_version),
         notif_access = COALESCE($7, vendor_devices.notif_access),
         agent_enabled = COALESCE($8, vendor_devices.agent_enabled),
+        last_host = COALESCE($9, vendor_devices.last_host),
         last_heartbeat = now(), updated_at = now()
     `, [body.device_id, body.merchant_id ?? null, body.label ?? null, body.sim_id ?? null, body.app_hash ?? null,
-        body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null]);
+        body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;
