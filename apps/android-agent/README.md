@@ -53,7 +53,7 @@ gradle wrapper            # one-time, creates ./gradlew
 ## Set up on the phone
 
 1. Install and open **Katana Agent**.
-2. **Orchestrator base URL** — default `https://glhouse.shop` (leave as-is).
+2. **Orchestrator base URL** — default `https://katanapay.co` (leave as-is).
 3. **Device ID** — any label (e.g. `pixel-7`). Tap **Save settings**.
 4. Tap **Grant SMS permission** → Allow.
 5. Tap **Enable notification access** → toggle **Katana Agent** on.

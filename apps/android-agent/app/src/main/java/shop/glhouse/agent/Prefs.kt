@@ -8,12 +8,25 @@ import java.util.UUID
 // Simple SharedPreferences-backed settings store.
 object Prefs {
     private const val PREF = "agent_prefs"
-    const val DEFAULT_BASE_URL = "https://glhouse.shop"
+    const val DEFAULT_BASE_URL = "https://katanapay.co"
+    // Pre-cutover default. Phones installed before the katanapay.co migration have this
+    // saved verbatim; baseUrl() silently rewrites it to DEFAULT_BASE_URL on first read.
+    private const val LEGACY_BASE_URL = "https://glhouse.shop"
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
-    fun baseUrl(ctx: Context): String =
-        sp(ctx).getString("base_url", DEFAULT_BASE_URL)?.ifBlank { DEFAULT_BASE_URL } ?: DEFAULT_BASE_URL
+    fun baseUrl(ctx: Context): String {
+        val stored = sp(ctx).getString("base_url", null)?.trim()?.trimEnd('/')
+        // One-time migration to the official domain. A phone still pointing at the old
+        // default is moved to the new one; a merchant who typed any other (custom) URL is
+        // left untouched. glhouse.shop still serves as an alias, so this is a silent
+        // upgrade — nothing was broken, we're just moving installs onto katanapay.co.
+        if (stored == LEGACY_BASE_URL) {
+            sp(ctx).edit().putString("base_url", DEFAULT_BASE_URL).apply()
+            return DEFAULT_BASE_URL
+        }
+        return stored?.ifBlank { DEFAULT_BASE_URL } ?: DEFAULT_BASE_URL
+    }
 
     // Unique per-phone device id. Generated ONCE on first run (from the stable Android
     // ID, else a random UUID) and persisted, so multiple phones never collide on a
@@ -71,7 +84,7 @@ object Prefs {
     fun setKeepAwake(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("keep_awake", v).apply()
 
     // Whether the last heartbeat actually reached the server. Surfaced in the UI so a
-    // merchant whose phone can't reach glhouse.shop sees "can't reach server" instead of
+    // merchant whose phone can't reach the server sees "can't reach server" instead of
     // a silent, permanent "(save to verify)". Default false until the first success.
     fun reachable(ctx: Context): Boolean = sp(ctx).getBoolean("reachable", false)
     fun setReachable(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("reachable", v).apply()
