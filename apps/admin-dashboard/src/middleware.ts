@@ -132,15 +132,24 @@ export async function middleware(req: NextRequest) {
 
   if (!session) {
     if (isApi) return jsonError(401, "not authenticated");
-    // Public marketing landing: an unauthenticated visitor to "/" is sent to the Katana
-    // Pay landing page instead of the login screen. (A redirect, not a rewrite — behind
-    // the `-H 127.0.0.1` + HTTPS proxy, a rewrite to an absolute app URL is treated as an
-    // external origin and fails TLS; a redirect is reliable.) Logged-in users fall
-    // through to their persona dashboard below.
+    // Public marketing landing AT THE ROOT: an unauthenticated visitor to "/" is served
+    // the Katana Pay landing page in place — the URL stays "https://katanapay.co/", no
+    // redirect. We rewrite to the /katana-pay route and force the destination to plain
+    // http on the app's own listener: behind `next start -H 127.0.0.1` + the HTTPS proxy,
+    // nextUrl's protocol is https (from X-Forwarded-Proto) while the server listens on
+    // http, so a same-host https rewrite is treated as a foreign origin and self-proxies
+    // over TLS (EPROTO). Forcing http: makes the destination match Next's real origin, so
+    // it renders internally. x-pathname is set to the landing route so the root layout
+    // picks its standalone (chrome-less) shell. Logged-in users fall through to their
+    // dashboard below.
     if (pathname === "/") {
+      const headers = new Headers(req.headers);
+      headers.set("x-pathname", "/katana-pay");
       const dest = req.nextUrl.clone();
+      dest.protocol = "http:";
+      dest.host = "127.0.0.1:3100";
       dest.pathname = "/katana-pay";
-      return NextResponse.redirect(dest);
+      return NextResponse.rewrite(dest, { request: { headers } });
     }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
