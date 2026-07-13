@@ -13,41 +13,48 @@ import { inr, esc } from "@/lib/telegram";
 
 // UTC instant of the most recent IST midnight — comparable to a timestamptz column.
 const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'";
+// UTC instant of the previous IST midnight (start of "yesterday" in IST).
+const YDAY_IST = "((now() AT TIME ZONE 'Asia/Kolkata')::date - 1) AT TIME ZONE 'Asia/Kolkata'";
 
 // Non-terminal settlement statuses = "pending / in-flight" (from branch-settlement.ts).
 const SETTLEMENT_TERMINAL =
   "'VERIFIED','RECONCILED','REJECTED','FAILED','CANCELLED','REVERSED','DRAFT','INSUFFICIENT_BALANCE','INVALID_BENEFICIARY'";
 
-// ── Report 1: today's collections (captured bank credits) ─────────────────────
-export async function collectionsToday(): Promise<string> {
+// ── Report 1: collections (captured bank credits) for a day window ────────────
+// `dateClause` is the SQL created_at filter for the window (today vs yesterday); the
+// rest of the filter (CREDIT, non-duplicate, exclude airtel settlement) is shared and
+// mirrors the vpa-transactions dashboard endpoint.
+async function collectionsReport(title: string, dateClause: string): Promise<string> {
+  const base = `COALESCE(direction,'CREDIT') = 'CREDIT' AND outcome <> 'DUPLICATE'
+    AND NOT (bank = 'AIRTEL' AND COALESCE(raw,'') LIKE '%airtel-settlement%')`;
   try {
     const [tot] = await rows<{ count: number; gross: number; confirmed: number }>("vendorGateway", `
       SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0)::float AS gross,
              COUNT(*) FILTER (WHERE outcome = 'CONFIRMED')::int AS confirmed
-        FROM vendor_txn_alerts
-       WHERE COALESCE(direction,'CREDIT') = 'CREDIT' AND outcome <> 'DUPLICATE'
-         AND NOT (bank = 'AIRTEL' AND COALESCE(raw,'') LIKE '%airtel-settlement%')
-         AND created_at >= ${TODAY_IST}
+        FROM vendor_txn_alerts WHERE ${base} AND ${dateClause}
     `);
     const perBank = await rows<{ bank: string; n: number; amt: number }>("vendorGateway", `
       SELECT COALESCE(NULLIF(bank,''),'OTHER') AS bank, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amt
-        FROM vendor_txn_alerts
-       WHERE COALESCE(direction,'CREDIT') = 'CREDIT' AND outcome <> 'DUPLICATE'
-         AND NOT (bank = 'AIRTEL' AND COALESCE(raw,'') LIKE '%airtel-settlement%')
-         AND created_at >= ${TODAY_IST}
+        FROM vendor_txn_alerts WHERE ${base} AND ${dateClause}
        GROUP BY 1 ORDER BY amt DESC
     `);
     const lines = perBank.map((b) => `   • ${esc(b.bank)}: <b>${inr(b.amt)}</b> (${b.n})`).join("\n");
     return [
-      `💰 <b>Collections today</b>`,
+      `💰 <b>${title}</b>`,
       `Total: <b>${inr(tot?.gross)}</b> across <b>${tot?.count ?? 0}</b> payments`,
       `Reconciled: ${tot?.confirmed ?? 0}/${tot?.count ?? 0}`,
       perBank.length ? `\n<b>By app:</b>\n${lines}` : "",
     ].filter(Boolean).join("\n");
   } catch {
-    return `💰 <b>Collections today</b>\n   ⚠️ unavailable`;
+    return `💰 <b>${title}</b>\n   ⚠️ unavailable`;
   }
 }
+
+export const collectionsToday = () =>
+  collectionsReport("Collections today", `created_at >= ${TODAY_IST}`);
+
+export const collectionsYesterday = () =>
+  collectionsReport("Collections yesterday", `created_at >= ${YDAY_IST} AND created_at < ${TODAY_IST}`);
 
 // ── Report 2: RRN capture health ──────────────────────────────────────────────
 export async function captureHealth(): Promise<string> {
