@@ -57,9 +57,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   id="main-content"
                   role="main"
                   tabIndex={-1}
-                  className="app-canvas flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-8"
+                  className="app-canvas flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 md:px-6 md:py-8"
                 >
-                  <div className="mx-auto max-w-7xl">{children}</div>
+                  <div className="mx-auto min-w-0 max-w-7xl">{children}</div>
                 </main>
               </div>
             </div>

@@ -180,13 +180,13 @@ export function DataView<T>({
           </div>
         )}
         {filters.length > 0 && (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto">
             {filters.map((f) => (
               <button
                 key={f.key}
                 onClick={() => setFilter(filter === f.key ? null : f.key)}
                 className={cn(
-                  "rounded-full border px-3 py-1 text-xs transition-colors",
+                  "shrink-0 rounded-full border px-3 py-1 text-xs transition-colors",
                   filter === f.key
                     ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]"
                     : "border-[color:var(--color-border)] text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-surface-muted)]",
