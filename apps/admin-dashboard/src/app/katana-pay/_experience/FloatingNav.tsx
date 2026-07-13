@@ -34,8 +34,7 @@ export function FloatingNav() {
       <div className="pointer-events-auto w-full max-w-4xl">
         <nav className="flex items-center justify-between gap-4 rounded-2xl border border-cyan-400/15 bg-black/40 px-4 py-2.5 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.95),0_0_30px_-12px_rgba(34,211,238,0.5)] backdrop-blur-2xl">
           <Link href="/katana-pay" className="flex items-center">
-            {/* Bright-on-black logo → screen blend drops the black bg over the nebula. */}
-            <img src="/katana-logo.png" alt="Katana Pay" className="h-7 w-auto mix-blend-screen sm:h-8" />
+            <img src="/katana-logo.png" alt="Katana Pay" className="h-7 w-auto sm:h-8" />
           </Link>
 
           {/* Desktop links */}
