@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 // Persona portals + login own their chrome. Sniff the path Next.js sets in
 // request headers so the SUPER_ADMIN sidebar/header don't leak into them.
-const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal", "/pay", "/developers"];
+const STANDALONE_PREFIXES = ["/login", "/provider-portal", "/merchant-portal", "/pay", "/developers", "/katana-pay"];
 
 async function isStandaloneShell(): Promise<boolean> {
   const h = await headers();
@@ -57,7 +57,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   id="main-content"
                   role="main"
                   tabIndex={-1}
-                  className="app-canvas flex-1 overflow-y-auto px-6 py-8"
+                  className="app-canvas flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-8"
                 >
                   <div className="mx-auto max-w-7xl">{children}</div>
                 </main>

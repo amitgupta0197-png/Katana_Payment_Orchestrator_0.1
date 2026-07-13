@@ -48,7 +48,7 @@ export default function FifoControlsPage() {
           <CardHeader><CardTitle className="text-base">Transaction limits</CardTitle><CardDescription>Blank = no limit on that dimension. Amounts in ₹.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             <Input className="h-9" placeholder="branch code e.g. M10001" value={lim.merchant_id} onChange={(e) => setLim({ ...lim, merchant_id: e.target.value })} />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <MoneyInput placeholder="per-txn" value={lim.per_txn} onChange={(v) => setLim({ ...lim, per_txn: v })} />
               <MoneyInput placeholder="daily" value={lim.daily} onChange={(v) => setLim({ ...lim, daily: v })} />
               <MoneyInput placeholder="monthly" value={lim.monthly} onChange={(v) => setLim({ ...lim, monthly: v })} />

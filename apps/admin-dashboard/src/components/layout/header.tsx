@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogoutButton } from "./logout-button";
 import { ThemeToggle } from "./theme-toggle";
+import { MobileNav } from "./sidebar";
 
 export async function Header() {
   // headers() is awaited so we can later read x-session-persona if needed.
@@ -17,10 +18,11 @@ export async function Header() {
   return (
     <header
       role="banner"
-      className="flex h-16 items-center justify-between gap-4 border-b bg-[color:var(--color-surface)] px-6"
+      className="flex h-16 items-center justify-between gap-3 border-b bg-[color:var(--color-surface)] px-4 md:px-6"
     >
       <div className="flex items-center gap-3 min-w-0">
-        <Shield className="h-4 w-4 text-[color:var(--color-brand)]" aria-hidden />
+        <MobileNav />
+        <Shield className="h-4 w-4 shrink-0 text-[color:var(--color-brand)]" aria-hidden />
         <span className="text-sm font-semibold">
           {session ? (personaLabel[session.persona] ?? session.persona) : "Sign in"}
         </span>
