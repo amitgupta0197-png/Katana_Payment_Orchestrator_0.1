@@ -157,6 +157,7 @@ export const navItems: NavItem[] = [
   { href: "/admin/ai-ops",         label: "AI Ops", icon: Users, status: "live", group: "Admin" },
   { href: "/admin/hardening",      label: "Hardening", icon: Shield, status: "live", group: "Admin" },
   { href: "/integrations",         label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
+  { href: "/partner-inquiries",     label: "Partner Inquiries", icon: Headphones, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "ADMIN", "SUPPORT"] },
   { href: "/security",             label: "Security (MFA)", icon: Shield, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "PROVIDER", "MERCHANT", "OPERATOR"] },
   { href: "/fifo-controls",        label: "Branch Controls", icon: Sliders, status: "live", group: "Admin" },
 ];

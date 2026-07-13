@@ -6,7 +6,8 @@
 // Features so the home page reads as one continuous surface.
 
 import { motion, type Variants } from "framer-motion";
-import { Store, Landmark, Code2, Network, Gift, ArrowRight, type LucideIcon } from "lucide-react";
+import { Store, Landmark, Code2, Network, Gift, type LucideIcon } from "lucide-react";
+import { PartnerDialog } from "./PartnerDialog";
 
 interface Audience { icon: LucideIcon; title: string; blurb: string; items: string[] }
 
@@ -111,13 +112,7 @@ export function Ecosystem() {
             <h3 className="mt-3 text-2xl font-semibold tracking-tight text-white md:text-3xl">Become a Katana Partner</h3>
             <p className="mt-2 text-base font-light text-white/55">Earn recurring revenue by referring merchants to Katana Pay.</p>
           </div>
-          <a
-            href="mailto:partners@katanapay.co?subject=Katana%20Partner%20Program"
-            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-6 py-3 text-sm font-medium text-cyan-100 transition-all hover:border-cyan-300 hover:bg-cyan-400/20 hover:shadow-[0_0_28px_-8px_rgba(34,211,238,0.6)]"
-          >
-            Become a Partner
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          </a>
+          <PartnerDialog label="Become a Partner" />
         </div>
       </motion.div>
     </section>
