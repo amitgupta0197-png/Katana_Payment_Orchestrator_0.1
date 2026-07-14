@@ -205,7 +205,7 @@ export function DataView<T>({
             )}
           </div>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           {refresh && (
             <Button variant="secondary" size="sm" className="h-8 w-8 p-0" onClick={refresh} aria-label="Refresh">
               <RefreshCw className="h-4 w-4" />
