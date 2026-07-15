@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
+import { PinelabsConfigCard } from "@/components/pinelabs-config-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -756,6 +757,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <PaymentMethodsCard merchantId={merchant.id} />
 
       <PoolPayConfigCard merchantId={merchant.id} />
+      <div className="mb-4"><PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit /></div>
 
       <SetLoginPasswordCard
         email={merchant.contact_email}
