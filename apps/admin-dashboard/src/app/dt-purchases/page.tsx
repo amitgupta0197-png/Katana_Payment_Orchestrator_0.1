@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle } from "lucide-react";
+import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle, KeyRound, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataView } from "@/components/world-class/data-view";
@@ -69,6 +69,23 @@ export default function DtPurchasesPage() {
   const [fundsFor, setFundsFor] = useState<Purchase | null>(null);
   const [fundsRef, setFundsRef] = useState("");
 
+  // Separate banker login (BANKER persona → /banker-portal). One-time password shown once.
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginForm, setLoginForm] = useState({ banker_id: "", email: "", full_name: "" });
+  const [issued, setIssued] = useState<{ email: string; password: string | null; existing: boolean } | null>(null);
+  const createLogin = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = { banker_id: loginForm.banker_id.trim(), email: loginForm.email.trim() };
+      if (loginForm.full_name.trim()) body.full_name = loginForm.full_name.trim();
+      const r = await fetch("/api/v1/dt/bankers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d.login as { email: string; password: string | null; existing: boolean };
+    },
+    onSuccess: (login) => { setIssued(login); toast.success("Banker login ready"); },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+
   const cols: Column<Purchase>[] = [
     { key: "banker_id", header: "Banker", render: (r) => <span className="font-medium">{r.banker_id}</span> },
     { key: "quantity", header: "DT Qty", render: (r) => r.quantity.toLocaleString("en-IN") },
@@ -92,7 +109,16 @@ export default function DtPurchasesPage() {
 
   return (
     <>
-      <PageHeader title="DT Purchases" description="Banker advance purchases and their approval/funding lifecycle (BRD §10)." icon={Receipt} />
+      <PageHeader
+        title="DT Purchases"
+        description="Banker advance purchases and their approval/funding lifecycle (BRD §10)."
+        icon={Receipt}
+        actions={
+          <Button variant="secondary" onClick={() => { setIssued(null); setLoginForm({ banker_id: "", email: "", full_name: "" }); setLoginOpen(true); }}>
+            <KeyRound className="h-4 w-4" /> Banker login
+          </Button>
+        }
+      />
       <DataView
         rows={q.data ?? []}
         columns={cols}
@@ -130,6 +156,49 @@ export default function DtPurchasesPage() {
           <DialogFooter>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={() => create.mutate()} disabled={!form.banker_id || !form.quantity || create.isPending}>{create.isPending ? "Creating…" : "Create draft"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Provision a separate banker login */}
+      <Dialog open={loginOpen} onOpenChange={(o) => { setLoginOpen(o); if (!o) setIssued(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Banker login</DialogTitle>
+            <DialogDescription>Creates a separate sign-in for the banker (BANKER role, scoped to their banker id). They land in the banker portal.</DialogDescription>
+          </DialogHeader>
+          {issued ? (
+            <div className="space-y-3">
+              <p className="text-sm text-[color:var(--color-text-muted)]">
+                {issued.existing
+                  ? "This email already had an account — the banker role was granted. They sign in with their existing password."
+                  : "Share these credentials with the banker now — the password is shown only once."}
+              </p>
+              <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
+                <div><span className="text-[color:var(--color-text-muted)]">Email:</span> <b>{issued.email}</b></div>
+                {issued.password && <div><span className="text-[color:var(--color-text-muted)]">One-time password:</span> <b className="font-mono">{issued.password}</b></div>}
+                <div><span className="text-[color:var(--color-text-muted)]">Sign-in:</span> /login → lands on /banker-portal</div>
+              </div>
+              {issued.password && (
+                <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(`Email: ${issued.email}\nPassword: ${issued.password}\nLogin: /login`); toast.success("Copied"); }}>
+                  <Copy className="h-4 w-4" /> Copy credentials
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5"><Label>Banker id (matches purchases)</Label><Input value={loginForm.banker_id} onChange={(e) => setLoginForm({ ...loginForm, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>
+              <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} placeholder="banker@example.com" /></div>
+              <div className="space-y-1.5"><Label>Full name <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label><Input value={loginForm.full_name} onChange={(e) => setLoginForm({ ...loginForm, full_name: e.target.value })} /></div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => { setLoginOpen(false); setIssued(null); }}>{issued ? "Done" : "Cancel"}</Button>
+            {!issued && (
+              <Button onClick={() => createLogin.mutate()} disabled={!loginForm.banker_id.trim() || !loginForm.email.trim() || createLogin.isPending}>
+                {createLogin.isPending ? "Creating…" : "Create login"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

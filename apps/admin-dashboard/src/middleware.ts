@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 const COOKIE_NAME = "katana_session";
 const SECRET = process.env.SESSION_SECRET ?? "dev-session-secret-do-not-use-in-prod";
 
-type Persona = "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
+type Persona = "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "BANKER" | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 interface Session {
   user_id: string; email: string; full_name: string;
   persona: Persona; scope_id: string | null; scope_label: string; exp: number;
@@ -94,6 +94,16 @@ const PROVIDER_PORTAL_UI = "/provider-portal";
 const PROVIDER_PORTAL_API = "/api/provider-portal";
 const MERCHANT_PORTAL_UI = "/merchant-portal";
 const MERCHANT_PORTAL_API = "/api/merchant-portal";
+const BANKER_PORTAL_UI = "/banker-portal";
+const BANKER_PORTAL_API = "/api/banker-portal";
+
+// Home page for a persona — where we bounce it when it hits a portal it doesn't own.
+function homeFor(p: Persona): string {
+  if (p === "PROVIDER") return "/provider-portal";
+  if (p === "MERCHANT") return "/merchant-portal";
+  if (p === "BANKER") return "/banker-portal";
+  return "/";
+}
 
 function isUnder(path: string, prefixes: string[] | string): boolean {
   const list = Array.isArray(prefixes) ? prefixes : [prefixes];
@@ -173,7 +183,7 @@ export async function middleware(req: NextRequest) {
     if (persona !== "PROVIDER") {
       return isApi
         ? jsonError(403, `requires PROVIDER persona; you are ${persona}`)
-        : NextResponse.redirect(new URL(persona === "SUPER_ADMIN" ? "/" : "/merchant-portal", req.url));
+        : NextResponse.redirect(new URL(homeFor(persona), req.url));
     }
   }
 
@@ -181,7 +191,15 @@ export async function middleware(req: NextRequest) {
     if (persona !== "MERCHANT") {
       return isApi
         ? jsonError(403, `requires MERCHANT persona; you are ${persona}`)
-        : NextResponse.redirect(new URL(persona === "SUPER_ADMIN" ? "/" : "/provider-portal", req.url));
+        : NextResponse.redirect(new URL(homeFor(persona), req.url));
+    }
+  }
+
+  if (isUnder(pathname, isApi ? BANKER_PORTAL_API : BANKER_PORTAL_UI)) {
+    if (persona !== "BANKER") {
+      return isApi
+        ? jsonError(403, `requires BANKER persona; you are ${persona}`)
+        : NextResponse.redirect(new URL(homeFor(persona), req.url));
     }
   }
 

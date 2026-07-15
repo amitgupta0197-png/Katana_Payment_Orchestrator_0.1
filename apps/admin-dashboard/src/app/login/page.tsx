@@ -13,6 +13,7 @@ const LANDING: Record<string, string> = {
   ADMIN: "/",
   PROVIDER: "/provider-portal",
   MERCHANT: "/merchant-portal",
+  BANKER: "/banker-portal",
   OPERATOR: "/operator",
   FINANCE: "/fifo-settlements",
   RISK: "/forensics",

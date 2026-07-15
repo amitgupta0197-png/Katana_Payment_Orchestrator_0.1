@@ -6,8 +6,9 @@ import { cookies } from "next/headers";
 
 // BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
 // payment-operations module; access is enforced per-route via gateOrResponse.
+// BANKER: DT business model party (scope_id = banker_id) — sees /banker-portal only.
 export type Persona =
-  | "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT"
+  | "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "BANKER"
   | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 
 export interface Session {
