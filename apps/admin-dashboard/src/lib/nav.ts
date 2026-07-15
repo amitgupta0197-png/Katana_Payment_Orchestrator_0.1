@@ -15,6 +15,7 @@ import {
   Workflow,
   Globe,
   Coins,
+  Droplets,
   UserCog,
   KeyRound,
   Shield,
@@ -69,7 +70,7 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
@@ -122,6 +123,7 @@ export const navItems: NavItem[] = [
 
   { href: "/dt-dashboard", label: "DT Dashboard", icon: Coins, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/dt-purchases", label: "DT Purchases", icon: Receipt, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
+  { href: "/dt-refills", label: "DT Refills", icon: Droplets, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
 
   { href: "/reconciliation", label: "Reconciliation", icon: GitMerge, status: "live", group: "Risk & Compliance" },
   { href: "/risk", label: "Risk & Velocity", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },

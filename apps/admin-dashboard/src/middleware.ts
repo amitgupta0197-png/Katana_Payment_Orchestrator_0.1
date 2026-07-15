@@ -171,7 +171,13 @@ export async function middleware(req: NextRequest) {
 
   const persona = session.persona;
 
-  if (isApi ? isUnder(pathname, SUPER_ADMIN_API) : isUnder(pathname, SUPER_ADMIN_UI)) {
+  // /api/admin/set-password is SUPER_ADMIN *or* ADMIN (route-gated), matching
+  // banker login provisioning — carve it out of the blanket /api/admin gate.
+  const superAdminApiHit = isApi
+    && isUnder(pathname, SUPER_ADMIN_API)
+    && pathname !== "/api/admin/set-password";
+
+  if (isApi ? superAdminApiHit : isUnder(pathname, SUPER_ADMIN_UI)) {
     if (persona !== "SUPER_ADMIN") {
       return isApi
         ? jsonError(403, `requires SUPER_ADMIN persona; you are ${persona}`)

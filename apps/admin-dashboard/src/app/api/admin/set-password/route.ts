@@ -1,6 +1,9 @@
-// POST /api/admin/set-password — SUPER_ADMIN sets (or resets) the login password
-// for a provider or merchant user. Provisions the login (users row + persona grant)
-// if it doesn't exist yet, so an admin can hand a provider/merchant their credentials.
+// POST /api/admin/set-password — SUPER_ADMIN or ADMIN sets (or resets) the login
+// password for a provider or merchant user. Provisions the login (users row +
+// persona grant) if it doesn't exist yet, so an admin can hand a provider/merchant
+// their credentials. Aligned with banker login provisioning (/api/v1/dt/bankers),
+// which the same roles can call. Note: this route is exempted from the middleware's
+// blanket SUPER_ADMIN-only /api/admin/* gate — the gate below is authoritative.
 //
 // Body: { email, password?, kind?: "MERCHANT"|"PROVIDER", scope_id?, scope_label?, full_name? }
 //   - password omitted → a one-time password is generated and returned.
@@ -25,7 +28,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const g = await gateOrResponse(["SUPER_ADMIN"]);
+  const g = await gateOrResponse(["SUPER_ADMIN", "ADMIN"]);
   if ("response" in g) return g.response;
   const s = g.session;
 
