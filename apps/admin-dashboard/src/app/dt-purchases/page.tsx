@@ -70,19 +70,23 @@ export default function DtPurchasesPage() {
   const [fundsRef, setFundsRef] = useState("");
 
   // Separate banker login (BANKER persona → /banker-portal). One-time password shown once.
+  // Reset mode issues a fresh one-time password for an existing banker (forgot password).
   const [loginOpen, setLoginOpen] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
   const [loginForm, setLoginForm] = useState({ banker_id: "", email: "", full_name: "" });
-  const [issued, setIssued] = useState<{ email: string; password: string | null; existing: boolean } | null>(null);
+  const [issued, setIssued] = useState<{ email: string; password: string | null; existing: boolean; reset?: boolean } | null>(null);
   const createLogin = useMutation({
     mutationFn: async () => {
-      const body: Record<string, unknown> = { banker_id: loginForm.banker_id.trim(), email: loginForm.email.trim() };
-      if (loginForm.full_name.trim()) body.full_name = loginForm.full_name.trim();
+      const body: Record<string, unknown> = resetMode
+        ? { reset_password: true, email: loginForm.email.trim() }
+        : { banker_id: loginForm.banker_id.trim(), email: loginForm.email.trim() };
+      if (!resetMode && loginForm.full_name.trim()) body.full_name = loginForm.full_name.trim();
       const r = await fetch("/api/v1/dt/bankers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
-      return d.login as { email: string; password: string | null; existing: boolean };
+      return { ...(d.login as { email: string; password: string | null; existing: boolean }), reset: !!d.reset };
     },
-    onSuccess: (login) => { setIssued(login); toast.success("Banker login ready"); },
+    onSuccess: (login) => { setIssued(login); toast.success(login.reset ? "Password reset" : "Banker login ready"); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -114,7 +118,7 @@ export default function DtPurchasesPage() {
         description="Banker advance purchases and their approval/funding lifecycle (BRD §10)."
         icon={Receipt}
         actions={
-          <Button variant="secondary" onClick={() => { setIssued(null); setLoginForm({ banker_id: "", email: "", full_name: "" }); setLoginOpen(true); }}>
+          <Button variant="secondary" onClick={() => { setIssued(null); setResetMode(false); setLoginForm({ banker_id: "", email: "", full_name: "" }); setLoginOpen(true); }}>
             <KeyRound className="h-4 w-4" /> Banker login
           </Button>
         }
@@ -165,14 +169,38 @@ export default function DtPurchasesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Banker login</DialogTitle>
-            <DialogDescription>Creates a separate sign-in for the banker (BANKER role, scoped to their banker id). They land in the banker portal.</DialogDescription>
+            <DialogDescription>
+              {resetMode
+                ? "Generates a fresh one-time password for an existing banker (the old password stops working)."
+                : "Creates a separate sign-in for the banker (BANKER role, scoped to their banker id). They land in the banker portal."}
+            </DialogDescription>
           </DialogHeader>
+          {!issued && (
+            <div className="flex gap-1 rounded-md border p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setResetMode(false)}
+                className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${!resetMode ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]" : "text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]"}`}
+              >
+                Create login
+              </button>
+              <button
+                type="button"
+                onClick={() => setResetMode(true)}
+                className={`flex-1 rounded px-3 py-1.5 font-medium transition-colors ${resetMode ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]" : "text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]"}`}
+              >
+                Reset password
+              </button>
+            </div>
+          )}
           {issued ? (
             <div className="space-y-3">
               <p className="text-sm text-[color:var(--color-text-muted)]">
-                {issued.existing
-                  ? "This email already had an account — the banker role was granted. They sign in with their existing password."
-                  : "Share these credentials with the banker now — the password is shown only once."}
+                {issued.reset
+                  ? "Password reset. Share the new one-time password with the banker now — it is shown only once and the old password no longer works."
+                  : issued.existing
+                    ? "This email already had an account — the banker role was granted. They sign in with their existing password (use Reset password if it's forgotten)."
+                    : "Share these credentials with the banker now — the password is shown only once."}
               </p>
               <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
                 <div><span className="text-[color:var(--color-text-muted)]">Email:</span> <b>{issued.email}</b></div>
@@ -187,16 +215,16 @@ export default function DtPurchasesPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="space-y-1.5"><Label>Banker id (matches purchases)</Label><Input value={loginForm.banker_id} onChange={(e) => setLoginForm({ ...loginForm, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>
+              {!resetMode && <div className="space-y-1.5"><Label>Banker id (matches purchases)</Label><Input value={loginForm.banker_id} onChange={(e) => setLoginForm({ ...loginForm, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>}
               <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} placeholder="banker@example.com" /></div>
-              <div className="space-y-1.5"><Label>Full name <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label><Input value={loginForm.full_name} onChange={(e) => setLoginForm({ ...loginForm, full_name: e.target.value })} /></div>
+              {!resetMode && <div className="space-y-1.5"><Label>Full name <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label><Input value={loginForm.full_name} onChange={(e) => setLoginForm({ ...loginForm, full_name: e.target.value })} /></div>}
             </div>
           )}
           <DialogFooter>
             <Button variant="secondary" onClick={() => { setLoginOpen(false); setIssued(null); }}>{issued ? "Done" : "Cancel"}</Button>
             {!issued && (
-              <Button onClick={() => createLogin.mutate()} disabled={!loginForm.banker_id.trim() || !loginForm.email.trim() || createLogin.isPending}>
-                {createLogin.isPending ? "Creating…" : "Create login"}
+              <Button onClick={() => createLogin.mutate()} disabled={(!resetMode && !loginForm.banker_id.trim()) || !loginForm.email.trim() || createLogin.isPending}>
+                {createLogin.isPending ? (resetMode ? "Resetting…" : "Creating…") : (resetMode ? "Reset password" : "Create login")}
               </Button>
             )}
           </DialogFooter>

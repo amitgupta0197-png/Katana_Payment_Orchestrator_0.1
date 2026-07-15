@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Swords, LayoutDashboard, Receipt, Droplets, LogOut } from "lucide-react";
+import { Swords, LayoutDashboard, Receipt, Droplets, UserRound, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/banker-portal",           label: "Dashboard", icon: LayoutDashboard, exact: true  },
   { href: "/banker-portal/purchases", label: "Purchases", icon: Receipt,         exact: false },
   { href: "/banker-portal/refills",   label: "Refills",   icon: Droplets,        exact: false },
+  { href: "/banker-portal/profile",   label: "Profile",   icon: UserRound,       exact: false },
 ];
 
 export function BankerPortalShell({
