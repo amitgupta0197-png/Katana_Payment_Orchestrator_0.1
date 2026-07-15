@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="aGlow" cx="86%" cy="20%" r="55%">
+      <stop offset="0%" stop-color="#5b8cff" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#5b8cff" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aGlow2" cx="10%" cy="88%" r="52%">
+      <stop offset="0%" stop-color="#e0455c" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#aGlow)"/>
+  <rect width="1600" height="1000" fill="url(#aGlow2)"/>
+  <!-- giant code brackets </> -->
+  <g opacity="0.08" stroke="#8fb6ff" fill="none" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 520 300 L 360 500 L 520 700"/>
+    <path d="M 1080 300 L 1240 500 L 1080 700"/>
+    <line x1="760" y1="740" x2="840" y2="260"/>
+  </g>
+  <!-- faint monospace grid dots -->
+  <g fill="#7fd7ff" fill-opacity="0.05">
+    <g id="row">
+      <circle cx="120" cy="140" r="3"/><circle cx="180" cy="140" r="3"/><circle cx="240" cy="140" r="3"/><circle cx="300" cy="140" r="3"/>
+    </g>
+    <use href="#row" y="60"/><use href="#row" y="120"/><use href="#row" y="180"/>
+    <g transform="translate(1180 700)">
+      <circle cx="0" cy="0" r="3"/><circle cx="60" cy="0" r="3"/><circle cx="120" cy="0" r="3"/><circle cx="180" cy="0" r="3"/>
+      <circle cx="0" cy="60" r="3"/><circle cx="60" cy="60" r="3"/><circle cx="120" cy="60" r="3"/>
+    </g>
+  </g>
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="2">
+    <line x1="1080" y1="-60" x2="1600" y2="300"/>
+    <line x1="0" y1="720" x2="520" y2="1060"/>
+  </g>
+</svg>

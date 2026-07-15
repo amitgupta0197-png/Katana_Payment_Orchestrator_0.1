@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<base href="/landing/">
+	<title>Katana Pay — Move money like it's frictionless</title>
+	<meta name="description" content="Payment orchestration for UPI-first businesses: hosted UPI checkout, real-time reconciliation, smart multi-provider routing, and fast branch settlements — behind one signed API.">
+	<meta name="keywords" content="Katana Pay, payment orchestration, UPI checkout, reconciliation, settlements, routing">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+	<meta name="theme-color" content="#050308">
+	<meta name="msapplication-navbutton-color" content="#050308">
+	<meta name="apple-mobile-web-app-status-bar-style" content="#050308">
+	<meta property="og:title" content="Katana Pay — Move money like it's frictionless" />
+	<meta property="og:description" content="Hosted UPI checkout, real-time reconciliation, smart routing, and fast settlements. Integrate in any language." />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content="***permalink***" />
+	<meta property="og:image" content="***img***" />
+	<meta property="og:image:type" content="image/jpeg" />
+	<link rel="icon" type="image/png" href='img/favicon.png' />
+	<!-- safari format detection -->
+	<meta name="format-detection" content="telephone=no" />
+	<meta name="format-detection" content="address=no" />
+	<meta name="format-detection" content="email=no" />
+	<meta name="format-detection" content="date=no" />
+	<!-- css -->
+	<link rel="stylesheet" href="css/libs.min.css">
+	<link rel="stylesheet" href="css/style.min.css">
+	<link rel="stylesheet" href="css/pages.css">
+	<style>
+		@font-face{font-family:'KatanaBrush';src:url('fonts/brush/BrushFont.otf') format('opentype');font-display:swap}
+		.hero__bg-word{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) skewX(-7deg);font-family:'KatanaBrush',sans-serif;font-size:22rem;line-height:1;letter-spacing:1rem;white-space:nowrap;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;transition:opacity 1s}
+		.hero__bg-word.item-1{opacity:.85;background-image:linear-gradient(180deg,#8a2836 0%,#c23a4e 45%,#a02c3d 68%,#6e2130 100%)}
+		.hero__bg-text .item-2{background-image:linear-gradient(180deg,#d9cfd2 0%,#ffffff 45%,#efe8ea 70%,#cabdc2 100%)}
+	</style>
+</head>
+
+<body class="body loaded">
+
+	<header class="kp-nav" style="background:linear-gradient(180deg,rgba(6,4,12,.72) 0%,rgba(6,4,12,0) 100%);border-bottom:none">
+		<a class="kp-nav__brand" href="/">Katana<span>Pay</span></a>
+		<nav class="kp-nav__links">
+			<a href="/landing/features.html">Features</a>
+			<a href="/landing/api.html">API</a>
+			<a href="/landing/pricing.html">Pricing</a>
+			<a href="/landing/docs.html">Docs</a>
+		</nav>
+		<a class="kp-nav__cta" href="/login">Console ↗</a>
+		<button class="kp-nav__toggle" type="button" aria-label="Menu"><span></span></button>
+	</header>
+
+	<div class="main-wrapper">
+
+
+		<div class="main-wrapper-animation">
+			<section class="hero">
+				<div class="hero__bg-block">
+					<div class="hero__bg-circle">
+						<img src="img/hero-bg-circle-1.jpg" alt="c" class="item-1">
+						<img src="img/hero-bg-circle-2.jpg" alt="c" class="item-2">
+						<img src="img/hero-bg-circle-3.jpg" alt="c" class="item-3">
+					</div>
+					<div class="hero__bg-figure">
+						<div class="hero__bg-figure-img"><img src="img/hero-bg-figure.svg" alt="figure"></div>
+					</div>
+					<div class="hero__bg-text">
+						<span class="hero__bg-word item-1">KATANA</span>
+						<span class="hero__bg-word item-2">KATANA</span>
+					</div>
+					<div class="hero__bg-samurai">
+						<div class="samurai-wrap item-1">
+							<div class="samurai-bg"><img src="img/hero-samurai-bg-1.webp" alt="s"></div>
+							<div class="samurai-eyes">
+								<img src="img/hero-samurai-eyes.webp" alt="eyes">
+								<div class="samurai-eyes__ieroglifs">
+									<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--1"><img src="img/ieroglifs/ieroglif-1-1.svg" alt="i"></div>
+									<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--2"><img src="img/ieroglifs/ieroglif-2-1.svg" alt="i"></div>
+									<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--3"><img src="img/ieroglifs/ieroglif-3-1.svg" alt="i"></div>
+								</div>
+							</div>
+							<div class="samurai-parts item-1" id="samurai-parts-1"></div>
+						</div>
+						<div class="samurai-wrap item-2">
+							<div class="samurai-parts item-2" id="samurai-parts-2"></div>
+							<div class="samurai-bg">
+								<div class="samurai-body">
+									<img class="samurai-bg-2" src="img/hero-samurai-bg-2.webp" alt="s">
+									<img class="samurai-bg-3" src="img/hero-samurai-bg-3.webp" alt="s">
+									<div class="samurai-eyes">
+										<img src="img/hero-samurai-eyes.webp" alt="eyes">
+										<div class="samurai-eyes__ieroglifs">
+											<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--1"><img src="img/ieroglifs/ieroglif-1-1.svg" alt="i"></div>
+											<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--2"><img src="img/ieroglifs/ieroglif-2-1.svg" alt="i"></div>
+											<div class="samurai-eyes__ieroglif samurai-eyes__ieroglif--3"><img src="img/ieroglifs/ieroglif-3-1.svg" alt="i"></div>
+										</div>
+									</div>
+								</div>
+								<div class="samurai-katana">
+									<img src="img/katana-main.webp" alt="k">
+									<div class="samurai-katana__glare"><img src="img/glare-katana.webp" alt="glare"></div>
+									<div class="samurai-katana__neon samurai-katana__neon--usd"><img src="img/usd-neon.webp" alt="usd"></div>
+									<div class="samurai-katana__neon samurai-katana__neon--btc"><img src="img/btc-neon.webp" alt="btc"></div>
+									<div class="samurai-katana__neon samurai-katana__neon--trading"><img src="img/trading-neon.webp" alt="trading"></div>
+								</div>
+								<div class="samurai-hands"><img src="img/samurai-hands.webp" alt="hands"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="hero__content">
+					<h1 class="hero__content-h1">Move money like <span class="red">it's frictionless</span></h1>
+					<h2 class="hero__content-h2">Hosted UPI checkout, real-time reconciliation, smart multi-provider routing, and fast branch settlements — behind one signed API, in any language.</h2>
+					<div class="hero__btn-wrap">
+							<a href="/login" class="hero__btn btn">
+									<div class="btn-corners">
+											<div class="btn-corners__left-top"></div>
+											<div class="btn-corners__left-bot"></div>
+											<div class="btn-corners__right-top"></div>
+											<div class="btn-corners__right-bot"></div>
+									</div>
+									<div class="btn-dots"></div>
+									<span class="btn-content"><span class="change-word">Get paid</span> with Katana Pay</span>
+							</a>
+					</div>
+					<div class="hero__content-t3">One signed API · any language</div>
+				</div>
+				<div class="hero__bottom-arr">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+						<path d="M3.89621 9.49219L12.0005 17.5965L20.1048 9.49219L21.999 11.3863L12 21.3853L2.00153 11.3869L3.89621 9.49219Z" fill="white"/>
+						<path d="M12 6.4329L8.18237 2.61523L6.6543 4.14331L11.9975 9.49156L17.3458 4.14331L15.8177 2.61523L12 6.4329Z" fill="white"/>
+					</svg>
+				</div>
+			</section>
+
+			<div class="katana-parts-animation">
+				<div class="katana-parts-animation__item katana-parts-animation__item--1">
+					<div id="katana-parts-animation__item--1"></div>
+				</div>
+				<div class="katana-parts-animation__item katana-parts-animation__item--2">
+					<div id="katana-parts-animation__item--2"></div>
+				</div>
+				<div class="katana-parts-animation__item katana-parts-animation__item--3">
+					<div id="katana-parts-animation__item--3"></div>
+				</div>
+			</div>
+
+			<div class="katana-steps">
+				<div class="katana-step katana-step--1">
+						<div class="katana-step__wrapper">
+								<div class="katana-step__col">
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="12">0</span>+</div>
+												<div class="katana-step__block-t2">payment providers</div>
+										</div>
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="99">0</span>.9%</div>
+												<div class="katana-step__block-t2">capture success</div>
+										</div>
+								</div>
+								<div class="katana-step__col">
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="24">0</span>/7</div>
+												<div class="katana-step__block-t2">real-time reconciliation</div>
+										</div>
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="1">0</span> API</div>
+												<div class="katana-step__block-t2">one signed integration</div>
+										</div>
+								</div>
+						</div>
+				</div>
+				<div class="katana-step katana-step--2 katana-step--blue">
+						<div class="katana-step__wrapper">
+								<div class="katana-step__col">
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="15">0</span>+</div>
+												<div class="katana-step__block-t2">banking &amp; PSP rails</div>
+										</div>
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="6">0</span>+</div>
+												<div class="katana-step__block-t2">verification checks</div>
+										</div>
+								</div>
+								<div class="katana-step__col">
+										<div class="katana-step__block">
+												<div class="katana-step__block-t1"><span class="num-animate" data-number="100">0</span>%</div>
+												<div class="katana-step__block-t2">auto-reconciled</div>
+										</div>
+								</div>
+						</div>
+				</div>
+				<div class="katana-step katana-step--3">
+						<div class="katana-step__wrapper">
+								<div class="katana-step__col">
+										<div class="katana-step__t1">One stack for every <br>money movement:</div>
+										<ul class="katana-step__list red-list">
+												<li>Pay-In</li>
+												<li>Payout</li>
+												<li>Settlements</li>
+										</ul>
+								</div>
+								<div class="katana-step__col">
+										<div class="katana-step__t1">Rails we route:</div>
+										<ul class="katana-step__list white-list">
+												<li>
+														<span>UPI</span>
+														<span class="icon"><img src="img/check-icon.svg" alt="upi"></span>
+												</li>
+												<li>
+														<span>Cards</span>
+														<span class="icon"><img src="img/check-icon.svg" alt="cards"></span>
+												</li>
+												<li>
+														<span>Net Banking</span>
+														<span class="icon"><img src="img/check-icon.svg" alt="netbanking"></span>
+												</li>
+										</ul>
+								</div>
+						</div>
+				</div>
+			</div>
+
+
+			<div class="hero-parallax-bottom">
+				<div class="hero-parallax-bottom__item hero-parallax-bottom__item--second-plan">
+					<img src="img/hero-parallax-second.webp" alt="second">
+				</div>
+				<div class="hero-parallax-bottom__item hero-parallax-bottom__item--first-plan">
+					<img src="img/hero-parallax-first.webp" alt="frtst">
+				</div>
+
+			</div>
+
+		</div>
+
+		<div class="hero-parallax-bottom__content">
+			<div class="hero-parallax-bottom__ierogliph" style="visibility:hidden">
+					<div id="hero-parallax-bottom__ierogliph"></div>
+			</div>
+			<div class="hero-parallax-bottom__text">
+					<div class="hero-parallax-bottom__text-1"><span class="red">Orchestration</span>, not just <br>a gateway</div>
+					<div class="hero-parallax-bottom__text-2">- one layer connecting merchants, banks, technology providers and payment networks. Every payment is scored across providers on <span class="white">success rate, latency, health and cost</span> — and routed to the best rail, <span class="white">live</span>.</div>
+			</div>
+			<div class="hero-parallax-bottom__icon">
+					<img src="img/Icon_Katana.svg" alt="icon">
+			</div>
+		</div>
+
+
+
+		<section class="what-wait">
+			<div class="wrapper">
+					<h2 class="what-wait__ttl">The whole stack, from <br>button to settled rupee</h2>
+					<div class="what-wait__items">
+							<div class="what-wait__item">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-1.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t1">Hosted checkout, any language:</div>
+											<div class="what-wait__item-t2">POST a signed order, redirect to a hosted pay page — PHP, Node, Python, Go or WordPress.</div>
+									</div>
+							</div>
+							<div class="what-wait__item">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-2.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t1">Real-time <br>reconciliation:</div>
+											<div class="what-wait__item-t2">Every UPI credit captured, matched to its order and reconciled, with RRN/UTR tracking.</div>
+									</div>
+							</div>
+							<div class="what-wait__item">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-3.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t1">Smart multi-provider routing:</div>
+											<div class="what-wait__item-t2">Each payment scored on success rate, latency, health and cost — routed to the best rail, live.</div>
+									</div>
+							</div>
+							<div class="what-wait__item">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-4.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t1">On-device RRN capture:</div>
+											<div class="what-wait__item-t2">When banks expose no API, our agent reads the 12-digit UPI reference on-device so collections always reconcile.</div>
+									</div>
+							</div>
+							<div class="what-wait__item">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-5.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t1">Fast branch <br>settlements:</div>
+											<div class="what-wait__item-t2">Upline → Katana → branch settlement with immutable timelines, versioned commission rules and USDT or bank payouts.</div>
+									</div>
+							</div>
+							<div class="what-wait__item what-wait__item--last">
+									<div class="what-wait__item-bg">
+											<img src="img/what-wait-6.webp" alt="wait1">
+									</div>
+									<div class="what-wait__item-content">
+											<div class="what-wait__item-t3">Ready to start <br>collecting?</div>
+											<a href="/login" class="what-wait__item-btn btn">
+													<div class="btn-corners">
+															<div class="btn-corners__left-top"></div>
+															<div class="btn-corners__left-bot"></div>
+															<div class="btn-corners__right-top"></div>
+															<div class="btn-corners__right-bot"></div>
+													</div>
+													<div class="btn-dots"></div>
+													<span class="btn-content">GET STARTED</span>
+											</a>
+									</div>
+							</div>
+					</div>
+			</div>
+	</section>
+
+
+	<section class="go-together" id="go-together">
+    <div class="wrapper">
+        <div class="go-together__bg">
+            <div class="layer layer--1"><img src="img/samurai-team-1.webp" alt="team"></div>
+            <div class="layer layer--2"><img src="img/samurai-team-2.webp" alt="team"></div>
+        </div>
+        <div class="go-together__content">
+            <h2 class="go-together__h2 ttl-1">Built for the entire payments ecosystem</h2>
+            <h3 class="go-together__h3 subttl"><span class="white">One</span> orchestration layer for merchants, banks, technology providers and payment networks.</h3>
+            <div class="go-together__socs">
+                <a href="#vacancy-modal" class="go-together__soc" data-fancybox>
+                    <div class="go-together__soc-t1">FOR MERCHANTS</div>
+                    <div class="go-together__soc-t2">ACCEPT PAYMENTS</div>
+                    <div class="go-together__soc-arr">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+                            <path d="M0.988281 19.0117L19.0117 0.988281M19.0117 0.988281H3.31749M19.0117 0.988281V16.4682" stroke="#437EFF" stroke-width="1.2"/>
+                        </svg>
+                    </div>
+                </a>
+                <a href="#vacancy-modal" class="go-together__soc" data-fancybox>
+                    <div class="go-together__soc-t1">FOR BANKS</div>
+                    <div class="go-together__soc-t2">SETTLEMENT RAILS</div>
+                    <div class="go-together__soc-arr">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+                            <path d="M0.988281 19.0117L19.0117 0.988281M19.0117 0.988281H3.31749M19.0117 0.988281V16.4682" stroke="#437EFF" stroke-width="1.2"/>
+                        </svg>
+                    </div>
+                </a>
+                <a href="#vacancy-modal" class="go-together__soc" data-fancybox>
+                    <div class="go-together__soc-t1">FOR PROVIDERS</div>
+                    <div class="go-together__soc-t2">WHITE-LABEL</div>
+                    <div class="go-together__soc-arr">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+                            <path d="M0.988281 19.0117L19.0117 0.988281M19.0117 0.988281H3.31749M19.0117 0.988281V16.4682" stroke="#437EFF" stroke-width="1.2"/>
+                        </svg>
+                    </div>
+                </a>
+            </div>
+            <div class="go-together__bot-text">Plug into a growing orchestration network — merchants, banks, PSPs and referral partners:</div>
+            <div class="go-together__btn-wrap">
+                <a href="#vacancy-modal" data-fancybox class="hero__btn btn">
+                    <div class="btn-corners">
+                        <div class="btn-corners__left-top"></div>
+                        <div class="btn-corners__left-bot"></div>
+                        <div class="btn-corners__right-top"></div>
+                        <div class="btn-corners__right-bot"></div>
+                    </div>
+                    <div class="btn-dots"></div>
+                    <span class="btn-content">Become a Katana Partner</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<section class="confs">
+	<div class="wrapper">
+			<h2 class="confs__h2 ttl-1">Every rail your customers use</h2>
+			<h3 class="confs__h3 subttl">One integration, <span class="white">every payment method</span> your customers reach for. Collect on:</h3>
+			<div class="confs__items">
+					<div class="confs__item">
+							<div class="confs__item-bg"><img src="img/rail-upi.svg" alt="UPI"></div>
+							<div class="confs__item-content">
+									<div class="confs__item-name">UPI — Intent, Collect &amp; QR</div>
+							</div>
+					</div>
+					<div class="confs__item">
+							<div class="confs__item-bg"><img src="img/rail-cards.svg" alt="Cards"></div>
+							<div class="confs__item-content">
+									<div class="confs__item-name">Cards</div>
+							</div>
+					</div>
+					<div class="confs__item">
+							<div class="confs__item-bg"><img src="img/rail-netbanking.svg" alt="Net Banking"></div>
+							<div class="confs__item-content">
+									<div class="confs__item-name">Net Banking</div>
+							</div>
+					</div>
+					<div class="confs__item">
+							<div class="confs__item-bg"><img src="img/rail-wallets.svg" alt="Wallets"></div>
+							<div class="confs__item-content">
+									<div class="confs__item-name">Wallets</div>
+							</div>
+					</div>
+			</div>
+	</div>
+</section>
+
+<section class="bottom-block">
+	<div class="bottom-block__bg">
+			<div class="bottom-block__bg-item item-1"><img src="img/bottom-bg-1.webp" alt="bg1"></div>
+			<div class="bottom-block__bg-item item-2"><img src="img/bottom-bg-2.webp" alt="bg2"></div>
+	</div>
+	<div class="bottom-block__content">
+			<h2 class="bottom-block__h2 ttl-1">Ready to start <br>collecting?</h2>
+			<div class="bottom-block__form-wrap">
+					<div class="bottom-block__form-ttl">Talk to the Katana team</div>
+					<form action="" class="bottom-block__form">
+							<input type="text" name="name" placeholder="Your Name">
+							<input type="email" name="email" placeholder="Email">
+							<textarea name="mess" placeholder="Message"></textarea>
+							<div class="bottom-block__form-status" style="display:none;color:#9be7c4;font-size:14px;margin-bottom:12px"></div>
+							<div class="bottom-block__form-submit-wrap">
+									<button type="submit"></button>
+									<a href="#" class="bottom-block__form-submit btn">
+											<div class="btn-corners">
+													<div class="btn-corners__left-top"></div>
+													<div class="btn-corners__left-bot"></div>
+													<div class="btn-corners__right-top"></div>
+													<div class="btn-corners__right-bot"></div>
+											</div>
+											<div class="btn-dots"></div>
+											<span class="btn-content">Send</span>
+									</a>
+							</div>
+					</form>
+					<div class="bottom-block__form-connect">Or reach us directly</div>
+					<a href="mailto:hello@katanapay.co" class="bottom-block__form-tg">
+							<div class="bottom-block__form-tg-icon1">
+									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+											<path d="M7.84765 12.6505L7.51682 17.3039C7.99015 17.3039 8.19515 17.1005 8.44098 16.8564L10.6602 14.7355L15.2585 18.103C16.1018 18.573 16.696 18.3255 16.9235 17.3272L19.9418 3.18385L19.9427 3.18302C20.2102 1.93635 19.4918 1.44885 18.6702 1.75469L0.928482 8.54719C-0.282352 9.01719 -0.264019 9.69219 0.722648 9.99802L5.25848 11.4089L15.7943 4.81635C16.2901 4.48802 16.741 4.66969 16.3701 4.99802L7.84765 12.6505Z" fill="white"/>
+									</svg>
+							</div>
+							<span>Talk to our team</span>
+							<div class="bottom-block__form-tg-icon2">
+									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+											<path d="M6.98828 25.0117L25.0117 6.98828M25.0117 6.98828H9.31749M25.0117 6.98828V22.4682" stroke="#437EFF" stroke-width="1.2"/>
+									</svg>
+							</div>
+					</a>
+			</div>
+	</div>
+</section>
+
+
+	</div>
+
+	<div class="modals-wrapper">
+    <div class="modal vacancy-modal" id="vacancy-modal">
+        <div class="modal-close"></div>
+        <div class="modal-content">
+            <div class="vacancy-modal__wrapper">
+                <div class="vacancy-modal__left">
+                    <div class="vacancy-modal__head">
+                        <div class="vacancy-modal__head-t1">PARTNER WITH</div>
+                        <div class="vacancy-modal__head-t2">KATANA PAY</div>
+                        <div class="vacancy-modal__head-arr"><img src="img/right-arr.svg" alt="rr"></div>
+                    </div>
+                    <div class="vacancy-modal__left-content">
+                        <p>Katana Pay is a payment orchestration platform for UPI-first businesses — hosted checkout, real-time reconciliation, smart routing and fast settlements behind one signed API.</p>
+                        <h2>Who we partner with:</h2>
+                        <ul class="red-list">
+                            <li>Merchants accepting payments on UPI, cards, net banking and wallets.</li>
+                            <li>Banking partners providing collection, settlement and escrow rails.</li>
+                            <li>Technology providers embedding fully-branded, white-label payments.</li>
+                            <li>Payment partners plugging PSPs, gateways and acquiring banks into the network.</li>
+                        </ul>
+                        <h2>What you get:</h2>
+                        <ul class="blue-list">
+                            <li>Recurring revenue for every merchant you refer to Katana Pay.</li>
+                            <li>Smart multi-provider routing scored on success rate, latency, health and cost.</li>
+                            <li>Real-time reconciliation with RRN/UTR tracking on every credit.</li>
+                            <li>Fast upline → Katana → branch settlements with immutable timelines.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="vacancy-modal__right">
+                    <div class="vacancy-modal__right-ttl">Contact us</div>
+                    <form action="" class="vacancy-modal__right-form">
+                        <div class="input-container">
+                            <input type="text" id="input-name" name="name" required>
+                            <label for="input-name">Your Name</label>
+                        </div>
+                        <div class="input-container">
+                            <input type="email" id="input-email" name="email" required>
+                            <label for="input-email">Email</label>
+                        </div>
+                        <div class="input-container active">
+                            <select name="partner_type" id="input-vacancy">
+                                <option>Referral &amp; Affiliate</option>
+                                <option>Merchant</option>
+                                <option>Banking Partner</option>
+                                <option>Technology Provider</option>
+                                <option>Payment Partner</option>
+                            </select>
+                            <label for="input-vacancy">Partner type</label>
+                        </div>
+                        <div class="input-container">
+                            <textarea name="message" id="textarea-message"></textarea>
+                            <label for="input-message">Message</label>
+                        </div>
+                        <div class="vacancy-modal__right-status" style="display:none;color:#9be7c4;font-size:14px;margin:8px 0"></div>
+                        <div class="vacancy-modal__submit bottom-block__form-submit-wrap">
+                            <button type="submit"></button>
+                            <a href="#" class="bottom-block__form-submit btn">
+                                <div class="btn-corners">
+                                    <div class="btn-corners__left-top"></div>
+                                    <div class="btn-corners__left-bot"></div>
+                                    <div class="btn-corners__right-top"></div>
+                                    <div class="btn-corners__right-bot"></div>
+                                </div>
+                                <div class="btn-dots"></div>
+                                <span class="btn-content">Submit</span>
+                            </a>
+                        </div>
+                    </form>
+                    <div class="bottom-block__form-connect">or reach us via</div>
+                    <a href="mailto:hello@katanapay.co" class="bottom-block__form-tg">
+                        <div class="bottom-block__form-tg-icon1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+                                <path d="M7.84765 12.6505L7.51682 17.3039C7.99015 17.3039 8.19515 17.1005 8.44098 16.8564L10.6602 14.7355L15.2585 18.103C16.1018 18.573 16.696 18.3255 16.9235 17.3272L19.9418 3.18385L19.9427 3.18302C20.2102 1.93635 19.4918 1.44885 18.6702 1.75469L0.928482 8.54719C-0.282352 9.01719 -0.264019 9.69219 0.722648 9.99802L5.25848 11.4089L15.7943 4.81635C16.2901 4.48802 16.741 4.66969 16.3701 4.99802L7.84765 12.6505Z" fill="white"/>
+                            </svg>
+                        </div>
+                        <span>Talk to our team</span>
+                        <div class="bottom-block__form-tg-icon2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+                                <path d="M6.98828 25.0117L25.0117 6.98828M25.0117 6.98828H9.31749M25.0117 6.98828V22.4682" stroke="#437EFF" stroke-width="1.2"/>
+                            </svg>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+	</div>
+
+	<script src="js/libs.min.js"></script>
+	<script src="js/common.min.js"></script>
+	<script src="js/kp-nav.js"></script>
+	<script>
+	// Katana Pay — wire the contact forms to our public partner-inquiry API
+	// (POST /api/v1/partner-inquiry → lands in the admin panel). Shows inline status
+	// instead of alert() so it never blocks. /api/... stays same-origin regardless of
+	// the <base href="/landing/"> because it is a root-relative path.
+	(function () {
+		function statusEl(form) {
+			return form.querySelector('.bottom-block__form-status, .vacancy-modal__right-status');
+		}
+		function submit(form) {
+			var g = function (sel) { var el = form.querySelector(sel); return el ? (el.value || '').trim() : ''; };
+			var payload = {
+				name: g('[name=name]'),
+				email: g('[name=email]'),
+				phone: g('[name=phone]'),
+				company: g('[name=company]'),
+				partner_type: g('[name=partner_type]') || 'Referral & Affiliate',
+				message: g('[name=mess]') || g('[name=message]') || g('textarea'),
+				website: ''
+			};
+			var s = statusEl(form);
+			if (!payload.name || !payload.email) {
+				if (s) { s.style.display = 'block'; s.style.color = '#ff8a9b'; s.textContent = 'Please enter your name and email.'; }
+				return;
+			}
+			if (s) { s.style.display = 'block'; s.style.color = '#cbd5e1'; s.textContent = 'Sending…'; }
+			fetch('/api/v1/partner-inquiry', {
+				method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload)
+			}).then(function (r) {
+				return r.json().catch(function () { return {}; }).then(function (d) { return { ok: r.ok, d: d }; });
+			}).then(function (res) {
+				if (!s) return;
+				if (res.ok) { s.style.color = '#9be7c4'; s.textContent = "Thanks — we'll be in touch."; form.reset(); }
+				else { s.style.color = '#ff8a9b'; s.textContent = (res.d && res.d.error) || 'Something went wrong. Please try again.'; }
+			}).catch(function () {
+				if (s) { s.style.color = '#ff8a9b'; s.textContent = 'Network error. Please try again.'; }
+			});
+		}
+		document.querySelectorAll('.bottom-block__form, .vacancy-modal__right-form').forEach(function (form) {
+			form.addEventListener('submit', function (e) { e.preventDefault(); submit(form); });
+		});
+		// The styled ".btn" anchors sit next to a hidden submit button — forward their click.
+		document.querySelectorAll('.bottom-block__form-submit').forEach(function (a) {
+			a.addEventListener('click', function (e) {
+				e.preventDefault();
+				var form = a.closest('form');
+				if (form) submit(form);
+			});
+		});
+	})();
+	</script>
+</body>
+
+</html>

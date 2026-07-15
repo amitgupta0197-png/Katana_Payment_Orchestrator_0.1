@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="nbBase" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#101a29"/>
+      <stop offset="55%" stop-color="#08111c"/>
+      <stop offset="100%" stop-color="#03060b"/>
+    </radialGradient>
+    <radialGradient id="nbGlow" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.40"/>
+      <stop offset="55%" stop-color="#2563eb" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="nbStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="nbBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <radialGradient id="nbVig" cx="50%" cy="45%" r="75%">
+      <stop offset="55%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#02040a" stop-opacity="0.75"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1000" height="560" fill="url(#nbBase)"/>
+  <rect width="1000" height="560" fill="url(#nbGlow)"/>
+
+  <!-- faint connection network -->
+  <g stroke="#38bdf8" stroke-opacity="0.10" stroke-width="2">
+    <line x1="120" y1="470" x2="300" y2="360"/>
+    <line x1="880" y1="470" x2="700" y2="360"/>
+    <line x1="300" y1="360" x2="700" y2="360"/>
+  </g>
+  <g fill="#7dd3fc" fill-opacity="0.35">
+    <circle cx="120" cy="470" r="5"/><circle cx="880" cy="470" r="5"/>
+    <circle cx="300" cy="360" r="5"/><circle cx="700" cy="360" r="5"/>
+  </g>
+
+  <!-- bank building motif -->
+  <g transform="translate(500 262)" opacity="0.24" stroke="url(#nbStroke)" fill="none" stroke-width="6" stroke-linejoin="round" filter="url(#nbBlur)">
+    <path d="M -170 -70 L 0 -140 L 170 -70 Z"/>
+  </g>
+  <g transform="translate(500 262)" opacity="0.30" stroke="url(#nbStroke)" fill="none" stroke-width="5" stroke-linejoin="round">
+    <path d="M -170 -70 L 0 -140 L 170 -70 Z"/>
+    <line x1="-186" y1="-58" x2="186" y2="-58"/>
+    <!-- columns -->
+    <line x1="-130" y1="-58" x2="-130" y2="82"/>
+    <line x1="-72" y1="-58" x2="-72" y2="82"/>
+    <line x1="-14" y1="-58" x2="-14" y2="82"/>
+    <line x1="44" y1="-58" x2="44" y2="82"/>
+    <line x1="102" y1="-58" x2="102" y2="82"/>
+    <line x1="-186" y1="96" x2="186" y2="96"/>
+    <line x1="-206" y1="118" x2="206" y2="118"/>
+    <circle cx="0" cy="-96" r="10" fill="url(#nbStroke)" stroke="none"/>
+  </g>
+
+  <rect width="1000" height="560" fill="url(#nbVig)"/>
+  <rect y="360" width="1000" height="200" fill="#02040a" opacity="0.35"/>
+</svg>

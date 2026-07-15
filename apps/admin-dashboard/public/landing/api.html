@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<base href="/landing/">
+	<title>API — Katana Pay</title>
+	<meta name="description" content="Sign the order with your per-branch Key + Salt, POST it, and redirect to the returned pay_url. Katana handles UPI, reconciliation, and the signed status callback.">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" type="image/png" href="img/favicon.png">
+	<link rel="stylesheet" href="css/pages.css">
+</head>
+<body class="kp">
+
+	<div class="kp-bg" style="background-image:url('img/bg-api.svg')"></div>
+	<div class="kp-bottom" style="background-image:url('img/bottom-bg-1.webp');opacity:.4"></div>
+
+	<header class="kp-nav">
+		<a class="kp-nav__brand" href="/">Katana<span>Pay</span></a>
+		<nav class="kp-nav__links">
+			<a href="/landing/features.html">Features</a>
+			<a href="/landing/api.html" class="active">API</a>
+			<a href="/landing/pricing.html">Pricing</a>
+			<a href="/landing/docs.html">Docs</a>
+		</nav>
+		<a class="kp-nav__cta" href="/login">Console ↗</a>
+		<button class="kp-nav__toggle" type="button" aria-label="Menu"><span></span></button>
+	</header>
+
+	<main class="kp-main">
+		<section class="kp-wrap kp-hero">
+			<span class="kp-eyebrow">Developer API</span>
+			<h1 class="kp-h1">Integrate in<br><span class="g">an afternoon.</span></h1>
+			<p class="kp-lede">One request to charge. Sign, POST, redirect — Katana handles UPI, reconciliation, and the signed status callback.</p>
+		</section>
+
+		<section class="kp-wrap kp-section">
+			<div class="kp-split">
+				<div>
+					<span class="kp-pill">
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+						One request to charge
+					</span>
+					<h2 class="kp-h1" style="font-size:clamp(2rem,4vw,3rem);margin-top:20px">One signed call.</h2>
+					<p class="kp-lede">Sign the order with your per-branch Key + Salt, POST it, and redirect the customer to the returned <code class="m" style="padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.08)">pay_url</code>. We handle UPI, reconciliation, and the signed status callback.</p>
+					<ul class="kp-ticks">
+						<li>No card / bank rails to touch</li>
+						<li>Signed requests + signed callbacks</li>
+						<li>Idempotent, RRN-tracked, auditable</li>
+					</ul>
+					<div class="kp-btns">
+						<a class="kp-btn kp-btn--primary" href="/login">Get API keys
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+						<a class="kp-btn kp-btn--ghost" href="/landing/docs.html">Full docs</a>
+					</div>
+				</div>
+
+				<div class="kp-code">
+					<div class="kp-code__bar"><i></i><i></i><i></i><span class="kp-code__name">katana-pay · order.sh</span></div>
+<pre id="apiPre" style="min-height:392px"><span class="h">POST /api/v1/katana-pay/order</span>
+{
+  <span class="k">"key"</span><span class="c">: </span><span class="s">"mk_live_9e8dc9f96eb6"</span>,
+  <span class="k">"txnid"</span><span class="c">: </span><span class="s">"ORDER-10294"</span>,
+  <span class="k">"amount"</span><span class="c">: </span><span class="s">"2499.00"</span>,
+  <span class="k">"productinfo"</span><span class="c">: </span><span class="s">"Pro subscription"</span>,
+  <span class="k">"email"</span><span class="c">: </span><span class="s">"buyer@acme.in"</span>,
+  <span class="k">"hash"</span><span class="c">: </span><span class="s">"e3b0c44298fc1c149afbf4c8996fb924…"</span>,
+  <span class="k">"notify_url"</span><span class="c">: </span><span class="s">"https://acme.in/api/katana/callback"</span>
+}
+
+<span class="h">← 200 OK</span>
+{
+  <span class="k">"pay_url"</span><span class="c">: </span><span class="s">"https://katanapay.co/pay/8f2a…"</span>,
+  <span class="k">"status"</span><span class="c">: </span><span class="s">"CREATED"</span>
+}</pre>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<footer class="kp-footer">
+		<div class="kp-wrap">
+			<a class="kp-footer__brand" href="/">Katana<span>Pay</span></a>
+			<nav class="kp-footer__links">
+				<a href="/landing/features.html">Features</a>
+				<a href="/landing/api.html">API</a>
+				<a href="/landing/pricing.html">Pricing</a>
+				<a href="/landing/docs.html">Docs</a>
+				<a href="/login">Console</a>
+			</nav>
+			<p class="kp-footer__note">Katana Pay — payment orchestration for UPI-first businesses.</p>
+		</div>
+	</footer>
+
+	<script>
+	// Types the payload out character-by-character when the terminal scrolls into view,
+	// then swaps in the syntax-highlighted markup — same effect as the original React
+	// ApiTerminal (~90 chars/sec, blinking caret).
+	(function () {
+		var pre = document.getElementById('apiPre');
+		if (!pre) return;
+		var finalHTML = pre.innerHTML;      // highlighted markup (the end state)
+		var plain = pre.textContent;        // the same text, unstyled (the source)
+		var started = false;
+
+		function run() {
+			if (started) return; started = true;
+			pre.classList.add('kp-typing');
+			var caret = document.createElement('span');
+			caret.className = 'kp-caret';
+			var i = 0, last = 0, CPS = 90;
+			function step(t) {
+				if (!last) last = t;
+				i += ((t - last) / 1000) * CPS; last = t;
+				var n = Math.min(plain.length, Math.floor(i));
+				pre.textContent = plain.slice(0, n);
+				pre.appendChild(caret);
+				if (n < plain.length) { requestAnimationFrame(step); }
+				else { pre.classList.remove('kp-typing'); pre.innerHTML = finalHTML; }
+			}
+			requestAnimationFrame(step);
+		}
+
+		var target = pre.closest('.kp-code') || pre;
+		if ('IntersectionObserver' in window) {
+			var io = new IntersectionObserver(function (entries) {
+				entries.forEach(function (e) { if (e.isIntersecting) { run(); io.disconnect(); } });
+			}, { threshold: 0.35 });
+			io.observe(target);
+		} else { run(); }
+	})();
+	</script>
+	<script src="js/kp-nav.js"></script>
+
+</body>
+</html>

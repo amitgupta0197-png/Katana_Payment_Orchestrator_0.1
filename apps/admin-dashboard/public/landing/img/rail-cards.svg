@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="cardBase" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#171029"/>
+      <stop offset="55%" stop-color="#0d0819"/>
+      <stop offset="100%" stop-color="#05030b"/>
+    </radialGradient>
+    <radialGradient id="cardGlow" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.42"/>
+      <stop offset="55%" stop-color="#4c3aa8" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardFace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="cardBack" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <filter id="cardBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <radialGradient id="cardVig" cx="50%" cy="45%" r="75%">
+      <stop offset="55%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#03020a" stop-opacity="0.75"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1000" height="560" fill="url(#cardBase)"/>
+  <rect width="1000" height="560" fill="url(#cardGlow)"/>
+
+  <g stroke="#a78bfa" stroke-opacity="0.10" stroke-width="2">
+    <line x1="-40" y1="140" x2="360" y2="-40"/>
+    <line x1="700" y1="600" x2="1080" y2="340"/>
+  </g>
+
+  <!-- back card (offset, faint) -->
+  <g transform="translate(500 262) rotate(-12)" opacity="0.16">
+    <rect x="-190" y="-118" width="360" height="228" rx="26" fill="none" stroke="url(#cardBack)" stroke-width="5"/>
+  </g>
+
+  <!-- front card -->
+  <g transform="translate(500 268) rotate(-9)" opacity="0.26">
+    <rect x="-200" y="-126" width="400" height="252" rx="28" fill="none" stroke="url(#cardFace)" stroke-width="6" filter="url(#cardBlur)"/>
+    <rect x="-200" y="-126" width="400" height="252" rx="28" fill="none" stroke="url(#cardFace)" stroke-width="4"/>
+    <!-- chip -->
+    <rect x="-150" y="-70" width="64" height="48" rx="9" fill="url(#cardFace)" opacity="0.9"/>
+    <line x1="-150" y1="-46" x2="-86" y2="-46" stroke="#0d0819" stroke-width="3"/>
+    <line x1="-118" y1="-70" x2="-118" y2="-22" stroke="#0d0819" stroke-width="3"/>
+    <!-- contactless -->
+    <g fill="none" stroke="#c4b5fd" stroke-width="4" stroke-linecap="round">
+      <path d="M -64 -66 a 26 26 0 0 1 0 40"/>
+      <path d="M -46 -74 a 40 40 0 0 1 0 56"/>
+    </g>
+    <!-- number dots -->
+    <g fill="#ddd6fe">
+      <rect x="-150" y="26" width="44" height="12" rx="6"/>
+      <rect x="-96" y="26" width="44" height="12" rx="6"/>
+      <rect x="-42" y="26" width="44" height="12" rx="6"/>
+      <rect x="12" y="26" width="44" height="12" rx="6"/>
+    </g>
+    <rect x="-150" y="66" width="150" height="10" rx="5" fill="#a78bfa" opacity="0.7"/>
+  </g>
+
+  <rect width="1000" height="560" fill="url(#cardVig)"/>
+  <rect y="360" width="1000" height="200" fill="#04030b" opacity="0.35"/>
+</svg>

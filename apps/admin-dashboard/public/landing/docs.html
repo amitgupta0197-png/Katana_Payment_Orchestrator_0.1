@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<base href="/landing/">
+	<title>Docs — Katana Pay</title>
+	<meta name="description" content="Katana Pay developer docs: credentials, endpoints, creating a signed order, request signing, and verifying the status callback.">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" type="image/png" href="img/favicon.png">
+	<link rel="stylesheet" href="css/pages.css">
+</head>
+<body class="kp">
+
+	<div class="kp-bg" style="background-image:url('img/bg-docs.svg')"></div>
+	<img class="kp-bottom-scene" src="img/hero-parallax-first.webp" alt="" style="opacity:.92">
+
+	<header class="kp-nav">
+		<a class="kp-nav__brand" href="/">Katana<span>Pay</span></a>
+		<nav class="kp-nav__links">
+			<a href="/landing/features.html">Features</a>
+			<a href="/landing/api.html">API</a>
+			<a href="/landing/pricing.html">Pricing</a>
+			<a href="/landing/docs.html" class="active">Docs</a>
+		</nav>
+		<a class="kp-nav__cta" href="/login">Console ↗</a>
+		<button class="kp-nav__toggle" type="button" aria-label="Menu"><span></span></button>
+	</header>
+
+	<main class="kp-main">
+		<section class="kp-wrap kp-hero" style="padding-bottom:8px">
+			<span class="kp-eyebrow">Documentation</span>
+			<h1 class="kp-h1">Integrate in<br><span class="g">an afternoon.</span></h1>
+			<p class="kp-lede">Any language that can sign a request and read a callback can take payments with Katana Pay. Here's the whole flow.</p>
+		</section>
+
+		<section class="kp-wrap kp-section">
+			<div class="kp-doc">
+				<article class="kp-panel">
+					<div class="kp-panel__h"><span class="kp-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8" cy="14" r="4"/><path d="M11 11l7-7 3 3M15 7l2 2"/></svg></span><h2>1 · Credentials (Key + Salt)</h2></div>
+					<p>Generate a per-branch <b>Key</b> and <b>Salt</b> from your provider console under <span class="m">Developers</span>. The Key goes in every request; the Salt signs the hash and is shown only once — store it server-side.</p>
+				</article>
+
+				<article class="kp-panel">
+					<div class="kp-panel__h"><span class="kp-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 7H6a3 3 0 0 0 0 6h3M15 7h3a3 3 0 0 1 0 6h-3M8 10h8"/></svg></span><h2>2 · Endpoints</h2></div>
+					<ul>
+						<li><span class="c" style="color:var(--ink-faint)">Create order (POST)</span><br><span class="m">https://katanapay.co/api/v1/katana-pay/order</span></li>
+						<li><span class="c" style="color:var(--ink-faint)">Hosted payment page</span><br><span class="m">https://katanapay.co/pay/{order_id}</span></li>
+						<li><span class="c" style="color:var(--ink-faint)">Status enquiry (GET)</span><br><span class="m">https://katanapay.co/api/pay-status/{order_id}</span></li>
+					</ul>
+				</article>
+
+				<article class="kp-panel">
+					<div class="kp-panel__h"><span class="kp-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 7l4 4-4 4M12 15h6"/><rect x="2.5" y="3" width="19" height="18" rx="2.5"/></svg></span><h2>3 · Create the order</h2></div>
+					<p>Server-side. Returns a <span class="m">pay_url</span> you redirect the customer to.</p>
+					<div class="kp-code">
+						<div class="kp-code__bar"><i></i><i></i><i></i><span class="kp-code__name">create-order.sh</span></div>
+<pre><span class="h">curl -X POST</span> https://katanapay.co/api/v1/katana-pay/order \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{
+    <span class="k">"key"</span>: <span class="s">"mk_your_key"</span>,
+    <span class="k">"txnid"</span>: <span class="s">"ORDER-1001"</span>,
+    <span class="k">"amount"</span>: <span class="s">"100.00"</span>,
+    <span class="k">"productinfo"</span>: <span class="s">"Order 1001"</span>,
+    <span class="k">"email"</span>: <span class="s">"buyer@example.com"</span>,
+    <span class="k">"hash"</span>: <span class="s">"&lt;computed: see signing&gt;"</span>,
+    <span class="k">"return_url"</span>: <span class="s">"https://your-site.com/payment/return"</span>,
+    <span class="k">"notify_url"</span>: <span class="s">"https://your-site.com/api/katana/callback"</span>
+  }'
+
+<span class="c"># → { "pay_url": "https://katanapay.co/pay/&lt;id&gt;", ... }</span></pre>
+					</div>
+					<p style="margin-top:16px">Sign the request with your Key + Salt:</p>
+					<div class="kp-code">
+						<div class="kp-code__bar"><i></i><i></i><i></i><span class="kp-code__name">signing</span></div>
+<pre><span class="c">// HMAC_SHA256</span>
+data = txnid + <span class="s">"|"</span> + amount + <span class="s">"|"</span> + productinfo + <span class="s">"|"</span> + email
+hash = <span class="h">HMAC_SHA256</span>( key = (KEY + SALT), message = data )   <span class="c">// lowercase hex</span></pre>
+					</div>
+				</article>
+
+				<article class="kp-panel">
+					<div class="kp-panel__h"><span class="kp-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v6M12 9l3-3M12 9L9 6"/><path d="M4 13a8 8 0 0 0 16 0"/><circle cx="12" cy="17" r="1.4"/></svg></span><h2>4 · Receive the status callback</h2></div>
+					<p>We POST the terminal status to your <span class="m">notify_url</span>. Verify the HASH with your Salt, then mark the order paid and reply HTTP 200.</p>
+					<div class="kp-code">
+						<div class="kp-code__bar"><i></i><i></i><i></i><span class="kp-code__name">callback</span></div>
+<pre>{ <span class="k">"ORDER_ID"</span>:<span class="s">"ORDER-1001"</span>, <span class="k">"STATUS"</span>:<span class="s">"Captured"</span>, <span class="k">"RESPONSE_CODE"</span>:<span class="s">"000"</span>,
+  <span class="k">"RRN"</span>:<span class="s">"..."</span>, <span class="k">"HASH"</span>:<span class="s">"&lt;uppercase sha256&gt;"</span> }
+
+<span class="c">// verify: sort fields (except HASH) ascending, join KEY=value with "~",</span>
+<span class="c">// append your SALT, SHA256 -> hex -> UPPERCASE  ==  HASH</span>
+<span class="c">// STATUS="Captured" & RESPONSE_CODE="000"  =>  paid</span></pre>
+					</div>
+				</article>
+			</div>
+
+			<div class="kp-btns">
+				<a class="kp-btn kp-btn--primary" href="/login">Get your API keys
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+				<a class="kp-btn kp-btn--ghost" href="/katana-pay-integration.html" target="_blank" rel="noopener">Full integration guide</a>
+			</div>
+		</section>
+	</main>
+
+	<footer class="kp-footer">
+		<div class="kp-wrap">
+			<a class="kp-footer__brand" href="/">Katana<span>Pay</span></a>
+			<nav class="kp-footer__links">
+				<a href="/landing/features.html">Features</a>
+				<a href="/landing/api.html">API</a>
+				<a href="/landing/pricing.html">Pricing</a>
+				<a href="/landing/docs.html">Docs</a>
+				<a href="/login">Console</a>
+			</nav>
+			<p class="kp-footer__note">Katana Pay — payment orchestration for UPI-first businesses.</p>
+		</div>
+	</footer>
+
+	<script src="js/kp-nav.js"></script>
+</body>
+</html>

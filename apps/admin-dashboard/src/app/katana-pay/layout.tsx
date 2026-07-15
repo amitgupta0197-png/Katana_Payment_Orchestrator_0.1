@@ -9,7 +9,6 @@ import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { FloatingNav } from "./_experience/FloatingNav";
 import { SiteFooter } from "./_experience/SiteFooter";
-import { SplashScreen } from "./_experience/SplashScreen";
 import { scrollState } from "./_experience/cameraStore";
 
 const Scene = dynamic(() => import("./_experience/Scene"), { ssr: false });
@@ -29,8 +28,6 @@ export default function KatanaPayLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="relative min-h-screen text-white antialiased">
-      {/* One-time intro video on first visit (self-dismisses; localStorage-gated). */}
-      <SplashScreen />
       {/* Opaque fallback behind the canvas (shows if WebGL is unavailable). */}
       <div className="fixed inset-0 -z-10 bg-[#020207]" />
       <Scene />

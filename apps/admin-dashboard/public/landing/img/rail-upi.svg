@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="upiBase" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#151024"/>
+      <stop offset="55%" stop-color="#0c0817"/>
+      <stop offset="100%" stop-color="#05030b"/>
+    </radialGradient>
+    <radialGradient id="upiGlow" cx="50%" cy="42%" r="45%">
+      <stop offset="0%" stop-color="#12b981" stop-opacity="0.42"/>
+      <stop offset="55%" stop-color="#0e7a63" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="upiStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="upiBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <radialGradient id="upiVig" cx="50%" cy="45%" r="75%">
+      <stop offset="55%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#03020a" stop-opacity="0.75"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1000" height="560" fill="url(#upiBase)"/>
+  <rect width="1000" height="560" fill="url(#upiGlow)"/>
+
+  <!-- katana diagonal shard accents -->
+  <g stroke="#34d399" stroke-opacity="0.10" stroke-width="2">
+    <line x1="-40" y1="120" x2="360" y2="-60"/>
+    <line x1="700" y1="620" x2="1080" y2="360"/>
+  </g>
+
+  <!-- QR motif (scan-to-pay) -->
+  <g transform="translate(500 262)" opacity="0.22">
+    <g stroke="url(#upiStroke)" stroke-width="6" fill="none" filter="url(#upiBlur)">
+      <rect x="-120" y="-120" width="70" height="70" rx="10"/>
+      <rect x="50" y="-120" width="70" height="70" rx="10"/>
+      <rect x="-120" y="50" width="70" height="70" rx="10"/>
+    </g>
+    <g fill="url(#upiStroke)">
+      <rect x="-104" y="-104" width="38" height="38" rx="5"/>
+      <rect x="66" y="-104" width="38" height="38" rx="5"/>
+      <rect x="-104" y="66" width="38" height="38" rx="5"/>
+    </g>
+    <g fill="#a7f3d0" fill-opacity="0.9">
+      <rect x="34" y="34" width="16" height="16" rx="3"/>
+      <rect x="64" y="34" width="16" height="16" rx="3"/>
+      <rect x="94" y="64" width="16" height="16" rx="3"/>
+      <rect x="34" y="94" width="16" height="16" rx="3"/>
+      <rect x="94" y="34" width="16" height="16" rx="3"/>
+      <rect x="64" y="94" width="16" height="16" rx="3"/>
+    </g>
+  </g>
+  <!-- scan line -->
+  <rect x="360" y="255" width="280" height="3" fill="#6ee7b7" opacity="0.5" filter="url(#upiBlur)"/>
+
+  <rect width="1000" height="560" fill="url(#upiVig)"/>
+  <rect y="360" width="1000" height="200" fill="#04030b" opacity="0.35"/>
+</svg>

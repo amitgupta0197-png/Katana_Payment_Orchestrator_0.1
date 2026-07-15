@@ -143,13 +143,15 @@ export async function middleware(req: NextRequest) {
     // picks its standalone (chrome-less) shell. Logged-in users fall through to their
     // dashboard below.
     if (pathname === "/") {
-      const headers = new Headers(req.headers);
-      headers.set("x-pathname", "/katana-pay");
+      // Serve the static samurai landing (public/landing/index.html) in place at "/".
+      // Force http on the app's own listener so Next serves it internally (the https +
+      // -H 127.0.0.1 combo otherwise self-proxies over TLS and 500s). The site's
+      // <base href="/landing/"> resolves its assets and nav links.
       const dest = req.nextUrl.clone();
       dest.protocol = "http:";
       dest.host = "127.0.0.1:3100";
-      dest.pathname = "/katana-pay";
-      return NextResponse.rewrite(dest, { request: { headers } });
+      dest.pathname = "/landing/index.html";
+      return NextResponse.rewrite(dest);
     }
     const url = req.nextUrl.clone();
     url.pathname = "/login";
@@ -191,5 +193,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|map|apk|pdf|html|mp4|webm|mov)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|map|apk|pdf|html|mp4|webm|mov|woff2?|ttf|eot|otf|json)$).*)"],
 };

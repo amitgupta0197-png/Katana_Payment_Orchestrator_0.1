@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="dGlow" cx="85%" cy="18%" r="55%">
+      <stop offset="0%" stop-color="#5b8cff" stop-opacity="0.18"/>
+      <stop offset="55%" stop-color="#5b8cff" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dGlow2" cx="12%" cy="90%" r="52%">
+      <stop offset="0%" stop-color="#e0455c" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#dGlow)"/>
+  <rect width="1600" height="1000" fill="url(#dGlow2)"/>
+  <!-- stacked document pages -->
+  <g opacity="0.08" stroke="#8fb6ff" fill="none" stroke-width="4" stroke-linejoin="round">
+    <path d="M 1140 300 h 220 l 60 60 v 300 h -280 z"/>
+    <path d="M 1360 300 l 60 60 h -60 z"/>
+    <g stroke-width="6" stroke-linecap="round" opacity="0.9">
+      <line x1="1180" y1="380" x2="1360" y2="380"/>
+      <line x1="1180" y1="430" x2="1380" y2="430"/>
+      <line x1="1180" y1="480" x2="1320" y2="480"/>
+      <line x1="1180" y1="530" x2="1380" y2="530"/>
+      <line x1="1180" y1="580" x2="1300" y2="580"/>
+    </g>
+    <path d="M 1100 340 h 220 l 60 60 v 300 h -280 z" opacity="0.5"/>
+  </g>
+  <!-- flow nodes (integration) bottom-left -->
+  <g opacity="0.09" stroke="#7fd7ff" fill="none" stroke-width="4">
+    <circle cx="220" cy="760" r="26"/>
+    <circle cx="420" cy="700" r="26"/>
+    <circle cx="360" cy="880" r="26"/>
+    <line x1="244" y1="748" x2="396" y2="712"/>
+    <line x1="240" y1="782" x2="342" y2="856"/>
+  </g>
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="2">
+    <line x1="1060" y1="-60" x2="1600" y2="320"/>
+    <line x1="0" y1="700" x2="540" y2="1060"/>
+  </g>
+</svg>

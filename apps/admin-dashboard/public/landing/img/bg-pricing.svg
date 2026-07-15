@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="pGlow" cx="84%" cy="16%" r="55%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.16"/>
+      <stop offset="50%" stop-color="#e0455c" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pGlow2" cx="12%" cy="90%" r="52%">
+      <stop offset="0%" stop-color="#5b8cff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pBar" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#e0455c" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ff8a5b" stop-opacity="0.7"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#pGlow)"/>
+  <rect width="1600" height="1000" fill="url(#pGlow2)"/>
+  <!-- ascending bars (growth) -->
+  <g opacity="0.09" fill="url(#pBar)">
+    <rect x="1120" y="720" width="70" height="180" rx="10"/>
+    <rect x="1220" y="600" width="70" height="300" rx="10"/>
+    <rect x="1320" y="440" width="70" height="460" rx="10"/>
+    <rect x="1420" y="260" width="70" height="640" rx="10"/>
+  </g>
+  <!-- trend arrow -->
+  <g opacity="0.10" stroke="#ffb27a" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 1120 800 L 1250 660 L 1330 720 L 1470 500"/>
+    <path d="M 1400 500 L 1470 500 L 1470 570"/>
+  </g>
+  <!-- faint coins bottom-left -->
+  <g opacity="0.08" stroke="#fbbf24" fill="none" stroke-width="5">
+    <ellipse cx="300" cy="860" rx="70" ry="26"/>
+    <ellipse cx="300" cy="820" rx="70" ry="26"/>
+  </g>
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="2">
+    <line x1="0" y1="260" x2="520" y2="-40"/>
+    <line x1="1040" y1="1060" x2="1600" y2="720"/>
+  </g>
+</svg>

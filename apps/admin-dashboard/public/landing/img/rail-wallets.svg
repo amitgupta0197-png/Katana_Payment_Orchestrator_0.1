@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="wBase" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#231425"/>
+      <stop offset="55%" stop-color="#140b15"/>
+      <stop offset="100%" stop-color="#08040a"/>
+    </radialGradient>
+    <radialGradient id="wGlow" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.38"/>
+      <stop offset="55%" stop-color="#e11d48" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#fb7185"/>
+    </linearGradient>
+    <filter id="wBlur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <radialGradient id="wVig" cx="50%" cy="45%" r="75%">
+      <stop offset="55%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#06030a" stop-opacity="0.75"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1000" height="560" fill="url(#wBase)"/>
+  <rect width="1000" height="560" fill="url(#wGlow)"/>
+
+  <g stroke="#fbbf24" stroke-opacity="0.10" stroke-width="2">
+    <line x1="-40" y1="150" x2="360" y2="-30"/>
+    <line x1="700" y1="600" x2="1080" y2="330"/>
+  </g>
+
+  <!-- floating coins -->
+  <g opacity="0.5" filter="url(#wBlur)">
+    <circle cx="690" cy="150" r="26" fill="none" stroke="url(#wStroke)" stroke-width="5"/>
+    <circle cx="742" cy="196" r="18" fill="none" stroke="url(#wStroke)" stroke-width="4"/>
+  </g>
+  <g opacity="0.85" fill="#fcd34d" font-family="Arial, sans-serif" font-weight="700">
+    <text x="690" y="160" font-size="26" text-anchor="middle">₹</text>
+  </g>
+
+  <!-- wallet motif -->
+  <g transform="translate(490 272)" opacity="0.26" stroke="url(#wStroke)" fill="none" stroke-width="6" stroke-linejoin="round" filter="url(#wBlur)">
+    <rect x="-180" y="-96" width="360" height="200" rx="26"/>
+  </g>
+  <g transform="translate(490 272)" opacity="0.32">
+    <rect x="-180" y="-96" width="360" height="200" rx="26" fill="none" stroke="url(#wStroke)" stroke-width="5"/>
+    <!-- card slot flap -->
+    <path d="M -180 -40 h 300 a 22 22 0 0 1 22 22 v 20 a 22 22 0 0 1 -22 22 h -300 Z" fill="none" stroke="url(#wStroke)" stroke-width="5"/>
+    <!-- clasp button -->
+    <circle cx="150" cy="4" r="12" fill="url(#wStroke)" stroke="none"/>
+    <!-- card peeking -->
+    <rect x="40" y="-118" width="130" height="46" rx="10" fill="none" stroke="#fbbf24" stroke-width="4" opacity="0.8"/>
+  </g>
+
+  <rect width="1000" height="560" fill="url(#wVig)"/>
+  <rect y="360" width="1000" height="200" fill="#06030a" opacity="0.35"/>
+</svg>
