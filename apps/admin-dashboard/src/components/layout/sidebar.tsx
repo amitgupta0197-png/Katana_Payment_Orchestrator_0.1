@@ -24,15 +24,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const visibleItems = personaNav(navItems, persona);
   const personaLabel = persona.toLowerCase().replace(/_/g, "-");
 
-  // Collapsible groups — remembered across sessions. The group holding the
-  // current page is always rendered open so the active link never disappears.
+  // Collapsible groups — CLOSED by default (absent key = collapsed); a group the
+  // user opens is remembered across sessions. The group holding the current page
+  // is always rendered open so the active link never disappears.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     try { setCollapsed(JSON.parse(localStorage.getItem("katana.nav.collapsed") ?? "{}")); } catch { /* ignore */ }
   }, []);
   const toggleGroup = (group: string) => {
     setCollapsed((prev) => {
-      const next = { ...prev, [group]: !prev[group] };
+      const next = { ...prev, [group]: !(prev[group] ?? true) };
       try { localStorage.setItem("katana.nav.collapsed", JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
@@ -54,7 +55,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           const items = visibleItems.filter((i) => i.group === group);
           if (items.length === 0) return null;
           const containsActive = items.some((i) => i.href === "/" ? pathname === "/" : pathname.startsWith(i.href));
-          const isCollapsed = !!collapsed[group] && !containsActive;
+          const isCollapsed = (collapsed[group] ?? true) && !containsActive;
           return (
             <div key={group}>
               <button
