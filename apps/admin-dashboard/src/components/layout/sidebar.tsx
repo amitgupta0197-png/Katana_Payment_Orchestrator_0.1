@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Swords, Menu, X } from "lucide-react";
+import { Swords, Menu, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { navGroups, navItems, personaNav, type NavPersona } from "@/lib/nav";
@@ -24,6 +24,20 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const visibleItems = personaNav(navItems, persona);
   const personaLabel = persona.toLowerCase().replace(/_/g, "-");
 
+  // Collapsible groups — remembered across sessions. The group holding the
+  // current page is always rendered open so the active link never disappears.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try { setCollapsed(JSON.parse(localStorage.getItem("katana.nav.collapsed") ?? "{}")); } catch { /* ignore */ }
+  }, []);
+  const toggleGroup = (group: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [group]: !prev[group] };
+      try { localStorage.setItem("katana.nav.collapsed", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   return (
     <>
       <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -35,13 +49,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">Payment Orchestrator</span>
         </div>
       </div>
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
         {navGroups.map((group) => {
           const items = visibleItems.filter((i) => i.group === group);
           if (items.length === 0) return null;
+          const containsActive = items.some((i) => i.href === "/" ? pathname === "/" : pathname.startsWith(i.href));
+          const isCollapsed = !!collapsed[group] && !containsActive;
           return (
             <div key={group}>
-              <h4 className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--color-text-subtle)]">{group}</h4>
+              <button
+                type="button"
+                onClick={() => toggleGroup(group)}
+                aria-expanded={!isCollapsed}
+                className="group/hdr flex w-full items-center gap-1.5 rounded-md px-3 mb-1 py-1 text-[10px] font-semibold uppercase tracking-widest text-[color:var(--color-text-subtle)] hover:text-[color:var(--color-text-muted)]"
+              >
+                <span className="flex-1 truncate text-left">{group}</span>
+                {isCollapsed && <span className="rounded-full bg-[color:var(--color-surface-muted)] px-1.5 text-[9px] tabular-nums normal-case tracking-normal">{items.length}</span>}
+                <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", isCollapsed && "-rotate-90")} aria-hidden />
+              </button>
+              {isCollapsed ? null : (
               <ul className="space-y-0.5">
                 {items.map((item) => {
                   const Icon = item.icon;
@@ -68,6 +94,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                   );
                 })}
               </ul>
+              )}
             </div>
           );
         })}

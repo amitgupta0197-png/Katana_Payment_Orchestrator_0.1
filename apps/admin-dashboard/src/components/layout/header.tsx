@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { LogoutButton } from "./logout-button";
 import { ThemeToggle } from "./theme-toggle";
 import { MobileNav } from "./sidebar";
+import { NavSearch } from "./nav-search";
 
 export async function Header() {
   // headers() is awaited so we can later read x-session-persona if needed.
@@ -32,6 +33,11 @@ export async function Header() {
           </Badge>
         )}
       </div>
+      {session && (
+        <div className="hidden flex-1 justify-center px-2 sm:flex">
+          <NavSearch />
+        </div>
+      )}
       <div className="flex items-center gap-3">
         {session && (
           <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
