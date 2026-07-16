@@ -128,9 +128,14 @@ export async function POST(req: Request) {
       // Ensure a MERCHANT persona scoped to this merchant (idempotent).
       // Cross-service merchant identity is the merchant_code (varchar), not the uuid
       // PK — scope_id MUST be the code or every merchant-scoped query returns nothing.
+      // is_primary only when the user has no primary persona yet — the DB allows one
+      // primary per user (user_personas_one_primary), e.g. an email that already
+      // holds a provider/banker login.
       await rows("iam", `
         INSERT INTO user_personas (id, user_id, persona_kind, scope_id, scope_label, is_primary, granted_by)
-        SELECT gen_random_uuid(), $1::uuid, 'MERCHANT', $2, $3, true, $4
+        SELECT gen_random_uuid(), $1::uuid, 'MERCHANT', $2, $3,
+               NOT EXISTS (SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND is_primary),
+               $4
         WHERE NOT EXISTS (
           SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND persona_kind = 'MERCHANT' AND scope_id = $2
         )

@@ -106,9 +106,13 @@ export async function POST(req: Request) {
     }
     // Ensure a BANKER persona scoped to this banker_id (idempotent). scope_id is the
     // banker_id text used across the DT tables (dt_purchases.banker_id etc.).
+    // is_primary only when the user has no primary persona yet — the DB allows one
+    // primary per user (user_personas_one_primary), e.g. a shared provider email.
     await rows("iam", `
       INSERT INTO user_personas (id, user_id, persona_kind, scope_id, scope_label, is_primary, granted_by)
-      SELECT gen_random_uuid(), $1::uuid, 'BANKER', $2, $3, true, $4
+      SELECT gen_random_uuid(), $1::uuid, 'BANKER', $2, $3,
+             NOT EXISTS (SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND is_primary),
+             $4
       WHERE NOT EXISTS (
         SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND persona_kind = 'BANKER' AND scope_id = $2
       )

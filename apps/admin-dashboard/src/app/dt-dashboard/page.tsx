@@ -3,10 +3,12 @@
 // DT Business dashboard (BRD §10 UI-001). KPIs across DT purchases, traffic quota,
 // security reserve and commission, plus the current Katana-controlled DT rate.
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Coins, Save } from "lucide-react";
+import { Coins, Save, Droplets, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -21,7 +23,8 @@ interface Kpis {
   traffic_quota: number; reserved: number; consumed_traffic: number; available_traffic: number;
   security_reserve: number; banker_commission: number; katana_margin: number; merchant_charge: number;
 }
-interface Data { kpis: Kpis; rate: { rate: number; currency: string; version: number } | null }
+interface OpenRefill { id: string; banker_id: string; quantity: number | null; trigger: string; status: string; created_by: string; created_at: string }
+interface Data { kpis: Kpis; rate: { rate: number; currency: string; version: number } | null; open_refills?: OpenRefill[] }
 
 export default function DtDashboardPage() {
   const qc = useQueryClient();
@@ -91,6 +94,37 @@ export default function DtDashboardPage() {
         <KpiTile label="Banker commission" value={k ? formatAmount(k.banker_commission) : "—"} loading={loading} />
         <KpiTile label="Katana margin" value={k ? formatAmount(k.katana_margin) : "—"} variant="success" loading={loading} />
       </div>
+
+      {/* Pending refill requests — raised by bankers from the banker portal */}
+      <Card className="mb-4">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base"><Droplets className="h-4 w-4" /> Pending refill requests</CardTitle>
+              <CardDescription>Raised by bankers (or auto on exhaustion). Fund and verify them on the DT Refills screen.</CardDescription>
+            </div>
+            <Link href="/dt-refills" className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--color-brand)] hover:underline">
+              Open DT Refills <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!q.data?.open_refills?.length ? (
+            <p className="text-sm text-[color:var(--color-text-muted)]">No open refill requests.</p>
+          ) : (
+            <ul className="divide-y">
+              {q.data.open_refills.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm">
+                  <span className="font-medium">{r.banker_id}</span>
+                  <span>{r.quantity != null ? `${r.quantity.toLocaleString("en-IN")} DT` : "qty —"}</span>
+                  <Badge variant={r.status === "OPEN" ? "warning" : "info"}>{r.status}</Badge>
+                  <span className="text-xs text-[color:var(--color-text-muted)]">by {r.created_by || "—"} · {new Date(r.created_at).toLocaleString("en-IN")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <p className="text-xs text-[color:var(--color-text-subtle)]">
         Commission figures populate once Phase 3 (routing consumption + waterfall) is enabled. Purchases, quota and reserve are live now.

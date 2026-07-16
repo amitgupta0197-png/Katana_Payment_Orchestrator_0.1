@@ -29,6 +29,28 @@ interface Provider {
   user_count: number; doc_count: number; merchant_count: number; created_at: string;
 }
 
+interface IssuedLogin { email?: string; password?: string | null; existing?: boolean; error?: string; banker_id?: string }
+interface CreateResult {
+  code: string;
+  provider_login?: IssuedLogin;
+  banker_login?: IssuedLogin;
+  branch?: { merchant_code?: string; login?: IssuedLogin; error?: string };
+}
+
+function CredentialLine({ title, login }: { title: string; login?: IssuedLogin }) {
+  if (!login) return null;
+  if (login.error) return <div className="text-xs text-[color:var(--color-danger)]">{title}: {login.error}</div>;
+  return (
+    <div className="rounded-md border bg-[color:var(--color-surface)] p-2 text-xs space-y-0.5">
+      <div className="font-semibold">{title}</div>
+      <div>Email: <b>{login.email}</b></div>
+      {login.password
+        ? <div>One-time password: <b className="font-mono">{login.password}</b></div>
+        : <div className="text-[color:var(--color-text-muted)]">Existing account — signs in with its current password.</div>}
+    </div>
+  );
+}
+
 function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
@@ -36,34 +58,108 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
     contact_email: "ops@partner.example", contact_phone: "9999988888",
     kind: "PROVIDER",
   });
+  const [withProviderLogin, setWithProviderLogin] = useState(true);
+  const [withBanker, setWithBanker] = useState(false);
+  const [bankerEmail, setBankerEmail] = useState("");
+  const [withBranch, setWithBranch] = useState(false);
+  const [branch, setBranch] = useState({ merchant_code: "", legal_name: "", contact_email: "" });
+  const [result, setResult] = useState<CreateResult | null>(null);
+
   const m = useMutation({
     mutationFn: async () => {
+      const body: Record<string, unknown> = { ...form, create_provider_login: withProviderLogin };
+      if (withBanker) { body.create_banker_login = true; if (bankerEmail.trim()) body.banker_email = bankerEmail.trim(); }
+      if (withBranch) {
+        body.initial_branch = {
+          merchant_code: branch.merchant_code.trim(),
+          legal_name: branch.legal_name.trim() || `${form.legal_name} Branch`,
+          ...(branch.contact_email.trim() ? { contact_email: branch.contact_email.trim() } : {}),
+        };
+      }
       const r = await fetch("/api/providers", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return r.json();
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as CreateResult;
     },
-    onSuccess: () => { toast.success("Provider created"); qc.invalidateQueries({ queryKey: ["providers"] }); onOpenChange(false); },
+    onSuccess: (d) => {
+      toast.success("Provider created");
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      if (d.provider_login || d.banker_login || d.branch) setResult(d);
+      else onOpenChange(false);
+    },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
+
+  const close = () => { onOpenChange(false); setResult(null); };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setResult(null); }}>
       <DialogContent>
         <DialogHeader><DialogTitle>Create provider</DialogTitle>
-          <DialogDescription>Kind: PROVIDER, AGENT, PARTNER, FRANCHISE.</DialogDescription></DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          {(["code","legal_name","contact_email","contact_phone","kind"] as const).map((k) => (
-            <div key={k} className={k === "legal_name" ? "space-y-1.5 col-span-2" : "space-y-1.5"}>
-              <Label>{k.replace(/_/g," ")}</Label>
-              <Input value={(form as Record<string, string>)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+          <DialogDescription>
+            {result
+              ? "Share these credentials now — one-time passwords are shown only once."
+              : "Kind: PROVIDER, AGENT, PARTNER, FRANCHISE. Optionally provision the provider login, banker login and first branch in one go."}
+          </DialogDescription></DialogHeader>
+        {result ? (
+          <div className="space-y-2">
+            <CredentialLine title={`Provider login (${result.code})`} login={result.provider_login} />
+            <CredentialLine title={`Banker login (${result.banker_login?.banker_id ?? result.code})`} login={result.banker_login} />
+            {result.branch?.error
+              ? <div className="text-xs text-[color:var(--color-danger)]">Branch: {result.branch.error}</div>
+              : <CredentialLine title={`Branch login (${result.branch?.merchant_code ?? ""})`} login={result.branch?.login} />}
+            <p className="text-xs text-[color:var(--color-text-muted)]">Everyone signs in at /login — provider lands in the provider portal, banker in the banker portal, branch in the merchant portal.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {(["code","legal_name","contact_email","contact_phone","kind"] as const).map((k) => (
+                <div key={k} className={k === "legal_name" ? "space-y-1.5 col-span-2" : "space-y-1.5"}>
+                  <Label>{k.replace(/_/g," ")}</Label>
+                  <Input value={(form as Record<string, string>)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Also provision</div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={withProviderLogin} onChange={(e) => setWithProviderLogin(e.target.checked)} />
+                Provider login (uses contact email)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={withBanker} onChange={(e) => setWithBanker(e.target.checked)} />
+                Banker login (banker id = provider code)
+              </label>
+              {withBanker && (
+                <div className="space-y-1.5 pl-6">
+                  <Label>Banker email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label>
+                  <Input type="email" value={bankerEmail} onChange={(e) => setBankerEmail(e.target.value)} placeholder="banker@example.com" />
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={withBranch} onChange={(e) => setWithBranch(e.target.checked)} />
+                First branch (merchant, mapped to this provider)
+              </label>
+              {withBranch && (
+                <div className="grid grid-cols-2 gap-3 pl-6">
+                  <div className="space-y-1.5"><Label>Branch code</Label><Input value={branch.merchant_code} onChange={(e) => setBranch({ ...branch, merchant_code: e.target.value })} placeholder="e.g. BR-001" /></div>
+                  <div className="space-y-1.5"><Label>Branch name</Label><Input value={branch.legal_name} onChange={(e) => setBranch({ ...branch, legal_name: e.target.value })} /></div>
+                  <div className="space-y-1.5 col-span-2"><Label>Branch email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label><Input type="email" value={branch.contact_email} onChange={(e) => setBranch({ ...branch, contact_email: e.target.value })} /></div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Creating…" : "Create"}</Button>
+          <Button variant="secondary" onClick={close}>{result ? "Done" : "Cancel"}</Button>
+          {!result && (
+            <Button onClick={() => m.mutate()} disabled={m.isPending || (withBranch && !branch.merchant_code.trim())}>
+              {m.isPending ? "Creating…" : "Create"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
