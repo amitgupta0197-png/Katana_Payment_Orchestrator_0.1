@@ -177,7 +177,12 @@ export default function DtPurchasesPage() {
     { key: "quantity", header: "DT Qty", render: (r) => r.quantity.toLocaleString("en-IN") },
     { key: "buy_rate", header: "Rate", render: (r) => formatAmount(r.buy_rate) },
     { key: "total_amount", header: "Advance", render: (r) => <span className="font-medium">{formatAmount(r.total_amount)}</span> },
-    { key: "split", header: "Split", render: (r) => `${r.priority_percent}/${r.security_percent}` },
+    { key: "split", header: "Rolling reserve", render: (r) => (
+      <div className="flex flex-col leading-tight">
+        <span className="font-medium">{formatAmount(r.total_amount * r.security_percent / 100)}</span>
+        <span className="text-[10px] text-[color:var(--color-text-muted)]">quota {formatAmount(r.total_amount * r.priority_percent / 100)} · {r.priority_percent}/{r.security_percent}</span>
+      </div>
+    ) },
     { key: "status", header: "Status", render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? "default"}>{r.status}</Badge> },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];

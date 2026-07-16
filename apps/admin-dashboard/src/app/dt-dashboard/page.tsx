@@ -100,6 +100,45 @@ export default function DtDashboardPage() {
         <KpiTile label="Katana margin" value={k ? formatAmount(k.katana_margin) : "—"} variant="success" loading={loading} />
       </div>
 
+      {/* Available traffic by banker — whose routable capacity remains */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-base">Available traffic by banker</CardTitle>
+          <CardDescription>The gross Available-traffic figure above, broken up by banker — who still has routable capacity for the population run.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!q.data?.bankers?.length ? (
+            <p className="text-sm text-[color:var(--color-text-muted)]">No banker quota yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {q.data.bankers.map((b) => {
+                const pctAvailable = b.traffic_quota > 0 ? Math.max(0, Math.min(100, (b.available / b.traffic_quota) * 100)) : 0;
+                const low = b.traffic_quota > 0 && b.available / b.traffic_quota <= 0.2;
+                return (
+                  <li key={b.banker_id}>
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-sm">
+                      <Link href={`/dt-purchases?banker=${encodeURIComponent(b.banker_id)}`} className="font-medium text-[color:var(--color-brand)] hover:underline">
+                        {b.banker_id}
+                      </Link>
+                      <span>
+                        <b className={low ? "text-[color:var(--color-danger)]" : "text-[color:var(--color-success)]"}>{formatAmount(b.available)}</b>
+                        <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">available of {formatAmount(b.traffic_quota)} · consumed {formatAmount(b.consumed)}</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--color-surface-muted)]">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${pctAvailable}%`, background: low ? "var(--color-danger)" : "var(--color-success)" }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Banker-wise breakdown — who bought the DT and where each stands */}
       <Card className="mb-4">
         <CardHeader>
