@@ -2,16 +2,17 @@
 // OPEN → FUNDED → VERIFIED → CLOSED, with CANCELLED allowed while not yet verified.
 // Admin/Finance-side only; bankers raise requests but never transition them.
 //
-// Reserve rotation on VERIFIED (business rule): the 60% priority split is constant.
-// Verifying a refill materialises a NEW ACTIVE lot (quantity × current rate, 60%
-// traffic quota + 40% security reserve) and RELEASES the banker's previous HELD
-// reserves — the refill's 40% becomes the new reserve pool. Prior EXHAUSTED lots
-// are marked REFILLED.
+// Settlement-buffer model (product decision 2026-07-16, supersedes release-on-refill):
+// verifying a refill materialises a NEW ACTIVE lot (quantity × current rate, 60%
+// traffic quota + 40% buffer) and ADDS that 40% to the banker's outstanding
+// settlement buffer. Previous reserves are NOT released — a small refill can never
+// reduce Katana's security position. Only verified settlement reconciliation
+// (POST /api/v1/dt/settlements) releases buffer, FIFO across lots.
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { gateOrResponse } from "@/lib/scope";
 import { rows } from "@/lib/pg";
-import { auditDt, currentRate } from "@/lib/dt";
+import { auditDt, currentRate, addBufferEntry } from "@/lib/dt";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!(NEXT[cur[0].status] ?? []).includes(body.to))
     return NextResponse.json({ error: `cannot move ${cur[0].status} → ${body.to}` }, { status: 409 });
 
-  let rotation: Record<string, unknown> | null = null;
+  let result: Record<string, unknown> | null = null;
   if (body.to === "VERIFIED") {
     const bankerId = cur[0].banker_id;
     const quantity = cur[0].quantity;
@@ -62,30 +63,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       INSERT INTO security_reserves (purchase_id, reserve_percent, held) VALUES ($1,40,$2)
     `, [lot[0].id, held]);
 
-    // Release the banker's PREVIOUS reserves — the refill's 40% is the new pool.
-    const released = await rows<{ id: string; held: number }>("provider", `
-      UPDATE security_reserves s SET released = s.held, status = 'RELEASED', updated_at = now()
-       FROM dt_purchases p
-      WHERE p.id = s.purchase_id AND p.banker_id = $1 AND s.status = 'HELD' AND s.purchase_id <> $2::uuid
-      RETURNING s.id::text, s.held::float AS held
-    `, [bankerId, lot[0].id]).catch(() => []);
+    // The refill's 40% ACCUMULATES into the outstanding settlement buffer.
+    const buf = await addBufferEntry(bankerId, {
+      added: held, refPurchaseId: lot[0].id, note: `refill ${id} verified`, actor: g.session.email,
+    });
 
-    // Exhausted lots are now refilled.
+    // Exhausted lots are now refilled (quota lifecycle only — reserves untouched).
     await rows("provider", `
       UPDATE dt_purchases SET status = 'REFILLED', updated_at = now()
        WHERE banker_id = $1 AND status = 'EXHAUSTED'
     `, [bankerId]).catch(() => {});
 
-    rotation = {
+    result = {
       new_lot_id: lot[0].id, quantity, rate: rate.rate, total,
-      traffic_quota: allocated, new_reserve: held,
-      released_previous: released.reduce((s, r) => s + r.held, 0),
-      released_count: released.length,
+      traffic_quota: allocated, buffer_added: held,
+      outstanding_buffer: buf.closing,
     };
   }
 
   await rows("provider", `UPDATE dt_refill_requests SET status = $2 WHERE id = $1::uuid`, [id, body.to]);
   await auditDt(g.session.email, `REFILL_${body.to}`, "dt_refill_request", id,
-    { status: cur[0].status }, { status: body.to, banker_id: cur[0].banker_id, ...(rotation ?? {}) });
-  return NextResponse.json({ ok: true, ...(rotation ? { rotation } : {}) });
+    { status: cur[0].status }, { status: body.to, banker_id: cur[0].banker_id, ...(result ?? {}) });
+  return NextResponse.json({ ok: true, ...(result ? { buffer: result } : {}) });
 }

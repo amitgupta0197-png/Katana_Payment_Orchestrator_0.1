@@ -95,7 +95,7 @@ export default function DtDashboardPage() {
         <KpiTile label="Traffic quota" value={k ? formatAmount(k.traffic_quota) : "—"} loading={loading} />
         <KpiTile label="Consumed traffic" value={k ? formatAmount(k.consumed_traffic) : "—"} loading={loading} />
         <KpiTile label="Available traffic" value={k ? formatAmount(k.available_traffic) : "—"} variant={k && k.traffic_quota > 0 && k.available_traffic / k.traffic_quota <= 0.2 ? "warning" : "success"} loading={loading} />
-        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${k.security_reserve_dt.toLocaleString("en-IN")} DT` : "—"} loading={loading} />
+        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${Math.round(k.security_reserve_dt).toLocaleString("en-IN")} DT` : "—"} loading={loading} />
         <KpiTile label="Banker commission" value={k ? formatAmount(k.banker_commission) : "—"} loading={loading} />
         <KpiTile label="Katana margin" value={k ? formatAmount(k.katana_margin) : "—"} variant="success" loading={loading} />
       </div>
@@ -152,7 +152,7 @@ export default function DtDashboardPage() {
                       </td>
                       <td className="py-2 pr-4">
                         {formatAmount(b.reserve_held)}
-                        <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({b.reserve_dt.toLocaleString("en-IN")} DT)</span>
+                        <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({Math.round(b.reserve_dt).toLocaleString("en-IN")} DT)</span>
                       </td>
                       <td className="py-2">
                         {b.open_refills > 0

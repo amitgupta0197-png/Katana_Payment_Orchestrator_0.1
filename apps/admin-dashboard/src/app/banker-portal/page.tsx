@@ -67,7 +67,7 @@ export default function BankerDashboardPage() {
         <KpiTile label="Traffic quota" value={k ? formatAmount(k.traffic_quota) : "—"} loading={loading} />
         <KpiTile label="Consumed traffic" value={k ? formatAmount(k.consumed_traffic) : "—"} loading={loading} />
         <KpiTile label="Available traffic" value={k ? formatAmount(k.available_traffic) : "—"} variant={k && k.traffic_quota > 0 && k.available_traffic / k.traffic_quota <= 0.2 ? "warning" : "success"} loading={loading} />
-        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${k.security_reserve_dt.toLocaleString("en-IN")} DT` : "—"} loading={loading} />
+        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${Math.round(k.security_reserve_dt).toLocaleString("en-IN")} DT` : "—"} loading={loading} />
         <KpiTile label="Commission earned" value={k ? formatAmount(k.banker_commission) : "—"} variant="success" loading={loading} />
       </div>
 

@@ -122,6 +122,8 @@ export async function transitionPurchase(
     await rows("provider", `
       INSERT INTO security_reserves (purchase_id, reserve_percent, held) VALUES ($1,$2,$3)
     `, [id, cur.security_percent, held]);
+    // Settlement-buffer model: the lot's 40% ADDS to the banker's outstanding buffer.
+    await addBufferEntry(cur.banker_id, { added: held, refPurchaseId: id, note: "purchase funds confirmed", actor });
   }
   const setPay = to === "FUNDS_SUBMITTED" && extra?.reference_no ? `, payment_ref = '${extra.reference_no.replace(/'/g, "")}'` : "";
   const setApprover = to === "AWAITING_FUNDS" ? `, approved_by = '${actor.replace(/'/g, "")}'` : "";
@@ -154,6 +156,59 @@ export async function trafficWallet(bankerId: string) {
   return { ...w, available, utilization };
 }
 
+// ── Settlement Buffer (final reserve model, decision 2026-07-16) ─────────────
+// The 40% rolling reserve is a pure settlement buffer:
+//   Outstanding Buffer = Total 40% funded − Settlement released
+// Refills ADD to it; only verified settlement reconciliation reduces it (FIFO).
+
+// What is currently outstanding across the banker's lots (held − released).
+export async function reserveRemaining(bankerId: string): Promise<number> {
+  const r = await rows<{ remaining: number }>("provider", `
+    SELECT COALESCE(SUM(GREATEST(s.held - s.released, 0)),0)::float AS remaining
+      FROM security_reserves s JOIN dt_purchases p ON p.id = s.purchase_id
+     WHERE p.banker_id = $1
+  `, [bankerId]).catch(() => [{ remaining: 0 }]);
+  return r[0]?.remaining ?? 0;
+}
+
+// Append a buffer ledger cycle row. Opening = last closing; if the banker has no
+// ledger rows yet (pre-existing lots), the opening is derived from the reserves so
+// history stays consistent without a backfill.
+export async function addBufferEntry(bankerId: string, entry: {
+  added?: number; released?: number; refPurchaseId?: string; refSettlement?: string; note?: string; actor: string;
+}): Promise<{ opening: number; closing: number }> {
+  const added = entry.added ?? 0;
+  const released = entry.released ?? 0;
+  const last = await rows<{ closing: number }>("provider", `
+    SELECT closing_buffer::float AS closing FROM settlement_buffer_ledger
+     WHERE banker_id = $1 ORDER BY created_at DESC LIMIT 1
+  `, [bankerId]).catch(() => []);
+  // Derived opening excludes the effect of THIS entry: reserves are mutated by the
+  // caller around this call, so prefer the ledger; derive only on first use.
+  const opening = last.length ? last[0].closing : Math.max(0, (await reserveRemaining(bankerId)) - added + released);
+  const closing = +(opening + added - released).toFixed(2);
+  await rows("provider", `
+    INSERT INTO settlement_buffer_ledger
+      (banker_id, opening_buffer, buffer_added, settlement_released, closing_buffer,
+       reference_purchase_id, reference_settlement, note, created_by)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+  `, [bankerId, opening, added, released, closing,
+      entry.refPurchaseId ?? null, entry.refSettlement ?? null, entry.note ?? null, entry.actor]).catch(() => {});
+  return { opening, closing };
+}
+
+export async function bufferLedger(bankerId?: string) {
+  return rows<any>("provider", `
+    SELECT id::text, banker_id, opening_buffer::float AS opening_buffer,
+           buffer_added::float AS buffer_added, settlement_released::float AS settlement_released,
+           closing_buffer::float AS closing_buffer,
+           reference_purchase_id::text, COALESCE(reference_settlement,'') AS reference_settlement,
+           COALESCE(note,'') AS note, COALESCE(created_by,'') AS created_by, created_at
+      FROM settlement_buffer_ledger ${bankerId ? "WHERE banker_id = $1" : ""}
+     ORDER BY created_at DESC LIMIT 200
+  `, bankerId ? [bankerId] : []).catch(() => []);
+}
+
 // ── Single-banker ledger (full per-lot break-up) ─────────────────────────────
 // One row per lot: the advance, its 60% quota position and its 40% reserve —
 // including reserves already RELEASED by refill rotation. This is the "where did
@@ -168,7 +223,8 @@ export async function bankerLedger(bankerId: string) {
            COALESCE(a.consumed,0)::float  AS quota_consumed,
            COALESCE(a.allocated,0)::float - COALESCE(a.reserved,0)::float - COALESCE(a.consumed,0)::float AS quota_available,
            COALESCE(s.held,0)::float      AS reserve_held,
-           COALESCE(p.quantity * s.reserve_percent / 100, 0)::float AS reserve_dt,
+           COALESCE(GREATEST(s.held - s.released, 0),0)::float AS reserve_remaining,
+           COALESCE(GREATEST(s.held - s.released, 0) / NULLIF(p.buy_rate,0), 0)::float AS reserve_dt,
            COALESCE(s.released,0)::float  AS reserve_released,
            COALESCE(s.status,'')          AS reserve_status
       FROM dt_purchases p
@@ -194,8 +250,8 @@ export async function bankerBreakdown() {
            COALESCE(SUM(a.reserved),0)::float AS reserved,
            COALESCE(SUM(a.consumed),0)::float AS consumed,
            COALESCE(SUM(a.allocated),0)::float - COALESCE(SUM(a.reserved),0)::float - COALESCE(SUM(a.consumed),0)::float AS available,
-           COALESCE(SUM(s.held) FILTER (WHERE s.status='HELD'),0)::float AS reserve_held,
-           COALESCE(SUM(p.quantity * s.reserve_percent / 100) FILTER (WHERE s.status='HELD'),0)::float AS reserve_dt,
+           COALESCE(SUM(GREATEST(s.held - s.released, 0)),0)::float AS reserve_held,
+           COALESCE(SUM(GREATEST(s.held - s.released, 0) / NULLIF(p.buy_rate,0)),0)::float AS reserve_dt,
            (SELECT COUNT(*)::int FROM dt_refill_requests r WHERE r.banker_id = p.banker_id AND r.status IN ('OPEN','FUNDED')) AS open_refills,
            MAX(p.created_at) AS last_purchase_at
       FROM dt_purchases p
@@ -227,12 +283,12 @@ export async function dashboardKpis(filter: { banker_id?: string } = {}) {
            COALESCE(SUM(a.consumed),0)::float  AS consumed
       FROM traffic_allocations a ${allocWhere}
   `, p).catch(() => [{}]);
-  // Rolling reserve = what is CURRENTLY held (released rows keep their held value
-  // for history, so summing all rows would overstate the pool after refill rotation).
-  // reserve_dt is the same pool expressed in DT units (quantity × reserve%).
+  // Rolling reserve = the outstanding settlement buffer: held − released across all
+  // lots (partial settlement releases supported). reserve_dt is the same figure in
+  // DT units (remaining ÷ lot buy rate).
   const [res] = await rows<any>("provider", `
-    SELECT COALESCE(SUM(s.held) FILTER (WHERE s.status='HELD'),0)::float AS reserve,
-           COALESCE(SUM(p.quantity * s.reserve_percent / 100) FILTER (WHERE s.status='HELD'),0)::float AS reserve_dt,
+    SELECT COALESCE(SUM(GREATEST(s.held - s.released, 0)),0)::float AS reserve,
+           COALESCE(SUM(GREATEST(s.held - s.released, 0) / NULLIF(p.buy_rate,0)),0)::float AS reserve_dt,
            COALESCE(SUM(s.released),0)::float AS released
       FROM security_reserves s JOIN dt_purchases p ON p.id=s.purchase_id ${filter.banker_id ? "WHERE p.banker_id=$1" : ""}
   `, p).catch(() => [{}]);

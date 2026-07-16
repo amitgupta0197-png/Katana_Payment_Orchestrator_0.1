@@ -36,9 +36,13 @@ interface LedgerLot {
   id: string; quantity: number; buy_rate: number; total_amount: number; status: string;
   payment_ref: string; created_at: string;
   quota_allocated: number; quota_reserved: number; quota_consumed: number; quota_available: number;
-  reserve_held: number; reserve_dt: number; reserve_released: number; reserve_status: string;
+  reserve_held: number; reserve_remaining: number; reserve_dt: number; reserve_released: number; reserve_status: string;
 }
 interface Wallet { traffic: { allocated: number; reserved: number; consumed: number; available: number; utilization: number }; ledger: LedgerLot[] }
+interface BufferEntry {
+  id: string; opening_buffer: number; buffer_added: number; settlement_released: number;
+  closing_buffer: number; reference_settlement: string; note: string; created_by: string; created_at: string;
+}
 
 export default function DtPurchasesPage() {
   const qc = useQueryClient();
@@ -62,6 +66,38 @@ export default function DtPurchasesPage() {
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
       return d as Wallet;
     },
+  });
+  const bufferQ = useQuery({
+    queryKey: ["dt-buffer-ledger", banker],
+    enabled: !!banker,
+    queryFn: async () => {
+      const r = await fetch(`/api/v1/dt/settlements?banker=${encodeURIComponent(banker!)}`);
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
+      return d.entries as BufferEntry[];
+    },
+  });
+
+  // Record verified settled traffic — the only action that reduces the buffer.
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleForm, setSettleForm] = useState({ amount: "", reference: "" });
+  const settle = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/v1/dt/settlements", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banker_id: banker, amount: Number(settleForm.amount), reference: settleForm.reference.trim() || undefined }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { released: number; outstanding_buffer: number };
+    },
+    onSuccess: (d) => {
+      toast.success("Settlement recorded", { description: `Buffer released ${formatAmount(d.released)} · outstanding ${formatAmount(d.outstanding_buffer)}` });
+      setSettleOpen(false); setSettleForm({ amount: "", reference: "" });
+      qc.invalidateQueries({ queryKey: ["dt-banker-ledger", banker] });
+      qc.invalidateQueries({ queryKey: ["dt-buffer-ledger", banker] });
+    },
+    onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -181,10 +217,17 @@ export default function DtPurchasesPage() {
       {banker && (
         <Card className="mb-4">
           <CardHeader>
-            <CardTitle className="text-base">Ledger — {banker}</CardTitle>
-            <CardDescription>
-              Every lot's advance, 60% quota position and 40% rolling reserve. Reserves released by refill rotation stay visible here.
-            </CardDescription>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Ledger — {banker}</CardTitle>
+                <CardDescription>
+                  Every lot's advance, 60% quota position and 40% rolling reserve (settlement buffer). Refills add to the buffer; only verified settlements release it, oldest lot first.
+                </CardDescription>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => { setSettleForm({ amount: "", reference: "" }); setSettleOpen(true); }}>
+                <Banknote className="h-4 w-4" /> Record settlement
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {ledgerQ.isLoading ? (
@@ -198,9 +241,9 @@ export default function DtPurchasesPage() {
                     <span>Quota <b>{formatAmount(ledgerQ.data.traffic.allocated)}</b></span>
                     <span>Consumed <b>{formatAmount(ledgerQ.data.traffic.consumed)}</b></span>
                     <span>Available <b>{formatAmount(ledgerQ.data.traffic.available)}</b></span>
-                    <span>Rolling reserve <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_held : 0), 0))}</b>
-                      <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_dt : 0), 0).toLocaleString("en-IN")} DT)</span></span>
-                    <span>Reserve released <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_released, 0))}</b></span>
+                    <span>Outstanding buffer <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_remaining, 0))}</b>
+                      <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({Math.round(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_dt, 0)).toLocaleString("en-IN")} DT)</span></span>
+                    <span>Settled / released <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_released, 0))}</b></span>
                   </div>
                 )}
                 <div className="overflow-x-auto">
@@ -233,10 +276,11 @@ export default function DtPurchasesPage() {
                           <td className="py-2 pr-4">{formatAmount(l.quota_consumed)}</td>
                           <td className="py-2 pr-4">{formatAmount(l.quota_available)}</td>
                           <td className="py-2 pr-4">
-                            {l.reserve_status === "RELEASED"
+                            {l.reserve_remaining <= 0 && l.reserve_held > 0
                               ? <span className="text-[color:var(--color-text-muted)] line-through">{formatAmount(l.reserve_held)}</span>
-                              : <span className="font-medium">{formatAmount(l.reserve_held)}</span>}
-                            {l.reserve_status === "HELD" && <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({l.reserve_dt.toLocaleString("en-IN")} DT)</span>}
+                              : <span className="font-medium">{formatAmount(l.reserve_remaining)}</span>}
+                            {l.reserve_remaining > 0 && <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({Math.round(l.reserve_dt).toLocaleString("en-IN")} DT)</span>}
+                            {l.reserve_released > 0 && l.reserve_remaining > 0 && <span className="ml-1 text-[10px] text-[color:var(--color-text-muted)]">settled {formatAmount(l.reserve_released)}</span>}
                           </td>
                           <td className="py-2 pr-4">
                             {l.reserve_status
@@ -249,11 +293,67 @@ export default function DtPurchasesPage() {
                     </tbody>
                   </table>
                 </div>
+                {!!bufferQ.data?.length && (
+                  <div className="mt-4">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Buffer movements</div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs text-[color:var(--color-text-muted)]">
+                            <th className="py-1.5 pr-4 font-medium">Opening</th>
+                            <th className="py-1.5 pr-4 font-medium">Added</th>
+                            <th className="py-1.5 pr-4 font-medium">Settled</th>
+                            <th className="py-1.5 pr-4 font-medium">Closing</th>
+                            <th className="py-1.5 pr-4 font-medium">Ref / note</th>
+                            <th className="py-1.5 font-medium">When</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bufferQ.data.slice(0, 10).map((e) => (
+                            <tr key={e.id} className="border-b last:border-0">
+                              <td className="py-1.5 pr-4">{formatAmount(e.opening_buffer)}</td>
+                              <td className="py-1.5 pr-4">{e.buffer_added > 0 ? <span className="text-[color:var(--color-success)]">+{formatAmount(e.buffer_added)}</span> : "—"}</td>
+                              <td className="py-1.5 pr-4">{e.settlement_released > 0 ? <span className="text-[color:var(--color-danger)]">−{formatAmount(e.settlement_released)}</span> : "—"}</td>
+                              <td className="py-1.5 pr-4 font-medium">{formatAmount(e.closing_buffer)}</td>
+                              <td className="py-1.5 pr-4 text-xs text-[color:var(--color-text-muted)]">{e.reference_settlement || e.note || "—"}</td>
+                              <td className="py-1.5 text-xs">{formatDateTime(e.created_at)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </CardContent>
         </Card>
       )}
+
+      {/* Record settlement — reduces the outstanding buffer (FIFO across lots) */}
+      <Dialog open={settleOpen} onOpenChange={setSettleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record settlement — {banker}</DialogTitle>
+            <DialogDescription>
+              Verified settled traffic reduces the outstanding buffer, oldest lot first. Refills never release the buffer — only this does.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {ledgerQ.data && (
+              <p className="text-sm text-[color:var(--color-text-muted)]">
+                Outstanding buffer: <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_remaining, 0))}</b>
+              </p>
+            )}
+            <div className="space-y-1.5"><Label>Settled amount (₹)</Label><Input type="number" step="0.01" value={settleForm.amount} onChange={(e) => setSettleForm({ ...settleForm, amount: e.target.value })} placeholder="e.g. 100000" /></div>
+            <div className="space-y-1.5"><Label>Settlement reference <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label><Input value={settleForm.reference} onChange={(e) => setSettleForm({ ...settleForm, reference: e.target.value })} placeholder="UTR / recon batch id" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setSettleOpen(false)}>Cancel</Button>
+            <Button onClick={() => settle.mutate()} disabled={!Number(settleForm.amount) || settle.isPending}>{settle.isPending ? "Recording…" : "Record settlement"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <DataView
         rows={q.data ?? []}
         columns={cols}
