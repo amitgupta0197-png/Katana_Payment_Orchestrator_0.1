@@ -39,7 +39,7 @@ export default function BankerPurchasesPage() {
     { key: "split", header: "Rolling reserve", render: (r) => (
       <div className="flex flex-col leading-tight">
         <span className="font-medium">{formatAmount(r.total_amount * r.security_percent / 100)}</span>
-        <span className="text-[10px] text-[color:var(--color-text-muted)]">quota {formatAmount(r.total_amount * r.priority_percent / 100)} · {r.priority_percent}/{r.security_percent}</span>
+        <span className="text-[10px] text-[color:var(--color-text-muted)]">quota {formatAmount(r.total_amount * r.priority_percent / 100)}</span>
       </div>
     ) },
     { key: "payment_ref", header: "Payment ref", render: (r) => r.payment_ref || "—" },
