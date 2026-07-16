@@ -36,7 +36,7 @@ interface LedgerLot {
   id: string; quantity: number; buy_rate: number; total_amount: number; status: string;
   payment_ref: string; created_at: string;
   quota_allocated: number; quota_reserved: number; quota_consumed: number; quota_available: number;
-  reserve_held: number; reserve_released: number; reserve_status: string;
+  reserve_held: number; reserve_dt: number; reserve_released: number; reserve_status: string;
 }
 interface Wallet { traffic: { allocated: number; reserved: number; consumed: number; available: number; utilization: number }; ledger: LedgerLot[] }
 
@@ -183,7 +183,7 @@ export default function DtPurchasesPage() {
           <CardHeader>
             <CardTitle className="text-base">Ledger — {banker}</CardTitle>
             <CardDescription>
-              Every lot's advance, 60% quota position and 40% security reserve. Reserves released by refill rotation stay visible here.
+              Every lot's advance, 60% quota position and 40% rolling reserve. Reserves released by refill rotation stay visible here.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -198,7 +198,8 @@ export default function DtPurchasesPage() {
                     <span>Quota <b>{formatAmount(ledgerQ.data.traffic.allocated)}</b></span>
                     <span>Consumed <b>{formatAmount(ledgerQ.data.traffic.consumed)}</b></span>
                     <span>Available <b>{formatAmount(ledgerQ.data.traffic.available)}</b></span>
-                    <span>Reserve held <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_held : 0), 0))}</b></span>
+                    <span>Rolling reserve <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_held : 0), 0))}</b>
+                      <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_dt : 0), 0).toLocaleString("en-IN")} DT)</span></span>
                     <span>Reserve released <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_released, 0))}</b></span>
                   </div>
                 )}
@@ -212,7 +213,7 @@ export default function DtPurchasesPage() {
                         <th className="py-2 pr-4 font-medium">Quota</th>
                         <th className="py-2 pr-4 font-medium">Consumed</th>
                         <th className="py-2 pr-4 font-medium">Available</th>
-                        <th className="py-2 pr-4 font-medium">Reserve</th>
+                        <th className="py-2 pr-4 font-medium">Rolling reserve</th>
                         <th className="py-2 pr-4 font-medium">Reserve status</th>
                         <th className="py-2 font-medium">Created</th>
                       </tr>
@@ -235,6 +236,7 @@ export default function DtPurchasesPage() {
                             {l.reserve_status === "RELEASED"
                               ? <span className="text-[color:var(--color-text-muted)] line-through">{formatAmount(l.reserve_held)}</span>
                               : <span className="font-medium">{formatAmount(l.reserve_held)}</span>}
+                            {l.reserve_status === "HELD" && <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({l.reserve_dt.toLocaleString("en-IN")} DT)</span>}
                           </td>
                           <td className="py-2 pr-4">
                             {l.reserve_status
@@ -276,7 +278,7 @@ export default function DtPurchasesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New DT purchase</DialogTitle>
-            <DialogDescription>Advance debit = quantity × rate. Splits 60% priority traffic / 40% security reserve.</DialogDescription>
+            <DialogDescription>Advance debit = quantity × rate. Splits 60% priority traffic / 40% rolling reserve.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5"><Label>Banker (provider code/id)</Label><Input value={form.banker_id} onChange={(e) => setForm({ ...form, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>
@@ -378,7 +380,7 @@ export default function DtPurchasesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirm funds & activate</DialogTitle>
-            <DialogDescription>Records the funding reference and materialises the 60% traffic quota + 40% security reserve.</DialogDescription>
+            <DialogDescription>Records the funding reference and materialises the 60% traffic quota + 40% rolling reserve.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-[color:var(--color-text-muted)]">{fundsFor?.banker_id} · advance <b>{fundsFor ? formatAmount(fundsFor.total_amount) : ""}</b></p>

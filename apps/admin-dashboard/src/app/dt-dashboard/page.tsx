@@ -21,13 +21,13 @@ import { formatAmount } from "@/lib/utils";
 interface Kpis {
   purchases: number; active: number; dt_purchased: number; advance_debit: number;
   traffic_quota: number; reserved: number; consumed_traffic: number; available_traffic: number;
-  security_reserve: number; banker_commission: number; katana_margin: number; merchant_charge: number;
+  security_reserve: number; security_reserve_dt: number; banker_commission: number; katana_margin: number; merchant_charge: number;
 }
 interface OpenRefill { id: string; banker_id: string; quantity: number | null; trigger: string; status: string; created_by: string; created_at: string }
 interface BankerRow {
   banker_id: string; purchases: number; active: number; dt_purchased: number; advance_debit: number;
   traffic_quota: number; reserved: number; consumed: number; available: number;
-  reserve_held: number; open_refills: number; last_purchase_at: string;
+  reserve_held: number; reserve_dt: number; open_refills: number; last_purchase_at: string;
 }
 interface Data { kpis: Kpis; rate: { rate: number; currency: string; version: number } | null; bankers?: BankerRow[]; open_refills?: OpenRefill[] }
 
@@ -95,7 +95,7 @@ export default function DtDashboardPage() {
         <KpiTile label="Traffic quota" value={k ? formatAmount(k.traffic_quota) : "—"} loading={loading} />
         <KpiTile label="Consumed traffic" value={k ? formatAmount(k.consumed_traffic) : "—"} loading={loading} />
         <KpiTile label="Available traffic" value={k ? formatAmount(k.available_traffic) : "—"} variant={k && k.traffic_quota > 0 && k.available_traffic / k.traffic_quota <= 0.2 ? "warning" : "success"} loading={loading} />
-        <KpiTile label="Security reserve" value={k ? formatAmount(k.security_reserve) : "—"} loading={loading} />
+        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${k.security_reserve_dt.toLocaleString("en-IN")} DT` : "—"} loading={loading} />
         <KpiTile label="Banker commission" value={k ? formatAmount(k.banker_commission) : "—"} loading={loading} />
         <KpiTile label="Katana margin" value={k ? formatAmount(k.katana_margin) : "—"} variant="success" loading={loading} />
       </div>
@@ -128,7 +128,7 @@ export default function DtDashboardPage() {
                     <th className="py-2 pr-4 font-medium">Quota</th>
                     <th className="py-2 pr-4 font-medium">Consumed</th>
                     <th className="py-2 pr-4 font-medium">Available</th>
-                    <th className="py-2 pr-4 font-medium">Reserve held</th>
+                    <th className="py-2 pr-4 font-medium">Rolling reserve</th>
                     <th className="py-2 font-medium">Open refills</th>
                   </tr>
                 </thead>
@@ -150,7 +150,10 @@ export default function DtDashboardPage() {
                           {formatAmount(b.available)}
                         </span>
                       </td>
-                      <td className="py-2 pr-4">{formatAmount(b.reserve_held)}</td>
+                      <td className="py-2 pr-4">
+                        {formatAmount(b.reserve_held)}
+                        <span className="ml-1 text-xs text-[color:var(--color-text-muted)]">({b.reserve_dt.toLocaleString("en-IN")} DT)</span>
+                      </td>
                       <td className="py-2">
                         {b.open_refills > 0
                           ? <Link href="/dt-refills" className="inline-flex"><Badge variant="warning">{b.open_refills} open</Badge></Link>

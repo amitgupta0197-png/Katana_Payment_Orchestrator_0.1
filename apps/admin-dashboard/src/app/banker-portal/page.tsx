@@ -14,7 +14,7 @@ import { formatAmount, formatDateTime } from "@/lib/utils";
 interface Kpis {
   purchases: number; active: number; dt_purchased: number; advance_debit: number;
   traffic_quota: number; reserved: number; consumed_traffic: number; available_traffic: number;
-  security_reserve: number; banker_commission: number;
+  security_reserve: number; security_reserve_dt: number; banker_commission: number;
 }
 interface Lot { id: string; quantity: number; buy_rate: number; total_amount: number; status: string; created_at: string }
 interface Data {
@@ -67,7 +67,7 @@ export default function BankerDashboardPage() {
         <KpiTile label="Traffic quota" value={k ? formatAmount(k.traffic_quota) : "—"} loading={loading} />
         <KpiTile label="Consumed traffic" value={k ? formatAmount(k.consumed_traffic) : "—"} loading={loading} />
         <KpiTile label="Available traffic" value={k ? formatAmount(k.available_traffic) : "—"} variant={k && k.traffic_quota > 0 && k.available_traffic / k.traffic_quota <= 0.2 ? "warning" : "success"} loading={loading} />
-        <KpiTile label="Security reserve" value={k ? formatAmount(k.security_reserve) : "—"} loading={loading} />
+        <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${k.security_reserve_dt.toLocaleString("en-IN")} DT` : "—"} loading={loading} />
         <KpiTile label="Commission earned" value={k ? formatAmount(k.banker_commission) : "—"} variant="success" loading={loading} />
       </div>
 

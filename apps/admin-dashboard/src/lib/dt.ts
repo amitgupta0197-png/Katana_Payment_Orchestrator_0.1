@@ -168,6 +168,7 @@ export async function bankerLedger(bankerId: string) {
            COALESCE(a.consumed,0)::float  AS quota_consumed,
            COALESCE(a.allocated,0)::float - COALESCE(a.reserved,0)::float - COALESCE(a.consumed,0)::float AS quota_available,
            COALESCE(s.held,0)::float      AS reserve_held,
+           COALESCE(p.quantity * s.reserve_percent / 100, 0)::float AS reserve_dt,
            COALESCE(s.released,0)::float  AS reserve_released,
            COALESCE(s.status,'')          AS reserve_status
       FROM dt_purchases p
@@ -194,6 +195,7 @@ export async function bankerBreakdown() {
            COALESCE(SUM(a.consumed),0)::float AS consumed,
            COALESCE(SUM(a.allocated),0)::float - COALESCE(SUM(a.reserved),0)::float - COALESCE(SUM(a.consumed),0)::float AS available,
            COALESCE(SUM(s.held) FILTER (WHERE s.status='HELD'),0)::float AS reserve_held,
+           COALESCE(SUM(p.quantity * s.reserve_percent / 100) FILTER (WHERE s.status='HELD'),0)::float AS reserve_dt,
            (SELECT COUNT(*)::int FROM dt_refill_requests r WHERE r.banker_id = p.banker_id AND r.status IN ('OPEN','FUNDED')) AS open_refills,
            MAX(p.created_at) AS last_purchase_at
       FROM dt_purchases p
@@ -225,8 +227,13 @@ export async function dashboardKpis(filter: { banker_id?: string } = {}) {
            COALESCE(SUM(a.consumed),0)::float  AS consumed
       FROM traffic_allocations a ${allocWhere}
   `, p).catch(() => [{}]);
+  // Rolling reserve = what is CURRENTLY held (released rows keep their held value
+  // for history, so summing all rows would overstate the pool after refill rotation).
+  // reserve_dt is the same pool expressed in DT units (quantity × reserve%).
   const [res] = await rows<any>("provider", `
-    SELECT COALESCE(SUM(s.held),0)::float AS reserve, COALESCE(SUM(s.released),0)::float AS released
+    SELECT COALESCE(SUM(s.held) FILTER (WHERE s.status='HELD'),0)::float AS reserve,
+           COALESCE(SUM(p.quantity * s.reserve_percent / 100) FILTER (WHERE s.status='HELD'),0)::float AS reserve_dt,
+           COALESCE(SUM(s.released),0)::float AS released
       FROM security_reserves s JOIN dt_purchases p ON p.id=s.purchase_id ${filter.banker_id ? "WHERE p.banker_id=$1" : ""}
   `, p).catch(() => [{}]);
   const [comm] = await rows<any>("provider", `
@@ -242,6 +249,7 @@ export async function dashboardKpis(filter: { banker_id?: string } = {}) {
     traffic_quota: quota, reserved, consumed_traffic: consumed,
     available_traffic: +(quota - reserved - consumed).toFixed(2),
     security_reserve: res?.reserve ?? 0,
+    security_reserve_dt: res?.reserve_dt ?? 0,
     banker_commission: comm?.banker_commission ?? 0,
     katana_margin: comm?.katana_margin ?? 0,
     merchant_charge: comm?.merchant_charge ?? 0,
