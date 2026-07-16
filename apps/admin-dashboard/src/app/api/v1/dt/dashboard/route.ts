@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { gateOrResponse } from "@/lib/scope";
 import { rows } from "@/lib/pg";
-import { dashboardKpis, currentRate } from "@/lib/dt";
+import { dashboardKpis, currentRate, bankerBreakdown } from "@/lib/dt";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +11,10 @@ export async function GET(req: Request) {
   const g = await gateOrResponse(["SUPER_ADMIN", "ADMIN", "FINANCE", "RISK"]);
   if ("response" in g) return g.response;
   const banker = new URL(req.url).searchParams.get("banker") || undefined;
-  const [kpis, rate, refills] = await Promise.all([
+  const [kpis, rate, bankers, refills] = await Promise.all([
     dashboardKpis({ banker_id: banker }),
     currentRate(),
+    bankerBreakdown(),
     rows<any>("provider", `
       SELECT id::text, banker_id, quantity::float AS quantity, trigger, status, created_by, created_at
         FROM dt_refill_requests
@@ -21,5 +22,5 @@ export async function GET(req: Request) {
        ORDER BY created_at DESC LIMIT 10
     `, banker ? [banker] : []).catch(() => []),
   ]);
-  return NextResponse.json({ kpis, rate, open_refills: refills });
+  return NextResponse.json({ kpis, rate, bankers, open_refills: refills });
 }

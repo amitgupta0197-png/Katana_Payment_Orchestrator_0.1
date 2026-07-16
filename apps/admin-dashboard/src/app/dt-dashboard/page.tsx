@@ -24,7 +24,12 @@ interface Kpis {
   security_reserve: number; banker_commission: number; katana_margin: number; merchant_charge: number;
 }
 interface OpenRefill { id: string; banker_id: string; quantity: number | null; trigger: string; status: string; created_by: string; created_at: string }
-interface Data { kpis: Kpis; rate: { rate: number; currency: string; version: number } | null; open_refills?: OpenRefill[] }
+interface BankerRow {
+  banker_id: string; purchases: number; active: number; dt_purchased: number; advance_debit: number;
+  traffic_quota: number; reserved: number; consumed: number; available: number;
+  reserve_held: number; open_refills: number; last_purchase_at: string;
+}
+interface Data { kpis: Kpis; rate: { rate: number; currency: string; version: number } | null; bankers?: BankerRow[]; open_refills?: OpenRefill[] }
 
 export default function DtDashboardPage() {
   const qc = useQueryClient();
@@ -94,6 +99,71 @@ export default function DtDashboardPage() {
         <KpiTile label="Banker commission" value={k ? formatAmount(k.banker_commission) : "—"} loading={loading} />
         <KpiTile label="Katana margin" value={k ? formatAmount(k.katana_margin) : "—"} variant="success" loading={loading} />
       </div>
+
+      {/* Banker-wise breakdown — who bought the DT and where each stands */}
+      <Card className="mb-4">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Banker-wise breakdown</CardTitle>
+              <CardDescription>Per-banker DT position — click a banker to open their full ledger. The gross KPIs above are the sum of these rows.</CardDescription>
+            </div>
+            <Link href="/dt-purchases" className="inline-flex items-center gap-1 text-sm font-medium text-[color:var(--color-brand)] hover:underline">
+              Open DT Purchases <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!q.data?.bankers?.length ? (
+            <p className="text-sm text-[color:var(--color-text-muted)]">No banker purchases yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-[color:var(--color-text-muted)]">
+                    <th className="py-2 pr-4 font-medium">Banker</th>
+                    <th className="py-2 pr-4 font-medium">DT bought</th>
+                    <th className="py-2 pr-4 font-medium">Advance</th>
+                    <th className="py-2 pr-4 font-medium">Lots (active)</th>
+                    <th className="py-2 pr-4 font-medium">Quota</th>
+                    <th className="py-2 pr-4 font-medium">Consumed</th>
+                    <th className="py-2 pr-4 font-medium">Available</th>
+                    <th className="py-2 pr-4 font-medium">Reserve held</th>
+                    <th className="py-2 font-medium">Open refills</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {q.data.bankers.map((b) => (
+                    <tr key={b.banker_id} className="border-b last:border-0">
+                      <td className="py-2 pr-4">
+                        <Link href={`/dt-purchases?banker=${encodeURIComponent(b.banker_id)}`} className="font-medium text-[color:var(--color-brand)] hover:underline">
+                          {b.banker_id}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-4">{b.dt_purchased.toLocaleString("en-IN")}</td>
+                      <td className="py-2 pr-4">{formatAmount(b.advance_debit)}</td>
+                      <td className="py-2 pr-4">{b.purchases} ({b.active})</td>
+                      <td className="py-2 pr-4">{formatAmount(b.traffic_quota)}</td>
+                      <td className="py-2 pr-4">{formatAmount(b.consumed)}</td>
+                      <td className="py-2 pr-4">
+                        <span className={b.traffic_quota > 0 && b.available / b.traffic_quota <= 0.2 ? "font-medium text-[color:var(--color-danger)]" : ""}>
+                          {formatAmount(b.available)}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4">{formatAmount(b.reserve_held)}</td>
+                      <td className="py-2">
+                        {b.open_refills > 0
+                          ? <Link href="/dt-refills" className="inline-flex"><Badge variant="warning">{b.open_refills} open</Badge></Link>
+                          : <span className="text-[color:var(--color-text-muted)]">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Pending refill requests — raised by bankers from the banker portal */}
       <Card className="mb-4">

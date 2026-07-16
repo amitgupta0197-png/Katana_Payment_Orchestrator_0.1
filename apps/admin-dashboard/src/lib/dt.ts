@@ -154,6 +154,57 @@ export async function trafficWallet(bankerId: string) {
   return { ...w, available, utilization };
 }
 
+// ── Single-banker ledger (full per-lot break-up) ─────────────────────────────
+// One row per lot: the advance, its 60% quota position and its 40% reserve —
+// including reserves already RELEASED by refill rotation. This is the "where did
+// this banker's money go" view.
+export async function bankerLedger(bankerId: string) {
+  return rows<any>("provider", `
+    SELECT p.id::text, p.quantity::float AS quantity, p.buy_rate::float AS buy_rate,
+           p.total_amount::float AS total_amount, p.status, COALESCE(p.payment_ref,'') AS payment_ref,
+           p.created_at,
+           COALESCE(a.allocated,0)::float AS quota_allocated,
+           COALESCE(a.reserved,0)::float  AS quota_reserved,
+           COALESCE(a.consumed,0)::float  AS quota_consumed,
+           COALESCE(a.allocated,0)::float - COALESCE(a.reserved,0)::float - COALESCE(a.consumed,0)::float AS quota_available,
+           COALESCE(s.held,0)::float      AS reserve_held,
+           COALESCE(s.released,0)::float  AS reserve_released,
+           COALESCE(s.status,'')          AS reserve_status
+      FROM dt_purchases p
+      LEFT JOIN traffic_allocations a ON a.purchase_id = p.id
+      LEFT JOIN security_reserves  s ON s.purchase_id = p.id
+     WHERE p.banker_id = $1
+     ORDER BY p.created_at DESC
+     LIMIT 200
+  `, [bankerId]).catch(() => []);
+}
+
+// ── Per-banker breakdown (admin dashboard drill-down) ────────────────────────
+// One row per banker: what they bought, their quota position and reserve. The
+// dashboard's gross KPIs are the sum of these rows.
+export async function bankerBreakdown() {
+  return rows<any>("provider", `
+    SELECT p.banker_id,
+           COUNT(*)::int AS purchases,
+           COUNT(*) FILTER (WHERE p.status='ACTIVE')::int AS active,
+           COALESCE(SUM(p.quantity),0)::float AS dt_purchased,
+           COALESCE(SUM(p.total_amount),0)::float AS advance_debit,
+           COALESCE(SUM(a.allocated),0)::float AS traffic_quota,
+           COALESCE(SUM(a.reserved),0)::float AS reserved,
+           COALESCE(SUM(a.consumed),0)::float AS consumed,
+           COALESCE(SUM(a.allocated),0)::float - COALESCE(SUM(a.reserved),0)::float - COALESCE(SUM(a.consumed),0)::float AS available,
+           COALESCE(SUM(s.held) FILTER (WHERE s.status='HELD'),0)::float AS reserve_held,
+           (SELECT COUNT(*)::int FROM dt_refill_requests r WHERE r.banker_id = p.banker_id AND r.status IN ('OPEN','FUNDED')) AS open_refills,
+           MAX(p.created_at) AS last_purchase_at
+      FROM dt_purchases p
+      LEFT JOIN traffic_allocations a ON a.purchase_id = p.id
+      LEFT JOIN security_reserves  s ON s.purchase_id = p.id
+     GROUP BY p.banker_id
+     ORDER BY MAX(p.created_at) DESC
+     LIMIT 200
+  `).catch(() => []);
+}
+
 // ── Dashboard KPIs (BRD §10 UI-001) ─────────────────────────────────────────
 export async function dashboardKpis(filter: { banker_id?: string } = {}) {
   const bankerWhere = filter.banker_id ? `WHERE banker_id = $1` : "";

@@ -4,11 +4,14 @@
 // DRAFT → PENDING_APPROVAL → AWAITING_FUNDS → FUNDS_SUBMITTED → ACTIVE (60/40 split
 // materialised on confirm). Admin/Finance-gated.
 
+import Link from "next/link";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle, KeyRound, Copy } from "lucide-react";
+import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle, KeyRound, Copy, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { DataView } from "@/components/world-class/data-view";
 import { RowActions } from "@/components/world-class/row-actions";
 import { Badge } from "@/components/ui/badge";
@@ -29,20 +32,44 @@ const STATUS_VARIANT: Record<string, "default" | "info" | "warning" | "success" 
   ACTIVE: "success", EXHAUSTED: "warning", SUSPENDED: "warning", REFILLED: "success", CLOSED: "default", REJECTED: "danger",
 };
 
+interface LedgerLot {
+  id: string; quantity: number; buy_rate: number; total_amount: number; status: string;
+  payment_ref: string; created_at: string;
+  quota_allocated: number; quota_reserved: number; quota_consumed: number; quota_available: number;
+  reserve_held: number; reserve_released: number; reserve_status: string;
+}
+interface Wallet { traffic: { allocated: number; reserved: number; consumed: number; available: number; utilization: number }; ledger: LedgerLot[] }
+
 export default function DtPurchasesPage() {
   const qc = useQueryClient();
+  // ?banker=X → single-banker drill-down: list filtered + full ledger card on top.
+  const banker = useSearchParams().get("banker");
   const q = useQuery({
-    queryKey: ["dt-purchases"],
+    queryKey: ["dt-purchases", banker],
     queryFn: async () => {
-      const r = await fetch("/api/v1/dt/purchases");
+      const r = await fetch(`/api/v1/dt/purchases${banker ? `?banker=${encodeURIComponent(banker)}` : ""}`);
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
       return d.purchases as Purchase[];
     },
   });
+  const ledgerQ = useQuery({
+    queryKey: ["dt-banker-ledger", banker],
+    enabled: !!banker,
+    queryFn: async () => {
+      const r = await fetch(`/api/v1/dt/wallets/${encodeURIComponent(banker!)}`);
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
+      return d as Wallet;
+    },
+  });
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ banker_id: "", quantity: "", buy_rate: "" });
+  // Optionally provision the banker's sign-in together with their first purchase —
+  // a purchase row alone never creates a login.
+  const [withNewLogin, setWithNewLogin] = useState(false);
+  const [newLoginEmail, setNewLoginEmail] = useState("");
   const create = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = { banker_id: form.banker_id.trim(), quantity: Number(form.quantity) };
@@ -50,8 +77,27 @@ export default function DtPurchasesPage() {
       const r = await fetch("/api/v1/dt/purchases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
+      // Purchase created — provision the login if requested (surface its own error).
+      if (withNewLogin && newLoginEmail.trim()) {
+        const lr = await fetch("/api/v1/dt/bankers", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ banker_id: form.banker_id.trim(), email: newLoginEmail.trim() }),
+        });
+        const ld = await lr.json().catch(() => ({}));
+        if (!lr.ok) throw new Error(`purchase created, but banker login failed: ${ld.error ?? "unknown error"}`);
+        return ld.login as { email: string; password: string | null; existing: boolean };
+      }
+      return null;
     },
-    onSuccess: () => { toast.success("Draft purchase created"); setCreateOpen(false); setForm({ banker_id: "", quantity: "", buy_rate: "" }); qc.invalidateQueries({ queryKey: ["dt-purchases"] }); },
+    onSuccess: (login) => {
+      toast.success("Draft purchase created");
+      setCreateOpen(false);
+      setForm({ banker_id: "", quantity: "", buy_rate: "" });
+      setWithNewLogin(false); setNewLoginEmail("");
+      qc.invalidateQueries({ queryKey: ["dt-purchases"] });
+      // Show the one-time credentials in the Banker-login dialog panel.
+      if (login) { setIssued(login); setResetMode(false); setLoginOpen(true); }
+    },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -114,15 +160,98 @@ export default function DtPurchasesPage() {
   return (
     <>
       <PageHeader
-        title="DT Purchases"
-        description="Banker advance purchases and their approval/funding lifecycle (BRD §10)."
+        title={banker ? `DT Purchases — ${banker}` : "DT Purchases"}
+        description={banker ? `Full ledger and purchase lifecycle for ${banker}.` : "Banker advance purchases and their approval/funding lifecycle (BRD §10)."}
         icon={Receipt}
         actions={
-          <Button variant="secondary" onClick={() => { setIssued(null); setResetMode(false); setLoginForm({ banker_id: "", email: "", full_name: "" }); setLoginOpen(true); }}>
-            <KeyRound className="h-4 w-4" /> Banker login
-          </Button>
+          <div className="flex items-center gap-2">
+            {banker && (
+              <Link href="/dt-purchases" className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]">
+                <X className="h-4 w-4" /> All bankers
+              </Link>
+            )}
+            <Button variant="secondary" onClick={() => { setIssued(null); setResetMode(false); setLoginForm({ banker_id: "", email: "", full_name: "" }); setLoginOpen(true); }}>
+              <KeyRound className="h-4 w-4" /> Banker login
+            </Button>
+          </div>
         }
       />
+
+      {/* Single-banker ledger — the full break-up of every lot's quota + reserve */}
+      {banker && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-base">Ledger — {banker}</CardTitle>
+            <CardDescription>
+              Every lot's advance, 60% quota position and 40% security reserve. Reserves released by refill rotation stay visible here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {ledgerQ.isLoading ? (
+              <p className="text-sm text-[color:var(--color-text-muted)]">Loading ledger…</p>
+            ) : !ledgerQ.data?.ledger?.length ? (
+              <p className="text-sm text-[color:var(--color-text-muted)]">No lots yet for this banker.</p>
+            ) : (
+              <>
+                {ledgerQ.data.traffic && (
+                  <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <span>Quota <b>{formatAmount(ledgerQ.data.traffic.allocated)}</b></span>
+                    <span>Consumed <b>{formatAmount(ledgerQ.data.traffic.consumed)}</b></span>
+                    <span>Available <b>{formatAmount(ledgerQ.data.traffic.available)}</b></span>
+                    <span>Reserve held <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + (l.reserve_status === "HELD" ? l.reserve_held : 0), 0))}</b></span>
+                    <span>Reserve released <b>{formatAmount(ledgerQ.data.ledger.reduce((s, l) => s + l.reserve_released, 0))}</b></span>
+                  </div>
+                )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-[color:var(--color-text-muted)]">
+                        <th className="py-2 pr-4 font-medium">Lot</th>
+                        <th className="py-2 pr-4 font-medium">DT Qty</th>
+                        <th className="py-2 pr-4 font-medium">Advance</th>
+                        <th className="py-2 pr-4 font-medium">Quota</th>
+                        <th className="py-2 pr-4 font-medium">Consumed</th>
+                        <th className="py-2 pr-4 font-medium">Available</th>
+                        <th className="py-2 pr-4 font-medium">Reserve</th>
+                        <th className="py-2 pr-4 font-medium">Reserve status</th>
+                        <th className="py-2 font-medium">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ledgerQ.data.ledger.map((l) => (
+                        <tr key={l.id} className="border-b last:border-0">
+                          <td className="py-2 pr-4">
+                            <div className="flex flex-col">
+                              <Badge variant={STATUS_VARIANT[l.status] ?? "default"} className="w-fit">{l.status}</Badge>
+                              {l.payment_ref.startsWith("REFILL:") && <span className="text-[10px] text-[color:var(--color-text-muted)]">from refill</span>}
+                            </div>
+                          </td>
+                          <td className="py-2 pr-4">{l.quantity.toLocaleString("en-IN")}</td>
+                          <td className="py-2 pr-4 font-medium">{formatAmount(l.total_amount)}</td>
+                          <td className="py-2 pr-4">{formatAmount(l.quota_allocated)}</td>
+                          <td className="py-2 pr-4">{formatAmount(l.quota_consumed)}</td>
+                          <td className="py-2 pr-4">{formatAmount(l.quota_available)}</td>
+                          <td className="py-2 pr-4">
+                            {l.reserve_status === "RELEASED"
+                              ? <span className="text-[color:var(--color-text-muted)] line-through">{formatAmount(l.reserve_held)}</span>
+                              : <span className="font-medium">{formatAmount(l.reserve_held)}</span>}
+                          </td>
+                          <td className="py-2 pr-4">
+                            {l.reserve_status
+                              ? <Badge variant={l.reserve_status === "HELD" ? "info" : l.reserve_status === "RELEASED" ? "default" : "warning"}>{l.reserve_status}</Badge>
+                              : <span className="text-[color:var(--color-text-muted)]">—</span>}
+                          </td>
+                          <td className="py-2">{formatDateTime(l.created_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <DataView
         rows={q.data ?? []}
         columns={cols}
@@ -156,10 +285,23 @@ export default function DtPurchasesPage() {
               <div className="space-y-1.5"><Label>Buy rate <span className="text-[color:var(--color-text-subtle)]">(blank = current)</span></Label><Input type="number" step="0.01" value={form.buy_rate} onChange={(e) => setForm({ ...form, buy_rate: e.target.value })} placeholder="104.00" /></div>
             </div>
             {form.quantity && form.buy_rate && <p className="text-xs text-[color:var(--color-text-muted)]">Advance debit: <b>{formatAmount(Number(form.quantity) * Number(form.buy_rate))}</b></p>}
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={withNewLogin} onChange={(e) => setWithNewLogin(e.target.checked)} />
+                Also create the banker&rsquo;s login for this id
+              </label>
+              {withNewLogin && (
+                <div className="space-y-1.5 pl-6">
+                  <Label>Banker email</Label>
+                  <Input type="email" value={newLoginEmail} onChange={(e) => setNewLoginEmail(e.target.value)} placeholder="banker@example.com" />
+                  <p className="text-xs text-[color:var(--color-text-subtle)]">A one-time password will be shown after creation.</p>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => create.mutate()} disabled={!form.banker_id || !form.quantity || create.isPending}>{create.isPending ? "Creating…" : "Create draft"}</Button>
+            <Button onClick={() => create.mutate()} disabled={!form.banker_id || !form.quantity || (withNewLogin && !newLoginEmail.trim()) || create.isPending}>{create.isPending ? "Creating…" : "Create draft"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
