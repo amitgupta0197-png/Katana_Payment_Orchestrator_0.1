@@ -15,6 +15,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { hashPassword, generatePassword } from "@/lib/password";
+import { revokeSessions } from "@/lib/session-security";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,9 @@ export async function POST(req: Request) {
       userId = created[0].id;
       createdUser = true;
     }
+
+    // Invalidate any existing sessions for the account whose password just changed (M6).
+    await revokeSessions(body.email);
 
     // Ensure the persona grant exists (idempotent) when scope info is supplied.
     if (body.kind && body.scope_id) {

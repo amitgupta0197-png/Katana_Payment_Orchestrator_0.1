@@ -154,23 +154,32 @@ export async function resolveProviderMerchants(s: Session): Promise<string[]> {
 }
 
 import { getSession, requirePersona } from "./auth";
+import { MFA_ENFORCED, isSensitiveRole } from "./fifo-mfa";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function gate(allowed: Persona[]): Promise<Session> {
+export interface GateOpts {
+  // Set false on the MFA enrolment endpoints so an un-enrolled sensitive user can still
+  // reach them; everything else enforces MFA when FIFO_MFA_ENFORCE is on (audit M7).
+  requireMfa?: boolean;
+}
+
+export async function gate(allowed: Persona[], opts: GateOpts = {}): Promise<Session> {
   const s = await getSession();
   const g = requirePersona(s, ...allowed);
   if (!g.ok) throw new HttpError(g.status, g.error);
+  if (opts.requireMfa !== false && MFA_ENFORCED && isSensitiveRole(g.session.persona) && !g.session.mfa)
+    throw new HttpError(403, "MFA enrollment required for this role");
   return g.session;
 }
 
 import { NextResponse } from "next/server";
 
-export async function gateOrResponse(allowed: Persona[]): Promise<{ session: Session } | { response: NextResponse }> {
+export async function gateOrResponse(allowed: Persona[], opts: GateOpts = {}): Promise<{ session: Session } | { response: NextResponse }> {
   try {
-    return { session: await gate(allowed) };
+    return { session: await gate(allowed, opts) };
   } catch (e) {
     if (e instanceof HttpError) {
       return { response: NextResponse.json({ error: e.message }, { status: e.status }) };

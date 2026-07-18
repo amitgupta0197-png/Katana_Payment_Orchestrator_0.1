@@ -12,7 +12,7 @@ const ALL = ["SUPER_ADMIN", "ADMIN", "PROVIDER", "MERCHANT", "OPERATOR", "COMPLI
 const schema = z.object({ token: z.string().optional() });
 
 export async function POST(req: Request) {
-  const g = await gateOrResponse([...ALL]);
+  const g = await gateOrResponse([...ALL], { requireMfa: false });
   if ("response" in g) return g.response;
   let body;
   try { body = schema.parse(await req.json().catch(() => ({}))); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }

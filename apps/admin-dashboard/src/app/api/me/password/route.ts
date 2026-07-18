@@ -4,9 +4,10 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { getSession, setSessionCookie } from "@/lib/auth";
 import { rows, pgError } from "@/lib/pg";
 import { hashPassword, verifyPassword, isRealHash } from "@/lib/password";
+import { revokeSessions, currentEpoch } from "@/lib/session-security";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,15 @@ export async function POST(req: Request) {
 
     await rows("auth", `UPDATE users SET password_hash = $2, updated_at = now() WHERE email = $1`,
       [session.email, hashPassword(body.new_password)]);
+
+    // Revoke every existing session for this user (M6), then re-issue THIS one so the
+    // caller stays logged in while any other/stolen sessions are invalidated.
+    await revokeSessions(session.email);
+    await setSessionCookie({
+      user_id: session.user_id, email: session.email, full_name: session.full_name,
+      persona: session.persona, scope_id: session.scope_id, scope_label: session.scope_label,
+      mfa: session.mfa, device: session.device, sv: await currentEpoch(session.email),
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

@@ -4,6 +4,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { requireSecret } from "@/lib/secrets";
+import { epochValid } from "@/lib/session-security";
 
 // BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
 // payment-operations module; access is enforced per-route via gateOrResponse.
@@ -21,6 +22,7 @@ export interface Session {
   scope_label: string;
   mfa?: boolean;       // MFA satisfied at login (SEC-003)
   device?: string;     // bound device hash (SEC-004)
+  sv?: number;         // session epoch at issue time — for revocation (audit M6)
   exp: number; // unix seconds
 }
 
@@ -54,7 +56,11 @@ export function verifySession(token: string | undefined): Session | null {
 
 export async function getSession(): Promise<Session | null> {
   const c = await cookies();
-  return verifySession(c.get(COOKIE_NAME)?.value);
+  const s = verifySession(c.get(COOKIE_NAME)?.value);
+  if (!s) return null;
+  // Revocation check (M6): reject sessions issued before the user's current epoch.
+  if (!(await epochValid(s.email, s.sv))) return null;
+  return s;
 }
 
 export async function setSessionCookie(s: Omit<Session, "exp">) {

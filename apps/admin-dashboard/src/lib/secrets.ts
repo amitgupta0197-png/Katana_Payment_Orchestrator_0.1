@@ -11,6 +11,10 @@
 // environment BEFORE code using them is deployed to production. Rotate first, then deploy.
 
 const IS_PROD = process.env.NODE_ENV === "production";
+// `next build` runs with NODE_ENV=production and evaluates module top-level code. We must
+// not fail the BUILD on a missing secret — only the running server. Enforcement therefore
+// skips the production build phase and applies at runtime (first import in the live process).
+const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
 
 // Values that must never authenticate anything in production — the committed dev defaults.
 const KNOWN_DEFAULTS = new Set([
@@ -28,7 +32,7 @@ const KNOWN_DEFAULTS = new Set([
  */
 export function requireSecret(name: string, value: string | undefined | null, devFallback: string): string {
   if (value && !KNOWN_DEFAULTS.has(value)) return value;
-  if (!IS_PROD) return value || devFallback;
+  if (!IS_PROD || IS_BUILD) return value || devFallback;
   throw new Error(
     `${name} is unset or set to a known insecure default. Refusing to start in production — ` +
     `set a strong unique value (rotate it first, then deploy). See docs/SECURITY-AUDIT-2026-07.md.`,

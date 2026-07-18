@@ -26,7 +26,12 @@
 | H6 (capture-rrn merchant binding) | ✅ code done | Poll bound to the device's enrolled merchant. |
 | M2 (timestamp in signature) | ✅ code done | Signature is over `${timestamp}.${payload}` on both server and agent. |
 | Agent signing (unblocks C2 device routes) | ✅ code done — needs APK build+deploy | Agent v2.37 signs with `AGENT_SIGNING_SECRET`; `x-sandbox` removed. Server verifies via `verifyDeviceRequest`. |
-| M3–M7, L1–L5 | ⏳ todo | Phase 2 structural hardening. |
+| M4 (login rate-limit) | ✅ code done | Lockout after N failures/window; needs migration `0014_session_security.sql`. |
+| M6 (session revocation) | ✅ code done | Epoch-based; auto-revoke on password change; `/api/me/logout-all`. |
+| M7 (MFA enforcement) | ✅ code done — opt-in | Enforced in the gate when `FIFO_MFA_ENFORCE=true`; enrolment endpoints exempt. |
+| M3 (device binding) | ⏳ deferred | Needs a persistent device-cookie design; IP/UA binding would log real users out. |
+| Per-device signing keys | ⏳ deferred | Shared `AGENT_SIGNING_SECRET` already replaces x-sandbox; per-device keys are a larger build. |
+| M5, L1–L5 | ⏳ todo | Remaining lower-severity items. |
 
 > ✅ **Agent signing implemented.** The deployed agent used to authenticate with the `x-sandbox: 1` header (no real auth). The agent (v2.37) now signs every request with a dedicated `AGENT_SIGNING_SECRET` (HMAC-SHA256, timestamp bound in), and the server verifies it. Rollout: **(1)** set `AGENT_SIGNING_SECRET` on the server (same value baked into the APK via `keystore.properties → agentSigningSecret`); **(2)** deploy the server with `LEGACY_SANDBOX_AGENTS=1` so current devices keep working; **(3)** build + distribute the new APK; **(4)** once the fleet is updated, remove `LEGACY_SANDBOX_AGENTS` — the device-route bypass is then fully closed. The unauthenticated *callback* path (the worst C2 vector) is already closed regardless.
 

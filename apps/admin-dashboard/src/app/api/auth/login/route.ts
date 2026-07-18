@@ -10,6 +10,7 @@ import { setSessionCookie } from "@/lib/auth";
 import { verifyPassword, isRealHash } from "@/lib/password";
 import { publish } from "@/lib/events";
 import { getMfa, checkLoginCode, deviceHash, recordDevice, isSensitiveRole, MFA_ENFORCED } from "@/lib/fifo-mfa";
+import { loginLock, recordLoginFailure, clearLoginFailures, currentEpoch } from "@/lib/session-security";
 
 const schema = z.object({
   email: z.string().email(),
@@ -22,12 +23,22 @@ export async function POST(req: Request) {
   try { body = schema.parse(await req.json()); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
+  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
+
+  // Rate-limit / lockout (M4): too many recent failures for this email → refuse early.
+  const lock = await loginLock(body.email);
+  if (lock.locked)
+    return NextResponse.json(
+      { error: "too many failed attempts; try again later" },
+      { status: 429, headers: { "Retry-After": String(lock.retryAfterSec) } },
+    );
+
   try {
     const u = await rows<any>("auth", `
       SELECT id::text, email::text, COALESCE(full_name,'') AS full_name, status, password_hash
         FROM users WHERE email = $1
     `, [body.email]);
-    if (!u.length) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
+    if (!u.length) { await recordLoginFailure(body.email, ip); return NextResponse.json({ error: "invalid credentials" }, { status: 401 }); }
     if (u[0].status !== "active") return NextResponse.json({ error: "user disabled" }, { status: 403 });
 
     // Verify against the real password hash when set. The shared DEMO_PASSWORD fallback for
@@ -38,7 +49,7 @@ export async function POST(req: Request) {
     const passwordOk = isRealHash(u[0].password_hash)
       ? verifyPassword(body.password, u[0].password_hash)
       : allowDemo && body.password === (process.env.DEMO_PASSWORD ?? "demo");
-    if (!passwordOk) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
+    if (!passwordOk) { await recordLoginFailure(body.email, ip); return NextResponse.json({ error: "invalid credentials" }, { status: 401 }); }
 
     const personas = await rows<any>("iam", `
       SELECT persona_kind, COALESCE(scope_id,'') AS scope_id, COALESCE(scope_label,'') AS scope_label, is_primary
@@ -54,12 +65,17 @@ export async function POST(req: Request) {
     const mfa = await getMfa(u[0].email);
     if (mfa?.enabled) {
       const ok = await checkLoginCode(u[0].email, body.totp);
-      if (!ok) return NextResponse.json({ error: body.totp ? "invalid authentication code" : "authentication code required", mfa_required: true }, { status: 401 });
+      if (!ok) {
+        await recordLoginFailure(body.email, ip);
+        return NextResponse.json({ error: body.totp ? "invalid authentication code" : "authentication code required", mfa_required: true }, { status: 401 });
+      }
     }
     const mfaSetupRequired = MFA_ENFORCED && isSensitiveRole(primary.persona_kind) && !mfa?.enabled;
 
+    // Full success — clear the failure counter (M4).
+    await clearLoginFailures(body.email);
+
     // Device binding (SEC-004): record the device and stamp its hash on the session.
-    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
     const ua = req.headers.get("user-agent");
     const dHash = deviceHash(ua, ip);
     await recordDevice(u[0].email, dHash, ua);
@@ -73,6 +89,7 @@ export async function POST(req: Request) {
       scope_label: primary.scope_label,
       mfa: !!mfa?.enabled,
       device: dHash,
+      sv: await currentEpoch(u[0].email),   // stamp the current session epoch (M6)
     });
 
     await publish({

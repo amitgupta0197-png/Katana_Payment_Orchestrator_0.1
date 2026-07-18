@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const ALL = ["SUPER_ADMIN", "ADMIN", "PROVIDER", "MERCHANT", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] as const;
 
 export async function POST() {
-  const g = await gateOrResponse([...ALL]);
+  const g = await gateOrResponse([...ALL], { requireMfa: false });
   if ("response" in g) return g.response;
   try {
     const r = await enrollMfa(g.session.email, g.session.user_id);
