@@ -15,9 +15,11 @@
 // in sync — same secret env var, same body/sig encoding (HMAC-SHA256, b64url).
 
 import { NextRequest, NextResponse } from "next/server";
+import { requireSecret } from "@/lib/secrets";
 
 const COOKIE_NAME = "katana_session";
-const SECRET = process.env.SESSION_SECRET ?? "dev-session-secret-do-not-use-in-prod";
+// MUST resolve to the exact same value as lib/auth.ts, or session verification diverges.
+const SECRET = requireSecret("SESSION_SECRET", process.env.SESSION_SECRET, "dev-session-secret-do-not-use-in-prod");
 
 type Persona = "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "BANKER" | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 interface Session {

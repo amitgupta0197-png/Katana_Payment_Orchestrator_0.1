@@ -5,11 +5,13 @@
 // per-database so we re-use connections.
 
 import { Pool, type QueryResultRow } from "pg";
+import { requireSecret } from "@/lib/secrets";
 
 const PG_HOST = process.env.PG_HOST ?? "localhost";
 const PG_PORT = Number(process.env.PG_PORT ?? 5432);
 const PG_USER = process.env.PG_USER ?? "sixsenai";
-const PG_PASSWORD = process.env.PG_PASSWORD ?? "sixsenai_pg_2024_secure";
+// Fails closed in production if the DB password is unset or the committed default (audit H3).
+const PG_PASSWORD = requireSecret("PG_PASSWORD", process.env.PG_PASSWORD, "sixsenai_pg_2024_secure");
 
 const pools = new Map<string, Pool>();
 

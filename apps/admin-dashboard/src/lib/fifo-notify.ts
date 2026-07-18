@@ -5,8 +5,13 @@
 import { createHmac } from "crypto";
 import { rows } from "@/lib/pg";
 import { recordEvent } from "@/lib/fifo";
+import { safeFetch } from "@/lib/safe-fetch";
+import { requireSecret } from "@/lib/secrets";
 
-const SECRET = process.env.FIFO_WEBHOOK_SECRET ?? process.env.SESSION_SECRET ?? "dev-webhook-secret";
+// A DEDICATED secret — no longer chained to SESSION_SECRET (audit H2: the key that verifies
+// inbound device signatures must not be the same key that signs outbound merchant callbacks,
+// nor reuse the session-signing key). Fails closed in production.
+const SECRET = requireSecret("FIFO_WEBHOOK_SECRET", process.env.FIFO_WEBHOOK_SECRET, "dev-webhook-secret");
 
 export function signPayload(body: string): string {
   return createHmac("sha256", SECRET).update(body).digest("hex");
@@ -33,13 +38,11 @@ export async function sendStatusCallback(order: {
   const body = JSON.stringify(payload);
   const signature = signPayload(body);
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
-    const r = await fetch(order.callback_url, {
+    const r = await safeFetch(order.callback_url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-signature": signature, "x-signature-alg": "HMAC-SHA256" },
-      body, signal: ctrl.signal,
-    }).finally(() => clearTimeout(t));
+      body,
+    });
     await recordEvent({ orderId: order.id, from: order.status, to: order.status, actorKind: "system",
       reason: `callback ${r.ok ? "delivered" : "failed"} (HTTP ${r.status})`, payload: { callback_url: order.callback_url, http_status: r.status } });
   } catch (e) {

@@ -66,7 +66,13 @@ export interface TxnAlertResult {
   confirm?: ConfirmPoolPayResult;
 }
 
-interface Cand { id: string; order_id: string; status: string; receiver_vpa: string; created_at: string }
+interface Cand { id: string; order_id: string; status: string; receiver_vpa: string; created_at: string; amount: number }
+
+// Credited amount must equal the order amount before a match can auto-confirm. Tolerance
+// is sub-paisa to absorb float/numeric round-trips; anything larger is a genuine mismatch.
+function amountMatches(orderAmount: number, alertAmount: number): boolean {
+  return Math.abs(Number(orderAmount) - Number(alertAmount)) < 0.01;
+}
 
 // ── Forensic helpers ──────────────────────────────────────────────────────────────
 
@@ -165,9 +171,44 @@ async function openManualCase(
   return r[0]?.case_id ?? null;
 }
 
+// #1 auto-fill: a payment-email credit (Paytm/PhonePe "₹X received") lands carrying the
+// provider's internal ref but NO 12-digit UPI RRN — the real RRN only lives on the Paytm
+// Business detail screen. If the merchant has a LIVE capture device (agent heartbeated
+// recently), auto-raise an on-demand capture request so the agent re-sweeps Paytm and
+// backfills the RRN — no manual "Get RRN" click per row. Deduped by the partial-unique
+// index on alert_id; skipped when no device is live (the request would only expire).
+// Returns the request id when one is raised, else null.
+async function maybeAutoCaptureRequest(
+  merchantId: string, alertId: string, amount: number, payerVpa: string | null,
+): Promise<string | null> {
+  const live = await rows<{ device_id: string }>("vendorGateway", `
+    SELECT device_id FROM vendor_devices
+     WHERE merchant_id = $1 AND COALESCE(agent_enabled, true)
+       AND last_heartbeat > now() - interval '20 minutes' LIMIT 1
+  `, [merchantId]).catch(() => []);
+  if (!live.length) return null;
+  const r = await rows<{ id: string }>("vendorGateway", `
+    INSERT INTO vendor_capture_requests (alert_id, merchant_id, amount, payer_vpa, requested_by)
+    SELECT $1::uuid, $2, $3, $4, 'auto:no-rrn'
+     WHERE NOT EXISTS (SELECT 1 FROM vendor_capture_requests
+                        WHERE alert_id = $1::uuid AND status IN ('PENDING','SENT'))
+    RETURNING id::text
+  `, [alertId, merchantId, amount.toFixed(2), payerVpa]).catch(() => []);
+  return r[0]?.id ?? null;
+}
+
 // ── Main ingestion + reconciliation ─────────────────────────────────────────────────
 
-export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResult> {
+// `channelTrusted` is asserted ONLY by internal server-side callers (the email poller)
+// that reached this function through their own authenticated channel — never from a public
+// HTTP body. It is what lets a merchant's own mailbox (source EMAIL) or a signed gateway
+// (BANK_API) auto-confirm without a registered device. The public /api/v1/txn-alert route
+// must NOT set it, so a request cannot self-declare a trusted channel via `source` (audit C3).
+export async function ingestTxnAlert(
+  input: TxnAlertInput,
+  opts: { channelTrusted?: boolean } = {},
+): Promise<TxnAlertResult> {
+  const channelTrusted = opts.channelTrusted === true;
   const source = input.source ?? "DEVICE";
   const deviceId = input.device_id ?? null;
   const amount = Number(input.amount);
@@ -228,11 +269,45 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   // 3) Duplicate / replay detection.
   let duplicate = false;
   let dupDetail = "";
-  const dupHash = await rows<{ id: string }>("vendorGateway", `
-    SELECT id::text FROM vendor_txn_alerts
-     WHERE message_hash = $1 AND created_at >= now() - ($2 || ' hours')::interval LIMIT 1
-  `, [messageHash, String(DEDUP_HASH_HOURS)]).catch(() => []);
-  if (dupHash.length) { duplicate = true; dupDetail = "identical message hash seen recently"; }
+  let benignRecapture = false;
+  // Same 12-digit UPI RRN seen recently = the SAME payment re-captured, never new money
+  // (RRNs are unique per UPI transaction). The agent's seen-set is in-memory, so a
+  // restart re-uploads the whole visible reports list — and Airtel's relative "paid at"
+  // text drifts between scrapes, so the message-hash check alone misses those replays.
+  // Checked FIRST so an RRN-bearing re-upload is classed as a benign re-scrape (no HIGH
+  // security alert, no manual case) instead of an identical-hash replay.
+  if (utr && /^\d{12}$/.test(utr)) {
+    // Target the BEST stored copy (confirmed > real-amount > earliest) — the one the
+    // feed shows — so a repair lands on the visible row, not another junk duplicate.
+    const dupRrn = await rows<{ id: string; amount: number }>("vendorGateway", `
+      SELECT id::text, amount::float AS amount FROM vendor_txn_alerts
+       WHERE direction = 'CREDIT' AND utr = $1
+         AND created_at >= now() - ($2 || ' hours')::interval
+       ORDER BY (outcome = 'CONFIRMED') DESC, (amount > 0) DESC, created_at ASC LIMIT 1
+    `, [utr, String(DEDUP_HASH_HOURS)]).catch(() => []);
+    if (dupRrn.length) {
+      duplicate = true; benignRecapture = true; dupDetail = `RRN ${utr} already captured (re-scrape)`;
+      // Self-heal: a mid-load first scrape can store ₹0 with a junk payer (the RRN node
+      // renders before the amount does). When the re-scrape carries the real amount,
+      // repair the stored row in place instead of keeping the junk forever.
+      if (amount > 0 && Number(dupRrn[0].amount) === 0) {
+        await rows("vendorGateway", `
+          UPDATE vendor_txn_alerts
+             SET amount = $2, payer_name = COALESCE($3, payer_name), payer_vpa = COALESCE($4, payer_vpa),
+                 detail = COALESCE(detail,'') || ' · amount repaired by re-scrape'
+           WHERE id = $1::uuid
+        `, [dupRrn[0].id, amount.toFixed(2), payerName, input.payer_vpa ?? null]).catch(() => {});
+        dupDetail += ` · repaired ₹0 original to ${amount.toFixed(2)}`;
+      }
+    }
+  }
+  if (!duplicate) {
+    const dupHash = await rows<{ id: string }>("vendorGateway", `
+      SELECT id::text FROM vendor_txn_alerts
+       WHERE message_hash = $1 AND created_at >= now() - ($2 || ' hours')::interval LIMIT 1
+    `, [messageHash, String(DEDUP_HASH_HOURS)]).catch(() => []);
+    if (dupHash.length) { duplicate = true; dupDetail = "identical message hash seen recently"; }
+  }
   if (!duplicate && input.nonce) {
     const dupNonce = await rows<{ id: string }>("vendorGateway", `
       SELECT id::text FROM vendor_txn_alerts
@@ -252,17 +327,28 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   // to exactly one (order_id is unique per vendor). No ambiguity, no amount tricks.
   if (orderRef) {
     const byRef = await rows<Cand>("vendorGateway", `
-      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at
+      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1 ORDER BY created_at DESC
     `, [orderRef]).catch(() => []);
-    if (byRef.length) { order = byRef[0]; confidence = 100; matchDetail = `exact order id ${orderRef}`; }
+    if (byRef.length) {
+      order = byRef[0];
+      if (amountMatches(order.amount, amount)) { confidence = 100; matchDetail = `exact order id ${orderRef}`; }
+      // Order id matched but the credited amount differs — NEVER auto-confirm a mismatch
+      // (a ₹1 alert must not clear a ₹50k order, nor defeat HIGH_AMOUNT_HOLD). Route to
+      // manual review by keeping confidence below the auto-confirm bar (audit H1).
+      else { confidence = 40; matchDetail = `order id ${orderRef} matched but amount mismatch (alert ₹${amount.toFixed(2)} vs order ₹${Number(order.amount).toFixed(2)})`; }
+    }
   }
   if (utr && !order) {
     const byUtr = await rows<Cand>("vendorGateway", `
-      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at
+      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1 ORDER BY created_at DESC
     `, [utr]).catch(() => []);
-    if (byUtr.length === 1) { order = byUtr[0]; confidence = 100; matchDetail = `exact UTR ${utr}`; }
+    if (byUtr.length === 1) {
+      order = byUtr[0];
+      if (amountMatches(order.amount, amount)) { confidence = 100; matchDetail = `exact UTR ${utr}`; }
+      else { confidence = 40; matchDetail = `UTR ${utr} matched but amount mismatch (alert ₹${amount.toFixed(2)} vs order ₹${Number(order.amount).toFixed(2)})`; }
+    }
     else if (byUtr.length > 1) { duplicate = true; dupDetail = `UTR ${utr} on ${byUtr.length} orders`; }
   }
   if (!order && !duplicate) {
@@ -270,7 +356,7 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
     // genuine LATE payment — one that landed after the order timed out — is not lost.
     // SUCCESS/SUCCEEDED/FAILED are excluded (hard final).
     const cands = await rows<Cand>("vendorGateway", `
-      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at
+      SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
          AND amount = $1 AND created_at >= now() - ($2 || ' minutes')::interval
@@ -314,7 +400,13 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   const fakeSender = isFakeSender(input.sender, source);
   // EMAIL / BANK_API are SERVER-side channels (the merchant's authenticated mailbox /
   // a signed gateway) — higher trust than a phone, so they don't need a TRUSTED device.
-  const trusted = deviceStatus === "TRUSTED" || source === "EMAIL" || source === "BANK_API";
+  // But that elevated trust is granted ONLY when the caller proved it came through such a
+  // channel (channelTrusted, set by the internal poller) — never because the request BODY
+  // said so. A public request that merely sets source:"EMAIL"/"BANK_API" gets no trust and
+  // must still present a TRUSTED device (audit C3).
+  const trusted =
+    deviceStatus === "TRUSTED" ||
+    (channelTrusted && (source === "EMAIL" || source === "BANK_API"));
   const willConfirm = !!order && !duplicate && !fakeSender && trusted && confidence >= CONFIDENCE_THRESHOLD;
 
   let outcome: TxnAlertResult["outcome"];
@@ -437,14 +529,18 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
 
   // 7) Forensic security alerts.
   let securityAlertId: string | null = null;
-  if (duplicate) securityAlertId = await raiseSecurityAlert(deviceId, dupDetail.includes("nonce") ? "NONCE_REUSE" : "DUPLICATE", "HIGH", dupDetail, alertId);
+  // A benign re-scrape (agent restart re-reading the same reports list) is expected
+  // churn, not an attack — log it LOW so a restart doesn't flood HIGH alerts.
+  if (duplicate) securityAlertId = await raiseSecurityAlert(deviceId, dupDetail.includes("nonce") ? "NONCE_REUSE" : "DUPLICATE", benignRecapture ? "LOW" : "HIGH", dupDetail, alertId);
   else if (fakeSender) securityAlertId = await raiseSecurityAlert(deviceId, "FAKE_SENDER", "HIGH", `credit alert from non-bank sender ${input.sender}`, alertId);
   else if (deviceStatus === "SUSPENDED" || deviceStatus === "REVOKED") securityAlertId = await raiseSecurityAlert(deviceId, "SUSPENDED_DEVICE", "HIGH", `alert from ${deviceStatus} device`, alertId);
   else if (deviceStatus === "UNKNOWN" && order && deviceId) securityAlertId = await raiseSecurityAlert(deviceId, "UNKNOWN_DEVICE", "MEDIUM", "alert matched an order from an unregistered device", alertId);
 
   // 6) Operations fallback — open a manual case for anything not auto-confirmed.
+  // Benign re-scrapes are skipped: the ORIGINAL alert already carries whatever case
+  // matters, so a duplicate row needs no ops action of its own.
   let manualCaseId: string | null = null;
-  if (outcome !== "CONFIRMED") {
+  if (outcome !== "CONFIRMED" && !benignRecapture) {
     const reason: ManualReason =
       duplicate ? "DUPLICATE"
       : fakeSender ? "SUSPICIOUS_DEVICE"
@@ -467,6 +563,15 @@ export async function ingestTxnAlert(input: TxnAlertInput): Promise<TxnAlertResu
   if (manualCaseId || securityAlertId) {
     await rows("vendorGateway", `UPDATE vendor_txn_alerts SET manual_case_id = $2, security_alert_id = $3 WHERE id = $1::uuid`,
       [alertId, manualCaseId, securityAlertId]).catch(() => {});
+  }
+
+  // #1 auto-fill the RRN for email credits that arrived without one — the payment lives on
+  // the merchant's Paytm Business screen; nudge a live capture device to re-sweep and
+  // backfill it. EMAIL only (ACCESSIBILITY credits already carry their on-device RRN);
+  // skip duplicates. No-op when the merchant has no active device.
+  if (source === "EMAIL" && !rrn && !duplicate && input.merchant_id) {
+    const reqId = await maybeAutoCaptureRequest(input.merchant_id, alertId, amount, input.payer_vpa ?? null);
+    if (reqId) await audit(actor, "CAPTURE_AUTO_REQUESTED", "txn_alert", alertId, "no RRN on email credit → auto capture request to live device");
   }
 
   // Apply confirmation when policy is satisfied.

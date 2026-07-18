@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { signPayload } from "@/lib/fifo-notify";
+import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +24,10 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  const sandbox = deviceSandboxRequested(req);
   const rawText = await req.text();
   if (!sandbox) {
-    const sig = req.headers.get("x-signature") ?? "";
-    if (!sig || signPayload(rawText) !== sig)
+    if (!sigEqual(signPayload(rawText), req.headers.get("x-signature")))
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
   let body; try { body = schema.parse(JSON.parse(rawText)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }

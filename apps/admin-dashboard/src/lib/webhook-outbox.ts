@@ -14,6 +14,7 @@
 import { rows } from "@/lib/pg";
 import { payloadHash, sign, retrySchedule } from "@/lib/webhooks";
 import { publish } from "@/lib/events";
+import { safeFetch } from "@/lib/safe-fetch";
 
 const DEFAULT_SECRET = "sandbox-merchant-secret-do-not-use-in-prod";
 
@@ -101,7 +102,7 @@ export async function dispatchPending(opts: { limit?: number } = {}): Promise<{
     const started = Date.now();
     let status = 0, body = "", err: string | null = null;
     try {
-      const r = await fetch(fullUrl(target), {
+      const r = await safeFetch(fullUrl(target), {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -112,7 +113,6 @@ export async function dispatchPending(opts: { limit?: number } = {}): Promise<{
           "x-attempt": String(attemptNo),
         },
         body: JSON.stringify(row.payload),
-        signal: AbortSignal.timeout(5_000),
       });
       status = r.status;
       body = (await r.text()).slice(0, 4_000);

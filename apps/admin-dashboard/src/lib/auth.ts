@@ -3,6 +3,7 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { requireSecret } from "@/lib/secrets";
 
 // BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
 // payment-operations module; access is enforced per-route via gateOrResponse.
@@ -24,7 +25,7 @@ export interface Session {
 }
 
 const COOKIE_NAME = "katana_session";
-const SECRET = process.env.SESSION_SECRET ?? "dev-session-secret-do-not-use-in-prod";
+const SECRET = requireSecret("SESSION_SECRET", process.env.SESSION_SECRET, "dev-session-secret-do-not-use-in-prod");
 const TTL_SECONDS = 8 * 60 * 60;
 
 function sign(payload: string): string {

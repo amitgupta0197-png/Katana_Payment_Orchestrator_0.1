@@ -20,6 +20,7 @@ import {
   canonicalise, payloadHash, dedupKey, verifySignature, vendorSecret,
 } from "@/lib/webhooks";
 import { enqueueForOrder } from "@/lib/webhook-outbox";
+import { sandboxRequested } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ const STATUS_TO_EVENT: Record<string, string> = {
 
 export async function POST(req: Request, { params }: { params: Promise<{ vendor: string }> }) {
   const { vendor } = await params;
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  const sandbox = sandboxRequested(req);
 
   let body: z.infer<typeof schema>;
   let raw: unknown;

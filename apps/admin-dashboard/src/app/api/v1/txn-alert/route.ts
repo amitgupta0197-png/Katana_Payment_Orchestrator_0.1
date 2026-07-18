@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { signPayload } from "@/lib/fifo-notify";
+import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
 import { ingestTxnAlert, isAuthMessage, RECON_POLICY } from "@/lib/txn-reconcile";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +43,13 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  const sandbox = deviceSandboxRequested(req);
   const rawText = await req.text();
 
   if (!sandbox) {
-    // HMAC signature over the raw body.
-    const sig = req.headers.get("x-signature") ?? "";
-    if (!sig || signPayload(rawText) !== sig)
+    // HMAC signature over the raw body (constant-time compare).
+    const sig = req.headers.get("x-signature");
+    if (!sigEqual(signPayload(rawText), sig))
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
     // Timestamp replay window (±5 min). Accepts epoch seconds or milliseconds.
     const tsRaw = req.headers.get("x-timestamp");

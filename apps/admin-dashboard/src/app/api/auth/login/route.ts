@@ -30,11 +30,14 @@ export async function POST(req: Request) {
     if (!u.length) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
     if (u[0].status !== "active") return NextResponse.json({ error: "user disabled" }, { status: 403 });
 
-    // Verify against the real password hash when set; otherwise accept the shared
-    // demo password (un-migrated seeded accounts).
+    // Verify against the real password hash when set. The shared DEMO_PASSWORD fallback for
+    // un-migrated accounts is DISABLED in production (audit C5) — otherwise any seeded account
+    // with a null/non-scrypt hash logs in with "demo". In prod such an account cannot log in
+    // until an admin sets a real password. Enable in a non-prod env with ALLOW_DEMO_LOGIN=1.
+    const allowDemo = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEMO_LOGIN === "1";
     const passwordOk = isRealHash(u[0].password_hash)
       ? verifyPassword(body.password, u[0].password_hash)
-      : body.password === (process.env.DEMO_PASSWORD ?? "demo");
+      : allowDemo && body.password === (process.env.DEMO_PASSWORD ?? "demo");
     if (!passwordOk) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
 
     const personas = await rows<any>("iam", `

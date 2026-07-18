@@ -257,7 +257,7 @@ async function pollOneInboxOAuth(cfg: InboxConfig): Promise<EmailIngestResult> {
         amount: hit.amount, order_ref: hit.orderRef ?? undefined, payer_name: hit.payerName ?? undefined, payer_vpa: hit.payerVpa ?? undefined, utr: hit.utr ?? undefined,
         sender: from || "email", raw: `${subject} — ${gmailBody(msg.payload)}`.slice(0, 2000),
         event_time: eventTime, parser_version: "email-oauth-1.0",
-      });
+      }, { channelTrusted: true });
       out.ingested++;
       out.results.push({ amount: hit.amount, payer: hit.payerName, outcome: r.outcome, confidence: r.confidence, matched: r.matched_order_ref });
     }
@@ -339,7 +339,7 @@ export async function pollOneInbox(cfg: InboxConfig): Promise<EmailIngestResult>
           raw: `${subject} — ${body}`.slice(0, 2000),
           event_time: eventTime,
           parser_version: "email-1.0",
-        });
+        }, { channelTrusted: true });
         out.ingested++;
         out.results.push({ amount: hit.amount, payer: hit.payerName, outcome: r.outcome, confidence: r.confidence, matched: r.matched_order_ref });
       }

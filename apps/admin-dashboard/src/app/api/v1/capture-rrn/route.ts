@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { signPayload } from "@/lib/fifo-notify";
+import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +26,10 @@ export async function GET(req: Request) {
   const deviceId = url.searchParams.get("device_id") ?? "";
   const merchantId = url.searchParams.get("merchant_id") ?? "";
 
-  // Auth: sandbox header, or HMAC over the raw query string.
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  // Auth: sandbox header (non-prod only), or HMAC over the raw query string.
+  const sandbox = deviceSandboxRequested(req);
   if (!sandbox) {
-    const sig = req.headers.get("x-signature") ?? "";
-    if (!sig || signPayload(url.search) !== sig)
+    if (!sigEqual(signPayload(url.search), req.headers.get("x-signature")))
       return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 

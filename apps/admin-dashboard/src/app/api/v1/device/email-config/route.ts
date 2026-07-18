@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { signPayload } from "@/lib/fifo-notify";
+import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
 import { testInboxConnection } from "@/lib/email-ingest";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +26,11 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  const sandbox = deviceSandboxRequested(req);
   const raw = await req.text();
   if (!sandbox) {
-    const sig = req.headers.get("x-signature") ?? "";
-    if (!sig || signPayload(raw) !== sig) return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+    if (!sigEqual(signPayload(raw), req.headers.get("x-signature")))
+      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
   let body: z.infer<typeof schema>;
   try { body = schema.parse(JSON.parse(raw)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
@@ -53,7 +54,9 @@ export async function POST(req: Request) {
       INSERT INTO vendor_email_inboxes (merchant_id, email, app_password, host, port, enabled, status, last_error, updated_at)
       VALUES ($1, $2, $3, COALESCE($4,'imap.gmail.com'), COALESCE($5,993), COALESCE($6,true), $7, $8, now())
       ON CONFLICT (email) DO UPDATE SET
-        merchant_id  = COALESCE($1, vendor_email_inboxes.merchant_id),
+        -- Keep the existing merchant binding; only fill it if currently unset. Prevents an
+        -- attacker re-pointing an already-connected inbox to a different merchant (audit H5).
+        merchant_id  = COALESCE(vendor_email_inboxes.merchant_id, $1),
         app_password = COALESCE(NULLIF($3,''), vendor_email_inboxes.app_password),
         host         = COALESCE($4, vendor_email_inboxes.host),
         port         = COALESCE($5, vendor_email_inboxes.port),

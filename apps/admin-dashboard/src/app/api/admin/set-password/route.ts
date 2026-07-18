@@ -46,6 +46,14 @@ export async function POST(req: Request) {
     let createdUser = false;
     if (existing.length) {
       userId = existing[0].id;
+      // Privilege guard (audit H7): this self-service provisioning route may only (re)set
+      // passwords for tenant logins (MERCHANT/PROVIDER/BANKER). Refuse to touch a privileged
+      // staff account, so an ADMIN cannot reset a SUPER_ADMIN's password and take it over.
+      const PRIVILEGED = new Set(["SUPER_ADMIN", "ADMIN", "FINANCE", "COMPLIANCE", "RISK", "OPERATOR", "SUPPORT"]);
+      const targetPersonas = await rows<{ persona_kind: string }>("iam",
+        `SELECT persona_kind FROM user_personas WHERE user_id = $1::uuid`, [userId]);
+      if (targetPersonas.some((p) => PRIVILEGED.has(p.persona_kind)))
+        return NextResponse.json({ error: "cannot set the password of a privileged staff account via this route" }, { status: 403 });
       await rows("auth", `UPDATE users SET password_hash = $2, status = 'active', updated_at = now() WHERE id = $1::uuid`,
         [userId, hashPassword(password)]);
     } else {

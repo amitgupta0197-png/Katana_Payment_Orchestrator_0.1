@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { payloadHash, verifySignature, vendorSecret } from "@/lib/webhooks";
+import { sandboxRequested } from "@/lib/device-auth";
 import { confirmPoolPayOrder } from "@/lib/poolpay-order";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = req.headers.get("x-sandbox") === "1";
+  const sandbox = sandboxRequested(req);
   const rawText = await req.text();
   let raw: unknown;
   let body: z.infer<typeof schema>;

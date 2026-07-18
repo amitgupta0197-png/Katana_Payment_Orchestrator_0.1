@@ -23,6 +23,11 @@ function masterKey(): Buffer {
     if (k.length !== 32) throw new Error("VAULT_MASTER_KEY must decode to 32 bytes");
     return k;
   }
+  // Production MUST supply a real key. Without it every sealed secret would be encrypted
+  // under the public 0x42 constant (audit C4) — refuse to run. Rotate the vault with
+  // tools/reseal-vault.mjs before setting VAULT_MASTER_KEY for the first time.
+  if (process.env.NODE_ENV === "production")
+    throw new Error("VAULT_MASTER_KEY is required in production (base64 32 bytes). See docs/SECURITY-AUDIT-2026-07.md.");
   // Dev-only deterministic key so the demo runs without setup.
   // 32 bytes of repeated 0x42 — easy to spot in dumps and clearly not prod.
   return Buffer.alloc(32, 0x42);

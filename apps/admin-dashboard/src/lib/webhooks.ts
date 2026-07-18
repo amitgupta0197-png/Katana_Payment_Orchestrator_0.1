@@ -9,6 +9,7 @@
 // regardless of what JSON the provider sent.
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { requireSecret } from "@/lib/secrets";
 
 // Replay window in seconds. Anything older than this is rejected even with
 // a valid signature so an intercepted callback can't be replayed later.
@@ -71,5 +72,6 @@ export function verifySignature(input: {
 // (BRD §3 KMS/HSM). For Sprint 3 demos we use a fixed env-overridable secret.
 export function vendorSecret(vendor: string): string {
   const k = `VENDOR_SECRET_${vendor.toUpperCase()}`;
-  return process.env[k] ?? process.env.VENDOR_SECRET_DEFAULT ?? "sandbox-secret-do-not-use-in-prod";
+  // Fails closed in production when unset / the committed default (audit H8).
+  return requireSecret(k, process.env[k] ?? process.env.VENDOR_SECRET_DEFAULT, "sandbox-secret-do-not-use-in-prod");
 }
