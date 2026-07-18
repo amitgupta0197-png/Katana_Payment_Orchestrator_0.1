@@ -15,10 +15,14 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
-// Uploads captured credit alerts + heartbeats to the orchestrator. Sandbox auth
-// (x-sandbox header). Failed alert uploads are persisted to OutboxStore and retried,
-// so a real bank credit is never lost to a transient network/server issue.
+// Uploads captured credit alerts + heartbeats to the orchestrator. Requests are signed with
+// HMAC-SHA256 over "${timestamp}.${payload}" (x-timestamp + x-signature headers), using the
+// AGENT_SIGNING_SECRET shared with the server — the server rejects unsigned/forged requests.
+// Failed alert uploads are persisted to OutboxStore and retried, so a real bank credit is
+// never lost to a transient network/server issue.
 object AlertUploader {
     private val client = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
@@ -95,8 +99,25 @@ object AlertUploader {
     private fun parseAmount(s: String): Double =
         s.replace(",", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
 
+    // HMAC-SHA256(secret, payload) as lowercase hex.
+    private fun hmacHex(payload: String): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(BuildConfig.AGENT_SIGNING_SECRET.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
+    // Signed request builder. The timestamp is bound into the signature so a captured request
+    // can't be replayed with a fresh timestamp. `signed` is the exact bytes the server verifies:
+    // the raw body for POSTs, the query string (incl. leading '?') for the capture-rrn GET.
+    private fun signedBuilder(url: String, signed: String): Request.Builder {
+        val ts = (System.currentTimeMillis() / 1000L).toString()
+        return Request.Builder().url(url)
+            .header("x-timestamp", ts)
+            .header("x-signature", hmacHex("$ts.$signed"))
+    }
+
     private fun alertRequest(url: String, body: String): Request =
-        Request.Builder().url(url).header("x-sandbox", "1").post(body.toRequestBody(JSON)).build()
+        signedBuilder(url, body).post(body.toRequestBody(JSON)).build()
 
     // DEBUG: upload a dump of the current accessibility screen (text + class + bounds) so
     // the real layout of an app we can't ADB-inspect (Airtel blocks USB debugging) can be
@@ -126,7 +147,9 @@ object AlertUploader {
         if (merchant.isBlank()) return emptyList()
         val base = Prefs.baseUrl(ctx).trimEnd('/')
         val url = "$base/api/v1/capture-rrn?device_id=${enc(Prefs.deviceId(ctx))}&merchant_id=${enc(merchant)}"
-        val req = Request.Builder().url(url).header("x-sandbox", "1").get().build()
+        // Sign the query string (incl. leading '?') — the server verifies over URL.search.
+        val query = url.substring(url.indexOf('?'))
+        val req = signedBuilder(url, query).get().build()
         return try {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return emptyList()

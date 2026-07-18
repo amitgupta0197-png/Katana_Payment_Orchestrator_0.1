@@ -5,11 +5,15 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
+import { verifyDeviceRequest } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const raw = await req.text();
+  // Was unauthenticated (audit H4): now requires a device signature (or the sandbox bypass).
+  const auth = verifyDeviceRequest(req, raw);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body: { device_id?: string; merchant_id?: string; label?: string; body?: string };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   try {

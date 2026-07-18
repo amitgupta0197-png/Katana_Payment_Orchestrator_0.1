@@ -7,8 +7,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
-import { signPayload } from "@/lib/fifo-notify";
-import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
+import { verifyDeviceRequest } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +23,9 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = deviceSandboxRequested(req);
   const rawText = await req.text();
-  if (!sandbox) {
-    if (!sigEqual(signPayload(rawText), req.headers.get("x-signature")))
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-  }
+  const auth = verifyDeviceRequest(req, rawText);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body; try { body = schema.parse(JSON.parse(rawText)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 
   // Which public domain this device actually contacted (nginx forwards the original

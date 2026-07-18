@@ -18,7 +18,46 @@
 //     explicitly opts in with LEGACY_SANDBOX_AGENTS=1. Default is closed. Once the signed
 //     agent is rolled out to the fleet, remove that env var to shut the bypass for good.
 
-import { timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
+import { requireSecret } from "@/lib/secrets";
+
+// Dedicated device-signing key — distinct from FIFO_WEBHOOK_SECRET (which signs OUTBOUND
+// merchant callbacks). The agent embeds this to sign its requests; keeping it separate means
+// extracting it from the APK does not also forge outbound callbacks (audit H2/C3). Resolved
+// lazily so callback routes that import this module don't require it.
+let _agentSecret: string | null = null;
+function agentSecret(): string {
+  if (_agentSecret === null)
+    _agentSecret = requireSecret("AGENT_SIGNING_SECRET", process.env.AGENT_SIGNING_SECRET, "dev-agent-signing-secret");
+  return _agentSecret;
+}
+
+const REPLAY_SKEW_MS = 5 * 60 * 1000; // ±5 min
+
+/** HMAC-SHA256 over `${timestamp}.${payload}` — the timestamp is INSIDE the signature so a
+ *  captured request cannot be replayed with a fresh timestamp (audit M2). Hex output. */
+export function deviceSignature(timestamp: string, payload: string): string {
+  return createHmac("sha256", agentSecret()).update(`${timestamp}.${payload}`).digest("hex");
+}
+
+/**
+ * Verify a device request. `payload` is the exact bytes the agent signed — the raw body for
+ * POST routes, or the query string (`url.search`) for the capture-rrn GET. Honours the
+ * x-sandbox transition bypass on device routes (LEGACY_SANDBOX_AGENTS); otherwise requires a
+ * fresh, valid signature.
+ */
+export function verifyDeviceRequest(req: Request, payload: string): { ok: true } | { ok: false; error: string } {
+  if (deviceSandboxRequested(req)) return { ok: true };
+  const ts = req.headers.get("x-timestamp");
+  const sig = req.headers.get("x-signature");
+  if (!ts || !sig) return { ok: false, error: "missing signature/timestamp" };
+  const tsNum = Number(ts);
+  if (Number.isNaN(tsNum)) return { ok: false, error: "bad timestamp" };
+  const tsMs = tsNum > 1e12 ? tsNum : tsNum * 1000; // accept seconds or millis
+  if (Math.abs(Date.now() - tsMs) > REPLAY_SKEW_MS) return { ok: false, error: "stale timestamp (replay window exceeded)" };
+  if (!sigEqual(deviceSignature(ts, payload), sig)) return { ok: false, error: "invalid signature" };
+  return { ok: true };
+}
 
 /** x-sandbox bypass for CALLBACK routes / anything not hit by the live agent. Never in prod. */
 export function sandboxAllowed(): boolean {

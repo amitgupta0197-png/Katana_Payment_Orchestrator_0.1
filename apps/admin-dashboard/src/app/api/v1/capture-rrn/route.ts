@@ -12,8 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
-import { signPayload } from "@/lib/fifo-notify";
-import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
+import { verifyDeviceRequest } from "@/lib/device-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +25,22 @@ export async function GET(req: Request) {
   const deviceId = url.searchParams.get("device_id") ?? "";
   const merchantId = url.searchParams.get("merchant_id") ?? "";
 
-  // Auth: sandbox header (non-prod only), or HMAC over the raw query string.
-  const sandbox = deviceSandboxRequested(req);
-  if (!sandbox) {
-    if (!sigEqual(signPayload(url.search), req.headers.get("x-signature")))
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-  }
+  // Auth: HMAC over the raw query string (timestamp bound in), or the device sandbox bypass.
+  const auth = verifyDeviceRequest(req, url.search);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   if (!merchantId) return NextResponse.json({ commands: [] });
+
+  // Bind the poll to the device's OWN enrolled merchant (audit H6): a device may only read
+  // capture requests for the merchant it is registered to, not an arbitrary merchant_id in
+  // the query. (The signed query already resists forgery; this is defence in depth.)
+  if (deviceId) {
+    const dev = await rows<{ merchant_id: string | null }>("vendorGateway",
+      `SELECT merchant_id FROM vendor_devices WHERE device_id = $1`, [deviceId]).catch(() => []);
+    const bound = dev[0]?.merchant_id;
+    if (bound && bound !== merchantId)
+      return NextResponse.json({ error: "merchant mismatch for device" }, { status: 403 });
+  }
 
   try {
     // Lazily expire stale open requests for this merchant.

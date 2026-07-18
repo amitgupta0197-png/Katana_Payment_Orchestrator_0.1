@@ -14,9 +14,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
-import { signPayload } from "@/lib/fifo-notify";
-import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
-import { ingestTxnAlert, isAuthMessage, RECON_POLICY } from "@/lib/txn-reconcile";
+import { verifyDeviceRequest } from "@/lib/device-auth";
+import { ingestTxnAlert, isAuthMessage } from "@/lib/txn-reconcile";
 
 export const dynamic = "force-dynamic";
 
@@ -43,23 +42,11 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = deviceSandboxRequested(req);
   const rawText = await req.text();
-
-  if (!sandbox) {
-    // HMAC signature over the raw body (constant-time compare).
-    const sig = req.headers.get("x-signature");
-    if (!sigEqual(signPayload(rawText), sig))
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    // Timestamp replay window (±5 min). Accepts epoch seconds or milliseconds.
-    const tsRaw = req.headers.get("x-timestamp");
-    const tsNum = tsRaw ? Number(tsRaw) : NaN;
-    if (!tsRaw || Number.isNaN(tsNum))
-      return NextResponse.json({ error: "missing x-timestamp" }, { status: 401 });
-    const tsMs = tsNum > 1e12 ? tsNum : tsNum * 1000;
-    if (Math.abs(Date.now() - tsMs) > RECON_POLICY.REPLAY_SKEW_SECONDS * 1000)
-      return NextResponse.json({ error: "stale timestamp (replay window exceeded)" }, { status: 401 });
-  }
+  // Device auth: valid HMAC signature (timestamp bound in) over the raw body, or the
+  // x-sandbox transition bypass on the device tier. See lib/device-auth.
+  const auth = verifyDeviceRequest(req, rawText);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   let body: z.infer<typeof schema>;
   try { body = schema.parse(JSON.parse(rawText)); }

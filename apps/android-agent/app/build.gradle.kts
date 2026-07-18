@@ -18,8 +18,16 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 50
-        versionName = "2.36"
+        versionCode = 51
+        versionName = "2.37"
+
+        // HMAC key the agent uses to sign its requests to the orchestrator device routes.
+        // MUST equal the server's AGENT_SIGNING_SECRET. Read from keystore.properties
+        // (git-ignored) or a -PagentSigningSecret gradle prop; dev fallback otherwise.
+        val agentSigningSecret = (keystoreProps["agentSigningSecret"] as String?)
+            ?: (project.findProperty("agentSigningSecret") as String?)
+            ?: "dev-agent-signing-secret"
+        buildConfigField("String", "AGENT_SIGNING_SECRET", "\"$agentSigningSecret\"")
     }
 
     buildFeatures {

@@ -22,12 +22,13 @@
 | M1 (timing compare) | ✅ code done | Device routes use `timingSafeEqual`. |
 | C1/C4/H2/H3/H8 (fail-closed secrets) | ✅ code done — **deploy after rotation** | `secrets.ts` + `reseal-vault.mjs`. The app now refuses to boot on a missing/default secret, so secrets must be rotated **first**. |
 | C1/C4/H3/H8 (rotate the live values) | ⏳ needs you | Rotate on the server; only you can. |
-| H4 (text-alert/agent-debug) | ⚠️ partial | text-alert unused by the agent (safe to require auth); agent-debug uses x-sandbox like the device routes — covered by the same transition flag. |
-| H6 (capture-rrn merchant binding) | ⏳ todo | Needs the per-device→merchant binding; pairs with the agent-signing work. |
-| M2 (timestamp in signature) | ⏳ todo | Requires an agent-side change (coordinated). |
+| H4 (text-alert/agent-debug) | ✅ code done | Both now require a device signature. |
+| H6 (capture-rrn merchant binding) | ✅ code done | Poll bound to the device's enrolled merchant. |
+| M2 (timestamp in signature) | ✅ code done | Signature is over `${timestamp}.${payload}` on both server and agent. |
+| Agent signing (unblocks C2 device routes) | ✅ code done — needs APK build+deploy | Agent v2.37 signs with `AGENT_SIGNING_SECRET`; `x-sandbox` removed. Server verifies via `verifyDeviceRequest`. |
 | M3–M7, L1–L5 | ⏳ todo | Phase 2 structural hardening. |
 
-> ⚠️ **Key operational finding:** the deployed Android agent authenticates to the device-ingestion routes with the `x-sandbox: 1` header — it does **not** sign its requests. Fully closing the C2 bypass on those routes therefore requires **rebuilding the agent to sign (HMAC) and redeploying the APK to every device**. Until that ships, set `LEGACY_SANDBOX_AGENTS=1` in prod to keep capture working (the device routes stay forgeable during this window; the far more dangerous unauthenticated callback path is already closed). This is the top remaining decision — see "Next steps."
+> ✅ **Agent signing implemented.** The deployed agent used to authenticate with the `x-sandbox: 1` header (no real auth). The agent (v2.37) now signs every request with a dedicated `AGENT_SIGNING_SECRET` (HMAC-SHA256, timestamp bound in), and the server verifies it. Rollout: **(1)** set `AGENT_SIGNING_SECRET` on the server (same value baked into the APK via `keystore.properties → agentSigningSecret`); **(2)** deploy the server with `LEGACY_SANDBOX_AGENTS=1` so current devices keep working; **(3)** build + distribute the new APK; **(4)** once the fleet is updated, remove `LEGACY_SANDBOX_AGENTS` — the device-route bypass is then fully closed. The unauthenticated *callback* path (the worst C2 vector) is already closed regardless.
 
 ## Severity summary
 

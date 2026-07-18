@@ -9,8 +9,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
-import { signPayload } from "@/lib/fifo-notify";
-import { deviceSandboxRequested, sigEqual } from "@/lib/device-auth";
+import { verifyDeviceRequest } from "@/lib/device-auth";
 import { testInboxConnection } from "@/lib/email-ingest";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +25,9 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sandbox = deviceSandboxRequested(req);
   const raw = await req.text();
-  if (!sandbox) {
-    if (!sigEqual(signPayload(raw), req.headers.get("x-signature")))
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-  }
+  const auth = verifyDeviceRequest(req, raw);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body: z.infer<typeof schema>;
   try { body = schema.parse(JSON.parse(raw)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 
