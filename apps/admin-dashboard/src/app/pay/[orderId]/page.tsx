@@ -68,7 +68,11 @@ function PaymentInner({ orderId }: { orderId: string }) {
   // checkout). A short delay lets them see "Payment received" first.
   useEffect(() => {
     if (!d?.terminal || !d.return_url) return;
-    const u = new URL(d.return_url);
+    let u: URL;
+    try { u = new URL(d.return_url); } catch { return; }
+    // Only ever redirect to an http(s) target (audit M8) — belt-and-braces with the
+    // scheme check enforced at order creation.
+    if (u.protocol !== "http:" && u.protocol !== "https:") return;
     u.searchParams.set("order_id", d.order_id);
     u.searchParams.set("status", d.status);
     if (d.rrn) u.searchParams.set("rrn", d.rrn);

@@ -2,7 +2,13 @@
 // Used for operator/admin MFA (BRD SEC-003). Compatible with Google Authenticator,
 // Authy, 1Password, etc.
 
-import { createHmac, randomBytes } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+
+// Constant-time equality for two same-shape 6-digit code strings (audit L1).
+function codeEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -55,7 +61,7 @@ export function verifyTotp(secret: string, token: string, window = 1, nowMs?: nu
   if (!/^\d{6}$/.test(t)) return false;
   const counter = Math.floor((nowMs ?? Date.now()) / 1000 / 30);
   for (let w = -window; w <= window; w++) {
-    if (hotp(secret, counter + w) === t) return true;
+    if (codeEq(hotp(secret, counter + w), t)) return true;
   }
   return false;
 }

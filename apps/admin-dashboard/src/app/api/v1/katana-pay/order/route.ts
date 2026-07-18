@@ -30,8 +30,11 @@ const schema = z.object({
   receiver_vpas: z.array(z.string()).max(30).optional(), // receiver VPA pool (backup failover)
   mode: z.enum(["QR", "INTENT"]).optional(),
   currency: z.string().optional(),
-  return_url: z.string().url().optional(),   // browser redirect after payment
-  notify_url: z.string().url().optional(),   // S2S status-callback target (per order)
+  // Restrict to http(s) so a stored return_url/notify_url can't carry javascript:/data:/file:
+  // (open-redirect / scheme abuse — audit M8). SSRF on notify_url is additionally blocked at
+  // egress by safeFetch.
+  return_url: z.string().url().refine((u) => /^https?:\/\//i.test(u), "return_url must be http(s)").optional(),
+  notify_url: z.string().url().refine((u) => /^https?:\/\//i.test(u), "notify_url must be http(s)").optional(),
 });
 
 async function parseBody(req: Request): Promise<Record<string, unknown>> {

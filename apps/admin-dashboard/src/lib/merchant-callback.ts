@@ -78,7 +78,15 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   try {
     const creds = await getCheckoutCreds(merchantCode);
     if (creds?.salt) hash = signPoolPay(payload, creds.salt);
-  } catch { /* unsigned if creds missing — body still delivered */ }
+  } catch { /* handled below */ }
+  if (!hash) {
+    // Never deliver an UNSIGNED status callback (audit M5) — a merchant can't distinguish it
+    // from a spoof. Record the skip (visible + retryable once signing creds are configured).
+    await rows("vendorGateway", `
+      UPDATE vendor_payin_orders SET meta = COALESCE(meta,'{}'::jsonb) || $2::jsonb, updated_at = now() WHERE id = $1::uuid
+    `, [orderRowId, JSON.stringify({ callback: { skipped: "no signing creds", at: new Date().toISOString(), target } })]).catch(() => {});
+    return { sent: false, reason: "no signing creds" };
+  }
   const body = { ...payload, HASH: hash };
 
   const outboxId = await enqueue({
