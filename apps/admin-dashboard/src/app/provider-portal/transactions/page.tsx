@@ -38,6 +38,9 @@ export default function ProviderTransactionsPage() {
   ];
   const recentCols: Column<Txn>[] = [
     { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
+    { key: "ref", header: "Katana Txn ID", render: (r) => r.ref
+      ? <span className="font-mono text-xs break-all" title={r.ref}>{r.ref}</span>
+      : <span className="text-[color:var(--color-text-subtle)]">—</span> },
     { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "channel", header: "Channel", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },

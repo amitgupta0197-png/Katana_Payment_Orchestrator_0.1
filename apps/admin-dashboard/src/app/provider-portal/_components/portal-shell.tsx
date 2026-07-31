@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Banknote,
+  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Banknote, Contact, Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,9 @@ const NAV = [
   { href: "/provider-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
   { href: "/provider-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
   { href: "/provider-portal/settlements", label: "Settlements", icon: Banknote,       exact: false },
+  { href: "/provider-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
   { href: "/provider-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
+  { href: "/provider-portal/developers", label: "Developers", icon: Plug,            exact: false },
   { href: "/provider-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/provider-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
   { href: "/provider-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
