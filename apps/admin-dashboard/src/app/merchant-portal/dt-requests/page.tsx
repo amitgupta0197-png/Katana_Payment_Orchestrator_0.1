@@ -7,11 +7,12 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Coins, Plus } from "lucide-react";
+import { Coins, Plus, Lock, Clock, ShieldCheck, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataView } from "@/components/world-class/data-view";
 import { KpiTile } from "@/components/world-class/kpi-tile";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,24 @@ interface Refill {
   received_confirmed_by: string; received_confirmed_at: string | null; created_at: string;
 }
 interface Banker { banker_id: string; label: string }
+interface LedgerRow {
+  id: string; client_ref: string; txn_id: string; amount: number; currency: string;
+  method: string; rail: string; status: string; created_at: string;
+}
+interface Activation {
+  id: string; model: string; status: "REQUESTED" | "APPROVED" | "REJECTED" | "REVOKED";
+  request_note: string; review_note: string; requested_at: string;
+  reviewed_by: string; reviewed_at: string | null;
+}
+
+const MODEL_LABEL: Record<string, string> = {
+  PURE_INTENT: "Pure intent — provider access",
+  DIRECT_QUASI: "Direct quasi — third-party QR + Katana agent",
+};
+const MODEL_BLURB: Record<string, string> = {
+  PURE_INTENT: "You collect through Katana's provider access using the intent / collect flow that is already live on your dashboard.",
+  DIRECT_QUASI: "You onboard your own third-party direct QR, and the Katana agent app on your collection phone tracks the RRN for reconciliation.",
+};
 
 const STATUS_VARIANT: Record<string, "default" | "info" | "warning" | "success" | "danger"> = {
   DRAFT: "default", PENDING_APPROVAL: "info", AWAITING_FUNDS: "warning", FUNDS_SUBMITTED: "info",
@@ -54,6 +73,37 @@ export default function MerchantDtRequestsPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ banker_id: "", quantity: "", kind: "PURCHASE" as "PURCHASE" | "REFILL" });
+  const [activateOpen, setActivateOpen] = useState(false);
+  const [activateForm, setActivateForm] = useState({ model: "PURE_INTENT" as "PURE_INTENT" | "DIRECT_QUASI", note: "" });
+
+  // Activation state governs whether this branch can raise DT requests at all.
+  const actQ = useQuery({
+    queryKey: ["mp:dt-activation"],
+    queryFn: async () => {
+      const r = await fetch("/api/merchant-portal/dt-activation");
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
+      return d as { activated: boolean; activation: Activation | null; history: Activation[] };
+    },
+  });
+
+  const requestActivation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/merchant-portal/dt-activation", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: activateForm.model, note: activateForm.note.trim() || undefined }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d;
+    },
+    onSuccess: () => {
+      toast.success("Activation request sent", { description: "Katana will review it and enable your DT dashboard once approved." });
+      setActivateOpen(false); setActivateForm({ model: "PURE_INTENT", note: "" });
+      qc.invalidateQueries({ queryKey: ["mp:dt-activation"] });
+    },
+    onError: (e: Error) => toast.error("Could not send request", { description: e.message }),
+  });
 
   const q = useQuery({
     queryKey: ["mp:dt-requests"],
@@ -64,6 +114,8 @@ export default function MerchantDtRequestsPage() {
       return d as {
         merchant_id: string; purchases: Purchase[]; refills: Refill[];
         rate: { rate: number; currency: string; version: number } | null; bankers: Banker[];
+        collections: { total: number; count: number; today: number; ledger: LedgerRow[] };
+        position: { quota: number; consumed: number; reserved: number; reserve_held: number; available: number; utilization: number };
       };
     },
   });
@@ -93,6 +145,8 @@ export default function MerchantDtRequestsPage() {
   const refills = q.data?.refills ?? [];
   const rate = q.data?.rate ?? null;
   const bankers = q.data?.bankers ?? [];
+  const collections = q.data?.collections ?? null;
+  const position = q.data?.position ?? null;
   const awaitingBanker = purchases.filter((p) => p.status === "FUNDS_SUBMITTED").length;
   const live = purchases.filter((p) => p.status === "ACTIVE").length;
 
@@ -124,11 +178,117 @@ export default function MerchantDtRequestsPage() {
     { key: "created_at", header: "Raised", render: (r) => formatDateTime(r.created_at) },
   ];
 
+  const activation = actQ.data?.activation ?? null;
+  const activated = !!actQ.data?.activated;
+
+  // Not activated → the page is an activation gate, not a request form. Showing the
+  // request UI disabled would only invite "why can't I click this".
+  if (!actQ.isLoading && !activated) {
+    const pending = activation?.status === "REQUESTED";
+    const rejected = activation?.status === "REJECTED" || activation?.status === "REVOKED";
+    return (
+      <>
+        <PageHeader title="DT Requests" description="Activation required before this branch can use the DT refill model." icon={Coins} />
+        <Card className="max-w-3xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {pending ? <Clock className="h-4 w-4 text-[color:var(--color-warning)]" aria-hidden />
+                       : <Lock className="h-4 w-4 text-[color:var(--color-text-muted)]" aria-hidden />}
+              {pending ? "Activation pending review" : rejected ? "Activation not approved" : "DT refill model not activated"}
+            </CardTitle>
+            <CardDescription>
+              {pending
+                ? "Katana is reviewing your request. Your DT dashboard unlocks as soon as it is approved."
+                : rejected
+                  ? "Your previous request was not approved. You can raise a new one."
+                  : "Ask Katana to activate this branch for the DT refill model. Once approved you can raise DT purchase and refill requests here."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activation && (
+              <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
+                <div className="flex justify-between gap-4">
+                  <span className="text-[color:var(--color-text-muted)]">Requested model</span>
+                  <b>{MODEL_LABEL[activation.model] ?? activation.model}</b>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-[color:var(--color-text-muted)]">Status</span>
+                  <Badge variant={pending ? "warning" : "danger"}>{activation.status}</Badge>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-[color:var(--color-text-muted)]">Requested</span>
+                  <span>{formatDateTime(activation.requested_at)}</span>
+                </div>
+                {activation.review_note && (
+                  <div className="pt-1 text-[color:var(--color-text-muted)]">
+                    Katana&apos;s note: <span className="text-[color:var(--color-text)]">{activation.review_note}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(["PURE_INTENT", "DIRECT_QUASI"] as const).map((m) => (
+                <div key={m} className="rounded-md border p-3">
+                  <div className="text-sm font-medium">{MODEL_LABEL[m]}</div>
+                  <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">{MODEL_BLURB[m]}</p>
+                </div>
+              ))}
+            </div>
+
+            {!pending && (
+              <Button onClick={() => setActivateOpen(true)}>
+                <ShieldCheck className="h-4 w-4" /> Request activation
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={activateOpen} onOpenChange={setActivateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Request DT activation</DialogTitle>
+              <DialogDescription>Choose the model this branch will operate under. Katana reviews and approves.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Model</Label>
+                <div className="space-y-2">
+                  {(["PURE_INTENT", "DIRECT_QUASI"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setActivateForm({ ...activateForm, model: m })}
+                      className={`w-full rounded-md border p-3 text-left transition-colors ${activateForm.model === m ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)]" : "hover:bg-[color:var(--color-surface-muted)]"}`}
+                    >
+                      <div className="text-sm font-medium">{MODEL_LABEL[m]}</div>
+                      <p className="mt-0.5 text-xs text-[color:var(--color-text-muted)]">{MODEL_BLURB[m]}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="note">Note <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label>
+                <Input id="note" value={activateForm.note} onChange={(e) => setActivateForm({ ...activateForm, note: e.target.value })} placeholder="Anything Katana should know" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setActivateOpen(false)}>Cancel</Button>
+              <Button onClick={() => requestActivation.mutate()} disabled={requestActivation.isPending}>
+                {requestActivation.isPending ? "Sending…" : "Send request"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
         title="DT Requests"
-        description="Raise a DT purchase or refill request. The banker confirms receipt, which activates it."
+        description="Raise a DT purchase or refill request. The banker approves the USDT accepted, which activates it."
         icon={Coins}
         actions={
           <Button onClick={() => setOpen(true)} disabled={!rate}>
@@ -137,11 +297,32 @@ export default function MerchantDtRequestsPage() {
         }
       />
 
+      {activation && (
+        <p className="mb-4 text-xs text-[color:var(--color-text-muted)]">
+          Activated for <b className="text-[color:var(--color-text)]">{MODEL_LABEL[activation.model] ?? activation.model}</b>
+          {activation.reviewed_at ? ` · approved ${formatDateTime(activation.reviewed_at)}` : ""}
+        </p>
+      )}
+
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiTile label="Current DT rate" value={rate ? formatAmount(rate.rate) : "— not set —"} sublabel={rate ? `v${rate.version}` : "ask Katana to set it"} variant={rate ? "default" : "danger"} loading={q.isLoading} />
         <KpiTile label="My requests" value={purchases.length || "—"} loading={q.isLoading} />
-        <KpiTile label="Awaiting banker confirmation" value={awaitingBanker} variant={awaitingBanker > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Live" value={live} variant="success" loading={q.isLoading} />
+        <KpiTile label="Awaiting banker approval" value={awaitingBanker} variant={awaitingBanker > 0 ? "warning" : "default"} loading={q.isLoading} />
+        <KpiTile label="Live lots" value={live} variant="success" loading={q.isLoading} />
+      </div>
+
+      {/* Pay-ins collected, tracked against the DT quota this branch holds. */}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <KpiTile label="Collected (all time)" value={collections ? formatAmount(collections.total) : "—"} sublabel={collections ? `${collections.count} pay-ins` : undefined} icon={Inbox} loading={q.isLoading} />
+        <KpiTile label="Collected today" value={collections ? formatAmount(collections.today) : "—"} loading={q.isLoading} />
+        <KpiTile label="DT quota" value={position ? formatAmount(position.quota) : "—"} loading={q.isLoading} />
+        <KpiTile label="Consumed" value={position ? formatAmount(position.consumed) : "—"} sublabel={position ? `${position.utilization}% of quota` : undefined} loading={q.isLoading} />
+        <KpiTile
+          label="Available quota"
+          value={position ? formatAmount(position.available) : "—"}
+          variant={position && position.quota > 0 && position.available / position.quota <= 0.2 ? "warning" : "success"}
+          loading={q.isLoading}
+        />
       </div>
 
       <DataView
@@ -158,6 +339,32 @@ export default function MerchantDtRequestsPage() {
         emptyTitle="No DT requests yet"
         emptyDescription="Raise one with “New request”. It goes to Katana for approval, then to the banker to confirm receipt."
       />
+
+      {/* Collection ledger — every successful pay-in, which is what consumes the quota. */}
+      <div className="mt-6">
+        <h2 className="mb-1 text-sm font-semibold">Collection ledger</h2>
+        <p className="mb-2 text-xs text-[color:var(--color-text-muted)]">
+          Successful pay-ins collected by this branch. Only SUCCESS is counted — an expired or
+          pending order is not money in.
+        </p>
+        <DataView
+          rows={collections?.ledger ?? []}
+          columns={[
+            { key: "created_at", header: "When", render: (r: LedgerRow) => formatDateTime(r.created_at) },
+            { key: "client_ref", header: "Reference", render: (r: LedgerRow) => <span className="font-mono text-xs">{r.client_ref || r.txn_id || r.id.slice(0, 8)}</span> },
+            { key: "amount", header: "Amount", render: (r: LedgerRow) => <span className="font-medium">{formatAmount(r.amount)}</span> },
+            { key: "method", header: "Method", render: (r: LedgerRow) => r.method || "—" },
+            { key: "rail", header: "Rail", render: (r: LedgerRow) => r.rail || "—" },
+            { key: "status", header: "Status", render: (r: LedgerRow) => <Badge variant="success">{r.status}</Badge> },
+          ] as Column<LedgerRow>[]}
+          rowKey={(r: LedgerRow) => r.id}
+          loading={q.isLoading}
+          search={{ placeholder: "Search reference…", fields: ["client_ref", "txn_id", "method"] }}
+          refresh={() => q.refetch()}
+          emptyTitle="No collections yet"
+          emptyDescription="Successful pay-ins appear here and count against your DT quota."
+        />
+      </div>
 
       {refills.length > 0 && (
         <div className="mt-6">

@@ -28,6 +28,7 @@ import {
   Sliders,
   ScrollText,
   Scale,
+  ShieldCheck,
   UserRound,
   Headphones,
   FileSearch,
@@ -72,7 +73,7 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/dt-rate-cards", "/dt-allocations", "/dt-wallet", "/dt-traffic-wallet", "/dt-reserves", "/dt-commission-ledger", "/dt-reconciliation", "/dt-audit", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/dt-activations", "/dt-rate-cards", "/dt-allocations", "/dt-wallet", "/dt-traffic-wallet", "/dt-reserves", "/dt-commission-ledger", "/dt-reconciliation", "/dt-audit", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
@@ -135,6 +136,7 @@ export const navItems: NavItem[] = [
 
   { href: "/dt-dashboard", label: "DT Dashboard", icon: Coins, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/dt-purchases", label: "DT Purchases", icon: Receipt, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
+  { href: "/dt-activations", label: "DT Activations", icon: ShieldCheck, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/dt-refills", label: "DT Refills", icon: Droplets, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/dt-rate-cards", label: "DT Rate Cards", icon: Sliders, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/dt-allocations", label: "Traffic Allocations", icon: Activity, status: "live", group: "DT Business", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
