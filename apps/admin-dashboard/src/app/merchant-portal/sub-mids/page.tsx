@@ -31,7 +31,7 @@ export default function MerchantSubMidsPage() {
     <>
       <PageHeader
         title="Sub-MIDs"
-        description="Your active Sub-MIDs. Request new ones via your merchant."
+        description="Your active Sub-MIDs. Request new ones via your provider."
         icon={CreditCard}
       />
       <Card>

@@ -45,7 +45,7 @@ export function ProviderCharts() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Status breakdown</CardTitle>
-          <CardDescription>Across all banker orders.</CardDescription>
+          <CardDescription>Across all branch orders.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? <ChartSkeleton h={140} /> : <StatusDonut status={status} />}

@@ -35,8 +35,8 @@ export default function ProviderKycPage() {
   return (
     <>
       <PageHeader
-        title="Merchant KYC"
-        description="Required KYC documents to keep your merchant in good standing."
+        title="Provider KYC"
+        description="Required KYC documents to keep your provider in good standing."
         icon={FileCheck2}
       />
       <Card className="mb-4">

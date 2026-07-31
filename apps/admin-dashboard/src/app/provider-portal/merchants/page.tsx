@@ -53,8 +53,8 @@ export default function MappedMerchantsPage() {
   return (
     <>
       <PageHeader
-        title="Mapped bankers"
-        description="Approved & live bankers under your merchant."
+        title="Mapped branches"
+        description="Approved & live branches under your provider."
         icon={Store}
       />
       <Card>

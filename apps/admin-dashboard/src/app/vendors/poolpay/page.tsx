@@ -57,7 +57,7 @@ export default function PoolPayCockpit() {
 
   const cols: Column<Order>[] = [
     { key: "order_id", header: "Order", render: (r) => <span className="font-mono text-xs">{r.order_id}</span> },
-    { key: "merchant_id", header: "Banker", render: (r) => r.merchant_id ? <span className="font-mono text-xs">{r.merchant_id}</span> : <span className="text-xs text-[color:var(--color-text-subtle)]">test</span> },
+    { key: "merchant_id", header: "Branch", render: (r) => r.merchant_id ? <span className="font-mono text-xs">{r.merchant_id}</span> : <span className="text-xs text-[color:var(--color-text-subtle)]">test</span> },
     { key: "sub_mid_code", header: "Sub-MID", render: (r) => r.sub_mid_code ? <Badge variant="info">{r.sub_mid_code}</Badge> : <span className="text-xs text-[color:var(--color-text-subtle)]">—</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency_code)}</span> },
     { key: "channel", header: "Channel" },
@@ -118,7 +118,7 @@ export default function PoolPayCockpit() {
         </TabsList>
         <TabsContent value="orders">
           <DataView rows={orders} columns={cols} rowKey={(r) => r.id} loading={q.isLoading}
-            search={{ placeholder: "Search by order / banker / RRN / vendor txn…", fields: ["order_id", "merchant_id", "vendor_txn_id", "rrn", "channel"] }}
+            search={{ placeholder: "Search by order / branch / RRN / vendor txn…", fields: ["order_id", "merchant_id", "vendor_txn_id", "rrn", "channel"] }}
             filters={[
               { key: "success", label: "Success", predicate: (r: Order) => r.status === "SUCCEEDED" || r.status === "SUCCESS" },
               { key: "failed",  label: "Failed",  predicate: (r: Order) => r.status === "FAILED" },

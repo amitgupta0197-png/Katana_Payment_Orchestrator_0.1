@@ -32,8 +32,8 @@ export default function AdminRolesPage() {
         search={{ placeholder: "Search by role / permission…", fields: ["code", "description"] }}
         filters={[
           { key: "platform", label: "Platform", predicate: (r: Role) => r.scope === "platform-wide" },
-          { key: "provider", label: "Merchant", predicate: (r: Role) => r.scope === "provider" },
-          { key: "merchant", label: "Banker", predicate: (r: Role) => r.scope === "merchant" },
+          { key: "provider", label: "Provider", predicate: (r: Role) => r.scope === "provider" },
+          { key: "merchant", label: "Branch", predicate: (r: Role) => r.scope === "merchant" },
         ]}
         savedViewKey="admin-roles" refresh={() => q.refetch()}
         emptyTitle="No roles defined" />

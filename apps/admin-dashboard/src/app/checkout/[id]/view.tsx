@@ -85,11 +85,11 @@ export default function CheckoutDetailView({ id }: { id: string }) {
   ];
   const attemptCols: Column<Attempt>[] = [
     { key: "attempt_no", header: "#" },
-    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "status", header: "Outcome", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
     { key: "next_state", header: "Next state", render: (r) => r.next_state ? <Badge variant={stateColor(r.next_state as PaymentState)}>{r.next_state}</Badge> : "—" },
     { key: "auth_status", header: "Auth", render: (r) => r.auth_status || "—" },
-    { key: "provider_txn_id", header: "Merchant txn", render: (r) => r.provider_txn_id ? <span className="font-mono text-xs">{r.provider_txn_id}</span> : "—" },
+    { key: "provider_txn_id", header: "Provider txn", render: (r) => r.provider_txn_id ? <span className="font-mono text-xs">{r.provider_txn_id}</span> : "—" },
     { key: "response_time_ms", header: "ms" },
     { key: "error_code", header: "Error", render: (r) => r.error_code ? <span className="text-[color:var(--color-danger)] text-xs">{r.error_code}</span> : "—" },
     { key: "started_at", header: "Started", render: (r) => formatDateTime(r.started_at) },
@@ -103,7 +103,7 @@ export default function CheckoutDetailView({ id }: { id: string }) {
   ];
   const routeCols: Column<RouteCand>[] = [
     { key: "rank", header: "#" },
-    { key: "provider", header: "Merchant", render: (r) => <Badge variant={r.rank === route?.selected_rank ? "success" : "brand"}>{r.provider}</Badge> },
+    { key: "provider", header: "Provider", render: (r) => <Badge variant={r.rank === route?.selected_rank ? "success" : "brand"}>{r.provider}</Badge> },
     { key: "score", header: "Score", render: (r) => Number(r.score).toFixed(4) },
     { key: "reasoning", header: "Factors", render: (r) => <span className="font-mono text-xs">{r.reasoning}</span> },
   ];
@@ -191,7 +191,7 @@ export default function CheckoutDetailView({ id }: { id: string }) {
       </div>
 
       <Card className="mb-4">
-        <CardHeader><CardTitle className="text-base">Payment attempts ({attempts.length})</CardTitle><CardDescription>One row per merchant call (BRD §7 P3 acceptance).</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Payment attempts ({attempts.length})</CardTitle><CardDescription>One row per provider call (BRD §7 P3 acceptance).</CardDescription></CardHeader>
         <CardContent><DataTable columns={attemptCols} rows={attempts} rowKey={(r) => r.id} emptyState="No attempts recorded." /></CardContent>
       </Card>
       <Card className="mb-4">

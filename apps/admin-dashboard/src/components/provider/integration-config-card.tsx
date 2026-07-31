@@ -71,7 +71,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
       return d;
     },
     onSuccess: () => {
-      toast.success("Integration saved", { description: "Cascaded to all bankers under this merchant." });
+      toast.success("Integration saved", { description: "Cascaded to all branches under this provider." });
       qc.invalidateQueries({ queryKey: ["provider-integration", providerId] });
       qc.invalidateQueries({ queryKey: ["poolpay-funnel", providerId] });
     },
@@ -87,7 +87,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
         <div className="flex items-center justify-between gap-2">
           <div>
             <CardTitle className="text-base inline-flex items-center gap-2"><Plug className="h-4 w-4" /> Katana Pay (PoolPay) integration</CardTitle>
-            <CardDescription>Configure once here — it auto-applies to every banker under this merchant.</CardDescription>
+            <CardDescription>Configure once here — it auto-applies to every branch under this provider.</CardDescription>
           </div>
           <div className="flex items-center gap-1.5">
             <Badge variant={cfg?.enabled ? "success" : "default"}>{cfg?.enabled ? "Enabled" : "Disabled"}</Badge>

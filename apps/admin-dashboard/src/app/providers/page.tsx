@@ -85,7 +85,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
       return d as CreateResult;
     },
     onSuccess: (d) => {
-      toast.success("Merchant created");
+      toast.success("Provider created");
       qc.invalidateQueries({ queryKey: ["providers"] });
       if (d.provider_login || d.banker_login || d.branch) setResult(d);
       else onOpenChange(false);
@@ -98,7 +98,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setResult(null); }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Create merchant</DialogTitle>
+        <DialogHeader><DialogTitle>Create provider</DialogTitle>
           <DialogDescription>
             {result
               ? "Share these credentials now — one-time passwords are shown only once."
@@ -111,7 +111,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
             {result.branch?.error
               ? <div className="text-xs text-[color:var(--color-danger)]">Branch: {result.branch.error}</div>
               : <CredentialLine title={`Branch login (${result.branch?.merchant_code ?? ""})`} login={result.branch?.login} />}
-            <p className="text-xs text-[color:var(--color-text-muted)]">Everyone signs in at /login — merchant lands in the merchant portal, banker in the banker portal, banker in the merchant portal.</p>
+            <p className="text-xs text-[color:var(--color-text-muted)]">Everyone signs in at /login — provider lands in the provider portal, banker in the banker portal, branch in the merchant portal.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -145,9 +145,9 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
               </label>
               {withBranch && (
                 <div className="grid grid-cols-2 gap-3 pl-6">
-                  <div className="space-y-1.5"><Label>Banker code</Label><Input value={branch.merchant_code} onChange={(e) => setBranch({ ...branch, merchant_code: e.target.value })} placeholder="e.g. BR-001" /></div>
-                  <div className="space-y-1.5"><Label>Banker name</Label><Input value={branch.legal_name} onChange={(e) => setBranch({ ...branch, legal_name: e.target.value })} /></div>
-                  <div className="space-y-1.5 col-span-2"><Label>Banker email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label><Input type="email" value={branch.contact_email} onChange={(e) => setBranch({ ...branch, contact_email: e.target.value })} /></div>
+                  <div className="space-y-1.5"><Label>Branch code</Label><Input value={branch.merchant_code} onChange={(e) => setBranch({ ...branch, merchant_code: e.target.value })} placeholder="e.g. BR-001" /></div>
+                  <div className="space-y-1.5"><Label>Branch name</Label><Input value={branch.legal_name} onChange={(e) => setBranch({ ...branch, legal_name: e.target.value })} /></div>
+                  <div className="space-y-1.5 col-span-2"><Label>Branch email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label><Input type="email" value={branch.contact_email} onChange={(e) => setBranch({ ...branch, contact_email: e.target.value })} /></div>
                 </div>
               )}
             </div>
@@ -202,7 +202,7 @@ export default function ProvidersPage() {
     { key: "kind", header: "Kind" },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-    { key: "merchant_count", header: "Bankers" },
+    { key: "merchant_count", header: "Branches" },
     { key: "contact_email", header: "Contact" },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
@@ -212,7 +212,7 @@ export default function ProvidersPage() {
   return (
     <>
       <PageHeader
-        title="Merchants"
+        title="Providers"
         description="Sub-admin reseller entities and their KYC lifecycle (PRODUCT_VISION §3.1)."
         icon={UserPlus}
       />
@@ -230,10 +230,10 @@ export default function ProvidersPage() {
           { key: "suspended",    label: "Suspended",     predicate: (r) => r.status === "SUSPENDED" },
         ]}
         href={(r) => `/providers/${r.id}`}
-        fab={canCreate ? { label: "Merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Provider", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="providers"
-        emptyTitle="No merchants yet"
+        emptyTitle="No providers yet"
         emptyDescription="Onboard your first reseller to start the KYC lifecycle."
         bulkActions={canUpdate || canDelete ? [
           ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const,

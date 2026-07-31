@@ -48,7 +48,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create tenant</DialogTitle>
-          <DialogDescription>PLATFORM is the root; PROVIDER/MERCHANT banker off a parent tenant.</DialogDescription>
+          <DialogDescription>PLATFORM is the root; PROVIDER/MERCHANT branch off a parent tenant.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5"><Label>Code</Label><Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
@@ -108,7 +108,7 @@ export default function TenantsPage() {
         fab={canCreate ? { label: "Tenant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="tenants"
-        emptyTitle="No tenants yet" emptyDescription="Create the first tenant — PLATFORM is the root, PROVIDER/MERCHANT banker off it." />
+        emptyTitle="No tenants yet" emptyDescription="Create the first tenant — PLATFORM is the root, PROVIDER/MERCHANT branch off it." />
       <CreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );

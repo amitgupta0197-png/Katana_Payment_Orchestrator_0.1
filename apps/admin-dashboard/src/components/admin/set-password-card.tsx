@@ -24,7 +24,7 @@ interface Props {
 
 export function SetLoginPasswordCard({ email, kind, scopeId, scopeLabel, fullName }: Props) {
   const [password, setPassword] = useState("");
-  const [result, setResult] = useState<{ password: string; generated: boolean; created_user: boolean ; lands_on?: string | null; moved_from?: string[] } | null>(null);
+  const [result, setResult] = useState<{ password: string; generated: boolean; created_user: boolean } | null>(null);
 
   const m = useMutation({
     mutationFn: async (generate: boolean) => {
@@ -78,19 +78,6 @@ export function SetLoginPasswordCard({ email, kind, scopeId, scopeLabel, fullNam
             <div className="text-xs text-[color:var(--color-text-muted)]">
               {result.created_user ? "Login created." : "Password updated."} Share these with the {kind.toLowerCase()} — the password won&rsquo;t be shown again.
             </div>
-            {result.lands_on && (
-              <div className="text-xs">
-                Signs in to: <b>{result.lands_on}</b>
-              </div>
-            )}
-            {result.moved_from && result.moved_from.length > 0 && (
-              // The same email held a grant for another entity. Login routes by the
-              // PRIMARY persona, so this password reset just moved where they land.
-              <div className="rounded border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted,transparent)] p-2 text-xs">
-                <b>Heads up:</b> this email is also granted {result.moved_from.join(", ")}.
-                It now signs in here instead — one email can only land in one portal.
-              </div>
-            )}
             <CredRow label="Login URL" value={`${origin}/login`} onCopy={copy} />
             <CredRow label="Email" value={email} onCopy={copy} />
             <CredRow label="Password" value={result.password} onCopy={copy} mono />

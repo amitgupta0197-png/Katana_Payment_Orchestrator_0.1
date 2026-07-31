@@ -31,7 +31,7 @@ export default function PgAdapterPage() {
     { key: "enabled", header: "On?", render: (r) => r.enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
   const cCols: Column<Credential>[] = [
-    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "env", header: "Env" },
     { key: "active", header: "Active", render: (r) => r.active ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
     { key: "created_at", header: "Created", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
@@ -39,7 +39,7 @@ export default function PgAdapterPage() {
 
   return (
     <>
-      <PageHeader title="PG adapters" description="Pay-in gateway adapter pool — merchants + per-env credentials." icon={Network} />
+      <PageHeader title="PG adapters" description="Pay-in gateway adapter pool — providers + per-env credentials." icon={Network} />
       <Tabs defaultValue="providers">
         <TabsList>
           <TabsTrigger value="providers"><Network className="h-3.5 w-3.5" /> Providers
@@ -59,11 +59,11 @@ export default function PgAdapterPage() {
               { key: "low-sr",   label: "Success <95%", predicate: (r: Provider) => r.success_rate_bps < 9500 },
             ]}
             savedViewKey="pg-providers" refresh={() => q.refetch()}
-            emptyTitle="No PG merchants" />
+            emptyTitle="No PG providers" />
         </TabsContent>
         <TabsContent value="creds">
           <DataView rows={creds} columns={cCols} rowKey={(r) => r.id}
-            search={{ placeholder: "Search by merchant / env…", fields: ["provider", "env"] }}
+            search={{ placeholder: "Search by provider / env…", fields: ["provider", "env"] }}
             filters={[
               { key: "active",   label: "Active",   predicate: (r: Credential) => r.active },
               { key: "inactive", label: "Inactive", predicate: (r: Credential) => !r.active },

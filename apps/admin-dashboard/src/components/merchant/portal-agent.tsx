@@ -64,7 +64,7 @@ export function MerchantPortalAgentCard() {
               <Button size="sm" variant="ghost" onClick={() => copy(baseUrl)}><Copy className="h-3.5 w-3.5" /></Button>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`w-24 text-xs ${MUTED}`}>Banker code</span>
+              <span className={`w-24 text-xs ${MUTED}`}>Branch code</span>
               <code className="flex-1 truncate font-mono text-xs">{code || "—"}</code>
               <Button size="sm" variant="ghost" onClick={() => copy(code)}><Copy className="h-3.5 w-3.5" /></Button>
             </div>

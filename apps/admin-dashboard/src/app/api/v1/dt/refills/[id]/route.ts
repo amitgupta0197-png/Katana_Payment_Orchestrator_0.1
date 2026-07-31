@@ -2,20 +2,12 @@
 // OPEN → FUNDED → VERIFIED → CLOSED, with CANCELLED allowed while not yet verified.
 // Admin/Finance-side only; bankers raise requests but never transition them.
 //
-// Release-on-refill model (restored 2026-07-31 by business decision, reverting the
-// 2026-07-16 settlement-buffer change): verifying a refill materialises a NEW ACTIVE
-// lot (quantity × current rate, 60% traffic quota + 40% security reserve) and RELEASES
-// the banker's previous HELD reserves — the refill's 40% becomes the new reserve pool.
-//
-// The release is mirrored into settlement_buffer_ledger (added = new 40%, released =
-// the freed reserves) so the buffer view and security_reserves never disagree.
-// Verified settlement reconciliation (POST /api/v1/dt/settlements) still releases
-// buffer FIFO; both paths now write the same ledger.
-//
-// NOTE — this reinstates a known commercial exposure that the settlement-buffer model
-// was written to close: a small refill releases the whole previous reserve, so a banker
-// can shrink Katana's security position by refilling a token quantity. Guarding that
-// (e.g. a minimum refill ratio) is a separate business decision.
+// Settlement-buffer model (product decision 2026-07-16, supersedes release-on-refill):
+// verifying a refill materialises a NEW ACTIVE lot (quantity × current rate, 60%
+// traffic quota + 40% buffer) and ADDS that 40% to the banker's outstanding
+// settlement buffer. Previous reserves are NOT released — a small refill can never
+// reduce Katana's security position. Only verified settlement reconciliation
+// (POST /api/v1/dt/settlements) releases buffer, FIFO across lots.
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { gateOrResponse } from "@/lib/scope";
@@ -71,26 +63,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       INSERT INTO security_reserves (purchase_id, reserve_percent, held) VALUES ($1,40,$2)
     `, [lot[0].id, held]);
 
-    // Release the banker's PREVIOUS reserves — the refill's 40% is the new pool.
-    // Runs AFTER the new lot's reserve row exists and excludes it, so the incoming
-    // reserve is never released by its own refill.
-    const released = await rows<{ id: string; held: number }>("provider", `
-      UPDATE security_reserves s SET released = s.held, status = 'RELEASED', updated_at = now()
-       FROM dt_purchases p
-      WHERE p.id = s.purchase_id AND p.banker_id = $1 AND s.status = 'HELD' AND s.purchase_id <> $2::uuid
-      RETURNING s.id::text, s.held::float AS held
-    `, [bankerId, lot[0].id]).catch(() => []);
-    const releasedTotal = +released.reduce((s, r) => s + r.held, 0).toFixed(2);
-
-    // Mirror the rotation into the buffer ledger: the new 40% is added, the freed
-    // reserves are released, so closing_buffer tracks reserveRemaining() exactly.
+    // The refill's 40% ACCUMULATES into the outstanding settlement buffer.
     const buf = await addBufferEntry(bankerId, {
-      added: held, released: releasedTotal, refPurchaseId: lot[0].id,
-      note: `refill ${id} verified — released ${released.length} prior reserve(s)`,
-      actor: g.session.email,
+      added: held, refPurchaseId: lot[0].id, note: `refill ${id} verified`, actor: g.session.email,
     });
 
-    // Exhausted lots are now refilled.
+    // Exhausted lots are now refilled (quota lifecycle only — reserves untouched).
     await rows("provider", `
       UPDATE dt_purchases SET status = 'REFILLED', updated_at = now()
        WHERE banker_id = $1 AND status = 'EXHAUSTED'
@@ -98,9 +76,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     result = {
       new_lot_id: lot[0].id, quantity, rate: rate.rate, total,
-      traffic_quota: allocated, new_reserve: held,
-      released_previous: releasedTotal,
-      released_count: released.length,
+      traffic_quota: allocated, buffer_added: held,
       outstanding_buffer: buf.closing,
     };
   }
@@ -108,5 +84,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await rows("provider", `UPDATE dt_refill_requests SET status = $2 WHERE id = $1::uuid`, [id, body.to]);
   await auditDt(g.session.email, `REFILL_${body.to}`, "dt_refill_request", id,
     { status: cur[0].status }, { status: body.to, banker_id: cur[0].banker_id, ...(result ?? {}) });
-  return NextResponse.json({ ok: true, ...(result ? { rotation: result } : {}) });
+  return NextResponse.json({ ok: true, ...(result ? { buffer: result } : {}) });
 }

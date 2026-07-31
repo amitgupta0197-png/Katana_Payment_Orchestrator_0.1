@@ -171,7 +171,7 @@ function PaymentInner({ orderId }: { orderId: string }) {
                   <div className="mt-1 text-xs text-[color:var(--color-text-muted)]">UPI Ref (RRN): <span className="font-mono">{d.rrn}</span></div>
                 )}
                 {status === "EXPIRED" || status === "FAILED" ? (
-                  <div className="mt-2 text-xs text-[color:var(--color-text-muted)]">Please ask the banker for a fresh payment link.</div>
+                  <div className="mt-2 text-xs text-[color:var(--color-text-muted)]">Please ask the branch for a fresh payment link.</div>
                 ) : null}
               </div>
             )}

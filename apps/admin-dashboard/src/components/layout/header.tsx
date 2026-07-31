@@ -1,5 +1,4 @@
 import { headers } from "next/headers";
-import Link from "next/link";
 import { LogOut, Shield } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +13,7 @@ export async function Header() {
   await headers();
   const session = await getSession();
   const personaLabel: Record<string, string> = {
-    // Display names only — the persona CODES are unchanged (PROVIDER/MERCHANT).
-    SUPER_ADMIN: "Super Admin", PROVIDER: "Merchant", MERCHANT: "Banker",
+    SUPER_ADMIN: "Super Admin", PROVIDER: "Provider", MERCHANT: "Branch",
   };
 
   return (
@@ -42,16 +40,10 @@ export async function Header() {
       )}
       <div className="flex items-center gap-3">
         {session && (
-          // The identity block doubles as the way into account settings — that is where
-          // people look for "change my password", not in the sidebar.
-          <Link
-            href="/profile"
-            title="My profile — change password"
-            className="hidden sm:flex flex-col items-end leading-tight text-xs rounded-md px-2 py-1 -mr-1 transition-colors hover:bg-[color:var(--color-surface-muted)]"
-          >
+          <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
             <span className="font-medium text-[color:var(--color-text)]">{session.full_name || session.email}</span>
             <span className="text-[color:var(--color-text-muted)]">{session.email}</span>
-          </Link>
+          </div>
         )}
         <ThemeToggle />
         {session ? (

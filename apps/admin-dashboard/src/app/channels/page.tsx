@@ -38,7 +38,7 @@ export default function ChannelsPage() {
   const providers = Array.from(new Set(rows.map((c) => c.provider))).filter(Boolean);
 
   const cols: Column<Channel>[] = [
-    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "method", header: "Method" },
     { key: "direction", header: "Direction", render: (r) => <Badge variant={r.direction === "payin" ? "info" : "warning"}>{r.direction}</Badge> },
     { key: "enabled", header: "On?", render: (r) => r.enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
@@ -50,7 +50,7 @@ export default function ChannelsPage() {
     <>
       <PageHeader
         title="Channels"
-        description="Enabled payment rails — pay-in + payout × method × merchant. Toggle to bring a channel online or offline."
+        description="Enabled payment rails — pay-in + payout × method × provider. Toggle to bring a channel online or offline."
         icon={Network}
       />
       <DataView
@@ -58,7 +58,7 @@ export default function ChannelsPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by merchant or method…", fields: ["provider", "method"] }}
+        search={{ placeholder: "Search by provider or method…", fields: ["provider", "method"] }}
         filters={[
           { key: "on",     label: "On",      predicate: (r: Channel) => r.enabled },
           { key: "off",    label: "Off",     predicate: (r: Channel) => !r.enabled },

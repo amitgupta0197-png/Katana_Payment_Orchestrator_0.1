@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Banknote, Contact, Plug,
+  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Banknote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -14,12 +14,10 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 const NAV = [
   { href: "/provider-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
   { href: "/provider-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/provider-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
+  { href: "/provider-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
   { href: "/provider-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
   { href: "/provider-portal/settlements", label: "Settlements", icon: Banknote,       exact: false },
-  { href: "/provider-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
   { href: "/provider-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
-  { href: "/provider-portal/developers", label: "Developers", icon: Plug,            exact: false },
   { href: "/provider-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/provider-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
   { href: "/provider-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
@@ -41,7 +39,7 @@ export function ProviderPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Merchant navigation"
+        aria-label="Provider navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -51,7 +49,7 @@ export function ProviderPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Merchant portal
+              Provider portal
             </span>
           </div>
         </div>
@@ -89,7 +87,7 @@ export function ProviderPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Merchant</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Provider</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

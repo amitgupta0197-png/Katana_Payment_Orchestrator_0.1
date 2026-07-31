@@ -92,7 +92,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Active payments (operations)</CardTitle>
-          <CardDescription>Live pay-ins for this banker — mode, active receiver VPA, backup failover.</CardDescription>
+          <CardDescription>Live pay-ins for this branch — mode, active receiver VPA, backup failover.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={live.length ? "success" : "default"}>{live.length} active</Badge>
@@ -191,7 +191,7 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Transactions</CardTitle>
-          <CardDescription>All pay-ins for this banker across every status, newest first.</CardDescription>
+          <CardDescription>All pay-ins for this branch across every status, newest first.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="success" title="Total of successful pay-ins">{formatAmount(successAmount, "INR")} collected</Badge>

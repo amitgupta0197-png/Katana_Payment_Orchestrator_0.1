@@ -40,8 +40,8 @@ export default function AdminBranchSettlementsPage() {
   const inReview = list.filter((x) => x.status === "REVIEW").length;
 
   const cols: Column<Settlement>[] = [
-    { key: "provider", header: "Merchant", render: (r) => <span className="text-xs">{r.provider_name ?? r.provider_code ?? "—"}</span> },
-    { key: "branch", header: "Banker", render: (r) => <span className="text-xs font-medium">{r.branch_name ?? r.merchant_key}</span> },
+    { key: "provider", header: "Provider", render: (r) => <span className="text-xs">{r.provider_name ?? r.provider_code ?? "—"}</span> },
+    { key: "branch", header: "Branch", render: (r) => <span className="text-xs font-medium">{r.branch_name ?? r.merchant_key}</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "utr", header: "UTR", render: (r) => r.utr ? <span className="font-mono text-xs">{r.utr}</span> : <span className="text-[color:var(--color-text-subtle)]">—</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={settlementStatusVariant(r.status)}>{SETTLEMENT_STATUS_LABEL[r.status] ?? r.status}</Badge> },
@@ -52,8 +52,8 @@ export default function AdminBranchSettlementsPage() {
   return (
     <>
       <PageHeader
-        title="Banker settlements"
-        description="Every merchant↔banker settlement. Mark for review and edit any field to fix reconciliation errors."
+        title="Branch settlements"
+        description="Every provider↔branch settlement. Mark for review and edit any field to fix reconciliation errors."
         icon={Banknote}
         actions={<div className="flex items-center gap-2">
           {inReview > 0 && <Badge variant="warning"><Flag className="h-3 w-3 mr-1" />{inReview} in review</Badge>}

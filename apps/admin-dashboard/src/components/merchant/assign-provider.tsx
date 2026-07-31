@@ -53,7 +53,7 @@ export function AssignProviderDialog({
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Banker assigned to merchant");
+      toast.success("Branch assigned to provider");
       onOpenChange(false);
       setProviderId("");
       qc.invalidateQueries({ queryKey: ["merchants"] });
@@ -66,20 +66,20 @@ export function AssignProviderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign to merchant</DialogTitle>
+          <DialogTitle>Assign to provider</DialogTitle>
           <DialogDescription>
             Map {merchantCode ? <span className="font-mono">{merchantCode}</span> : "this merchant"} under a
             provider so traffic, commissions, and reporting trace back to who sourced it.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
-          <Label>Merchant</Label>
+          <Label>Provider</Label>
           <select
             className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
             value={providerId}
             onChange={(e) => setProviderId(e.target.value)}
           >
-            <option value="">— Select a merchant —</option>
+            <option value="">— Select a provider —</option>
             {providers.map((p) => (
               <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>
             ))}
@@ -118,7 +118,7 @@ export function ProviderAttributionCard({ merchantId, merchantCode }: { merchant
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Merchant unassigned");
+      toast.success("Provider unassigned");
       qc.invalidateQueries({ queryKey: ["merchant-provider", merchantId] });
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
@@ -128,8 +128,8 @@ export function ProviderAttributionCard({ merchantId, merchantCode }: { merchant
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
         <div>
-          <CardTitle className="text-base">Merchant attribution</CardTitle>
-          <CardDescription>Which merchant sourced this banker, and who onboarded it.</CardDescription>
+          <CardTitle className="text-base">Provider attribution</CardTitle>
+          <CardDescription>Which provider sourced this branch, and who onboarded it.</CardDescription>
         </div>
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
           <Link2 className="h-4 w-4" /> {mappings.length ? "Change / add" : "Assign provider"}

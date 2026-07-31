@@ -5,13 +5,7 @@
 import { rows } from "@/lib/pg";
 import { branchKeysForMerchant } from "@/lib/provider-integration";
 
-// Full bank-settlement lifecycle (see lib/settlement-fsm for the transition rules).
-// Kept backward compatible with the original 6-status flow.
-export const SETTLEMENT_STATUSES = [
-  "DRAFT", "REQUESTED", "ACCEPTED", "PROCESSING", "PAID", "PARTIALLY_PAID", "UTR_SUBMITTED",
-  "VERIFIED", "RECONCILED", "REJECTED", "ON_HOLD", "FAILED", "REVERSED", "CORRECTION_REQUIRED",
-  "ESCALATED", "COMPLIANCE_REVIEW", "INSUFFICIENT_BALANCE", "REVIEW", "CANCELLED",
-] as const;
+export const SETTLEMENT_STATUSES = ["REQUESTED", "UTR_SUBMITTED", "VERIFIED", "REJECTED", "REVIEW", "CANCELLED"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
 
 // PoolPay purpose codes by amount range (Withdrawal guide annexure). Used to
@@ -37,44 +31,26 @@ export async function branchCollectedSuccess(merchantKey: string): Promise<numbe
   return r[0]?.total ?? 0;
 }
 
-// Sum of already-VERIFIED/RECONCILED settlements for a (provider, branch) pair.
+// Sum of already-VERIFIED settlements for a (provider, branch) pair.
 export async function branchVerifiedSettled(providerId: string, merchantKey: string): Promise<number> {
   const r = await rows<{ total: number }>("provider", `
     SELECT COALESCE(SUM(amount),0)::float AS total
       FROM provider_branch_settlements
-     WHERE provider_id = $1::uuid AND merchant_key = $2 AND status IN ('VERIFIED','RECONCILED')
+     WHERE provider_id = $1::uuid AND merchant_key = $2 AND status = 'VERIFIED'
   `, [providerId, merchantKey]).catch(() => [{ total: 0 }]);
   return r[0]?.total ?? 0;
 }
 
-// BLOCKED balance (BRD §11): settlements still in flight hold their gross so the same
-// funds can't be requested twice. Terminal/released statuses (verified, reconciled,
-// rejected, failed, cancelled, reversed, insufficient-balance, invalid-beneficiary)
-// don't block — those funds return to the available balance.
-export async function branchBlocked(providerId: string, merchantKey: string): Promise<number> {
-  const r = await rows<{ total: number }>("provider", `
-    SELECT COALESCE(SUM(amount),0)::float AS total
-      FROM provider_branch_settlements
-     WHERE provider_id = $1::uuid AND merchant_key = $2
-       AND status NOT IN ('VERIFIED','RECONCILED','REJECTED','FAILED','CANCELLED','REVERSED','DRAFT','INSUFFICIENT_BALANCE','INVALID_BENEFICIARY')
-  `, [providerId, merchantKey]).catch(() => [{ total: 0 }]);
-  return r[0]?.total ?? 0;
-}
-
-// Available = collected SUCCESS pay-ins − settled − blocked (in-flight requests).
-// `outstanding` is what the provider can still raise right now.
+// Outstanding = collected SUCCESS pay-ins − already-verified settlements. This is
+// the provider's receivable from the branch and the default settlement amount.
 export async function outstandingForBranch(providerId: string, merchantKey: string): Promise<{
-  collected: number; settled: number; blocked: number; outstanding: number;
+  collected: number; settled: number; outstanding: number;
 }> {
-  const [collected, settled, blocked] = await Promise.all([
+  const [collected, settled] = await Promise.all([
     branchCollectedSuccess(merchantKey),
     branchVerifiedSettled(providerId, merchantKey),
-    branchBlocked(providerId, merchantKey),
   ]);
-  return {
-    collected, settled, blocked,
-    outstanding: Math.max(0, Math.round((collected - settled - blocked) * 100) / 100),
-  };
+  return { collected, settled, outstanding: Math.max(0, Math.round((collected - settled) * 100) / 100) };
 }
 
 // Branches mapped under a provider, resolved to merchant_code + display name.

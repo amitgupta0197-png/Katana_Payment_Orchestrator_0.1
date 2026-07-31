@@ -81,14 +81,14 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
                   Generated. Copy the Salt now — it won&rsquo;t be shown again.
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Banker Key</Label>
+                  <Label>Branch Key</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.key}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.key)}><Copy className="h-4 w-4" /></Button>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Banker Salt</Label>
+                  <Label>Branch Salt</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.salt}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.salt)}><Copy className="h-4 w-4" /></Button>

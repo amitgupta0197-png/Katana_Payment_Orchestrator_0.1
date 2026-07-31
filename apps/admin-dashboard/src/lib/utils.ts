@@ -57,19 +57,3 @@ export function railLabel(code: string | null | undefined): string {
   if (!code) return "—";
   return RAIL_LABELS[code.toUpperCase()] ?? code;
 }
-
-// ── Display names for stored enum values ─────────────────────────────────────
-// The DB stores PROVIDER / MERCHANT as persona and provider.kind values. The product
-// calls those a Merchant and a Banker respectively. Mapping happens at render time
-// only — the stored values are what scope.ts and every gate key off, so renaming them
-// in the database would be an access-control change, not a wording one.
-const ENTITY_DISPLAY: Record<string, string> = {
-  PROVIDER: "MERCHANT",
-  MERCHANT: "BANKER",
-};
-
-/** Render a stored persona / kind value using product terminology. */
-export function displayEntity(value: string | null | undefined): string {
-  if (!value) return "—";
-  return ENTITY_DISPLAY[value] ?? value;
-}
