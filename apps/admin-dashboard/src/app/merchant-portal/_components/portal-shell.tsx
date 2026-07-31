@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, Receipt, Banknote, BookOpen, CreditCard,
-  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug,
+  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug, Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/merchant-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
   { href: "/merchant-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
   { href: "/merchant-portal/provider-settlements", label: "Provider settlements", icon: Landmark, exact: false },
+  { href: "/merchant-portal/dt-requests",  label: "DT Requests", icon: Coins,          exact: false },
   { href: "/merchant-portal/reserves",    label: "Reserves",    icon: BookOpen,        exact: false },
   { href: "/merchant-portal/sub-mids",    label: "Sub-MIDs",    icon: CreditCard,      exact: false },
   { href: "/merchant-portal/api-keys",    label: "API keys",    icon: KeyRound,        exact: false },
