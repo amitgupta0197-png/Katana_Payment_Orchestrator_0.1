@@ -71,7 +71,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
       return d;
     },
     onSuccess: () => {
-      toast.success("Integration saved", { description: "Cascaded to all branches under this provider." });
+      toast.success("Integration saved", { description: "Cascaded to all bankers under this merchant." });
       qc.invalidateQueries({ queryKey: ["provider-integration", providerId] });
       qc.invalidateQueries({ queryKey: ["poolpay-funnel", providerId] });
     },

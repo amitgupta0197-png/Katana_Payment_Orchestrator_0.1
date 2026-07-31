@@ -50,7 +50,7 @@ export default function BranchProviderSettlementsPage() {
         {r.locked ? <Badge variant="warning">🔒 locked</Badge> : null}
       </span>
     ) },
-    { key: "provider", header: "Provider", render: (r) => <span className="font-medium">{r.provider_name ?? r.provider_code ?? "—"}</span> },
+    { key: "provider", header: "Merchant", render: (r) => <span className="font-medium">{r.provider_name ?? r.provider_code ?? "—"}</span> },
     { key: "amount", header: "Gross", render: (r) => <span className="tabular-nums">{formatAmount(r.gross_amount ?? r.amount, r.currency)}</span> },
     { key: "net", header: "Net to pay", render: (r) => (
       <span className="tabular-nums font-medium">
@@ -84,8 +84,8 @@ export default function BranchProviderSettlementsPage() {
   return (
     <>
       <PageHeader
-        title="Provider settlements"
-        description="Settlements your provider raised. Accept, process, and mark paid — every step is visible to your provider in real time."
+        title="Merchant settlements"
+        description="Settlements your merchant raised. Accept, process, and mark paid — every step is visible to your merchant in real time."
         icon={Banknote}
         actions={<Badge variant={q.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live · 10s</Badge>}
       />

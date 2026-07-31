@@ -102,15 +102,15 @@ export const navItems: NavItem[] = [
   { href: "/admin-log", label: "Admin Log", icon: ScrollText, status: "live", group: "Overview" },
   { href: "/profile", label: "My Profile", icon: UserRound, status: "live", group: "Overview" },
 
-  { href: "/providers",        label: "Providers",       icon: UserPlus, status: "live", group: "Payment Management" },
+  { href: "/providers",        label: "Merchants",       icon: UserPlus, status: "live", group: "Payment Management" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
-  { href: "/merchants",        label: "Branch",          icon: Store,    status: "live", group: "Payment Management" },
-  { href: "/merchant-config",  label: "Branch Config",   icon: Sliders,  status: "live", group: "Payment Management" },
+  { href: "/merchants",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
+  { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/payin-order",      label: "Payin Order",     icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/summary",          label: "Summary",         icon: BarChart3,status: "live", group: "Payment Management" },
   { href: "/payout-order",     label: "Payout Order",    icon: Send,     status: "live", group: "Payment Management" },
-  { href: "/merchant-wallet",  label: "Branch Wallet",   icon: Wallet,   status: "live", group: "Payment Management" },
+  { href: "/merchant-wallet",  label: "Banker Wallet",   icon: Wallet,   status: "live", group: "Payment Management" },
   { href: "/fund",             label: "Fund",            icon: Cash,     status: "live", group: "Payment Management" },
   { href: "/payin-data",       label: "Payin Data",      icon: Activity, status: "live", group: "Payment Management" },
   { href: "/payout-data",      label: "Payout Data",     icon: Activity, status: "live", group: "Payment Management" },
@@ -119,7 +119,7 @@ export const navItems: NavItem[] = [
   { href: "/ledger", label: "Ledger", icon: BookOpen, status: "live", group: "Money Movement" },
   { href: "/payout", label: "Payouts (gRPC)", icon: Send, status: "live", group: "Money Movement" },
   { href: "/settlement", label: "Settlements", icon: Banknote, status: "live", group: "Money Movement" },
-  { href: "/branch-settlements", label: "Branch Settlements", icon: Banknote, status: "live", group: "Money Movement" },
+  { href: "/branch-settlements", label: "Banker Settlements", icon: Banknote, status: "live", group: "Money Movement" },
   { href: "/settlement-rules", label: "Settlement Rules", icon: Sliders, status: "live", group: "Money Movement" },
   { href: "/usdt-rates", label: "USDT Rates", icon: Globe, status: "live", group: "Money Movement" },
   { href: "/collections", label: "Collections", icon: Inbox, status: "live", group: "Money Movement" },
@@ -186,7 +186,7 @@ export const navItems: NavItem[] = [
   { href: "/integrations",         label: "Integrations", icon: KeyRound, status: "live", group: "Admin" },
   { href: "/partner-inquiries",     label: "Partner Inquiries", icon: Headphones, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "ADMIN", "SUPPORT"] },
   { href: "/security",             label: "Security (MFA)", icon: Shield, status: "live", group: "Admin", personas: ["SUPER_ADMIN", "PROVIDER", "MERCHANT", "OPERATOR"] },
-  { href: "/fifo-controls",        label: "Branch Controls", icon: Sliders, status: "live", group: "Admin" },
+  { href: "/fifo-controls",        label: "Banker Controls", icon: Sliders, status: "live", group: "Admin" },
 ];
 
 export const navGroups = ["Overview", "Payment Management", "Money Movement", "DT Business", "Risk & Compliance", "Operations", "Admin"] as const;

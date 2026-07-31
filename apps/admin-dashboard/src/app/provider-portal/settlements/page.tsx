@@ -86,7 +86,7 @@ export default function ProviderSettlementsPage() {
 
   const cols: Column<Settlement>[] = [
     { key: "ref", header: "Request ID", render: (r) => <span className="font-mono text-xs">{r.request_ref ?? r.id.slice(0, 8)}</span> },
-    { key: "merchant_key", header: "Branch", render: (r) => <span className="font-medium">{r.branch_name ?? r.merchant_key}</span> },
+    { key: "merchant_key", header: "Banker", render: (r) => <span className="font-medium">{r.branch_name ?? r.merchant_key}</span> },
     { key: "amount", header: "Gross", render: (r) => <span className="tabular-nums">{formatAmount(r.gross_amount ?? r.amount, r.currency)}</span> },
     { key: "net", header: "Net payable", render: (r) => (
       <span className="tabular-nums font-medium">
@@ -111,7 +111,7 @@ export default function ProviderSettlementsPage() {
     <>
       <PageHeader
         title="Settlements"
-        description="Collect from your branches: raise a settlement, the branch pays your beneficiary account and submits the UTR, you verify it."
+        description="Collect from your bankers: raise a settlement, the banker pays your beneficiary account and submits the UTR, you verify it."
         icon={Banknote}
         actions={<div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setNotifOpen(true)}><Bell className="h-4 w-4" /> Notifications</Button>

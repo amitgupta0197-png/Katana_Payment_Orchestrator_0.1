@@ -76,7 +76,7 @@ export default function DtActivationsPage() {
   const s = q.data?.summary;
 
   const cols: Column<Activation>[] = [
-    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-medium">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Banker", render: (r) => <span className="font-medium">{r.merchant_id}</span> },
     { key: "model", header: "Model", render: (r) => <span className="text-xs">{MODEL_LABEL[r.model] ?? r.model}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? "default"}>{r.status}</Badge> },
     { key: "requested_by", header: "Requested by", render: (r) => <span className="text-xs">{r.requested_by || "—"}</span> },
@@ -107,13 +107,13 @@ export default function DtActivationsPage() {
     <>
       <PageHeader
         title="DT Activations"
-        description="Branches asking to be activated for the DT refill model. Approving unlocks their DT dashboard."
+        description="Bankers asking to be activated for the DT refill model. Approving unlocks their DT dashboard."
         icon={ShieldCheck}
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <KpiTile label="Pending review" value={s?.pending ?? "—"} variant={s && s.pending > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Activated branches" value={s?.approved ?? "—"} variant="success" loading={q.isLoading} />
+        <KpiTile label="Activated bankers" value={s?.approved ?? "—"} variant="success" loading={q.isLoading} />
         <KpiTile label="Total requests" value={rows.length || "—"} loading={q.isLoading} />
       </div>
 
@@ -122,14 +122,14 @@ export default function DtActivationsPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search branch…", fields: ["merchant_id", "status", "model", "requested_by"] }}
+        search={{ placeholder: "Search banker…", fields: ["merchant_id", "status", "model", "requested_by"] }}
         filters={[
           { key: "pending", label: "Pending", predicate: (r) => r.status === "REQUESTED" },
           { key: "approved", label: "Activated", predicate: (r) => r.status === "APPROVED" },
         ]}
         refresh={() => q.refetch()}
         emptyTitle="No activation requests"
-        emptyDescription="Branches request DT activation from their portal; they appear here for review."
+        emptyDescription="Bankers request DT activation from their portal; they appear here for review."
         rowActions={(r) => {
           const a = actionsFor(r);
           return a.length ? <RowActions actions={a} /> : null;

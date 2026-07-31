@@ -26,7 +26,7 @@ const AUDIENCES: Audience[] = [
   },
   {
     icon: Code2,
-    title: "For Technology Providers",
+    title: "For Technology Merchants",
     blurb: "Ship payments inside your own product, fully branded.",
     items: ["White Label Gateway", "API Integration", "Custom Checkout", "Embedded Payments"],
   },

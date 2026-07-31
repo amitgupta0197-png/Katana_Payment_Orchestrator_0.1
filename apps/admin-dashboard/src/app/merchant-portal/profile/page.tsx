@@ -71,11 +71,11 @@ export default function ProfilePage() {
           </div>
           <div className="space-y-1.5">
             <Label>Webhook URL (must be HTTPS)</Label>
-            <Input value={form.webhook_url} onChange={(e) => setForm({ ...form, webhook_url: e.target.value })} placeholder="https://api.your-branch.com/katana/webhook" />
+            <Input value={form.webhook_url} onChange={(e) => setForm({ ...form, webhook_url: e.target.value })} placeholder="https://api.your-banker.com/katana/webhook" />
           </div>
           <div className="space-y-1.5">
             <Label>Return URL</Label>
-            <Input value={form.return_url} onChange={(e) => setForm({ ...form, return_url: e.target.value })} placeholder="https://checkout.your-branch.com/return" />
+            <Input value={form.return_url} onChange={(e) => setForm({ ...form, return_url: e.target.value })} placeholder="https://checkout.your-banker.com/return" />
           </div>
           <div className="pt-2">
             <Button onClick={() => m.mutate()} disabled={m.isPending || !me}>{m.isPending ? "Saving…" : "Save"}</Button>

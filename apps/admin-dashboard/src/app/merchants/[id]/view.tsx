@@ -47,7 +47,7 @@ interface CheckoutCredsStatus {
 }
 
 const STEPS = [
-  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic branch details captured." },
+  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic banker details captured." },
   { key: "step_kyb_docs",     stage_from: "DOCS_PENDING",  stage_to: "SCREENING",     label: "KYB documents",   description: "PAN, GST, CIN, MOA, AOA, board resolution, bank statement, MCC declaration uploaded." },
   { key: "step_screening",    stage_from: "SCREENING",     stage_to: "BANK_VERIFY",   label: "Screening",       description: "OFAC / UN / EU / FATF sanctions screening. Risk tier assigned." },
   { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "CONFIG",        label: "Bank verify",     description: "Penny-drop on settlement account. Beneficiary name-match validated." },
@@ -509,7 +509,7 @@ function GatewayMidCard({ merchant }: { merchant: Merchant }) {
                   <div className="space-y-1.5"><Label>Gateway</Label><Input value={form.gateway} onChange={(e) => setForm({ ...form, gateway: e.target.value })} placeholder="PAYU" /></div>
                   <div className="space-y-1.5"><Label>Main MID code</Label><Input value={form.mid_code} onChange={(e) => setForm({ ...form, mid_code: e.target.value })} placeholder="MID-…" /></div>
                 </div>
-                <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway branch key" /></div>
+                <div className="space-y-1.5"><Label>Key</Label><Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gateway banker key" /></div>
                 <div className="space-y-1.5"><Label>Salt</Label><Input value={form.salt} onChange={(e) => setForm({ ...form, salt: e.target.value })} placeholder="gateway salt" /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -651,7 +651,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
   if (!merchant) {
     return (
       <>
-        <PageHeader title="Branch not found" description="" icon={Store} />
+        <PageHeader title="Banker not found" description="" icon={Store} />
         <Card><CardContent className="py-8 text-center"><Link className="text-[color:var(--color-brand)] hover:underline" href="/merchants">← back to branches</Link></CardContent></Card>
       </>
     );

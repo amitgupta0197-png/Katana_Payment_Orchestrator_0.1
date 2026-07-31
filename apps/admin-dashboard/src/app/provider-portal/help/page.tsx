@@ -19,15 +19,15 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 export default function ProviderHelpPage() {
   return (
     <>
-      <PageHeader title="Help & guide" description="How to use your provider portal — leads, branches, Sub-MIDs, commission, and more." icon={HelpCircle} />
+      <PageHeader title="Help & guide" description="How to use your merchant portal — leads, bankers, Sub-MIDs, commission, and more." icon={HelpCircle} />
 
       {/* Quick links */}
       <Card className="mb-4">
         <CardHeader><CardTitle className="text-base">Jump to</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {[
-            { href: "/provider-portal/leads", label: "Add a branch lead", icon: UserPlus },
-            { href: "/provider-portal/merchants", label: "Your branches", icon: Store },
+            { href: "/provider-portal/leads", label: "Add a banker lead", icon: UserPlus },
+            { href: "/provider-portal/merchants", label: "Your bankers", icon: Store },
             { href: "/provider-portal/transactions", label: "Transactions & reimbursement", icon: Receipt },
             { href: "/provider-portal/sub-mids", label: "Request a Sub-MID", icon: CreditCard },
             { href: "/provider-portal/commission", label: "Commission", icon: Percent },

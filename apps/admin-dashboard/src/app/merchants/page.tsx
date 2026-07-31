@@ -240,7 +240,7 @@ export default function MerchantsPage() {
   return (
     <>
       <PageHeader
-        title="Branches"
+        title="Bankers"
         description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
         icon={Store}
       />
@@ -287,7 +287,7 @@ export default function MerchantsPage() {
             <div className="mt-0.5 truncate text-xs text-[color:var(--color-text-muted)]">{r.contact_email}</div>
           </Link>
         )}
-        fab={canCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Onboard banker", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="merchants"
         emptyTitle="No merchants onboarded yet"
@@ -297,7 +297,7 @@ export default function MerchantsPage() {
             openHref={`/merchants/${r.id}`}
             actions={[
               { label: "Open detail", icon: ExternalLink, onClick: () => (window.location.href = `/merchants/${r.id}`) },
-              ...(canAssignProvider ? [{ label: "Assign provider", icon: Link2, onClick: () => setAssignFor(r) }] : []),
+              ...(canAssignProvider ? [{ label: "Assign merchant", icon: Link2, onClick: () => setAssignFor(r) }] : []),
             ]}
           />
         )}

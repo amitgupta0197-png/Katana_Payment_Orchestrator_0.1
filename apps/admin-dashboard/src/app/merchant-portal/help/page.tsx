@@ -21,7 +21,7 @@ const codeBlock = "block whitespace-pre overflow-x-auto rounded-md border bg-[co
 export default function MerchantHelpPage() {
   return (
     <>
-      <PageHeader title="Help & guide" description="How to use your branch portal — API keys, webhooks, Sub-MIDs, and settlements." icon={HelpCircle} />
+      <PageHeader title="Help & guide" description="How to use your banker portal — API keys, webhooks, Sub-MIDs, and settlements." icon={HelpCircle} />
 
       {/* Quick links */}
       <Card className="mb-4">

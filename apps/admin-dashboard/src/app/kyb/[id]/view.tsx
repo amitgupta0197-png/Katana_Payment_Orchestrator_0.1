@@ -140,7 +140,7 @@ export default function KybDetailView({ id }: { id: string }) {
   ];
   const screenCols: Column<ScreeningHit>[] = [
     { key: "hit_kind", header: "Kind", render: (r) => <Badge variant="danger">{r.hit_kind}</Badge> },
-    { key: "provider", header: "Provider", render: (r) => r.provider || "—" },
+    { key: "provider", header: "Merchant", render: (r) => r.provider || "—" },
     { key: "score", header: "Score", render: (r) => r.score || "—" },
     { key: "payload", header: "Payload", render: (r) => <span className="font-mono text-xs">{r.payload.slice(0, 60)}…</span> },
     { key: "created_at", header: "When", render: (r) => formatDateTime(r.created_at) },
@@ -193,7 +193,7 @@ export default function KybDetailView({ id }: { id: string }) {
         <CardHeader><CardTitle className="text-base">Documents ({docs.length})</CardTitle></CardHeader>
         <CardContent>
           {docs.length === 0
-            ? <EmptyState icon={FileText} title="No documents uploaded" description="The branch needs to upload PAN/GST/MOA before this case can advance." />
+            ? <EmptyState icon={FileText} title="No documents uploaded" description="The banker needs to upload PAN/GST/MOA before this case can advance." />
             : <DataTable columns={docCols} rows={docs} rowKey={(r) => r.id} />}
         </CardContent>
       </Card>

@@ -158,8 +158,8 @@ export default function ProviderDashboard() {
   return (
     <>
       <PageHeader
-        title="Provider dashboard"
-        description="Your mapped branches, Sub-MID pipeline, KYB progress, and commission."
+        title="Merchant dashboard"
+        description="Your mapped bankers, Sub-MID pipeline, KYB progress, and commission."
         icon={LayoutDashboard}
         actions={<Badge variant={merchants.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge>}
       />
@@ -172,8 +172,8 @@ export default function ProviderDashboard() {
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Portfolio</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Mapped branches" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/provider-portal/merchants" />
-        <KpiTile label="Branches live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/provider-portal/merchants" />
+        <KpiTile label="Mapped bankers" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/provider-portal/merchants" />
+        <KpiTile label="Bankers live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/provider-portal/merchants" />
         <KpiTile label="Sub-MIDs live" value={subMidsLive} sublabel={`${subMidsPending} pending KYC`} icon={Network} loading={subMids.isLoading} href="/provider-portal/sub-mids" />
         <KpiTile label="Open KYB cases" value={kybOpen} icon={FileCheck2} variant={kybOpen > 0 ? "warning" : "default"} loading={kyb.isLoading} />
       </div>
@@ -201,7 +201,7 @@ export default function ProviderDashboard() {
         <KpiTile label="Gross collected" value={formatAmount(txns.data?.totals?.gross ?? 0)} sublabel={`${txns.data?.totals?.success_count ?? 0} successful`} icon={Wallet} variant="success" loading={txns.isLoading} href="/provider-portal/transactions" />
         <KpiTile label="Total transactions" value={txns.data?.totals?.total_count ?? 0} icon={Store} loading={txns.isLoading} href="/provider-portal/transactions" />
         <KpiTile label="Pending" value={txns.data?.totals?.pending_count ?? 0} icon={Activity} variant={(txns.data?.totals?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={txns.isLoading} href="/provider-portal/transactions" />
-        <KpiTile label="Branches with volume" value={new Set((txns.data?.recent ?? []).map((r) => r.merchant_id)).size} icon={Network} loading={txns.isLoading} href="/provider-portal/transactions" />
+        <KpiTile label="Bankers with volume" value={new Set((txns.data?.recent ?? []).map((r) => r.merchant_id)).size} icon={Network} loading={txns.isLoading} href="/provider-portal/transactions" />
       </div>
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
@@ -294,7 +294,7 @@ export default function ProviderDashboard() {
       </Card>
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Katana Pay reconciliation</h2>
-      <PaymentFunnel description="Live Katana Pay pay-ins across all your branches — created → reconciled." />
+      <PaymentFunnel description="Live Katana Pay pay-ins across all your bankers — created → reconciled." />
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Insights</h2>
       <ProviderCharts />

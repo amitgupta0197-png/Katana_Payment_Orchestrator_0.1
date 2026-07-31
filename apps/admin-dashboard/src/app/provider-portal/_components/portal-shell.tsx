@@ -14,7 +14,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 const NAV = [
   { href: "/provider-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
   { href: "/provider-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/provider-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
+  { href: "/provider-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
   { href: "/provider-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
   { href: "/provider-portal/settlements", label: "Settlements", icon: Banknote,       exact: false },
   { href: "/provider-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
@@ -41,7 +41,7 @@ export function ProviderPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Provider navigation"
+        aria-label="Merchant navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -51,7 +51,7 @@ export function ProviderPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Provider portal
+              Merchant portal
             </span>
           </div>
         </div>

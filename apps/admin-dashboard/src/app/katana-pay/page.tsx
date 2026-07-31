@@ -8,8 +8,7 @@ import { CtaBand } from "./_experience/CtaBand";
 
 export const metadata: Metadata = {
   title: "Katana Pay — Move money like it's frictionless",
-  description:
-    "Katana Pay is a payment orchestration platform for UPI-first businesses: hosted UPI checkout for any website, real-time reconciliation, smart multi-provider routing, and fast branch settlements — behind one signed API.",
+  description: "Katana Pay is a payment orchestration platform for UPI-first businesses: hosted UPI checkout for any website, real-time reconciliation, smart multi-merchant routing, and fast banker settlements — behind one signed API.",
   openGraph: {
     title: "Katana Pay — Move money like it's frictionless",
     description: "Hosted UPI checkout, real-time reconciliation, smart routing, and fast settlements. Integrate in any language.",

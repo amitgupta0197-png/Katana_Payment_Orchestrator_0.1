@@ -125,7 +125,7 @@ function Simulator() {
 
   const cols: Column<SimResult["candidates"][0]>[] = [
     { key: "rank", header: "#" },
-    { key: "provider", header: "Provider", render: (r) => <Badge variant={r.rank === 1 ? "success" : "brand"}>{r.provider}</Badge> },
+    { key: "provider", header: "Merchant", render: (r) => <Badge variant={r.rank === 1 ? "success" : "brand"}>{r.provider}</Badge> },
     { key: "score", header: "Score" },
     { key: "reasoning", header: "Reasoning", render: (r) => <span className="font-mono text-xs">{r.reasoning}</span> },
   ];
@@ -235,7 +235,7 @@ export default function RoutingAdminPage() {
   const healthByProvider = new Map(q.data?.health?.map((h) => [h.provider_code, h]) ?? []);
 
   const railCols: Column<Rail>[] = [
-    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "method", header: "Method" },
     { key: "direction", header: "Dir" },
     { key: "mdr_bps", header: "MDR (bps)" },
@@ -246,7 +246,7 @@ export default function RoutingAdminPage() {
   ];
 
   const healthCols: Column<Health>[] = [
-    { key: "provider_code", header: "Provider", render: (r) => <Badge variant="brand">{r.provider_code}</Badge> },
+    { key: "provider_code", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider_code}</Badge> },
     { key: "circuit_state", header: "Circuit", render: (r) => <Badge variant={badge(r.circuit_state)}>{r.circuit_state}</Badge> },
     { key: "consecutive_failures", header: "Consec. failures" },
     { key: "success_rate", header: "Success %", render: (r) => (r.success_rate * 100).toFixed(2) + "%" },

@@ -173,9 +173,9 @@ export default function ProviderDetailView({ id }: { id: string }) {
     return (
       <EmptyState
         icon={UserPlus}
-        title="Provider not found"
+        title="Merchant not found"
         description="It may have been terminated or you don't have access."
-        secondaryAction={{ label: "Back to providers", href: "/providers" }}
+        secondaryAction={{ label: "Back to merchants", href: "/providers" }}
       />
     );
   }
@@ -205,7 +205,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
     { key: "valid_to", header: "To", render: (r) => r.valid_to ? formatDateTime(r.valid_to) : "—" },
   ];
   const mapCols: Column<Mapping>[] = [
-    { key: "merchant_id", header: "Branch", render: (r) => (
+    { key: "merchant_id", header: "Banker", render: (r) => (
       <button onClick={() => setMerchantDrawer(r)} className="text-left text-[color:var(--color-brand)] hover:underline">
         <span className="font-medium">{r.merchant_name ?? r.merchant_code ?? r.merchant_id}</span>
         {r.merchant_code && r.merchant_name && <span className="ml-1.5 font-mono text-xs text-[color:var(--color-text-muted)]">{r.merchant_code}</span>}
@@ -217,7 +217,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
       <RowActions
         actions={[
           { label: "Open in drawer", icon: ExternalLink, onClick: () => setMerchantDrawer(r) },
-          { label: "Open branch page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
+          { label: "Open banker page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
         ]}
       />
     )},
@@ -307,7 +307,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardHeader>
         <CardContent>
           {users.length === 0
-            ? <EmptyState icon={Users} title="No provider users" description="Invite ops users so the provider team can self-manage." />
+            ? <EmptyState icon={Users} title="No merchant users" description="Invite ops users so the merchant team can self-manage." />
             : <DataTable columns={userCols} rows={users} rowKey={(r) => r.id} />}
         </CardContent>
       </Card>
@@ -327,7 +327,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
     )},
-    { key: "merchants", label: "Branches", icon: Network, count: mappings.length, content: (
+    { key: "merchants", label: "Bankers", icon: Network, count: mappings.length, content: (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
@@ -337,7 +337,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardHeader>
         <CardContent>
           {mappings.length === 0
-            ? <EmptyState icon={Network} title="No branches mapped" description="Onboard branches under this provider to start volume." action={canMerchantCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
+            ? <EmptyState icon={Network} title="No bankers mapped" description="Onboard bankers under this merchant to start volume." action={canMerchantCreate ? { label: "Onboard banker", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
             : <DataTable columns={mapCols} rows={mappings} rowKey={(r) => r.id} onRowClick={(r) => setMerchantDrawer(r)} />}
         </CardContent>
       </Card>
@@ -347,8 +347,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <IntegrationConfigCard providerId={id} canEdit={canAdmin} />
         <PaymentFunnel
           providerId={id}
-          title="Branch reconciliation funnel"
-          description="Live Katana Pay pay-ins across every branch under this provider."
+          title="Banker reconciliation funnel"
+          description="Live Katana Pay pay-ins across every banker under this merchant."
         />
       </div>
     )},
@@ -418,7 +418,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   return (
     <>
       <DetailShell
-        breadcrumbs={[{ label: "Providers", href: "/providers" }, { label: provider.code }]}
+        breadcrumbs={[{ label: "Merchants", href: "/providers" }, { label: provider.code }]}
         backHref="/providers"
         title={provider.legal_name}
         subtitle={`Sub-admin reseller · PRODUCT_VISION §3.1`}

@@ -4,7 +4,7 @@ import { CtaBand } from "../_experience/CtaBand";
 
 export const metadata: Metadata = {
   title: "API — Katana Pay",
-  description: "Sign the order with your per-branch Key + Salt, POST it, and redirect to the returned pay_url. Katana handles UPI, reconciliation, and the signed status callback.",
+  description: "Sign the order with your per-banker Key + Salt, POST it, and redirect to the returned pay_url. Katana handles UPI, reconciliation, and the signed status callback.",
 };
 
 export default function ApiPage() {

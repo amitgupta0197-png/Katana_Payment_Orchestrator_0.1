@@ -11,9 +11,9 @@ interface Feature { icon: LucideIcon; title: string; body: string }
 const FEATURES: Feature[] = [
   { icon: Globe, title: "Hosted checkout, any language", body: "POST a signed order, redirect to a hosted pay page. PHP, Node, Python, Go, WordPress — if it can send JSON, it can take payments." },
   { icon: GitMerge, title: "Real-time reconciliation", body: "Every UPI credit is captured, matched to its order, and reconciled — with RRN/UTR tracking so nothing slips through." },
-  { icon: Workflow, title: "Smart multi-provider routing", body: "Each payment scored across providers on success rate, latency, health and cost — routed to the best rail, live." },
+  { icon: Workflow, title: "Smart multi-merchant routing", body: "Each payment scored across providers on success rate, latency, health and cost — routed to the best rail, live." },
   { icon: Smartphone, title: "On-device RRN capture", body: "When banks expose no API, our agent reads the 12-digit UPI reference on-device so collections always reconcile." },
-  { icon: Banknote, title: "Fast branch settlements", body: "A full upline → Katana → branch settlement flow with immutable timelines, versioned commission rules, and USDT or bank payouts." },
+  { icon: Banknote, title: "Fast banker settlements", body: "A full upline → Katana → branch settlement flow with immutable timelines, versioned commission rules, and USDT or bank payouts." },
   { icon: Code2, title: "Developer-first API", body: "Signed order API, hosted pay page, signed callbacks. Per-branch Key + Salt, live OpenAPI docs, copy-paste samples." },
 ];
 

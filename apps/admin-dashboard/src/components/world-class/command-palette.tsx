@@ -13,8 +13,8 @@ import { navItems } from "@/lib/nav";
 interface Hit { kind: string; id: string; title: string; subtitle: string; href: string }
 
 const QUICK_ADD = [
-  { id: "qa:provider", title: "New provider", hint: "Go to providers and open Create", href: "/providers?new=1" },
-  { id: "qa:merchant", title: "New branch", hint: "Go to merchants and open Onboard", href: "/merchants?new=1" },
+  { id: "qa:provider", title: "New merchant", hint: "Go to providers and open Create", href: "/providers?new=1" },
+  { id: "qa:merchant", title: "New banker", hint: "Go to merchants and open Onboard", href: "/merchants?new=1" },
   { id: "qa:tenant",   title: "New tenant",   hint: "Go to tenants and open Create",   href: "/tenants?new=1" },
   { id: "qa:user",     title: "Add user",     hint: "Go to /admin/access and open Add user", href: "/admin/access?new=1" },
 ];

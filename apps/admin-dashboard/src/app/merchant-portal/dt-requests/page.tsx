@@ -186,7 +186,7 @@ export default function MerchantDtRequestsPage() {
     const rejected = activation?.status === "REJECTED" || activation?.status === "REVOKED";
     return (
       <>
-        <PageHeader title="DT Requests" description="Activation required before this branch can use the DT refill model." icon={Coins} />
+        <PageHeader title="DT Requests" description="Activation required before this banker can use the DT refill model." icon={Coins} />
         <Card className="max-w-3xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

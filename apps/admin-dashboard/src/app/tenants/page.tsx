@@ -108,7 +108,7 @@ export default function TenantsPage() {
         fab={canCreate ? { label: "Tenant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="tenants"
-        emptyTitle="No tenants yet" emptyDescription="Create the first tenant — PLATFORM is the root, PROVIDER/MERCHANT branch off it." />
+        emptyTitle="No tenants yet" emptyDescription="Create the first tenant — PLATFORM is the root, PROVIDER/MERCHANT banker off it." />
       <CreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );

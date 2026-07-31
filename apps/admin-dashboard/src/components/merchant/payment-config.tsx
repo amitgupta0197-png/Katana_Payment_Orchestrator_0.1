@@ -169,7 +169,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
           </div>
           <div className="space-y-1.5">
             <Label>Settlement VPA</Label>
-            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="branch@upi" />
+            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="banker@upi" />
           </div>
           <div className="space-y-1.5">
             <Label>Environment</Label>

@@ -202,7 +202,7 @@ export default function ProvidersPage() {
     { key: "kind", header: "Kind" },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-    { key: "merchant_count", header: "Branches" },
+    { key: "merchant_count", header: "Bankers" },
     { key: "contact_email", header: "Contact" },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
@@ -212,7 +212,7 @@ export default function ProvidersPage() {
   return (
     <>
       <PageHeader
-        title="Providers"
+        title="Merchants"
         description="Sub-admin reseller entities and their KYC lifecycle (PRODUCT_VISION §3.1)."
         icon={UserPlus}
       />
@@ -230,10 +230,10 @@ export default function ProvidersPage() {
           { key: "suspended",    label: "Suspended",     predicate: (r) => r.status === "SUSPENDED" },
         ]}
         href={(r) => `/providers/${r.id}`}
-        fab={canCreate ? { label: "Provider", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="providers"
-        emptyTitle="No providers yet"
+        emptyTitle="No merchants yet"
         emptyDescription="Onboard your first reseller to start the KYC lifecycle."
         bulkActions={canUpdate || canDelete ? [
           ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const,

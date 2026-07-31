@@ -101,8 +101,8 @@ export default function LeadsPage() {
   return (
     <>
       <PageHeader
-        title="Branch leads"
-        description="Branches you've sourced that are still in onboarding (APPLICATION → IN_REVIEW). Super Admin approves at /kyb."
+        title="Banker leads"
+        description="Bankers you've sourced that are still in onboarding (APPLICATION → IN_REVIEW). Super Admin approves at /kyb."
         icon={UserPlus}
         actions={<NewLeadDialog />}
       />

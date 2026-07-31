@@ -125,7 +125,7 @@ export default function SubMidsPage() {
     <>
       <PageHeader
         title="Sub-MIDs"
-        description="Sub-MIDs across your mapped branches. Request new ones here; Super Admin approves."
+        description="Sub-MIDs across your mapped bankers. Request new ones here; Super Admin approves."
         icon={CreditCard}
         actions={<RequestDialog mains={q.data?.main_mids ?? []} merchants={merchants.data?.merchants ?? []} />}
       />
