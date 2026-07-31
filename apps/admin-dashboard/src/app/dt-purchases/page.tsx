@@ -78,6 +78,20 @@ export default function DtPurchasesPage() {
     },
   });
 
+  // Existing banker logins, so a purchase row can offer "Reset password" for a banker
+  // that already has one and "Create login" for one that doesn't — the row itself only
+  // carries banker_id, and the reset endpoint keys off the login email.
+  const bankerLoginsQ = useQuery({
+    queryKey: ["dt-bankers"],
+    queryFn: async () => {
+      const r = await fetch("/api/v1/dt/bankers");
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
+      return d.bankers as { banker_id: string; email: string; full_name: string; status: string }[];
+    },
+  });
+  const loginFor = (bankerId: string) => (bankerLoginsQ.data ?? []).find((b) => b.banker_id === bankerId);
+
   // Record verified settled traffic — the only action that reduces the buffer.
   const [settleOpen, setSettleOpen] = useState(false);
   const [settleForm, setSettleForm] = useState({ amount: "", reference: "" });
@@ -168,7 +182,13 @@ export default function DtPurchasesPage() {
       if (!r.ok) throw new Error(d.error ?? "Failed");
       return { ...(d.login as { email: string; password: string | null; existing: boolean }), reset: !!d.reset };
     },
-    onSuccess: (login) => { setIssued(login); toast.success(login.reset ? "Password reset" : "Banker login ready"); },
+    onSuccess: (login) => {
+      setIssued(login);
+      toast.success(login.reset ? "Password reset" : "Banker login ready");
+      // Refresh the login list so the row menu flips from "Create banker login" to
+      // "Reset banker password" without a page reload.
+      qc.invalidateQueries({ queryKey: ["dt-bankers"] });
+    },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -195,6 +215,34 @@ export default function DtPurchasesPage() {
     if (r.status === "FUNDS_SUBMITTED") a.push({ label: "Confirm funds → activate", icon: CheckCircle2, onClick: () => { setFundsFor(r); setFundsRef(""); } });
     if (["DRAFT", "PENDING_APPROVAL", "AWAITING_FUNDS", "FUNDS_SUBMITTED"].includes(r.status))
       a.push({ label: "Reject", icon: XCircle, variant: "danger", onClick: () => { if (confirm(`Reject purchase for ${r.banker_id}?`)) transition.mutate({ id: r.id, to: "REJECTED" }); } });
+
+    // Banker-login management, reachable from the row rather than only the header
+    // dialog. Which action shows depends on whether this banker already has a login:
+    // reset issues a fresh one-time password, create provisions the first one.
+    const login = loginFor(r.banker_id);
+    if (login) {
+      a.push({
+        label: "Reset banker password",
+        icon: KeyRound,
+        onClick: () => {
+          setIssued(null);
+          setResetMode(true);
+          setLoginForm({ banker_id: r.banker_id, email: login.email, full_name: login.full_name || "" });
+          setLoginOpen(true);
+        },
+      });
+    } else if (bankerLoginsQ.data) {
+      a.push({
+        label: "Create banker login",
+        icon: KeyRound,
+        onClick: () => {
+          setIssued(null);
+          setResetMode(false);
+          setLoginForm({ banker_id: r.banker_id, email: "", full_name: "" });
+          setLoginOpen(true);
+        },
+      });
+    }
     return a;
   }
 
