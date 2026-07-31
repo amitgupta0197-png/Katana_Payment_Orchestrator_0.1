@@ -1,21 +1,17 @@
-// Banker portal shell. Belt-and-braces auth check on top of middleware.
+// Merchant portal shell. Belt-and-braces auth check on top of middleware.
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { BankerPortalShell } from "./_components/portal-shell";
+import { MerchantPortalShell } from "./_components/portal-shell";
 
-export default async function BankerPortalLayout({ children }: { children: React.ReactNode }) {
+export default async function MerchantPortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login?next=/banker-portal");
-  if (session.persona !== "BANKER") {
-    redirect(
-      session.persona === "PROVIDER" ? "/provider-portal"
-        : session.persona === "MERCHANT" ? "/merchant-portal"
-        : "/",
-    );
+  if (session.persona !== "MERCHANT") {
+    redirect(session.persona === "SUPER_ADMIN" ? "/" : "/merchant-portal");
   }
   return (
-    <BankerPortalShell scopeLabel={session.scope_label || session.scope_id || "Banker"} email={session.email} fullName={session.full_name}>
+    <MerchantPortalShell scopeLabel={session.scope_label} email={session.email} fullName={session.full_name}>
       {children}
-    </BankerPortalShell>
+    </MerchantPortalShell>
   );
 }

@@ -151,7 +151,7 @@ export default function DtPurchasesPage() {
   const [fundsFor, setFundsFor] = useState<Purchase | null>(null);
   const [fundsRef, setFundsRef] = useState("");
 
-  // Separate banker login (BANKER persona → /banker-portal). One-time password shown once.
+  // Separate banker login (BANKER persona → /dt-banker-portal). One-time password shown once.
   // Reset mode issues a fresh one-time password for an existing banker (forgot password).
   const [loginOpen, setLoginOpen] = useState(false);
   const [resetMode, setResetMode] = useState(false);
@@ -454,7 +454,7 @@ export default function DtPurchasesPage() {
               <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
                 <div><span className="text-[color:var(--color-text-muted)]">Email:</span> <b>{issued.email}</b></div>
                 {issued.password && <div><span className="text-[color:var(--color-text-muted)]">One-time password:</span> <b className="font-mono">{issued.password}</b></div>}
-                <div><span className="text-[color:var(--color-text-muted)]">Sign-in:</span> /login → lands on /banker-portal</div>
+                <div><span className="text-[color:var(--color-text-muted)]">Sign-in:</span> /login → lands on /dt-banker-portal</div>
               </div>
               {issued.password && (
                 <Button variant="secondary" size="sm" onClick={() => { navigator.clipboard.writeText(`Email: ${issued.email}\nPassword: ${issued.password}\nLogin: /login`); toast.success("Copied"); }}>

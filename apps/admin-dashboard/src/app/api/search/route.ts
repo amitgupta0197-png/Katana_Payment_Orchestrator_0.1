@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     const r = await rows<any>("merchant",
       `SELECT id::text, merchant_code, legal_name FROM merchants WHERE merchant_code = $1 LIMIT 1`,
       [g.session.scope_id]).catch(() => []);
-    for (const m of r) hits.push({ kind: "merchant", id: m.id, title: m.merchant_code, subtitle: m.legal_name, href: `/merchant-portal` });
+    for (const m of r) hits.push({ kind: "merchant", id: m.id, title: m.merchant_code, subtitle: m.legal_name, href: `/banker-portal` });
   }
 
   // Tenants — SUPER_ADMIN only.

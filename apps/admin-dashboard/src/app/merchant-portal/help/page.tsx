@@ -1,8 +1,8 @@
-// Merchant help & guide — how to use the portal's core actions. Static content;
-// mirrors MERCHANT-GUIDE.md in the repo root.
+// Provider help & guide — how to use the provider portal. Static content; mirrors
+// PROVIDER-GUIDE.md in the repo's docs/.
 
 import Link from "next/link";
-import { HelpCircle, KeyRound, Webhook, CreditCard, Banknote, ChevronRight } from "lucide-react";
+import { HelpCircle, UserPlus, Store, Receipt, CreditCard, Percent, FileCheck2, LifeBuoy, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,22 +16,22 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
   );
 }
 
-const codeBlock = "block whitespace-pre overflow-x-auto rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-xs font-mono";
-
-export default function MerchantHelpPage() {
+export default function ProviderHelpPage() {
   return (
     <>
-      <PageHeader title="Help & guide" description="How to use your branch portal — API keys, webhooks, Sub-MIDs, and settlements." icon={HelpCircle} />
+      <PageHeader title="Help & guide" description="How to use your provider portal — leads, branches, Sub-MIDs, commission, and more." icon={HelpCircle} />
 
       {/* Quick links */}
       <Card className="mb-4">
         <CardHeader><CardTitle className="text-base">Jump to</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {[
-            { href: "/merchant-portal/api-keys", label: "Issue an API key", icon: KeyRound },
-            { href: "/merchant-portal/profile", label: "Configure webhooks", icon: Webhook },
-            { href: "/merchant-portal/sub-mids", label: "View / request Sub-MIDs", icon: CreditCard },
-            { href: "/merchant-portal/settlements", label: "Settlement statements", icon: Banknote },
+            { href: "/merchant-portal/leads", label: "Add a branch lead", icon: UserPlus },
+            { href: "/merchant-portal/merchants", label: "Your branches", icon: Store },
+            { href: "/merchant-portal/transactions", label: "Transactions & reimbursement", icon: Receipt },
+            { href: "/merchant-portal/sub-mids", label: "Request a Sub-MID", icon: CreditCard },
+            { href: "/merchant-portal/commission", label: "Commission", icon: Percent },
+            { href: "/merchant-portal/kyc", label: "Your KYC", icon: FileCheck2 },
           ].map((l) => {
             const Icon = l.icon;
             return (
@@ -51,106 +51,113 @@ export default function MerchantHelpPage() {
           <CardDescription>Access your portal at the login page.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Sign in with the <strong>email</strong> and <strong>password</strong> your account manager shared with you. Your portal only ever shows <em>your</em> business&rsquo;s data.</p>
-          <p>You can change your password anytime under <Link href="/merchant-portal/profile" className="text-[color:var(--color-brand)] underline">Profile → Change password</Link>.</p>
+          <p>Sign in with the <strong>email</strong> and <strong>password</strong> your Katana account manager shared with you. Your portal only shows branches and data <strong>mapped to you</strong>.</p>
         </CardContent>
       </Card>
 
-      {/* API keys */}
+      {/* Dashboard */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" /> Issue an API key</CardTitle>
-          <CardDescription>For connecting your systems to Katana&rsquo;s APIs programmatically.</CardDescription>
+          <CardTitle className="text-base">Dashboard — your portfolio at a glance</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <ol className="space-y-2">
-            <Step n={1}>Go to <strong>API keys</strong> in the sidebar and click <strong>Issue key</strong>.</Step>
-            <Step n={2}>Give it a <strong>label</strong> (e.g. &ldquo;Production server&rdquo;) and pick the <strong>scopes</strong> it needs.</Step>
-            <Step n={3}>Click issue. The <strong>secret</strong> (starts with <code>sk_</code>) is shown <strong>once</strong> — copy and store it securely. We never show it again.</Step>
-            <Step n={4}>Use the key in your API calls in the <code>Authorization</code> header.</Step>
-          </ol>
-          <div>
-            <p className="mb-1 font-medium">Scopes</p>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="info">payin</Badge><span className="text-xs text-[color:var(--color-text-muted)]">accept payments</span>
-              <Badge variant="info">payout</Badge><span className="text-xs text-[color:var(--color-text-muted)]">payouts &amp; settlement</span>
-              <Badge variant="info">refund</Badge><span className="text-xs text-[color:var(--color-text-muted)]">issue refunds</span>
-              <Badge variant="info">status</Badge><span className="text-xs text-[color:var(--color-text-muted)]">query txn status</span>
-            </div>
-          </div>
-          <code className={codeBlock}>{`Authorization: Bearer sk_your_secret_key_here`}</code>
-          <p className="text-xs text-[color:var(--color-text-muted)]">Only a hash of the key is stored. If you lose it, issue a new one and update your integration.</p>
+        <CardContent className="space-y-2 text-sm">
+          <p>The dashboard shows live KPIs: mapped merchants (total / live / onboarding), Sub-MIDs (live + pending KYC), open KYB cases, and your MTD / YTD commission. The <strong>Insights</strong> charts show pay-in volume, status, collected ₹, and channel mix across your branches. The <strong>onboarding funnel</strong> shows where each branch sits across the 6 stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE.</p>
         </CardContent>
       </Card>
 
-      {/* Webhooks */}
+      {/* Leads */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><Webhook className="h-4 w-4" /> Configure webhooks</CardTitle>
-          <CardDescription>Get real-time notifications when a payment&rsquo;s status changes.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><UserPlus className="h-4 w-4" /> Add a branch lead</CardTitle>
+          <CardDescription>Onboard a new branch under your account.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <ol className="space-y-2">
-            <Step n={1}>Go to <strong>Profile</strong>.</Step>
-            <Step n={2}>Enter your <strong>Webhook URL</strong> — it <strong>must be HTTPS</strong> (e.g. <code>https://api.yoursite.com/katana/webhook</code>). Optionally set a <strong>Return URL</strong> for post-payment redirects.</Step>
-            <Step n={3}>Click <strong>Save</strong>. Katana will POST a JSON event to that URL whenever an order updates.</Step>
-            <Step n={4}>On your endpoint, <strong>verify the signature</strong> and respond <code>200</code>.</Step>
+            <Step n={1}>Go to <strong>Leads</strong> → click <strong>New lead</strong>.</Step>
+            <Step n={2}>Fill in the merchant&rsquo;s details: code, legal name, brand, business type, contact email &amp; phone, website.</Step>
+            <Step n={3}>Submit. The branch is created at the <strong>APPLICATION</strong> stage and auto-mapped to you.</Step>
+            <Step n={4}>A <strong>branch login is created automatically</strong> — a one-time password is shown; share it with the merchant so they can sign in to their own portal.</Step>
           </ol>
-          <div>
-            <p className="mb-1 font-medium">Headers we send</p>
-            <code className={codeBlock}>{`X-Event-Type:   payment.succeeded
-X-Timestamp:    1719660000
-X-Payload-Hash: <sha256 of the JSON body>
-X-Signature:    <HMAC-SHA256(secret, payloadHash + "." + timestamp)>
-X-Attempt:      1`}</code>
-          </div>
-          <div>
-            <p className="mb-1 font-medium">To verify</p>
-            <ol className="space-y-2">
-              <Step n={1}>Reject if <code>X-Timestamp</code> is more than <strong>±5 minutes</strong> from now (replay protection).</Step>
-              <Step n={2}>Compute <code>HMAC-SHA256(your_secret, sha256(body) + "." + timestamp)</code> and compare to <code>X-Signature</code> (timing-safe).</Step>
-              <Step n={3}>Return HTTP <code>2xx</code> to acknowledge.</Step>
-            </ol>
-          </div>
-          <p className="text-xs text-[color:var(--color-text-muted)]">
-            <strong>Retries:</strong> if your endpoint doesn&rsquo;t return 2xx we retry on a backoff (1m → 5m → 15m → 1h → 6h → 24h). After 6 failures the event is parked in a dead-letter queue. Keep your endpoint fast (&lt; 5s) and idempotent.
-          </p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">You can only create leads under your own account, and you only see leads you created. From there the branch moves through the onboarding funnel.</p>
+        </CardContent>
+      </Card>
+
+      {/* Merchants */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Store className="h-4 w-4" /> Your branches</CardTitle>
+          <CardDescription>View the branches mapped to you.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p>Open <strong>Branches</strong> to see your approved &amp; live merchants. Click one to view its details, its <strong>Sub-MIDs</strong> (code, mode, KYC, settlement), and its <strong>rolling reserves</strong> (hold amount, release date, status).</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">This view is read-only — branch onboarding starts from <strong>Leads</strong>, and branch edits are made by the branch or Katana.</p>
+        </CardContent>
+      </Card>
+
+      {/* Transactions */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Receipt className="h-4 w-4" /> Transactions &amp; reimbursement</CardTitle>
+          <CardDescription>Gross collected across your branches.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p>Open <strong>Transactions</strong> to see gross value across all channels (Katana Pay, PayU, Cashfree, Razorpay, …) for your mapped branches, broken down <strong>by branch</strong> and <strong>by channel</strong>, plus recent activity.</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]"><strong>Gross</strong> counts successful collections only — this is the reimbursable value your commission is based on.</p>
         </CardContent>
       </Card>
 
       {/* Sub-MIDs */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><CreditCard className="h-4 w-4" /> Sub-MIDs</CardTitle>
-          <CardDescription>The MIDs that route your live traffic.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><CreditCard className="h-4 w-4" /> Request a Sub-MID</CardTitle>
+          <CardDescription>Provision a new MID for one of your branches.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p>Open <strong>Sub-MIDs</strong> to see the MIDs assigned to you, each showing its parent Main MID, mode, KYC status, and whether settlement is enabled.</p>
-          <div className="rounded-md border border-[color:var(--color-brand)]/30 bg-[color:var(--color-brand)]/5 p-3 text-xs">
-            <strong>Requesting a new Sub-MID:</strong> this is done by your <strong>provider / account manager</strong>, not self-service. Contact them with your expected volume and use-case, and the new Sub-MID will appear here once created.
-          </div>
+          <ol className="space-y-2">
+            <Step n={1}>Go to <strong>Sub-MIDs</strong> → click <strong>Request Sub-MID</strong>.</Step>
+            <Step n={2}>Pick the <strong>branch</strong> (from your mapped branches) and the <strong>Main MID</strong>, enter a <strong>Sub-MID code</strong>, and choose a <strong>mode</strong>.</Step>
+            <Step n={3}>Submit. It&rsquo;s created with <Badge variant="warning">PENDING</Badge> KYC and settlement off, then a Katana admin reviews and enables it.</Step>
+          </ol>
           <ul className="space-y-1.5 text-xs text-[color:var(--color-text-muted)]">
-            <li><Badge variant="info">TRAFFIC</Badge> handling live traffic.</li>
-            <li><Badge variant="brand">KYC_APPROVED</Badge> KYC cleared.</li>
-            <li><strong>KYC status</strong> moves <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge>. Settlement is a separate switch that your provider enables.</li>
+            <li><Badge variant="info">TRAFFIC</Badge> can start taking traffic right away.</li>
+            <li><Badge variant="brand">KYC_APPROVED</Badge> requires the merchant&rsquo;s KYC to be approved first.</li>
+            <li>KYC status moves <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge>; settlement is enabled separately by Katana.</li>
           </ul>
+          <p className="text-xs text-[color:var(--color-text-muted)]">You can only request Sub-MIDs for branches mapped to you.</p>
         </CardContent>
       </Card>
 
-      {/* Settlements */}
+      {/* Commission */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><Banknote className="h-4 w-4" /> Settlement statements</CardTitle>
-          <CardDescription>When your collected money is paid out to your bank.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><Percent className="h-4 w-4" /> Commission</CardTitle>
+          <CardDescription>Your earnings and rate card.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <p>Open <strong>Settlements</strong> to see each settlement batch: date, number of transactions, gross, fees, and <strong>net</strong> (what lands in your account).</p>
-          <code className={codeBlock}>{`Net payout = Gross collected − Fees − Reserves held`}</code>
-          <ul className="space-y-1.5 text-xs text-[color:var(--color-text-muted)]">
-            <li><Badge variant="warning">PENDING</Badge> batch created, payout not yet sent.</li>
-            <li><Badge variant="success">COMPLETED</Badge> money transferred — the <strong>UTR</strong> (bank reference) and payout reference are filled in.</li>
-          </ul>
-          <p className="text-xs text-[color:var(--color-text-muted)]">Use the UTR to reconcile the credit against your bank statement.</p>
+        <CardContent className="space-y-2 text-sm">
+          <p>Open <strong>Commission</strong> to see your <strong>MTD</strong> and <strong>YTD</strong> earnings and the active <strong>rules</strong> (rate in basis points, fixed fee, validity dates).</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">Rates are set by Katana and are read-only here. Commission accrues on the successful gross shown in Transactions.</p>
+        </CardContent>
+      </Card>
+
+      {/* KYC */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><FileCheck2 className="h-4 w-4" /> Your KYC</CardTitle>
+          <CardDescription>Your onboarding documents &amp; status.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p>Open <strong>KYC</strong> to see your provider status and the required document checklist (PAN, GST, CIN, MOA, AOA, board resolution, address proof, bank statement). Statuses follow <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge> (or REJECTED / EXPIRED).</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">If document upload isn&rsquo;t available to you yet, send your documents to your Katana account manager.</p>
+        </CardContent>
+      </Card>
+
+      {/* Support */}
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><LifeBuoy className="h-4 w-4" /> Support</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
+          <p>For help, use the <strong>Support</strong> tab or reach the Katana team on the <code>#katana-providers</code> channel / your account manager.</p>
         </CardContent>
       </Card>
 

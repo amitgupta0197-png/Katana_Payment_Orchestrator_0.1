@@ -2,20 +2,30 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Swords, LayoutDashboard, Receipt, Droplets, UserRound, LogOut } from "lucide-react";
+import {
+  Swords, LayoutDashboard, Receipt, Banknote, BookOpen, CreditCard,
+  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const NAV = [
-  { href: "/banker-portal",           label: "Dashboard", icon: LayoutDashboard, exact: true  },
-  { href: "/banker-portal/purchases", label: "Purchases", icon: Receipt,         exact: false },
-  { href: "/banker-portal/refills",   label: "Refills",   icon: Droplets,        exact: false },
-  { href: "/banker-portal/profile",   label: "Profile",   icon: UserRound,       exact: false },
+  { href: "/banker-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
+  { href: "/banker-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
+  { href: "/banker-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
+  { href: "/banker-portal/provider-settlements", label: "Provider settlements", icon: Landmark, exact: false },
+  { href: "/banker-portal/reserves",    label: "Reserves",    icon: BookOpen,        exact: false },
+  { href: "/banker-portal/sub-mids",    label: "Sub-MIDs",    icon: CreditCard,      exact: false },
+  { href: "/banker-portal/api-keys",    label: "API keys",    icon: KeyRound,        exact: false },
+  { href: "/banker-portal/integration", label: "Integration", icon: Plug,            exact: false },
+  { href: "/banker-portal/disputes",    label: "Disputes",    icon: ShieldAlert,     exact: false },
+  { href: "/banker-portal/profile",     label: "Profile",     icon: UserCog,         exact: false },
+  { href: "/banker-portal/help",        label: "Help & guide",icon: HelpCircle,      exact: false },
 ];
 
-export function BankerPortalShell({
+export function MerchantPortalShell({
   children, scopeLabel, email, fullName,
 }: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string }) {
   const pathname = usePathname();
@@ -30,7 +40,7 @@ export function BankerPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Banker navigation"
+        aria-label="Branch navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -40,7 +50,7 @@ export function BankerPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Banker portal
+              Branch portal
             </span>
           </div>
         </div>
@@ -67,7 +77,7 @@ export function BankerPortalShell({
           })}
         </nav>
         <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · banker
+          v0.1.0 · branch
         </div>
       </aside>
 
@@ -78,7 +88,7 @@ export function BankerPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Banker</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Branch</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

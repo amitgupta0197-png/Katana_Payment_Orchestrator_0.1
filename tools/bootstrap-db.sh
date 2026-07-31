@@ -90,5 +90,5 @@ exec_file iamservice_db      "$SEED/06_personas.sql"
 
 echo "[bootstrap] done. login at http://localhost:3100/login with password 'demo':"
 echo "  admin@katana.dev    → SUPER_ADMIN  → /"
-echo "  provider@katana.dev → PROVIDER     → /provider-portal"
-echo "  merchant@katana.dev → MERCHANT     → /merchant-portal"
+echo "  provider@katana.dev → PROVIDER     → /merchant-portal"
+echo "  merchant@katana.dev → MERCHANT     → /banker-portal"

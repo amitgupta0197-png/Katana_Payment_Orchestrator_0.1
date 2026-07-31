@@ -47,7 +47,7 @@ Katana is a multi-tenant **payment orchestration platform** that lets a Super Ad
 
 | Step | Page | Persona | Data captured | Validation | State change |
 |---|---|---|---|---|---|
-| 1 | `/provider-portal/leads` | Provider | merchant_id, business_name, business_type, expected_volume, contact_email, contact_phone | merchant_id unique per tenant; expected_volume > 0 | merchant lead row |
+| 1 | `/merchant-portal/leads` | Provider | merchant_id, business_name, business_type, expected_volume, contact_email, contact_phone | merchant_id unique per tenant; expected_volume > 0 | merchant lead row |
 | 2 | Provider uploads docs | Provider | PAN, GST, CIN, MOA, AOA, board_resolution, address_proof, bank_statement, MCC_DECLARATION, website_url, mobile_app_url | sha256 dedupe; each ≤ 10MB | `kyb_documents` rows |
 | 3 | Provider submits bank | Provider | bank_account_no, bank_ifsc, beneficiary_name (must match legal_name), upi_vpa (optional) | IFSC checksum, name match heuristic | `merchant_bank_accounts` row |
 | 4 | Provider risk profile | Provider | declared_mcc, declared_avg_ticket, declared_geos[], chargeback_history | declared_mcc ∈ MCC table | `merchant_risk_profiles` row |
@@ -309,8 +309,8 @@ Every transition writes a `workflow_transitions` row with `(workflow_kind, subje
 
 | Item | Why deferred | Trigger to start |
 |---|---|---|
-| Provider portal tree (`/provider-portal/*`) | Needs persona-scoped queries + middleware first | Next session |
-| Merchant portal tree (`/merchant-portal/*`) | Same as above | Next session |
+| Provider portal tree (`/merchant-portal/*`) | Needs persona-scoped queries + middleware first | Next session |
+| Merchant portal tree (`/banker-portal/*`) | Same as above | Next session |
 | `lib/workflows.ts` executable library | Schema is ready; needs each page's PATCH route to call it | After portals |
 | Telegram bot + 8 AI agents | Separate service; not blocked by anything but is a multi-day build | Phase D |
 | Production secrets rotation | Needs Vault deployed | Pre-GA |

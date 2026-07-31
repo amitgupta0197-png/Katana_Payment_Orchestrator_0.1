@@ -46,8 +46,8 @@ Three demo users, password `demo`:
 | Email                 | Persona     | Lands on            |
 |-----------------------|-------------|---------------------|
 | admin@katana.dev      | SUPER_ADMIN | `/`                 |
-| provider@katana.dev   | PROVIDER    | `/provider-portal`  |
-| merchant@katana.dev   | MERCHANT    | `/merchant-portal`  |
+| provider@katana.dev   | PROVIDER    | `/merchant-portal`  |
+| merchant@katana.dev   | MERCHANT    | `/banker-portal`  |
 
 ## What works end-to-end
 
@@ -58,7 +58,7 @@ Three demo users, password `demo`:
   - Provider/Merchant blocked from Super-Admin sections (`/admin/*`, `/tenants`,
     `/routing`, `/pg-adapter`, `/bank-adapter`, `/crypto-rail`, `/integrations`,
     `/channels`, `/fund`, `/admin-log`, `/agents`, `/api/admin/*`, etc.)
-  - `/provider-portal/*` only for PROVIDER; `/merchant-portal/*` only for MERCHANT
+  - `/merchant-portal/*` only for PROVIDER; `/banker-portal/*` only for MERCHANT
 - **Persona-scoped SQL** on every list endpoint (`src/lib/scope.ts`):
   - `SUPER_ADMIN` — full visibility
   - `PROVIDER` — only merchants mapped via `provider_merchant_mappings`

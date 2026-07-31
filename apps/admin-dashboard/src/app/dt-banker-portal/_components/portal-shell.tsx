@@ -2,28 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle,
-} from "lucide-react";
+import { Swords, LayoutDashboard, Receipt, Droplets, UserRound, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const NAV = [
-  { href: "/merchant-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
-  { href: "/merchant-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/merchant-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
-  { href: "/merchant-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
-  { href: "/merchant-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
-  { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
-  { href: "/merchant-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
-  { href: "/merchant-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
-  { href: "/merchant-portal/help",       label: "Help & guide", icon: HelpCircle,    exact: false },
+  { href: "/dt-banker-portal",           label: "Dashboard", icon: LayoutDashboard, exact: true  },
+  { href: "/dt-banker-portal/purchases", label: "Purchases", icon: Receipt,         exact: false },
+  { href: "/dt-banker-portal/refills",   label: "Refills",   icon: Droplets,        exact: false },
+  { href: "/dt-banker-portal/profile",   label: "Profile",   icon: UserRound,       exact: false },
 ];
 
-export function ProviderPortalShell({
+export function BankerPortalShell({
   children, scopeLabel, email, fullName,
 }: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string }) {
   const pathname = usePathname();
@@ -38,7 +30,7 @@ export function ProviderPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Provider navigation"
+        aria-label="Banker navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -48,7 +40,7 @@ export function ProviderPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Provider portal
+              Banker portal
             </span>
           </div>
         </div>
@@ -75,7 +67,7 @@ export function ProviderPortalShell({
           })}
         </nav>
         <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · provider
+          v0.1.0 · banker
         </div>
       </aside>
 
@@ -86,7 +78,7 @@ export function ProviderPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Provider</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Banker</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

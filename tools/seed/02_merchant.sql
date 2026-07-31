@@ -1,5 +1,5 @@
 -- Run against merchantservice_db.
--- Seeds Merchant 10001 (LIVE) so the merchant-portal has data.
+-- Seeds Merchant 10001 (LIVE) so the banker-portal has data.
 
 INSERT INTO merchants (id, tenant_id, merchant_code, legal_name, brand_name, business_type,
                        category_mcc, contact_email, contact_phone, website,
@@ -15,7 +15,7 @@ VALUES ('b0000000-0000-0000-0000-000000010001', 'tenant-default', 'M10001',
         now(), 'admin@katana.dev')
 ON CONFLICT (tenant_id, merchant_code) DO NOTHING;
 
--- A second merchant still in onboarding so /provider-portal/leads has rows.
+-- A second merchant still in onboarding so /merchant-portal/leads has rows.
 INSERT INTO merchants (id, tenant_id, merchant_code, legal_name, business_type,
                        contact_email, contact_phone, stage,
                        step_application, step_kyb_docs)

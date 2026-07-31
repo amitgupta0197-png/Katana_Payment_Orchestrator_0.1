@@ -11,9 +11,9 @@ import { Label } from "@/components/ui/label";
 const LANDING: Record<string, string> = {
   SUPER_ADMIN: "/",
   ADMIN: "/",
-  PROVIDER: "/provider-portal",
-  MERCHANT: "/merchant-portal",
-  BANKER: "/banker-portal",
+  PROVIDER: "/merchant-portal",
+  MERCHANT: "/banker-portal",
+  BANKER: "/dt-banker-portal",
   OPERATOR: "/operator",
   FINANCE: "/fifo-settlements",
   RISK: "/forensics",

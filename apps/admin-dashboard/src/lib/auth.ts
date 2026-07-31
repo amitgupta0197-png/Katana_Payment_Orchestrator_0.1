@@ -8,7 +8,7 @@ import { epochValid } from "@/lib/session-security";
 
 // BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
 // payment-operations module; access is enforced per-route via gateOrResponse.
-// BANKER: DT business model party (scope_id = banker_id) — sees /banker-portal only.
+// BANKER: DT business model party (scope_id = banker_id) — sees /dt-banker-portal only.
 export type Persona =
   | "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "BANKER"
   | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";

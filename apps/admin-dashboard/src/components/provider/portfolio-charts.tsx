@@ -1,7 +1,7 @@
 "use client";
 
 // Provider dashboard infographics — transaction volume, value, status, and channel
-// mix across the provider's assigned merchants. Driven by /api/provider-portal/transactions.
+// mix across the provider's assigned merchants. Driven by /api/merchant-portal/transactions.
 // Reuses the dependency-free SVG chart primitives from the merchant portal.
 
 import { useQuery } from "@tanstack/react-query";
@@ -16,7 +16,7 @@ interface ProviderTxns { totals: Totals; by_channel: ChannelRow[]; series: Day[]
 export function ProviderCharts() {
   const q = useQuery({
     queryKey: ["pp:txn-charts"],
-    queryFn: async () => (await fetch("/api/provider-portal/transactions").then((r) => r.json())) as ProviderTxns,
+    queryFn: async () => (await fetch("/api/merchant-portal/transactions").then((r) => r.json())) as ProviderTxns,
     refetchInterval: 60_000,
   });
   const d = q.data;

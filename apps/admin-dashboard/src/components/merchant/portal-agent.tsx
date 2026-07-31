@@ -2,7 +2,7 @@
 
 // Merchant-portal "Transaction agent" card: lets the merchant DOWNLOAD the Katana
 // Agent app and see whether their phone has granted the needed permissions. Reads the
-// self-scoped /api/merchant-portal/agent (merchant sees only their own devices).
+// self-scoped /api/banker-portal/agent (merchant sees only their own devices).
 
 import { useQuery } from "@tanstack/react-query";
 import { Smartphone, Download, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Copy } from "lucide-react";
@@ -26,7 +26,7 @@ export function MerchantPortalAgentCard() {
   const q = useQuery({
     queryKey: ["mp:agent"],
     queryFn: async () => {
-      const r = await fetch("/api/merchant-portal/agent");
+      const r = await fetch("/api/banker-portal/agent");
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return (await r.json()) as { merchant_code: string; devices: Device[]; any_permitted: boolean };
     },

@@ -3,7 +3,7 @@
 // Responsibilities (PRODUCT_VISION §1.2 #1, layer 1):
 //   1. Redirect un-authenticated UI hits to /login (with ?next=… for return).
 //   2. Block Provider/Merchant personas from Super-Admin-only sections.
-//   3. Route persona-portal hits (/provider-portal/*, /merchant-portal/*) only
+//   3. Route persona-portal hits (/merchant-portal/*, /banker-portal/*) only
 //      to the matching persona.
 //   4. Return 401 JSON for un-authenticated /api/* hits (excluding /api/auth/*
 //      and /api/health which must remain open).
@@ -92,18 +92,33 @@ const SUPER_ADMIN_API = [
   "/api/admin/slos", "/api/admin/incidents", "/api/recon/run", "/api/p2p",
 ];
 
-const PROVIDER_PORTAL_UI = "/provider-portal";
-const PROVIDER_PORTAL_API = "/api/provider-portal";
-const MERCHANT_PORTAL_UI = "/merchant-portal";
-const MERCHANT_PORTAL_API = "/api/merchant-portal";
-const BANKER_PORTAL_UI = "/banker-portal";
-const BANKER_PORTAL_API = "/api/banker-portal";
+// PERSONA vs URL — read this before touching the constants below.
+//
+// The portal URLs were renamed (2026-08-01) but the personas were NOT: persona values are
+// stored in sessions and in the DB (scope_id resolves against provider_id / merchant_id /
+// banker_id), so renaming them would be a data migration, not a rename. The constants are
+// therefore named after the PERSONA that owns the portal, and their VALUE is that portal's
+// current URL. The mapping is deliberately not one-to-one:
+//
+//   persona PROVIDER  →  /merchant-portal      (was /provider-portal)
+//   persona MERCHANT  →  /banker-portal        (was /merchant-portal)   ← the "branch"
+//   persona BANKER    →  /dt-banker-portal     (was /banker-portal)     ← DT counterparty
+//
+// So `PROVIDER_PORTAL_UI === "/merchant-portal"` is correct, not a bug: it is the portal
+// belonging to the PROVIDER persona. Keep constant names bound to the persona — that is
+// what `homeFor()` and the guards below switch on.
+const PROVIDER_PORTAL_UI = "/merchant-portal";
+const PROVIDER_PORTAL_API = "/api/merchant-portal";
+const MERCHANT_PORTAL_UI = "/banker-portal";
+const MERCHANT_PORTAL_API = "/api/banker-portal";
+const BANKER_PORTAL_UI = "/dt-banker-portal";
+const BANKER_PORTAL_API = "/api/dt-banker-portal";
 
 // Home page for a persona — where we bounce it when it hits a portal it doesn't own.
 function homeFor(p: Persona): string {
-  if (p === "PROVIDER") return "/provider-portal";
-  if (p === "MERCHANT") return "/merchant-portal";
-  if (p === "BANKER") return "/banker-portal";
+  if (p === "PROVIDER") return "/merchant-portal";
+  if (p === "MERCHANT") return "/banker-portal";
+  if (p === "BANKER") return "/dt-banker-portal";
   return "/";
 }
 
@@ -130,6 +145,22 @@ function withPathname(req: NextRequest): Headers {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isApi = pathname.startsWith("/api/");
+
+  // Portal rename (2026-08-01). "/provider-portal" is the only old path that is now
+  // genuinely vacant, so it is the only one we can redirect: send it to its new home.
+  // 308 keeps the method and body, so a stale client's POST still lands correctly.
+  //
+  // The other two old paths are NOT redirected, because after the rotation they are owned
+  // by a different persona and the request is ambiguous — "/merchant-portal" is now the
+  // PROVIDER's portal, and "/banker-portal" is now the MERCHANT's. A stale link is resolved
+  // per-user instead: the persona guards below bounce whoever follows it to homeFor(their
+  // own persona), which is strictly better than a blanket redirect could be.
+  if (pathname === "/provider-portal" || pathname.startsWith("/provider-portal/")
+      || pathname === "/api/provider-portal" || pathname.startsWith("/api/provider-portal/")) {
+    const dest = req.nextUrl.clone();
+    dest.pathname = pathname.replace("/provider-portal", "/merchant-portal");
+    return NextResponse.redirect(dest, 308);
+  }
 
   if (isApi) {
     if (PUBLIC_API.includes(pathname) || isUnder(pathname, PUBLIC_API_PREFIX) || VENDOR_CALLBACK.test(pathname) || SANDBOX_PREFIX.test(pathname)) {
