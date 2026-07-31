@@ -58,8 +58,8 @@ function NewLeadDialog() {
       <DialogTrigger asChild><Button><Plus /> New lead</Button></DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create branch lead</DialogTitle>
-          <DialogDescription>Per §2.2 step 1. The branch starts in APPLICATION stage and is auto-mapped to your provider.</DialogDescription>
+          <DialogTitle>Create banker lead</DialogTitle>
+          <DialogDescription>Per §2.2 step 1. The banker starts in APPLICATION stage and is auto-mapped to your merchant.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           {(Object.keys(form) as Array<keyof typeof form>).map((k) => (

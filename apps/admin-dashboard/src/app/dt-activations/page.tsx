@@ -153,14 +153,14 @@ export default function DtActivationsPage() {
           {decide && (
             <div className="space-y-3">
               <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
-                <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">Branch</span><b>{decide.row.merchant_id}</b></div>
+                <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">Banker</span><b>{decide.row.merchant_id}</b></div>
                 <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">Model</span><b>{MODEL_LABEL[decide.row.model] ?? decide.row.model}</b></div>
                 {decide.row.request_note && (
                   <div className="pt-1 text-[color:var(--color-text-muted)]">Their note: <span className="text-[color:var(--color-text)]">{decide.row.request_note}</span></div>
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="rn">Note to the branch <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label>
+                <Label htmlFor="rn">Note to the banker <span className="text-[color:var(--color-text-subtle)]">(optional)</span></Label>
                 <Input id="rn" value={note} onChange={(e) => setNote(e.target.value)} placeholder={decide.to === "REJECTED" ? "Why it was not approved" : "Anything they should know"} />
               </div>
             </div>

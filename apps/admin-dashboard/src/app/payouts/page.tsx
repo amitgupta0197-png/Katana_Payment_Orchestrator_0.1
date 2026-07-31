@@ -124,7 +124,7 @@ export default function PayoutsPage() {
       </div>
 
       <Card className="mb-4">
-        <CardHeader><CardTitle className="text-base">Context</CardTitle><CardDescription>Admins: set the branch code these actions apply to. Branches: leave blank (uses your own).</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Context</CardTitle><CardDescription>Admins: set the banker code these actions apply to. Bankers: leave blank (uses your own).</CardDescription></CardHeader>
         <CardContent><Input className="h-9 w-64" placeholder="banker code e.g. MID100245" value={merchantId} onChange={(e) => setMerchantId(e.target.value)} /></CardContent>
       </Card>
 

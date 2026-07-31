@@ -57,7 +57,7 @@ function CreateMainMidDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label>Branch code</Label>
+            <Label>Banker code</Label>
             <Input value={form.merchant_id} onChange={(e) => setForm({ ...form, merchant_id: e.target.value.toUpperCase() })} placeholder="M-0001" />
           </div>
           <div className="space-y-1.5">
@@ -116,7 +116,7 @@ function OnboardSubMidDialog({ open, onOpenChange, mains }: { open: boolean; onO
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Onboard sub-MID</DialogTitle>
-          <DialogDescription>Starts at PENDING KYC, settlement off. Optionally map it to the sourcing provider.</DialogDescription>
+          <DialogDescription>Starts at PENDING KYC, settlement off. Optionally map it to the sourcing merchant.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -127,7 +127,7 @@ function OnboardSubMidDialog({ open, onOpenChange, mains }: { open: boolean; onO
                 <option key={mm.id} value={mm.mid_code}>{mm.mid_code} · {mm.merchant_id}</option>
               ))}
             </select>
-            {selectedMain && <p className="text-xs text-[color:var(--color-text-muted)]">Branch: <span className="font-mono">{selectedMain.merchant_id}</span></p>}
+            {selectedMain && <p className="text-xs text-[color:var(--color-text-muted)]">Banker: <span className="font-mono">{selectedMain.merchant_id}</span></p>}
           </div>
           <div className="space-y-1.5">
             <Label>Sub-MID code</Label>
@@ -141,7 +141,7 @@ function OnboardSubMidDialog({ open, onOpenChange, mains }: { open: boolean; onO
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">(optional)</span></Label>
+              <Label>Merchant <span className="font-normal text-[color:var(--color-text-muted)]">(optional)</span></Label>
               <select className={selClass} value={form.provider_id} onChange={(e) => setForm({ ...form, provider_id: e.target.value })}>
                 <option value="">— None —</option>
                 {providers.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>)}

@@ -137,8 +137,8 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
         <>
           {/* Branch selector — credentials are per settling branch */}
           <Card className="mb-4">
-            <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><Store className="h-4 w-4" />Settling branch</CardTitle>
-              <CardDescription>Payments made through these credentials collect into this branch&apos;s settlement account. Each branch has its own Key + Salt.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><Store className="h-4 w-4" />Settling banker</CardTitle>
+              <CardDescription>Payments made through these credentials collect into this banker&apos;s settlement account. Each banker has its own Key + Salt.</CardDescription></CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
                 {(d?.branches ?? []).map((b) => (
@@ -165,7 +165,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
                   <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{d.credentials.scheme}</Badge></div>
                   <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><span className="font-mono text-xs">{d.credentials.salt_hint}</span></div>
                 </div>
-              ) : <p className="text-[color:var(--color-text-muted)]">No credentials for this branch yet — click <b>Generate Key + Salt</b>.</p>}
+              ) : <p className="text-[color:var(--color-text-muted)]">No credentials for this banker yet — click <b>Generate Key + Salt</b>.</p>}
             </CardContent>
           </Card>
 
@@ -206,7 +206,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
           <Card className="mt-4">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base inline-flex items-center gap-2"><Webhook className="h-4 w-4" />Return &amp; webhook URLs</CardTitle>
-                <CardDescription>Defaults for this branch when an order omits return_url / notify_url.</CardDescription></div>
+                <CardDescription>Defaults for this banker when an order omits return_url / notify_url.</CardDescription></div>
               <Button size="sm" variant="secondary" disabled={!activeBranch} onClick={() => { setReturnUrl(d?.return_url ?? ""); setWebhookUrl(d?.webhook_url ?? ""); setUrlOpen(true); }}>Edit</Button>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">

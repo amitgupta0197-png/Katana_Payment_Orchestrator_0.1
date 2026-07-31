@@ -44,7 +44,7 @@ export function DocsContent() {
 
       <div className="space-y-5">
         <Panel icon={KeyRound} title="1 · Credentials (Key + Salt)">
-          <p>Generate a per-branch <b>Key</b> and <b>Salt</b> from your provider console under <span className="font-mono text-cyan-200">Developers</span>. The Key goes in every request; the Salt signs the hash and is shown only once — store it server-side.</p>
+          <p>Generate a per-banker <b>Key</b> and <b>Salt</b> from your merchant console under <span className="font-mono text-cyan-200">Developers</span>. The Key goes in every request; the Salt signs the hash and is shown only once — store it server-side.</p>
         </Panel>
 
         <Panel icon={Plug} title="2 · Endpoints">

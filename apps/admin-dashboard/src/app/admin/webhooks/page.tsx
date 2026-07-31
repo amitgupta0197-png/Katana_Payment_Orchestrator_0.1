@@ -110,7 +110,7 @@ function CreateWebhookDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Branch ID</Label>
+                <Label>Banker ID</Label>
                 <Input value={form.merchant_id} onChange={(e) => setForm({ ...form, merchant_id: e.target.value })} placeholder="M10001" />
               </div>
               <div className="space-y-1.5">

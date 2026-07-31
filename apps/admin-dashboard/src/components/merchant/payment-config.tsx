@@ -64,7 +64,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 
   const block = useMutation({
     mutationFn: (next: boolean) => patch({ blocked: next }),
-    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Branch blocked — new pay-ins rejected" : "Branch unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
+    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Banker blocked — new pay-ins rejected" : "Banker unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -78,7 +78,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Payment collection methods</CardTitle>
-          <CardDescription>Which methods this branch can collect payments through. Tap to toggle.</CardDescription>
+          <CardDescription>Which methods this banker can collect payments through. Tap to toggle.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           {blocked && <Badge variant="danger">BLOCKED</Badge>}
@@ -153,7 +153,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Katana Pay configuration</CardTitle>
-          <CardDescription>PG pay-in (UPI) settings for this branch.</CardDescription>
+          <CardDescription>PG pay-in (UPI) settings for this banker.</CardDescription>
         </div>
         <Badge variant={form.enabled ? "success" : "default"}>{form.enabled ? "enabled" : "disabled"}</Badge>
       </CardHeader>

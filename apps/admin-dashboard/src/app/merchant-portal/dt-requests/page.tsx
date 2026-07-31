@@ -246,7 +246,7 @@ export default function MerchantDtRequestsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Request DT activation</DialogTitle>
-              <DialogDescription>Choose the model this branch will operate under. Katana reviews and approves.</DialogDescription>
+              <DialogDescription>Choose the model this banker will operate under. Katana reviews and approves.</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5">

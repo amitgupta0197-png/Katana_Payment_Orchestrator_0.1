@@ -53,7 +53,7 @@ export default function SettlementRulesPage() {
     { key: "scope", header: "Scope", render: (r) => (
       <span className="text-xs">
         {r.provider_id ? <span className="font-medium">{r.provider_name ?? r.provider_code ?? r.provider_id.slice(0, 8)}</span> : <Badge variant="brand">Global default</Badge>}
-        {r.merchant_key ? <> · branch <span className="font-mono">{r.merchant_key}</span></> : r.provider_id ? " · all branches" : null}
+        {r.merchant_key ? <> · banker <span className="font-mono">{r.merchant_key}</span></> : r.provider_id ? " · all branches" : null}
       </span>
     ) },
     { key: "rates", header: "Upline / Katana / Downline", render: (r) => (
@@ -90,7 +90,7 @@ export default function SettlementRulesPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Rules</CardTitle><CardDescription>Most specific active rule wins: provider + branch → provider-wide → global default. No rule = zero charges (settles at gross).</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Rules</CardTitle><CardDescription>Most specific active rule wins: merchant + banker → merchant-wide → global default. No rule = zero charges (settles at gross).</CardDescription></CardHeader>
         <CardContent>
           <DataTable columns={cols} rows={list} rowKey={(r) => r.id} loading={rules.isLoading} emptyState="No rules configured — settlements currently pass through at gross with zero charges." />
         </CardContent>
@@ -150,12 +150,12 @@ function CreateRuleDialog({ open, onOpenChange, providers, onDone }: {
           <DialogDescription>Creating a rule supersedes the previous one for the same scope (versioned). A reason is mandatory.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
-          <div><Label className="text-xs">Provider (blank = global)</Label>
+          <div><Label className="text-xs">Merchant (blank = global)</Label>
             <select value={form.provider_id} onChange={(e) => set("provider_id", e.target.value)} className="w-full rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-sm">
-              <option value="">All providers (global)</option>
+              <option value="">All merchants (global)</option>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.legal_name} ({p.code})</option>)}
             </select></div>
-          <div><Label className="text-xs">Branch code (blank = all)</Label><Input value={form.merchant_key} onChange={(e) => set("merchant_key", e.target.value)} placeholder="e.g. AMPL-01" /></div>
+          <div><Label className="text-xs">Banker code (blank = all)</Label><Input value={form.merchant_key} onChange={(e) => set("merchant_key", e.target.value)} placeholder="e.g. AMPL-01" /></div>
           <div><Label className="text-xs">Upline commission %</Label><Input type="number" step="0.01" value={form.upline_pct} onChange={(e) => set("upline_pct", e.target.value)} placeholder="5.75" /></div>
           <div><Label className="text-xs">Katana charge %</Label><Input type="number" step="0.01" value={form.katana_pct} onChange={(e) => set("katana_pct", e.target.value)} placeholder="0" /></div>
           <div><Label className="text-xs">Downline charge %</Label><Input type="number" step="0.01" value={form.downline_pct} onChange={(e) => set("downline_pct", e.target.value)} placeholder="0" /></div>

@@ -66,8 +66,8 @@ export default function ProviderTransactionsPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Gross by branch</CardTitle>
-            <CardDescription>Reimbursable gross per assigned branch.</CardDescription>
+            <CardTitle className="text-base">Gross by banker</CardTitle>
+            <CardDescription>Reimbursable gross per assigned banker.</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable columns={merCols} rows={d?.by_merchant ?? []} rowKey={(r) => r.merchant_id} loading={q.isLoading}

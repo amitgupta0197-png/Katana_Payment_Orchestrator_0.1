@@ -101,7 +101,7 @@ function KycDecisionDialog({
         <DialogHeader>
           <DialogTitle>{isApprove ? "Approve" : isReject ? "Reject" : "Mark in review"} — {provider.code}</DialogTitle>
           <DialogDescription>
-            {isApprove ? "Provider will be eligible to go live." : isReject ? "Provider cannot transact until re-submitted." : "Provider stays in IN_REVIEW state."}
+            {isApprove ? "Merchant will be eligible to go live." : isReject ? "Merchant cannot transact until re-submitted." : "Merchant stays in IN_REVIEW state."}
             {" "}Notes are written to the WORM audit log.
           </DialogDescription>
         </DialogHeader>
@@ -302,7 +302,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Provider users ({users.length})</CardTitle>
           {canUpdate && (
-            <Button size="sm" onClick={() => toast.info("Add provider-user lands in WC-6 propagate")}><Plus className="h-4 w-4" /> Add user</Button>
+            <Button size="sm" onClick={() => toast.info("Add merchant-user lands in WC-6 propagate")}><Plus className="h-4 w-4" /> Add user</Button>
           )}
         </CardHeader>
         <CardContent>
@@ -332,7 +332,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
           {canMerchantCreate && (
-            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
+            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard banker</Button>
           )}
         </CardHeader>
         <CardContent>
@@ -385,15 +385,15 @@ export default function ProviderDetailView({ id }: { id: string }) {
           {provider.status !== "TERMINATED" ? (
             <div className="flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-danger)]/20 bg-[color:var(--color-danger-muted)]/30 p-3">
               <div>
-                <div className="text-sm font-medium">Terminate provider</div>
-                <div className="text-xs text-[color:var(--color-text-muted)]">Provider can no longer transact. Active branches must be re-mapped first.</div>
+                <div className="text-sm font-medium">Terminate merchant</div>
+                <div className="text-xs text-[color:var(--color-text-muted)]">Merchant can no longer transact. Active bankers must be re-mapped first.</div>
               </div>
               <Button variant="danger" onClick={() => { if (confirm(`Terminate ${provider.code}? This cannot be reversed without a maker-checker request.`)) statusMut.mutate("TERMINATED"); }}>
                 <XOctagon className="h-4 w-4" /> Terminate
               </Button>
             </div>
           ) : (
-            <Badge variant="danger">Provider is TERMINATED.</Badge>
+            <Badge variant="danger">Merchant is TERMINATED.</Badge>
           )}
         </CardContent>
       </Card>
@@ -462,7 +462,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
                 <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3">
                   <div className="text-[color:var(--color-text-muted)] text-xs uppercase tracking-wide mb-1">Mapping</div>
                   <div className="flex items-center justify-between">
-                    <span>Branch ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
+                    <span>Banker ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Relation</span><Badge variant="brand">{merchantDrawer.relation}</Badge>

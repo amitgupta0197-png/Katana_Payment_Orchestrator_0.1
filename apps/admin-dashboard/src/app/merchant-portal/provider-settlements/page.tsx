@@ -149,7 +149,7 @@ function CapacityCard() {
       });
       const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error ?? "Failed"); return d;
     },
-    onSuccess: () => { toast.success("Availability updated — your provider can see it"); setF(null); qc.invalidateQueries({ queryKey: ["branch-capacity"] }); },
+    onSuccess: () => { toast.success("Availability updated — your merchant can see it"); setF(null); qc.invalidateQueries({ queryKey: ["branch-capacity"] }); },
     onError: (e: Error) => toast.error("Couldn’t save", { description: e.message }),
   });
 
@@ -213,7 +213,7 @@ function SettlementDetailDialog({ settlement, onClose }: { settlement: Settlemen
               <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-xs space-y-0.5">
                 <div className="mb-1 font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Deductions</div>
                 <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Gross request</span><span className="tabular-nums">{formatAmount(settlement.gross_amount ?? settlement.amount)}</span></div>
-                {Number(settlement.charges.upline_charge) > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Provider commission</span><span className="tabular-nums">− {formatAmount(Number(settlement.charges.upline_charge))}</span></div>}
+                {Number(settlement.charges.upline_charge) > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Merchant commission</span><span className="tabular-nums">− {formatAmount(Number(settlement.charges.upline_charge))}</span></div>}
                 {Number(settlement.charges.katana_charge) > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Katana charge</span><span className="tabular-nums">− {formatAmount(Number(settlement.charges.katana_charge))}</span></div>}
                 {Number(settlement.charges.downline_charge) > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Banker charge</span><span className="tabular-nums">− {formatAmount(Number(settlement.charges.downline_charge))}</span></div>}
                 {Number(settlement.charges.fixed_fee) > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Fixed fee</span><span className="tabular-nums">− {formatAmount(Number(settlement.charges.fixed_fee))}</span></div>}

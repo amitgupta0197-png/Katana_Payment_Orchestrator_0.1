@@ -205,7 +205,7 @@ export default function ProviderDashboard() {
       </div>
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
-          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>Latest collections across your branches (all channels).</CardDescription></div>
+          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>Latest collections across your bankers (all channels).</CardDescription></div>
           <Button variant="secondary" size="sm" asChild><Link href="/provider-portal/transactions">View all <ChevronRight className="h-3.5 w-3.5" /></Link></Button>
         </CardHeader>
         <CardContent>
@@ -303,7 +303,7 @@ export default function ProviderDashboard() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Onboarding funnel</CardTitle>
-          <CardDescription>Where your branches are in the 6-stage pipeline.</CardDescription>
+          <CardDescription>Where your bankers are in the 6-stage pipeline.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
@@ -324,12 +324,12 @@ export default function ProviderDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Recent branches</CardTitle>
+            <CardTitle className="text-base">Recent bankers</CardTitle>
             <CardDescription>Most recent additions to your portfolio.</CardDescription>
           </CardHeader>
           <CardContent>
             {allMerchants.slice(0, 10).length === 0
-              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No branches mapped yet.</div>
+              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No bankers mapped yet.</div>
               : (
                 <ol className="flex flex-col gap-2 text-sm">
                   {allMerchants.slice(0, 10).map((m) => (

@@ -141,7 +141,7 @@ function AddVendorDialog({ open, onOpenChange, providerId, onDone }: {
           <div><Label className="text-xs">Account number</Label><Input value={f.account_number} onChange={(e) => set("account_number", e.target.value)} /></div>
           <div><Label className="text-xs">IFSC</Label><Input value={f.ifsc} onChange={(e) => set("ifsc", e.target.value)} /></div>
           <div><Label className="text-xs">Bank name</Label><Input value={f.bank_name} onChange={(e) => set("bank_name", e.target.value)} /></div>
-          <div><Label className="text-xs">Branch</Label><Input value={f.bank_branch} onChange={(e) => set("bank_branch", e.target.value)} /></div>
+          <div><Label className="text-xs">Banker</Label><Input value={f.bank_branch} onChange={(e) => set("bank_branch", e.target.value)} /></div>
           <div><Label className="text-xs">Account type</Label>
             <select value={f.account_type} onChange={(e) => set("account_type", e.target.value)} className="w-full rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-sm">
               <option value="">—</option><option>SAVINGS</option><option>CURRENT</option>

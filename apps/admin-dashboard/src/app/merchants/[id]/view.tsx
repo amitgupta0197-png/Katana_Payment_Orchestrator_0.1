@@ -206,7 +206,7 @@ function RejectButton({ merchant }: { merchant: Merchant }) {
       return r.json();
     },
     onSuccess: () => {
-      toast.success("Branch rejected");
+      toast.success("Banker rejected");
       qc.invalidateQueries({ queryKey: ["merchant", merchant.id] });
       qc.invalidateQueries({ queryKey: ["merchants"] });
     },
@@ -313,7 +313,7 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
           <CardTitle className="text-base">API keys</CardTitle>
-          <CardDescription>Live secret keys for this branch. Only the prefix is stored — copy the full secret when it’s issued.</CardDescription>
+          <CardDescription>Live secret keys for this banker. Only the prefix is stored — copy the full secret when it’s issued.</CardDescription>
         </div>
         {isLive && <IssueApiKeyDialog merchant={merchant} />}
       </CardHeader>
@@ -390,14 +390,14 @@ function CheckoutKeyCard({ merchant }: { merchant: Merchant }) {
                   Generated. Copy the Salt now — it won’t be shown again.
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Branch Key</Label>
+                  <Label>Banker Key</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.key}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.key)}><Copy className="h-4 w-4" /></Button>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Branch Salt</Label>
+                  <Label>Banker Salt</Label>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 break-all rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-xs font-mono">{issued.salt}</code>
                     <Button size="sm" variant="secondary" onClick={() => copy(issued.salt)}><Copy className="h-4 w-4" /></Button>
@@ -602,7 +602,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
     <Card className="mb-4">
       <CardHeader>
         <CardTitle className="text-base">Test checkout</CardTitle>
-        <CardDescription>Run a payment for this branch straight from the dashboard — no external checkout page needed.</CardDescription>
+        <CardDescription>Run a payment for this banker straight from the dashboard — no external checkout page needed.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
@@ -621,7 +621,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
           <div className="rounded-md border p-3 text-sm space-y-1">
             <div><span className="text-[color:var(--color-text-muted)]">Result:</span> <Badge variant={result.order?.status === "SUCCESS" ? "success" : "danger"}>{result.order?.status ?? "—"}</Badge></div>
             <div><span className="text-[color:var(--color-text-muted)]">Txn:</span> <span className="font-mono text-xs">{result.order?.txn_id ?? "—"}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Provider:</span> {result.route?.provider ?? "—"} · <span className="text-[color:var(--color-text-muted)]">charge:</span> {result.charge?.outcome ?? "—"} · <span className="text-[color:var(--color-text-muted)]">gateway signed:</span> {result.gateway?.signed ? "yes" : "no"}</div>
+            <div><span className="text-[color:var(--color-text-muted)]">Merchant:</span> {result.route?.provider ?? "—"} · <span className="text-[color:var(--color-text-muted)]">charge:</span> {result.charge?.outcome ?? "—"} · <span className="text-[color:var(--color-text-muted)]">gateway signed:</span> {result.gateway?.signed ? "yes" : "no"}</div>
           </div>
         )}
         <p className="text-xs text-[color:var(--color-text-muted)]">“Simulated” runs Katana’s pipeline instantly (no PayU needed). “Pay via PayU” needs PayU creds set above and opens PayU’s hosted page.</p>
@@ -776,7 +776,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <TestCheckoutCard merchant={merchant} />
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this branch.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this banker.</CardDescription></CardHeader>
         <CardContent>
           <DataTable columns={subCols} rows={ownSubs} loading={subMidsQ.isLoading} rowKey={(r) => r.id} emptyState="No Sub-MIDs yet. Create one at /sub-mids after CONFIG stage." />
         </CardContent>

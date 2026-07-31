@@ -89,7 +89,7 @@ export function MerchantPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Branch</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Banker</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

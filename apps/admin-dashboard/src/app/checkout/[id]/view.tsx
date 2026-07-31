@@ -191,7 +191,7 @@ export default function CheckoutDetailView({ id }: { id: string }) {
       </div>
 
       <Card className="mb-4">
-        <CardHeader><CardTitle className="text-base">Payment attempts ({attempts.length})</CardTitle><CardDescription>One row per provider call (BRD §7 P3 acceptance).</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Payment attempts ({attempts.length})</CardTitle><CardDescription>One row per merchant call (BRD §7 P3 acceptance).</CardDescription></CardHeader>
         <CardContent><DataTable columns={attemptCols} rows={attempts} rowKey={(r) => r.id} emptyState="No attempts recorded." /></CardContent>
       </Card>
       <Card className="mb-4">

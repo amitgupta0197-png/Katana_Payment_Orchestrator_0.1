@@ -68,10 +68,10 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["merchants"] });
       if (d?.login?.password) {
-        toast.success("Branch onboarded — share the login below");
+        toast.success("Banker onboarded — share the login below");
         setCreated(d);
       } else {
-        toast.success(d?.login?.existing ? "Branch onboarded — login already existed for this email" : "Branch onboarded — APPLICATION stage");
+        toast.success(d?.login?.existing ? "Banker onboarded — login already existed for this email" : "Banker onboarded — APPLICATION stage");
         setOpen(false);
       }
     },
@@ -85,7 +85,7 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
       <Dialog open={open} onOpenChange={(o) => { if (!o) closeAll(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Branch login created</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Banker login created</DialogTitle>
             <DialogDescription>
               Share these credentials with the branch. The password is shown <strong>only once</strong> — copy it now.
               They can change it later under Profile → Change password.
@@ -128,11 +128,11 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {controlledOpen === undefined && (
-        <DialogTrigger asChild><Button><Plus /> Onboard branch</Button></DialogTrigger>
+        <DialogTrigger asChild><Button><Plus /> Onboard banker</Button></DialogTrigger>
       )}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Onboard branch — Step 1: Application</DialogTitle>
+          <DialogTitle>Onboard banker — Step 1: Application</DialogTitle>
           <DialogDescription>
             Per PRODUCT_VISION §2.2 step 1. Stage starts at APPLICATION. KYB documents,
             screening, bank verification, config, and approval happen in subsequent stages.
@@ -141,7 +141,7 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Branch code</Label>
+            <Label>Banker code</Label>
             <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} />
           </div>
           <div className="space-y-1.5">
@@ -185,13 +185,13 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
             <Input value={form.registered_address} onChange={(e) => setForm({ ...form, registered_address: e.target.value })} />
           </div>
           <div className="space-y-1.5 col-span-2">
-            <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">— map this branch under a provider for traceability (optional)</span></Label>
+            <Label>Merchant <span className="font-normal text-[color:var(--color-text-muted)]">— map this banker under a merchant for traceability (optional)</span></Label>
             <select
               className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
               value={form.provider_id}
               onChange={(e) => setForm({ ...form, provider_id: e.target.value })}
             >
-              <option value="">— Direct (no provider) —</option>
+              <option value="">— Direct (no merchant) —</option>
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>
               ))}
@@ -248,7 +248,7 @@ export default function MerchantsPage() {
         <Card className="mb-4">
           <CardHeader>
             <CardTitle className="text-base">Onboarding funnel</CardTitle>
-            <CardDescription>Quick visual of where branches sit. Use filter chips below the toolbar to drill in.</CardDescription>
+            <CardDescription>Quick visual of where bankers sit. Use filter chips below the toolbar to drill in.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">

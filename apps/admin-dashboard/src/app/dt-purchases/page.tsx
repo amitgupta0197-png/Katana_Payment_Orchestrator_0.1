@@ -444,7 +444,7 @@ export default function DtPurchasesPage() {
             <DialogDescription>Advance debit = quantity × rate. Splits 60% priority traffic / 40% rolling reserve.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1.5"><Label>Banker (provider code/id)</Label><Input value={form.banker_id} onChange={(e) => setForm({ ...form, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>
+            <div className="space-y-1.5"><Label>Banker (merchant code/id)</Label><Input value={form.banker_id} onChange={(e) => setForm({ ...form, banker_id: e.target.value })} placeholder="e.g. BNK-001" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>DT quantity</Label><Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} placeholder="4000" /></div>
               <div className="space-y-1.5"><Label>Buy rate <span className="text-[color:var(--color-text-subtle)]">(blank = current)</span></Label><Input type="number" step="0.01" value={form.buy_rate} onChange={(e) => setForm({ ...form, buy_rate: e.target.value })} placeholder="104.00" /></div>

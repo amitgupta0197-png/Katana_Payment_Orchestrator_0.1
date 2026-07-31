@@ -29,11 +29,11 @@ export function ProviderCreateOrderCard() {
     <Card className="mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base"><Banknote className="h-4 w-4" /> Create a pay-in (S2S order)</CardTitle>
-        <CardDescription>Generate a QR / S2S collect order on behalf of one of your branches.</CardDescription>
+        <CardDescription>Generate a QR / S2S collect order on behalf of one of your bankers.</CardDescription>
       </CardHeader>
       <CardContent>
         {q.isLoading ? (
-          <div className="py-4 text-center text-sm text-[color:var(--color-text-muted)]">Loading branches…</div>
+          <div className="py-4 text-center text-sm text-[color:var(--color-text-muted)]">Loading bankers…</div>
         ) : merchants.length === 0 ? (
           <div className="rounded-xl border border-dashed px-3 py-5 text-center text-sm text-[color:var(--color-text-muted)]">
             No branches yet. Add one under Leads first.
@@ -42,7 +42,7 @@ export function ProviderCreateOrderCard() {
           <>
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[240px] flex-1 space-y-1.5">
-                <Label>Branch</Label>
+                <Label>Banker</Label>
                 <select
                   className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
                   value={selectedId}

@@ -51,7 +51,7 @@ export default function ProviderHelpPage() {
           <CardDescription>Access your portal at the login page.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Sign in with the <strong>email</strong> and <strong>password</strong> your Katana account manager shared with you. Your portal only shows branches and data <strong>mapped to you</strong>.</p>
+          <p>Sign in with the <strong>email</strong> and <strong>password</strong> your Katana account manager shared with you. Your portal only shows bankers and data <strong>mapped to you</strong>.</p>
         </CardContent>
       </Card>
 
@@ -61,36 +61,36 @@ export default function ProviderHelpPage() {
           <CardTitle className="text-base">Dashboard — your portfolio at a glance</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>The dashboard shows live KPIs: mapped merchants (total / live / onboarding), Sub-MIDs (live + pending KYC), open KYB cases, and your MTD / YTD commission. The <strong>Insights</strong> charts show pay-in volume, status, collected ₹, and channel mix across your branches. The <strong>onboarding funnel</strong> shows where each branch sits across the 6 stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE.</p>
+          <p>The dashboard shows live KPIs: mapped merchants (total / live / onboarding), Sub-MIDs (live + pending KYC), open KYB cases, and your MTD / YTD commission. The <strong>Insights</strong> charts show pay-in volume, status, collected ₹, and channel mix across your bankers. The <strong>onboarding funnel</strong> shows where each banker sits across the 6 stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE.</p>
         </CardContent>
       </Card>
 
       {/* Leads */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><UserPlus className="h-4 w-4" /> Add a branch lead</CardTitle>
-          <CardDescription>Onboard a new branch under your account.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><UserPlus className="h-4 w-4" /> Add a banker lead</CardTitle>
+          <CardDescription>Onboard a new banker under your account.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <ol className="space-y-2">
             <Step n={1}>Go to <strong>Leads</strong> → click <strong>New lead</strong>.</Step>
             <Step n={2}>Fill in the merchant&rsquo;s details: code, legal name, brand, business type, contact email &amp; phone, website.</Step>
-            <Step n={3}>Submit. The branch is created at the <strong>APPLICATION</strong> stage and auto-mapped to you.</Step>
-            <Step n={4}>A <strong>branch login is created automatically</strong> — a one-time password is shown; share it with the merchant so they can sign in to their own portal.</Step>
+            <Step n={3}>Submit. The banker is created at the <strong>APPLICATION</strong> stage and auto-mapped to you.</Step>
+            <Step n={4}>A <strong>banker login is created automatically</strong> — a one-time password is shown; share it with the merchant so they can sign in to their own portal.</Step>
           </ol>
-          <p className="text-xs text-[color:var(--color-text-muted)]">You can only create leads under your own account, and you only see leads you created. From there the branch moves through the onboarding funnel.</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">You can only create leads under your own account, and you only see leads you created. From there the banker moves through the onboarding funnel.</p>
         </CardContent>
       </Card>
 
       {/* Merchants */}
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><Store className="h-4 w-4" /> Your branches</CardTitle>
-          <CardDescription>View the branches mapped to you.</CardDescription>
+          <CardTitle className="flex items-center gap-2 text-base"><Store className="h-4 w-4" /> Your bankers</CardTitle>
+          <CardDescription>View the bankers mapped to you.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Open <strong>Branches</strong> to see your approved &amp; live merchants. Click one to view its details, its <strong>Sub-MIDs</strong> (code, mode, KYC, settlement), and its <strong>rolling reserves</strong> (hold amount, release date, status).</p>
-          <p className="text-xs text-[color:var(--color-text-muted)]">This view is read-only — branch onboarding starts from <strong>Leads</strong>, and branch edits are made by the branch or Katana.</p>
+          <p>Open <strong>Bankers</strong> to see your approved &amp; live merchants. Click one to view its details, its <strong>Sub-MIDs</strong> (code, mode, KYC, settlement), and its <strong>rolling reserves</strong> (hold amount, release date, status).</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">This view is read-only — banker onboarding starts from <strong>Leads</strong>, and banker edits are made by the banker or Katana.</p>
         </CardContent>
       </Card>
 
@@ -98,10 +98,10 @@ export default function ProviderHelpPage() {
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base"><Receipt className="h-4 w-4" /> Transactions &amp; reimbursement</CardTitle>
-          <CardDescription>Gross collected across your branches.</CardDescription>
+          <CardDescription>Gross collected across your bankers.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Open <strong>Transactions</strong> to see gross value across all channels (Katana Pay, PayU, Cashfree, Razorpay, …) for your mapped branches, broken down <strong>by branch</strong> and <strong>by channel</strong>, plus recent activity.</p>
+          <p>Open <strong>Transactions</strong> to see gross value across all channels (Katana Pay, PayU, Cashfree, Razorpay, …) for your mapped bankers, broken down <strong>by banker</strong> and <strong>by channel</strong>, plus recent activity.</p>
           <p className="text-xs text-[color:var(--color-text-muted)]"><strong>Gross</strong> counts successful collections only — this is the reimbursable value your commission is based on.</p>
         </CardContent>
       </Card>
@@ -110,12 +110,12 @@ export default function ProviderHelpPage() {
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base"><CreditCard className="h-4 w-4" /> Request a Sub-MID</CardTitle>
-          <CardDescription>Provision a new MID for one of your branches.</CardDescription>
+          <CardDescription>Provision a new MID for one of your bankers.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <ol className="space-y-2">
             <Step n={1}>Go to <strong>Sub-MIDs</strong> → click <strong>Request Sub-MID</strong>.</Step>
-            <Step n={2}>Pick the <strong>branch</strong> (from your mapped branches) and the <strong>Main MID</strong>, enter a <strong>Sub-MID code</strong>, and choose a <strong>mode</strong>.</Step>
+            <Step n={2}>Pick the <strong>banker</strong> (from your mapped bankers) and the <strong>Main MID</strong>, enter a <strong>Sub-MID code</strong>, and choose a <strong>mode</strong>.</Step>
             <Step n={3}>Submit. It&rsquo;s created with <Badge variant="warning">PENDING</Badge> KYC and settlement off, then a Katana admin reviews and enables it.</Step>
           </ol>
           <ul className="space-y-1.5 text-xs text-[color:var(--color-text-muted)]">
@@ -123,7 +123,7 @@ export default function ProviderHelpPage() {
             <li><Badge variant="brand">KYC_APPROVED</Badge> requires the merchant&rsquo;s KYC to be approved first.</li>
             <li>KYC status moves <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge>; settlement is enabled separately by Katana.</li>
           </ul>
-          <p className="text-xs text-[color:var(--color-text-muted)]">You can only request Sub-MIDs for branches mapped to you.</p>
+          <p className="text-xs text-[color:var(--color-text-muted)]">You can only request Sub-MIDs for bankers mapped to you.</p>
         </CardContent>
       </Card>
 
@@ -146,7 +146,7 @@ export default function ProviderHelpPage() {
           <CardDescription>Your onboarding documents &amp; status.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Open <strong>KYC</strong> to see your provider status and the required document checklist (PAN, GST, CIN, MOA, AOA, board resolution, address proof, bank statement). Statuses follow <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge> (or REJECTED / EXPIRED).</p>
+          <p>Open <strong>KYC</strong> to see your merchant status and the required document checklist (PAN, GST, CIN, MOA, AOA, board resolution, address proof, bank statement). Statuses follow <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge> (or REJECTED / EXPIRED).</p>
           <p className="text-xs text-[color:var(--color-text-muted)]">If document upload isn&rsquo;t available to you yet, send your documents to your Katana account manager.</p>
         </CardContent>
       </Card>

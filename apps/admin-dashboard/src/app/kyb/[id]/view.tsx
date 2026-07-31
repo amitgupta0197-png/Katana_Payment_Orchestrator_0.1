@@ -158,7 +158,7 @@ export default function KybDetailView({ id }: { id: string }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Case</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Branch</span><span className="font-mono">{kyb.merchant_id}</span></div>
+            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Banker</span><span className="font-mono">{kyb.merchant_id}</span></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Status</span><Badge variant={statusVariant(kyb.status)}>{kyb.status}</Badge></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Risk tier</span>{kyb.risk_tier ? <Badge variant={statusVariant(kyb.risk_tier)}>{kyb.risk_tier}</Badge> : <span>—</span>}</div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Opened</span><span>{formatDateTime(kyb.opened_at)}</span></div>
@@ -202,7 +202,7 @@ export default function KybDetailView({ id }: { id: string }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Screening hits ({screening.length})</CardTitle>
-          <CardDescription>Sanctions / PEP / adverse media providers.</CardDescription>
+          <CardDescription>Sanctions / PEP / adverse media merchants.</CardDescription>
         </CardHeader>
         <CardContent>
           {screening.length === 0

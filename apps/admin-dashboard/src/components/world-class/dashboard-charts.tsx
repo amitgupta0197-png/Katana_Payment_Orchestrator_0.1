@@ -50,8 +50,8 @@ export function DashboardCharts() {
 
       <Card className="lg:col-span-3">
         <CardHeader>
-          <CardTitle className="text-base">Branch onboarding funnel</CardTitle>
-          <CardDescription>Branches by stage.</CardDescription>
+          <CardTitle className="text-base">Banker onboarding funnel</CardTitle>
+          <CardDescription>Bankers by stage.</CardDescription>
         </CardHeader>
         <CardContent>
           {d ? <FunnelBars funnel={d.funnel} /> : <ChartSkeleton h={140} />}

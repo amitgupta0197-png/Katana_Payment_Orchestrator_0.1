@@ -133,12 +133,12 @@ export default function ProviderSettlementsPage() {
       </div>
 
       <Card className="mb-6">
-        <CardHeader><CardTitle className="text-base">Recent activity</CardTitle><CardDescription>Everything your branches do lands here live — plus a toast the moment a status changes.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Recent activity</CardTitle><CardDescription>Everything your bankers do lands here live — plus a toast the moment a status changes.</CardDescription></CardHeader>
         <CardContent><SettlementNotifications selfRole="UPLINE" /></CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Settlements</CardTitle><CardDescription>UTRs appear here in real time as branches submit them.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Settlements</CardTitle><CardDescription>UTRs appear here in real time as bankers submit them.</CardDescription></CardHeader>
         <CardContent>
           <DataTable columns={cols} rows={list} rowKey={(r) => r.id} loading={settlements.isLoading} emptyState="No settlements yet. Raise one to start collecting from a branch." />
         </CardContent>
@@ -153,7 +153,7 @@ export default function ProviderSettlementsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Settlement {detailFor ? formatAmount(detailFor.amount, detailFor.currency) : ""}</DialogTitle>
-            <DialogDescription>Live status timeline — every action the branch and Katana take.</DialogDescription>
+            <DialogDescription>Live status timeline — every action the banker and Katana take.</DialogDescription>
           </DialogHeader>
           {detailFor && (
             <div className="space-y-3">
@@ -251,7 +251,7 @@ function BeneficiariesDialog({ open, onOpenChange, providerId, beneficiaries }: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Beneficiary accounts</DialogTitle><DialogDescription>The dedicated accounts your branches settle into.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Beneficiary accounts</DialogTitle><DialogDescription>The dedicated accounts your bankers settle into.</DialogDescription></DialogHeader>
         <div className="space-y-2 max-h-48 overflow-auto">
           {beneficiaries.length === 0 ? <p className="text-sm text-[color:var(--color-text-muted)]">None yet.</p> : beneficiaries.map((b) => (
             <div key={b.id} className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
@@ -376,11 +376,11 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Raise settlement to a branch</DialogTitle><DialogDescription>Amount is prefilled from the branch's outstanding collected pay-ins — edit if needed.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Raise settlement to a banker</DialogTitle><DialogDescription>Amount is prefilled from the branch's outstanding collected pay-ins — edit if needed.</DialogDescription></DialogHeader>
         <div className="space-y-3">
-          <div><Label className="text-xs">Branch</Label>
+          <div><Label className="text-xs">Banker</Label>
             <select value={branch} onChange={(e) => setBranch(e.target.value)} className="w-full rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-sm">
-              <option value="">Select a branch…</option>
+              <option value="">Select a banker…</option>
               {branches.map((m) => <option key={m.merchant_code} value={m.merchant_code}>{m.legal_name ? `${m.legal_name} (${m.merchant_code})` : m.merchant_code}</option>)}
             </select>
           </div>
@@ -433,14 +433,14 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
               {bd.downline_charge > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Banker charge</span><span className="tabular-nums">− {formatAmount(bd.downline_charge)}</span></div>}
               {bd.fixed_fee > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">Fixed fee</span><span className="tabular-nums">− {formatAmount(bd.fixed_fee)}</span></div>}
               {bd.gst > 0 && <div className="flex justify-between"><span className="text-[color:var(--color-text-muted)]">GST</span><span className="tabular-nums">− {formatAmount(bd.gst)}</span></div>}
-              <div className="flex justify-between border-t pt-1 font-medium text-[color:var(--color-text)]"><span>Net payable by branch</span><span className="tabular-nums">{formatAmount(bd.net)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-medium text-[color:var(--color-text)]"><span>Net payable by banker</span><span className="tabular-nums">{formatAmount(bd.net)}</span></div>
               {bd.rule_version ? <div className="text-right text-[10px] text-[color:var(--color-text-muted)]">rule v{bd.rule_version}</div> : null}
             </div>
           )}
           {mode === "BANK" && (
             <div><Label className="text-xs">Pay to (vendor or your account)</Label>
               <select value={payTo} onChange={(e) => setPayTo(e.target.value)} className="w-full rounded-md border bg-[color:var(--color-surface)] px-3 py-2 text-sm">
-                <option value="">Select who the branch pays…</option>
+                <option value="">Select who the banker pays…</option>
                 {activeVendors.length > 0 && (
                   <optgroup label="Vendors">
                     {activeVendors.map((v) => <option key={v.id} value={`v:${v.id}`}>{v.vendor_name} · {v.vpa || v.account_number}</option>)}

@@ -70,7 +70,7 @@ export function PinelabsConfigCard({ endpoint, canEdit }: { endpoint: string; ca
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" /> Pine Labs API keys</CardTitle>
-            <CardDescription>Connect this branch&apos;s Pine Labs (Plural) account so Katana can pull its transactions &amp; RRN.</CardDescription>
+            <CardDescription>Connect this banker&apos;s Pine Labs (Plural) account so Katana can pull its transactions &amp; RRN.</CardDescription>
           </div>
           <Badge variant={q.data?.enabled ? "success" : "default"}>{q.data?.enabled ? "Enabled" : "Off"}</Badge>
         </div>

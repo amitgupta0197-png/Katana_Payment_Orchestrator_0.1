@@ -56,7 +56,7 @@ function RequestDialog({ mains, merchants }: { mains: MainMid[]; merchants: Merc
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5 col-span-2">
-            <Label>branch</Label>
+            <Label>banker</Label>
             <select
               className="flex h-9 w-full rounded-md border px-3 py-1 text-sm"
               value={form.merchant_id}

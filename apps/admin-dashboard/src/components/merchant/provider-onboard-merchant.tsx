@@ -61,7 +61,7 @@ export function ProviderOnboardMerchant({
   return (
     <>
       {!isControlled && (
-        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
+        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard banker</Button>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
@@ -73,7 +73,7 @@ export function ProviderOnboardMerchant({
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Branch code</Label>
+              <Label>Banker code</Label>
               <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} placeholder="M-0001" />
             </div>
             <div className="space-y-1.5">
