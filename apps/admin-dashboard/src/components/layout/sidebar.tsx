@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { navGroups, navItems, personaNav, type NavPersona } from "@/lib/nav";
 
+// Groups that start OPEN despite the collapsed-by-default rule below. DT Business is new
+// enough that operators don't yet know to look behind a collapsed header for it.
+const DEFAULT_OPEN_GROUPS = new Set<string>(["DT Business"]);
+
 // Shared nav body — used by the desktop sidebar AND the mobile drawer so the two never
 // drift. `onNavigate` lets the drawer close itself when a link is tapped.
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -24,9 +28,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const visibleItems = personaNav(navItems, persona);
   const personaLabel = persona.toLowerCase().replace(/_/g, "-");
 
-  // Collapsible groups — CLOSED by default (absent key = collapsed); a group the
-  // user opens is remembered across sessions. The group holding the current page
-  // is always rendered open so the active link never disappears.
+  // Collapsible groups — CLOSED by default (absent key = collapsed) except those in
+  // DEFAULT_OPEN_GROUPS; a group the user opens is remembered across sessions. The group
+  // holding the current page is always rendered open so the active link never disappears.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     try { setCollapsed(JSON.parse(localStorage.getItem("katana.nav.collapsed") ?? "{}")); } catch { /* ignore */ }
@@ -55,7 +59,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           const items = visibleItems.filter((i) => i.group === group);
           if (items.length === 0) return null;
           const containsActive = items.some((i) => i.href === "/" ? pathname === "/" : pathname.startsWith(i.href));
-          const isCollapsed = (collapsed[group] ?? true) && !containsActive;
+          const isCollapsed = (collapsed[group] ?? !DEFAULT_OPEN_GROUPS.has(group)) && !containsActive;
           return (
             <div key={group}>
               <button
