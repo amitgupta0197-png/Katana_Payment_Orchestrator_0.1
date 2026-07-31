@@ -22,15 +22,14 @@ import type { Column } from "@/components/ui/data-table";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 interface Purchase {
-  id: string; banker_id: string; quantity: number; buy_rate: number; total_amount: number;
+  id: string; banker_id: string | null; quantity: number; buy_rate: number; total_amount: number;
   status: string; received_confirmed_by: string; received_confirmed_at: string | null;
   created_by: string; created_at: string;
 }
 interface Refill {
-  id: string; banker_id: string; quantity: number | null; trigger: string; status: string;
+  id: string; banker_id: string | null; quantity: number | null; trigger: string; status: string;
   received_confirmed_by: string; received_confirmed_at: string | null; created_at: string;
 }
-interface Banker { banker_id: string; label: string }
 interface LedgerRow {
   id: string; client_ref: string; txn_id: string; amount: number; currency: string;
   method: string; rail: string; status: string; created_at: string;
@@ -72,7 +71,7 @@ function whoseMove(status: string): string {
 export default function MerchantDtRequestsPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ banker_id: "", quantity: "", kind: "PURCHASE" as "PURCHASE" | "REFILL" });
+  const [form, setForm] = useState({ quantity: "", kind: "PURCHASE" as "PURCHASE" | "REFILL" });
   const [activateOpen, setActivateOpen] = useState(false);
   const [activateForm, setActivateForm] = useState({ model: "PURE_INTENT" as "PURE_INTENT" | "DIRECT_QUASI", note: "" });
 
@@ -113,7 +112,7 @@ export default function MerchantDtRequestsPage() {
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
       return d as {
         merchant_id: string; purchases: Purchase[]; refills: Refill[];
-        rate: { rate: number; currency: string; version: number } | null; bankers: Banker[];
+        rate: { rate: number; currency: string; version: number } | null;
         collections: { total: number; count: number; today: number; ledger: LedgerRow[] };
         position: { quota: number; consumed: number; reserved: number; reserve_held: number; available: number; utilization: number };
       };
@@ -124,7 +123,7 @@ export default function MerchantDtRequestsPage() {
     mutationFn: async () => {
       const r = await fetch("/api/merchant-portal/dt-requests", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ banker_id: form.banker_id, quantity: Number(form.quantity), kind: form.kind }),
+        body: JSON.stringify({ quantity: Number(form.quantity), kind: form.kind }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
@@ -135,7 +134,7 @@ export default function MerchantDtRequestsPage() {
         description: d.total ? `${form.quantity} DT × ${formatAmount(d.rate!)} = ${formatAmount(d.total)} — sent for approval.` : undefined,
       });
       setOpen(false);
-      setForm({ banker_id: "", quantity: "", kind: "PURCHASE" });
+      setForm({ quantity: "", kind: "PURCHASE" });
       qc.invalidateQueries({ queryKey: ["mp:dt-requests"] });
     },
     onError: (e: Error) => toast.error("Could not raise request", { description: e.message }),
@@ -144,7 +143,6 @@ export default function MerchantDtRequestsPage() {
   const purchases = q.data?.purchases ?? [];
   const refills = q.data?.refills ?? [];
   const rate = q.data?.rate ?? null;
-  const bankers = q.data?.bankers ?? [];
   const collections = q.data?.collections ?? null;
   const position = q.data?.position ?? null;
   const awaitingBanker = purchases.filter((p) => p.status === "FUNDS_SUBMITTED").length;
@@ -155,7 +153,7 @@ export default function MerchantDtRequestsPage() {
   const preview = rate && qty > 0 ? +(qty * rate.rate).toFixed(2) : null;
 
   const purchaseCols: Column<Purchase>[] = [
-    { key: "banker_id", header: "Banker", render: (r) => <span className="font-medium">{r.banker_id}</span> },
+    { key: "banker_id", header: "Assigned banker", render: (r) => r.banker_id ? <span className="font-medium">{r.banker_id}</span> : <span className="text-[color:var(--color-text-subtle)]">Katana to assign</span> },
     { key: "quantity", header: "DT Qty", render: (r) => r.quantity.toLocaleString("en-IN") },
     { key: "buy_rate", header: "Rate", render: (r) => formatAmount(r.buy_rate) },
     { key: "total_amount", header: "Advance", render: (r) => <span className="font-medium">{formatAmount(r.total_amount)}</span> },
@@ -172,7 +170,7 @@ export default function MerchantDtRequestsPage() {
   ];
 
   const refillCols: Column<Refill>[] = [
-    { key: "banker_id", header: "Banker", render: (r) => <span className="font-medium">{r.banker_id}</span> },
+    { key: "banker_id", header: "Assigned banker", render: (r) => r.banker_id ? <span className="font-medium">{r.banker_id}</span> : <span className="text-[color:var(--color-text-subtle)]">Katana to assign</span> },
     { key: "quantity", header: "DT Qty", render: (r) => (r.quantity != null ? r.quantity.toLocaleString("en-IN") : "—") },
     { key: "status", header: "Status", render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? "default"}>{r.status}</Badge> },
     { key: "created_at", header: "Raised", render: (r) => formatDateTime(r.created_at) },
@@ -330,7 +328,7 @@ export default function MerchantDtRequestsPage() {
         columns={purchaseCols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search banker or status…", fields: ["banker_id", "status"] }}
+        search={{ placeholder: "Search status…", fields: ["status"] }}
         filters={[
           { key: "awaiting", label: "Awaiting banker", predicate: (r) => r.status === "FUNDS_SUBMITTED" },
           { key: "active", label: "Live", predicate: (r) => r.status === "ACTIVE" },
@@ -386,7 +384,7 @@ export default function MerchantDtRequestsPage() {
           <DialogHeader>
             <DialogTitle>New DT request</DialogTitle>
             <DialogDescription>
-              Goes to Katana for approval, then to the banker to confirm the DT was received.
+              Katana reviews the request, assigns a banker, and that banker approves the USDT accepted.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -406,20 +404,6 @@ export default function MerchantDtRequestsPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="bk">Banker</Label>
-              <select
-                id="bk"
-                value={form.banker_id}
-                onChange={(e) => setForm({ ...form, banker_id: e.target.value })}
-                className="w-full rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm"
-              >
-                <option value="">Select a banker…</option>
-                {bankers.map((b) => (
-                  <option key={b.banker_id} value={b.banker_id}>{b.label || b.banker_id}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
               <Label htmlFor="qty">DT quantity</Label>
               <Input id="qty" type="number" min="1" step="1" value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })} placeholder="e.g. 4000" />
@@ -432,7 +416,7 @@ export default function MerchantDtRequestsPage() {
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => raise.mutate()} disabled={raise.isPending || !form.banker_id || !(Number(form.quantity) > 0)}>
+            <Button onClick={() => raise.mutate()} disabled={raise.isPending || !(Number(form.quantity) > 0)}>
               {raise.isPending ? "Raising…" : "Raise request"}
             </Button>
           </DialogFooter>

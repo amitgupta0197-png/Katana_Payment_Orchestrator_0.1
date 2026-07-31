@@ -23,7 +23,7 @@ import type { Column } from "@/components/ui/data-table";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 interface Purchase {
-  id: string; banker_id: string; quantity: number; buy_rate: number; total_amount: number;
+  id: string; banker_id: string | null; quantity: number; buy_rate: number; total_amount: number;
   priority_percent: number; security_percent: number; status: string; payment_ref: string; created_at: string;
 }
 
@@ -152,14 +152,18 @@ export default function DtPurchasesPage() {
   });
 
   const transition = useMutation({
-    mutationFn: async ({ id, to, reference_no }: { id: string; to: string; reference_no?: string }) => {
-      const r = await fetch(`/api/v1/dt/purchases/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, reference_no }) });
+    mutationFn: async ({ id, to, reference_no, banker_id }: { id: string; to: string; reference_no?: string; banker_id?: string }) => {
+      const r = await fetch(`/api/v1/dt/purchases/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, reference_no, banker_id }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
     },
     onSuccess: () => { toast.success("Purchase updated"); qc.invalidateQueries({ queryKey: ["dt-purchases"] }); },
     onError: (e: Error) => toast.error("Transition failed", { description: e.message }),
   });
+
+  // Assigning a banker to a merchant-raised request, done at approval time.
+  const [assignFor, setAssignFor] = useState<Purchase | null>(null);
+  const [assignBanker, setAssignBanker] = useState("");
 
   // confirm-funds needs a reference number → small dialog
   const [fundsFor, setFundsFor] = useState<Purchase | null>(null);
@@ -193,7 +197,7 @@ export default function DtPurchasesPage() {
   });
 
   const cols: Column<Purchase>[] = [
-    { key: "banker_id", header: "Banker", render: (r) => <span className="font-medium">{r.banker_id}</span> },
+    { key: "banker_id", header: "Banker", render: (r) => r.banker_id ? <span className="font-medium">{r.banker_id}</span> : <Badge variant="warning">unassigned</Badge> },
     { key: "quantity", header: "DT Qty", render: (r) => r.quantity.toLocaleString("en-IN") },
     { key: "buy_rate", header: "Rate", render: (r) => formatAmount(r.buy_rate) },
     { key: "total_amount", header: "Advance", render: (r) => <span className="font-medium">{formatAmount(r.total_amount)}</span> },
@@ -210,7 +214,12 @@ export default function DtPurchasesPage() {
   function actionsFor(r: Purchase) {
     const a: { label: string; icon: any; onClick: () => void; variant?: "danger" }[] = [];
     if (r.status === "DRAFT") a.push({ label: "Submit for approval", icon: Send, onClick: () => transition.mutate({ id: r.id, to: "PENDING_APPROVAL" }) });
-    if (r.status === "PENDING_APPROVAL") a.push({ label: "Approve", icon: ShieldCheck, onClick: () => transition.mutate({ id: r.id, to: "AWAITING_FUNDS" }) });
+    if (r.status === "PENDING_APPROVAL") a.push({
+      label: r.banker_id ? "Approve" : "Assign banker & approve",
+      icon: ShieldCheck,
+      // A merchant-raised request arrives with no banker — Katana assigns one here.
+      onClick: () => { if (r.banker_id) transition.mutate({ id: r.id, to: "AWAITING_FUNDS" }); else { setAssignFor(r); setAssignBanker(""); } },
+    });
     if (r.status === "AWAITING_FUNDS") a.push({ label: "Mark funds submitted", icon: Banknote, onClick: () => transition.mutate({ id: r.id, to: "FUNDS_SUBMITTED" }) });
     if (r.status === "FUNDS_SUBMITTED") a.push({ label: "Confirm funds → activate", icon: CheckCircle2, onClick: () => { setFundsFor(r); setFundsRef(""); } });
     if (["DRAFT", "PENDING_APPROVAL", "AWAITING_FUNDS", "FUNDS_SUBMITTED"].includes(r.status))
@@ -219,26 +228,27 @@ export default function DtPurchasesPage() {
     // Banker-login management, reachable from the row rather than only the header
     // dialog. Which action shows depends on whether this banker already has a login:
     // reset issues a fresh one-time password, create provisions the first one.
-    const login = loginFor(r.banker_id);
-    if (login) {
+    // Skipped entirely while the request is still unassigned — there is no banker yet.
+    const login = r.banker_id ? loginFor(r.banker_id) : undefined;
+    if (login && r.banker_id) {
       a.push({
         label: "Reset banker password",
         icon: KeyRound,
         onClick: () => {
           setIssued(null);
           setResetMode(true);
-          setLoginForm({ banker_id: r.banker_id, email: login.email, full_name: login.full_name || "" });
+          setLoginForm({ banker_id: r.banker_id ?? "", email: login.email, full_name: login.full_name || "" });
           setLoginOpen(true);
         },
       });
-    } else if (bankerLoginsQ.data) {
+    } else if (bankerLoginsQ.data && r.banker_id) {
       a.push({
         label: "Create banker login",
         icon: KeyRound,
         onClick: () => {
           setIssued(null);
           setResetMode(false);
-          setLoginForm({ banker_id: r.banker_id, email: "", full_name: "" });
+          setLoginForm({ banker_id: r.banker_id ?? "", email: "", full_name: "" });
           setLoginOpen(true);
         },
       });
@@ -529,6 +539,59 @@ export default function DtPurchasesPage() {
       </Dialog>
 
       {/* Confirm funds */}
+      {/* Merchant-raised requests arrive with no banker. Katana picks one here; the
+          request cannot advance past approval until it has one. */}
+      <Dialog open={!!assignFor} onOpenChange={(o) => !o && setAssignFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign a banker</DialogTitle>
+            <DialogDescription>
+              This request was raised by a branch, which does not choose its banker.
+              Assigning one also approves the request and moves it to awaiting funds.
+            </DialogDescription>
+          </DialogHeader>
+          {assignFor && (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3 text-sm space-y-1">
+                <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">DT quantity</span><b>{assignFor.quantity.toLocaleString("en-IN")}</b></div>
+                <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">Rate</span><b>{formatAmount(assignFor.buy_rate)}</b></div>
+                <div className="flex justify-between gap-4"><span className="text-[color:var(--color-text-muted)]">Advance</span><b>{formatAmount(assignFor.total_amount)}</b></div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ab">Banker</Label>
+                <select
+                  id="ab"
+                  value={assignBanker}
+                  onChange={(e) => setAssignBanker(e.target.value)}
+                  className="w-full rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-sm"
+                >
+                  <option value="">Select a banker…</option>
+                  {(bankerLoginsQ.data ?? []).map((b) => (
+                    <option key={b.banker_id} value={b.banker_id}>
+                      {b.banker_id}{b.full_name ? ` — ${b.full_name}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setAssignFor(null)}>Cancel</Button>
+            <Button
+              disabled={!assignBanker || transition.isPending}
+              onClick={() => {
+                transition.mutate(
+                  { id: assignFor!.id, to: "AWAITING_FUNDS", banker_id: assignBanker },
+                  { onSuccess: () => { setAssignFor(null); setAssignBanker(""); } },
+                );
+              }}
+            >
+              {transition.isPending ? "Assigning…" : "Assign & approve"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!fundsFor} onOpenChange={(o) => !o && setFundsFor(null)}>
         <DialogContent>
           <DialogHeader>

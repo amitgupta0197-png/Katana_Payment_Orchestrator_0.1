@@ -43,18 +43,6 @@ export async function GET() {
     currentRate(),
   ]);
 
-  // Bankers the merchant can raise against — id and label ONLY. Deliberately not the
-  // admin /api/v1/dt/bankers payload, which carries banker login emails and account
-  // status that a merchant has no business seeing.
-  const bankers = await rows<any>("iam", `
-    SELECT COALESCE(scope_id,'') AS banker_id, COALESCE(scope_label,'') AS label
-      FROM user_personas
-     WHERE persona_kind = 'BANKER' AND scope_id IS NOT NULL
-     GROUP BY scope_id, scope_label
-     ORDER BY scope_id
-     LIMIT 200
-  `).catch(() => []);
-
   // Pay-ins this branch has actually collected. Only SUCCESS counts — an EXPIRED or
   // PENDING order is not money in, and including it would overstate consumption
   // against the DT quota.
@@ -95,14 +83,15 @@ export async function GET() {
   const available = +((quota - (position?.reserved ?? 0) - (position?.consumed ?? 0))).toFixed(2);
 
   return NextResponse.json({
-    merchant_id: merchantId, purchases, refills, rate, bankers,
+    merchant_id: merchantId, purchases, refills, rate,
     collections: { ...collected, ledger },
     position: { ...position, available, utilization: quota > 0 ? +(((position?.consumed ?? 0) / quota) * 100).toFixed(1) : 0 },
   });
 }
 
+// No banker_id: the merchant does not choose — and must not see — the banker.
+// Katana assigns one when approving the request.
 const schema = z.object({
-  banker_id: z.string().trim().min(1).max(120),
   quantity: z.number().positive(),
   kind: z.enum(["PURCHASE", "REFILL"]).default("PURCHASE"),
 });
@@ -134,10 +123,10 @@ export async function POST(req: Request) {
     if (body.kind === "REFILL") {
       const r = await rows<{ id: string }>("provider", `
         INSERT INTO dt_refill_requests (banker_id, quantity, trigger, status, created_by, requested_by_merchant)
-        VALUES ($1,$2,'MANUAL','OPEN',$3,$4) RETURNING id::text
-      `, [body.banker_id, body.quantity, g.session.email, merchantId]);
+        VALUES (NULL,$1,'MANUAL','OPEN',$2,$3) RETURNING id::text
+      `, [body.quantity, g.session.email, merchantId]);
       await auditDt(g.session.email, "REFILL_CREATE_MERCHANT", "dt_refill_request", r[0].id, null,
-        { banker_id: body.banker_id, quantity: body.quantity, merchant_id: merchantId });
+        { quantity: body.quantity, merchant_id: merchantId });
       return NextResponse.json({ ok: true, id: r[0].id, kind: "REFILL" });
     }
 
@@ -152,12 +141,12 @@ export async function POST(req: Request) {
       INSERT INTO dt_purchases
         (banker_id, quantity, buy_rate, total_amount, priority_percent, security_percent,
          status, created_by, requested_by_merchant)
-      VALUES ($1,$2,$3,$4,60,40,'PENDING_APPROVAL',$5,$6)
+      VALUES (NULL,$1,$2,$3,60,40,'PENDING_APPROVAL',$4,$5)
       RETURNING id::text
-    `, [body.banker_id, body.quantity, rate.rate, total, g.session.email, merchantId]);
+    `, [body.quantity, rate.rate, total, g.session.email, merchantId]);
 
     await auditDt(g.session.email, "PURCHASE_REQUEST_MERCHANT", "dt_purchase", r[0].id, null,
-      { banker_id: body.banker_id, quantity: body.quantity, rate: rate.rate, total, merchant_id: merchantId });
+      { quantity: body.quantity, rate: rate.rate, total, merchant_id: merchantId });
 
     return NextResponse.json({ ok: true, id: r[0].id, kind: "PURCHASE", quantity: body.quantity, rate: rate.rate, total });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
