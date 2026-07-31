@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { displayEntity } from "@/lib/utils";
 
 interface Me {
   user: { id: string; email: string; full_name: string | null };
@@ -103,7 +104,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-[color:var(--color-text-muted)]">Role</dt>
-                  <dd><Badge variant="info">{u?.persona}</Badge></dd>
+                  <dd><Badge variant="info">{displayEntity(u?.persona)}</Badge></dd>
                 </div>
                 {u?.scope.label && (
                   <div className="flex justify-between gap-4">

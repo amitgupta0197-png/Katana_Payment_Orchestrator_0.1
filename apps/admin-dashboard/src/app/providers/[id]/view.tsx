@@ -39,7 +39,7 @@ import { ProviderKycDocsCard } from "@/components/provider/kyc-docs-card";
 import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { useCan } from "@/lib/use-access";
-import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { formatAmount, formatDateTime, statusVariant, displayEntity } from "@/lib/utils";
 
 interface Provider {
   id: string; code: string; legal_name: string; contact_email: string; contact_phone: string;
@@ -241,7 +241,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[color:var(--color-text-muted)]">Kind</span>
-              <span>{provider.kind}</span>
+              <span>{displayEntity(provider.kind)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[color:var(--color-text-muted)]">Email</span>
@@ -404,7 +404,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   const meta = (
     <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--color-text-muted)]">
       <span className="font-mono">{provider.code}</span>
-      <span>·</span><span>{provider.kind}</span>
+      <span>·</span><span>{displayEntity(provider.kind)}</span>
       <span>·</span><span>{provider.settlement_currency}</span>
       <span>·</span><span>created {formatDateTime(provider.created_at)}</span>
       <span>·</span>
