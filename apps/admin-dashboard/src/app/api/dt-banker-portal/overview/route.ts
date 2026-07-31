@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { gateOrResponse } from "@/lib/scope";
 import { rows } from "@/lib/pg";
 import { dashboardKpis, trafficWallet, dtWallet, currentRate } from "@/lib/dt";
+import { payinPopulation } from "@/lib/dt-payin";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function GET() {
   const bankerId = g.session.scope_id;
   if (!bankerId) return NextResponse.json({ error: "BANKER session missing scope_id" }, { status: 400 });
 
-  const [kpis, wallet, lots, rate, comm] = await Promise.all([
+  const [kpis, wallet, lots, rate, comm, population, popByMerchant] = await Promise.all([
     dashboardKpis({ banker_id: bankerId }),
     trafficWallet(bankerId),
     dtWallet(bankerId),
@@ -26,6 +27,18 @@ export async function GET() {
         FROM commission_entries e JOIN dt_purchases p ON p.id = e.purchase_lot
        WHERE p.banker_id = $1
     `, [bankerId]).catch(() => [{ banker_commission: 0 }]),
+    // Population repaid against THIS banker's lots only — scoped by banker_id, so one
+    // banker never sees another's position.
+    payinPopulation({ banker_id: bankerId }),
+    // Which merchants are actually sending traffic against this banker's lots.
+    rows<{ payin_merchant_code: string; lots: number; consumed: number }>("provider", `
+      SELECT p.payin_merchant_code,
+             COUNT(DISTINCT p.id)::int              AS lots,
+             COALESCE(SUM(a.consumed),0)::float     AS consumed
+        FROM dt_purchases p LEFT JOIN traffic_allocations a ON a.purchase_id = p.id
+       WHERE p.banker_id = $1 AND p.payin_merchant_code IS NOT NULL
+       GROUP BY p.payin_merchant_code ORDER BY consumed DESC
+    `, [bankerId]).catch(() => []),
   ]);
 
   return NextResponse.json({
@@ -39,5 +52,7 @@ export async function GET() {
     wallet,
     lots,
     rate,
+    population,
+    population_by_merchant: popByMerchant,
   });
 }

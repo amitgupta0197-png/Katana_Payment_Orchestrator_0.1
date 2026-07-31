@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle, KeyRound, Copy, X } from "lucide-react";
+import { Receipt, Plus, Send, ShieldCheck, Banknote, CheckCircle2, XCircle, KeyRound, Copy, X, Store } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,6 +25,8 @@ import { formatAmount, formatDateTime } from "@/lib/utils";
 interface Purchase {
   id: string; banker_id: string; quantity: number; buy_rate: number; total_amount: number;
   priority_percent: number; security_percent: number; status: string; payment_ref: string; created_at: string;
+  // providers.code of the merchant repaying this lot in pay-in traffic ("" = unassigned).
+  payin_merchant_code: string;
 }
 
 const STATUS_VARIANT: Record<string, "default" | "info" | "warning" | "success" | "danger"> = {
@@ -151,6 +153,36 @@ export default function DtPurchasesPage() {
   const [fundsFor, setFundsFor] = useState<Purchase | null>(null);
   const [fundsRef, setFundsRef] = useState("");
 
+  // Assign the merchant that repays this lot in pay-in traffic. Until a lot is assigned,
+  // incoming pay-ins cannot find it and it never draws down.
+  const [assignFor, setAssignFor] = useState<Purchase | null>(null);
+  const [assignCode, setAssignCode] = useState("");
+  const merchantsQ = useQuery({
+    queryKey: ["providers-for-dt"],
+    queryFn: async () => {
+      const r = await fetch("/api/providers");
+      if (!r.ok) return { providers: [] as { id: string; code: string; legal_name: string }[] };
+      return (await r.json()) as { providers: { id: string; code: string; legal_name: string }[] };
+    },
+    enabled: !!assignFor,
+  });
+  const assignMerchant = useMutation({
+    mutationFn: async ({ id, code }: { id: string; code: string | null }) => {
+      const r = await fetch(`/api/v1/dt/purchases/${id}/merchant`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payin_merchant_code: code }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+    },
+    onSuccess: () => {
+      toast.success("Pay-in merchant updated");
+      qc.invalidateQueries({ queryKey: ["dt-purchases"] });
+      setAssignFor(null);
+    },
+    onError: (e: Error) => toast.error("Assign failed", { description: e.message }),
+  });
+
   // Separate banker login (BANKER persona → /dt-banker-portal). One-time password shown once.
   // Reset mode issues a fresh one-time password for an existing banker (forgot password).
   const [loginOpen, setLoginOpen] = useState(false);
@@ -183,12 +215,24 @@ export default function DtPurchasesPage() {
         <span className="text-[10px] text-[color:var(--color-text-muted)]">quota {formatAmount(r.total_amount * r.priority_percent / 100)}</span>
       </div>
     ) },
+    // Which merchant repays this lot in pay-in traffic. Unassigned lots are inert: no
+    // incoming pay-in can find them, so they never draw down.
+    { key: "payin_merchant_code", header: "Pay-in merchant", render: (r) => (
+      r.payin_merchant_code
+        ? <span className="font-medium">{r.payin_merchant_code}</span>
+        : <Badge variant="warning">unassigned</Badge>
+    ) },
     { key: "status", header: "Status", render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? "default"}>{r.status}</Badge> },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
 
   function actionsFor(r: Purchase) {
     const a: { label: string; icon: any; onClick: () => void; variant?: "danger" }[] = [];
+    a.push({
+      label: r.payin_merchant_code ? "Change pay-in merchant" : "Assign pay-in merchant",
+      icon: Store,
+      onClick: () => { setAssignFor(r); setAssignCode(r.payin_merchant_code ?? ""); },
+    });
     if (r.status === "DRAFT") a.push({ label: "Submit for approval", icon: Send, onClick: () => transition.mutate({ id: r.id, to: "PENDING_APPROVAL" }) });
     if (r.status === "PENDING_APPROVAL") a.push({ label: "Approve", icon: ShieldCheck, onClick: () => transition.mutate({ id: r.id, to: "AWAITING_FUNDS" }) });
     if (r.status === "AWAITING_FUNDS") a.push({ label: "Mark funds submitted", icon: Banknote, onClick: () => transition.mutate({ id: r.id, to: "FUNDS_SUBMITTED" }) });
@@ -377,6 +421,55 @@ export default function DtPurchasesPage() {
         emptyDescription="Create a banker's first advance purchase to allocate priority traffic."
         rowActions={(r) => <RowActions actions={actionsFor(r)} />}
       />
+
+      {/* Assign the merchant whose incoming pay-ins repay this lot */}
+      <Dialog open={!!assignFor} onOpenChange={(o) => { if (!o) setAssignFor(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pay-in merchant</DialogTitle>
+            <DialogDescription>
+              Katana advanced USDT to a merchant; the merchant repays in pay-in traffic. Pick the
+              merchant whose incoming pay-ins draw down this lot. Every confirmed pay-in landing on
+              any banker under it consumes the merchant&rsquo;s oldest active lot first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Merchant</Label>
+              <select
+                className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                value={assignCode}
+                onChange={(e) => setAssignCode(e.target.value)}
+              >
+                <option value="">— Unassigned —</option>
+                {(merchantsQ.data?.providers ?? []).map((p) => (
+                  <option key={p.id} value={p.code}>{p.code} — {p.legal_name}</option>
+                ))}
+              </select>
+              {merchantsQ.isLoading && <p className="text-xs text-[color:var(--color-text-subtle)]">Loading merchants…</p>}
+            </div>
+            {assignFor && (
+              <p className="text-xs text-[color:var(--color-text-muted)]">
+                Lot: <b>{formatAmount(assignFor.total_amount)}</b> advance to banker <b>{assignFor.banker_id}</b> · {assignFor.status}
+              </p>
+            )}
+            {!assignCode && (
+              <p className="text-xs text-[color:var(--color-text-muted)]">
+                Unassigned lots are inert — no incoming pay-in can find them.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setAssignFor(null)}>Cancel</Button>
+            <Button
+              onClick={() => assignFor && assignMerchant.mutate({ id: assignFor.id, code: assignCode || null })}
+              disabled={assignMerchant.isPending}
+            >
+              {assignMerchant.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create draft */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

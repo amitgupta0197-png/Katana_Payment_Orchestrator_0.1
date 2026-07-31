@@ -59,13 +59,17 @@ export interface Purchase {
   id: string; banker_id: string; quantity: number; buy_rate: number; total_amount: number;
   priority_percent: number; security_percent: number; status: PurchaseStatus;
   payment_ref: string; created_by: string; approved_by: string;
+  // providers.code of the merchant whose incoming pay-ins repay this lot ("" = unassigned).
+  // Not merchants.merchant_code — see lib/dt-payin.ts for the naming split.
+  payin_merchant_code: string;
   created_at: string; updated_at: string;
 }
 
 const PURCHASE_COLS = `id::text, banker_id, quantity::float AS quantity, buy_rate::float AS buy_rate,
   total_amount::float AS total_amount, priority_percent::float AS priority_percent,
   security_percent::float AS security_percent, status, COALESCE(payment_ref,'') AS payment_ref,
-  COALESCE(created_by,'') AS created_by, COALESCE(approved_by,'') AS approved_by, created_at, updated_at`;
+  COALESCE(created_by,'') AS created_by, COALESCE(approved_by,'') AS approved_by,
+  COALESCE(payin_merchant_code,'') AS payin_merchant_code, created_at, updated_at`;
 
 export async function listPurchases(filter: { banker_id?: string; status?: string } = {}): Promise<Purchase[]> {
   const where: string[] = []; const p: unknown[] = [];

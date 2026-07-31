@@ -88,6 +88,21 @@ export default function ProviderDashboard() {
     refetchInterval: 30_000,
   });
 
+  // DT position: USDT advanced to us, and how much we have repaid in pay-in traffic.
+  // Absent (population: null) for merchants with no DT lots assigned — the tiles hide.
+  const dt = useQuery({
+    queryKey: ["merchant-portal", "dt-population"],
+    queryFn: async () => (await fetch("/api/merchant-portal/dt-population").then((r) => r.json())) as {
+      merchant_code?: string;
+      population: null | {
+        advanced: number; allocated: number; consumed: number; outstanding: number;
+        unallocated_amount: number; unallocated_count: number; payin_count: number; pct_repaid: number | null;
+      };
+    },
+    refetchInterval: 60_000,
+  });
+  const pop = dt.data?.population ?? null;
+
   const allMerchants = merchants.data?.merchants ?? [];
   const subs = subMids.data?.sub_mids ?? [];
   const kybCases = kyb.data?.cases ?? [];
@@ -122,6 +137,28 @@ export default function ProviderDashboard() {
         <div className="mb-6">
           <AlertStrip items={alerts.slice(0, 5)} />
         </div>
+      )}
+
+      {/* DT position — only for merchants carrying a USDT advance. Katana advances USDT;
+          this is how much of it has been repaid in incoming pay-in population. */}
+      {pop && pop.allocated > 0 && (
+        <>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+            Pay-in population {pop.pct_repaid !== null && <span className="normal-case text-[color:var(--color-text-subtle)]">· {pop.pct_repaid}% repaid</span>}
+          </h2>
+          <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiTile label="Advance carried" value={formatAmount(pop.advanced)} loading={dt.isLoading} />
+            <KpiTile label="Population sent" value={formatAmount(pop.consumed)} variant="success" loading={dt.isLoading} />
+            <KpiTile label="Still to send" value={formatAmount(pop.outstanding)} loading={dt.isLoading} />
+            <KpiTile
+              label="Pay-ins counted"
+              value={pop.payin_count}
+              sublabel={pop.unallocated_count ? `${pop.unallocated_count} unallocated` : undefined}
+              variant={pop.unallocated_count ? "warning" : "default"}
+              loading={dt.isLoading}
+            />
+          </div>
+        </>
       )}
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Portfolio</h2>

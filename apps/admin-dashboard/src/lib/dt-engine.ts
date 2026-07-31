@@ -89,6 +89,42 @@ export async function reserveQuota(input: { order_ref: string; banker_id: string
   }
 }
 
+// Same atomic FIFO reservation, but selecting the lot by the MERCHANT it was assigned to
+// rather than by banker. This is the path a real incoming pay-in takes: the money lands on
+// a banker, we resolve which merchant that banker belongs to, and the oldest ACTIVE lot
+// that merchant is repaying gets consumed — regardless of which banker bought the lot.
+// Returns the owning banker_id as well, because consumeReservation needs it to resolve the
+// commission rule and post the shadow journal.
+export async function reserveQuotaForMerchant(input: { order_ref: string; payin_merchant_code: string; amount: number }):
+  Promise<{ reservation_id: string; allocation_id: string; banker_id: string; purchase_id: string } | null> {
+  const client = await db("provider").connect();
+  try {
+    await client.query("BEGIN");
+    const alloc = await client.query(`
+      SELECT a.id::text AS id, p.banker_id, p.id::text AS purchase_id
+        FROM traffic_allocations a JOIN dt_purchases p ON p.id=a.purchase_id
+       WHERE p.payin_merchant_code=$1 AND p.status='ACTIVE' AND a.status='ACTIVE'
+         AND (a.allocated - a.reserved - a.consumed) >= $2
+       ORDER BY p.created_at ASC          -- FIFO across lots (OD-05)
+       LIMIT 1 FOR UPDATE OF a
+    `, [input.payin_merchant_code, input.amount]);
+    if (!alloc.rows.length) { await client.query("ROLLBACK"); return null; }
+    const { id: allocationId, banker_id, purchase_id } = alloc.rows[0];
+    await client.query(`UPDATE traffic_allocations SET reserved = reserved + $2, updated_at=now() WHERE id=$1::uuid`, [allocationId, input.amount]);
+    const res = await client.query(`
+      INSERT INTO traffic_reservations (order_ref, allocation_id, amount, status, expiry)
+      VALUES ($1,$2::uuid,$3,'RESERVED', now() + interval '15 minutes') RETURNING id::text
+    `, [input.order_ref, allocationId, input.amount]);
+    await client.query("COMMIT");
+    return { reservation_id: res.rows[0].id, allocation_id: allocationId, banker_id, purchase_id };
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // Consume a reservation on success: RESERVED → CONSUMED, move reserved→consumed on the
 // allocation, accrue commission + shadow journal, and if the lot is now exhausted mark it
 // and open a refill request (BRD §16).

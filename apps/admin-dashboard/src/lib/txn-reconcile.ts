@@ -20,6 +20,7 @@
 import { createHash } from "crypto";
 import { rows } from "@/lib/pg";
 import { confirmPoolPayOrder, type ConfirmPoolPayResult } from "@/lib/poolpay-order";
+import { processPayin } from "@/lib/dt-payin";
 
 // Policy knobs (architecture §6 / §8).
 const CONFIDENCE_THRESHOLD = 90;      // auto-confirm bar
@@ -589,6 +590,21 @@ export async function ingestTxnAlert(
         [alertId, outcome, detail, mc]).catch(() => {});
       manualCaseId = manualCaseId ?? mc;
     }
+  }
+
+  // DT population attribution. A CONFIRMED credit is the merchant repaying, in pay-in
+  // traffic, the USDT advance Katana gave it — so it consumes that merchant's oldest ACTIVE
+  // purchase lot. Runs only after `outcome` has settled (the confirm block above can demote
+  // it to DUPLICATE/UNMATCHED), is gated on DT_MODULE_ENABLED, and is fully isolated:
+  // reconciliation is the system of record and must never fail because DT accounting did.
+  if (outcome === "CONFIRMED") {
+    try {
+      const dt = await processPayin({ alert_id: alertId, banker_code: input.merchant_id ?? null, amount });
+      if (dt.status === "CONSUMED")
+        await audit(actor, "DT_PAYIN_CONSUMED", "txn_alert", alertId, `lot ${dt.purchase_id} · banker ${dt.banker_id} · ${dt.amount}`);
+      else if (dt.status === "UNALLOCATED")
+        await audit(actor, "DT_PAYIN_UNALLOCATED", "txn_alert", alertId, `${dt.reason} · ${dt.amount}`);
+    } catch { /* advisory only — never block ingestion */ }
   }
 
   await audit(actor, `ALERT_${outcome}`, "txn_alert", alertId,

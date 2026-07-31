@@ -17,11 +17,19 @@ interface Kpis {
   security_reserve: number; security_reserve_dt: number; banker_commission: number;
 }
 interface Lot { id: string; quantity: number; buy_rate: number; total_amount: number; status: string; created_at: string }
+// Pay-in population repaid against this banker's lots (scoped server-side by banker_id).
+interface Population {
+  advanced: number; allocated: number; consumed: number; outstanding: number;
+  unallocated_amount: number; unallocated_count: number; payin_count: number;
+  pct_repaid: number | null;
+}
 interface Data {
   kpis: Kpis;
   wallet: { allocated: number; reserved: number; consumed: number; available: number; utilization: number };
   lots: Lot[];
   rate: { rate: number; currency: string; version: number } | null;
+  population: Population;
+  population_by_merchant: { payin_merchant_code: string; lots: number; consumed: number }[];
 }
 
 const LOT_VARIANT: Record<string, "default" | "success" | "warning"> = {
@@ -42,6 +50,8 @@ export default function BankerDashboardPage() {
   const k = q.data?.kpis;
   const rate = q.data?.rate;
   const wallet = q.data?.wallet;
+  const pop = q.data?.population;
+  const byMerchant = q.data?.population_by_merchant ?? [];
   const loading = q.isLoading;
 
   return (
@@ -70,6 +80,44 @@ export default function BankerDashboardPage() {
         <KpiTile label="Rolling reserve" value={k ? `${formatAmount(k.security_reserve)} · ${Math.round(k.security_reserve_dt).toLocaleString("en-IN")} DT` : "—"} loading={loading} />
         <KpiTile label="Commission earned" value={k ? formatAmount(k.banker_commission) : "—"} variant="success" loading={loading} />
       </div>
+
+      {/* Pay-in population — the merchant repaying your advance in incoming traffic. */}
+      {pop && pop.allocated > 0 && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="text-base">Pay-in population received</CardTitle>
+            <CardDescription>
+              {pop.pct_repaid === null
+                ? "No quota materialised yet."
+                : `${pop.pct_repaid}% of the traffic quota on your lots has been repaid in incoming pay-ins.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <KpiTile label="Population received" value={formatAmount(pop.consumed)} variant="success" loading={loading} />
+              <KpiTile label="Still to receive" value={formatAmount(pop.outstanding)} loading={loading} />
+              <KpiTile label="Pay-ins attributed" value={pop.payin_count} loading={loading} />
+              <KpiTile
+                label="Unallocated"
+                value={pop.unallocated_count ? formatAmount(pop.unallocated_amount) : "—"}
+                sublabel={pop.unallocated_count ? `${pop.unallocated_count} pay-in(s) with no lot` : "all attributed"}
+                variant={pop.unallocated_count ? "warning" : "default"}
+                loading={loading}
+              />
+            </div>
+            {byMerchant.length > 0 && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[color:var(--color-text-muted)]">
+                {byMerchant.map((m) => (
+                  <span key={m.payin_merchant_code}>
+                    {m.payin_merchant_code} <b className="text-[color:var(--color-text)]">{formatAmount(m.consumed)}</b>
+                    <span className="text-[color:var(--color-text-subtle)]"> · {m.lots} lot(s)</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {wallet && wallet.allocated > 0 && (
         <Card className="mb-4">
