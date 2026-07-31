@@ -69,7 +69,14 @@ export async function POST(req: Request) {
     // Invalidate any existing sessions for the account whose password just changed (M6).
     await revokeSessions(body.email);
 
-    // Ensure the persona grant exists (idempotent) when scope info is supplied.
+    // Ensure the persona grant exists (idempotent) when scope info is supplied, and
+    // make it PRIMARY.
+    //
+    // Login picks the persona by `ORDER BY is_primary DESC, granted_at DESC`, so a user
+    // that already held a primary grant for some other entity would keep landing in that
+    // entity's portal — the admin sets a password here and the login goes somewhere else.
+    // Setting a password from an entity's page is an unambiguous statement of "this login
+    // belongs to THIS entity", so the new grant is promoted and the others demoted.
     if (body.kind && body.scope_id) {
       await rows("iam", `
         INSERT INTO user_personas (id, user_id, persona_kind, scope_id, scope_label, is_primary, granted_by)
@@ -78,8 +85,38 @@ export async function POST(req: Request) {
           SELECT 1 FROM user_personas WHERE user_id = $1::uuid AND persona_kind = $2 AND scope_id = $3
         )
       `, [userId, body.kind, body.scope_id, body.scope_label ?? body.scope_id, s.email]);
+
+      // Demote every other grant, then promote this one. Two statements rather than one
+      // so a pre-existing grant (which the INSERT above skipped) is still promoted.
+      await rows("iam", `
+        UPDATE user_personas SET is_primary = false
+         WHERE user_id = $1::uuid AND NOT (persona_kind = $2 AND scope_id = $3)
+      `, [userId, body.kind, body.scope_id]);
+      await rows("iam", `
+        UPDATE user_personas SET is_primary = true
+         WHERE user_id = $1::uuid AND persona_kind = $2 AND scope_id = $3
+      `, [userId, body.kind, body.scope_id]);
     }
 
-    return NextResponse.json({ email: body.email, password, generated, created_user: createdUser });
+    // Tell the admin where this login will actually land, and flag it when the change
+    // moved an existing login away from another entity's portal — that is a surprising
+    // side effect if the same email is shared between two entities.
+    const PORTAL: Record<string, string> = {
+      PROVIDER: "Merchant portal (/provider-portal)",
+      MERCHANT: "Banker portal (/merchant-portal)",
+    };
+    const others = body.kind && body.scope_id
+      ? await rows<{ persona_kind: string; scope_label: string }>("iam", `
+          SELECT persona_kind, COALESCE(scope_label, scope_id, '') AS scope_label
+            FROM user_personas
+           WHERE user_id = $1::uuid AND NOT (persona_kind = $2 AND scope_id = $3)
+        `, [userId, body.kind, body.scope_id]).catch(() => [])
+      : [];
+
+    return NextResponse.json({
+      email: body.email, password, generated, created_user: createdUser,
+      lands_on: body.kind ? (PORTAL[body.kind] ?? body.kind) : null,
+      moved_from: others.map((o) => `${o.persona_kind}${o.scope_label ? ` (${o.scope_label})` : ""}`),
+    });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
