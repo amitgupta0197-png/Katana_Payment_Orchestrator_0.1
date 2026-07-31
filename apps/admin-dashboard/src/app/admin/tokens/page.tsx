@@ -61,11 +61,11 @@ function IssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Issue sandbox token</DialogTitle>
-          <DialogDescription>The raw provider token is hashed before persistence — only the sha256 lives in the vault.</DialogDescription>
+          <DialogDescription>The raw merchant token is hashed before persistence — only the sha256 lives in the vault.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div><Label>Customer ref</Label><Input value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} /></div>
-          <div><Label>Provider</Label><Input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} /></div>
+          <div><Label>Merchant</Label><Input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} /></div>
           <div><Label>Method</Label>
             <select className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as typeof form.method })}>
               <option value="CARD">CARD</option><option value="UPI">UPI</option><option value="WALLET">WALLET</option>
@@ -73,7 +73,7 @@ function IssueDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: 
           </div>
           <div><Label>Brand</Label><Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></div>
           <div><Label>Last 4</Label><Input value={form.last4} onChange={(e) => setForm({ ...form, last4: e.target.value })} /></div>
-          <div className="col-span-1 sm:col-span-3"><Label>Provider token</Label><Input value={form.providerToken} onChange={(e) => setForm({ ...form, providerToken: e.target.value })} /></div>
+          <div className="col-span-1 sm:col-span-3"><Label>Merchant token</Label><Input value={form.providerToken} onChange={(e) => setForm({ ...form, providerToken: e.target.value })} /></div>
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -102,8 +102,8 @@ export default function TokensPage() {
   const tokenCols: Column<Token>[] = [
     { key: "token_id", header: "Token", render: (r) => <span className="font-mono text-xs">{r.token_id.slice(0, 8)}</span> },
     { key: "customer_ref", header: "Customer", render: (r) => <span className="font-mono text-xs">{r.customer_ref}</span> },
-    { key: "merchant_id", header: "Branch" },
-    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "merchant_id", header: "Banker" },
+    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "method", header: "Method" },
     { key: "brand", header: "Brand", render: (r) => r.brand ?? "—" },
     { key: "last4", header: "Last4", render: (r) => r.last4 ? `••${r.last4}` : "—" },
@@ -140,7 +140,7 @@ export default function TokensPage() {
         </TabsList>
         <TabsContent value="tokens">
           <DataView rows={tokens} columns={tokenCols} rowKey={(r) => r.token_id} loading={tQ.isLoading}
-            search={{ placeholder: "Search by customer / branch / brand / last4…", fields: ["customer_ref", "merchant_id", "provider", "brand", "last4"] }}
+            search={{ placeholder: "Search by customer / banker / brand / last4…", fields: ["customer_ref", "merchant_id", "provider", "brand", "last4"] }}
             filters={[
               { key: "active",  label: "Active",  predicate: (r: Token) => r.status === "ACTIVE" },
               { key: "revoked", label: "Revoked", predicate: (r: Token) => r.status === "REVOKED" },

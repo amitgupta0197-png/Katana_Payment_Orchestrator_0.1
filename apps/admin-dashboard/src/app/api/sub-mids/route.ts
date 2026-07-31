@@ -111,7 +111,7 @@ export async function POST(req: Request) {
            WHERE provider_id = $1::uuid AND merchant_id::text = $2 AND status = 'ACTIVE'
         `, [s.scope_id, v.merchant_id]);
         if (!mapped.length)
-          return NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 });
+          return NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 });
       }
       const main = await rows<any>("mid", `SELECT id FROM main_mids WHERE tenant_id = $1 AND mid_code = $2`,
         [tenant, v.main_mid_code]);

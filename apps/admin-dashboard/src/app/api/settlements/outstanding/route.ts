@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const branch = url.searchParams.get("branch");
   const providerId = s.persona === "PROVIDER" ? s.scope_id! : url.searchParams.get("provider");
-  if (!providerId || !branch) return NextResponse.json({ error: "provider and branch required" }, { status: 400 });
+  if (!providerId || !branch) return NextResponse.json({ error: "merchant and banker required" }, { status: 400 });
 
   try {
     const o = await outstandingForBranch(providerId, branch);

@@ -61,7 +61,7 @@ export default function ProviderPortalMerchantDetailView({ id }: { id: string })
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Branch not found</CardTitle>
+          <CardTitle>Banker not found</CardTitle>
           <CardDescription>This merchant isn't mapped to your provider, or doesn't exist.</CardDescription>
         </CardHeader>
       </Card>

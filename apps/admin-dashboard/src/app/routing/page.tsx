@@ -29,7 +29,7 @@ export default function RoutingPage() {
     { key: "enabled", header: "On?", render: (r) => r.enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
   const railCols: Column<Rail>[] = [
-    { key: "provider", header: "Provider", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
+    { key: "provider", header: "Merchant", render: (r) => <Badge variant="brand">{r.provider}</Badge> },
     { key: "method", header: "Method" },
     { key: "direction", header: "Dir", render: (r) => <Badge variant="info">{r.direction}</Badge> },
     { key: "weight", header: "Weight", render: (r) => <span className="tabular-nums">{r.weight}</span> },
@@ -61,7 +61,7 @@ export default function RoutingPage() {
         </TabsContent>
         <TabsContent value="rails">
           <DataView rows={rails} columns={railCols} rowKey={(r) => r.id}
-            search={{ placeholder: "Search by provider / method…", fields: ["provider", "method"] }}
+            search={{ placeholder: "Search by merchant / method…", fields: ["provider", "method"] }}
             filters={[
               { key: "on",     label: "On",     predicate: (r: Rail) => r.enabled },
               { key: "off",    label: "Off",    predicate: (r: Rail) => !r.enabled },

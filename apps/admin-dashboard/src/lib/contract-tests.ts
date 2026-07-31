@@ -37,7 +37,7 @@ export async function runContractsFor(provider: string): Promise<ContractReport>
 
     const refund = await adapter.refund({ providerTxnId: "pgt_demo", amountMinor: 10000n, currency: "INR" });
     checks.push(expect("refund.ok is boolean", typeof refund.ok === "boolean"));
-    checks.push(expect("refund.provider matches", refund.provider.toUpperCase() === provider.toUpperCase()));
+    checks.push(expect("refund.merchant matches", refund.provider.toUpperCase() === provider.toUpperCase()));
 
     const status = await adapter.getStatus("pgt_demo");
     checks.push(expect("getStatus.status is string", typeof status.status === "string"));

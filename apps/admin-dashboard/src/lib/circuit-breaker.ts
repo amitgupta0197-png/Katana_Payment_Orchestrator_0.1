@@ -1,5 +1,5 @@
 // Per-provider circuit breaker (BRD §6 P2 acceptance:
-// "Provider outage triggers failover within 5 seconds").
+// "Merchant outage triggers failover within 5 seconds").
 //
 //   CLOSED      → request flows normally
 //   OPEN        → all requests skip this provider (treated as kill-switched)

@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (s.persona === "MERCHANT") {
       const keys = await branchKeysForMerchant(s.scope_id!);
       if (!keys.includes(cur.merchant_key))
-        return NextResponse.json({ error: "this settlement is not addressed to your branch" }, { status: 403 });
+        return NextResponse.json({ error: "this settlement is not addressed to your banker" }, { status: 403 });
     }
     if (!["REQUESTED", "REJECTED"].includes(cur.status))
       return NextResponse.json({ error: `cannot submit UTR while status is ${cur.status}` }, { status: 409 });

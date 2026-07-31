@@ -112,8 +112,8 @@ export default function ProviderDashboard() {
   return (
     <>
       <PageHeader
-        title="Provider dashboard"
-        description="Your mapped branches, Sub-MID pipeline, KYB progress, and commission."
+        title="Merchant dashboard"
+        description="Your mapped bankers, Sub-MID pipeline, KYB progress, and commission."
         icon={LayoutDashboard}
         actions={<Badge variant={merchants.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge>}
       />
@@ -126,8 +126,8 @@ export default function ProviderDashboard() {
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Portfolio</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Mapped branches" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/merchant-portal/merchants" />
-        <KpiTile label="Branches live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/merchant-portal/merchants" />
+        <KpiTile label="Mapped bankers" value={allMerchants.length} icon={Store} loading={merchants.isLoading} href="/merchant-portal/merchants" />
+        <KpiTile label="Bankers live" value={liveCount} sublabel={`${inOnboarding} in onboarding`} icon={Store} variant={liveCount > 0 ? "success" : "default"} loading={merchants.isLoading} href="/merchant-portal/merchants" />
         <KpiTile label="Sub-MIDs live" value={subMidsLive} sublabel={`${subMidsPending} pending KYC`} icon={Network} loading={subMids.isLoading} href="/merchant-portal/sub-mids" />
         <KpiTile label="Open KYB cases" value={kybOpen} icon={FileCheck2} variant={kybOpen > 0 ? "warning" : "default"} loading={kyb.isLoading} />
       </div>
@@ -146,7 +146,7 @@ export default function ProviderDashboard() {
         <KpiTile label="Gross collected" value={formatAmount(txns.data?.totals?.gross ?? 0)} sublabel={`${txns.data?.totals?.success_count ?? 0} successful`} icon={Wallet} variant="success" loading={txns.isLoading} href="/merchant-portal/transactions" />
         <KpiTile label="Total transactions" value={txns.data?.totals?.total_count ?? 0} icon={Store} loading={txns.isLoading} href="/merchant-portal/transactions" />
         <KpiTile label="Pending" value={txns.data?.totals?.pending_count ?? 0} icon={Activity} variant={(txns.data?.totals?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={txns.isLoading} href="/merchant-portal/transactions" />
-        <KpiTile label="Branches with volume" value={new Set((txns.data?.recent ?? []).map((r) => r.merchant_id)).size} icon={Network} loading={txns.isLoading} href="/merchant-portal/transactions" />
+        <KpiTile label="Bankers with volume" value={new Set((txns.data?.recent ?? []).map((r) => r.merchant_id)).size} icon={Network} loading={txns.isLoading} href="/merchant-portal/transactions" />
       </div>
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
@@ -221,7 +221,7 @@ export default function ProviderDashboard() {
       </Card>
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Katana Pay reconciliation</h2>
-      <PaymentFunnel description="Live Katana Pay pay-ins across all your branches — created → reconciled." />
+      <PaymentFunnel description="Live Katana Pay pay-ins across all your bankers — created → reconciled." />
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Insights</h2>
       <ProviderCharts />
@@ -230,7 +230,7 @@ export default function ProviderDashboard() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Onboarding funnel</CardTitle>
-          <CardDescription>Where your branches are in the 6-stage pipeline.</CardDescription>
+          <CardDescription>Where your bankers are in the 6-stage pipeline.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
@@ -251,12 +251,12 @@ export default function ProviderDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Recent branches</CardTitle>
+            <CardTitle className="text-base">Recent bankers</CardTitle>
             <CardDescription>Most recent additions to your portfolio.</CardDescription>
           </CardHeader>
           <CardContent>
             {allMerchants.slice(0, 10).length === 0
-              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No branches mapped yet.</div>
+              ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No bankers mapped yet.</div>
               : (
                 <ol className="flex flex-col gap-2 text-sm">
                   {allMerchants.slice(0, 10).map((m) => (
@@ -277,7 +277,7 @@ export default function ProviderDashboard() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-2">
             <Button variant="secondary" asChild className="justify-between">
-              <Link href="/merchant-portal/leads"><span className="inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Submit new branch lead</span><ChevronRight className="h-3.5 w-3.5" /></Link>
+              <Link href="/merchant-portal/leads"><span className="inline-flex items-center gap-2"><Plus className="h-4 w-4" /> Submit new banker lead</span><ChevronRight className="h-3.5 w-3.5" /></Link>
             </Button>
             <Button variant="secondary" asChild className="justify-between">
               <Link href="/merchant-portal/sub-mids"><span className="inline-flex items-center gap-2"><Network className="h-4 w-4" /> Request a Sub-MID</span><ChevronRight className="h-3.5 w-3.5" /></Link>

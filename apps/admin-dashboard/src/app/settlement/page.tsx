@@ -76,7 +76,7 @@ export default function SettlementPage() {
   const pending = batches.filter((b) => b.status !== "COMPLETED" && b.status !== "PAID").length;
 
   const cols: Column<Batch>[] = [
-    { key: "merchant_id", header: "Branch",
+    { key: "merchant_id", header: "Banker",
       render: (r) => <button onClick={() => setDrawer(r)} className="text-[color:var(--color-brand)] hover:underline">{r.merchant_id}</button> },
     { key: "period_start", header: "Date",
       render: (r) => <span className="text-xs">{formatDateTime(r.period_start)}</span> },
@@ -113,7 +113,7 @@ export default function SettlementPage() {
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by branch or UTR…", fields: ["merchant_id", "utr", "payout_ref"] }}
+        search={{ placeholder: "Search by banker or UTR…", fields: ["merchant_id", "utr", "payout_ref"] }}
         filters={[
           { key: "pending",   label: "Pending",   predicate: (r: Batch) => r.status !== "COMPLETED" && r.status !== "PAID" },
           { key: "completed", label: "Completed", predicate: (r: Batch) => r.status === "COMPLETED" || r.status === "PAID" },

@@ -121,7 +121,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
                 <Button size="sm" variant="ghost" onClick={() => copy(baseUrl)}><Copy className="h-3.5 w-3.5" /></Button>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`w-28 text-xs ${MUTED}`}>Branch code</span>
+                <span className={`w-28 text-xs ${MUTED}`}>Banker code</span>
                 <code className="flex-1 truncate text-xs font-mono">{merchantCode}</code>
                 <Button size="sm" variant="ghost" onClick={() => copy(merchantCode)}><Copy className="h-3.5 w-3.5" /></Button>
               </div>

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 function scopeDenied(session: any, id: string): NextResponse | null {
   if (session.persona === "PROVIDER" && session.scope_id !== id)
-    return NextResponse.json({ error: "providers can only manage their own beneficiaries" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only manage their own beneficiaries" }, { status: 403 });
   return null;
 }
 

@@ -47,7 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
     `, [cur.provider_id, s.email,
-        body.outcome === "VERIFIED" ? "provider.settlement.verified" : "provider.settlement.rejected",
+        body.outcome === "VERIFIED" ? "merchant.settlement.verified" : "merchant.settlement.rejected",
         JSON.stringify({ settlement_id: id, note: body.note ?? null })]).catch(() => {});
 
     return NextResponse.json({ settlement: upd[0] });

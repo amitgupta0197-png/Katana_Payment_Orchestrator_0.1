@@ -129,7 +129,7 @@ export default function MakerCheckerPage() {
     <>
       <PageHeader
         title="Maker-checker queue"
-        description="Sensitive actions (KYC approval, provider termination) require a second Super-Admin (BRD §4)."
+        description="Sensitive actions (KYC approval, merchant termination) require a second Super-Admin (BRD §4)."
         icon={ShieldCheck}
         actions={<Badge variant="warning"><Clock className="h-3 w-3" /> {q.data?.pending.length ?? 0} pending</Badge>}
       />

@@ -68,10 +68,10 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["merchants"] });
       if (d?.login?.password) {
-        toast.success("Branch onboarded — share the login below");
+        toast.success("Banker onboarded — share the login below");
         setCreated(d);
       } else {
-        toast.success(d?.login?.existing ? "Branch onboarded — login already existed for this email" : "Branch onboarded — APPLICATION stage");
+        toast.success(d?.login?.existing ? "Banker onboarded — login already existed for this email" : "Banker onboarded — APPLICATION stage");
         setOpen(false);
       }
     },
@@ -85,9 +85,9 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
       <Dialog open={open} onOpenChange={(o) => { if (!o) closeAll(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Branch login created</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Banker login created</DialogTitle>
             <DialogDescription>
-              Share these credentials with the branch. The password is shown <strong>only once</strong> — copy it now.
+              Share these credentials with the banker. The password is shown <strong>only once</strong> — copy it now.
               They can change it later under Profile → Change password.
             </DialogDescription>
           </DialogHeader>
@@ -128,20 +128,20 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {controlledOpen === undefined && (
-        <DialogTrigger asChild><Button><Plus /> Onboard branch</Button></DialogTrigger>
+        <DialogTrigger asChild><Button><Plus /> Onboard banker</Button></DialogTrigger>
       )}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Onboard branch — Step 1: Application</DialogTitle>
+          <DialogTitle>Onboard banker — Step 1: Application</DialogTitle>
           <DialogDescription>
             Per PRODUCT_VISION §2.2 step 1. Stage starts at APPLICATION. KYB documents,
             screening, bank verification, config, and approval happen in subsequent stages.
-            A branch login is created automatically.
+            A banker login is created automatically.
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Branch code</Label>
+            <Label>Banker code</Label>
             <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} />
           </div>
           <div className="space-y-1.5">
@@ -185,7 +185,7 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
             <Input value={form.registered_address} onChange={(e) => setForm({ ...form, registered_address: e.target.value })} />
           </div>
           <div className="space-y-1.5 col-span-2">
-            <Label>Provider <span className="font-normal text-[color:var(--color-text-muted)]">— map this branch under a provider for traceability (optional)</span></Label>
+            <Label>Merchant <span className="font-normal text-[color:var(--color-text-muted)]">— map this branch under a provider for traceability (optional)</span></Label>
             <select
               className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
               value={form.provider_id}
@@ -240,7 +240,7 @@ export default function MerchantsPage() {
   return (
     <>
       <PageHeader
-        title="Branches"
+        title="Bankers"
         description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
         icon={Store}
       />
@@ -248,7 +248,7 @@ export default function MerchantsPage() {
         <Card className="mb-4">
           <CardHeader>
             <CardTitle className="text-base">Onboarding funnel</CardTitle>
-            <CardDescription>Quick visual of where branches sit. Use filter chips below the toolbar to drill in.</CardDescription>
+            <CardDescription>Quick visual of where bankers sit. Use filter chips below the toolbar to drill in.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -287,17 +287,17 @@ export default function MerchantsPage() {
             <div className="mt-0.5 truncate text-xs text-[color:var(--color-text-muted)]">{r.contact_email}</div>
           </Link>
         )}
-        fab={canCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Onboard banker", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="merchants"
-        emptyTitle="No merchants onboarded yet"
+        emptyTitle="No bankers onboarded yet"
         emptyDescription="Submit the first application to kick off the 6-stage pipeline."
         rowActions={(r) => (
           <RowActions
             openHref={`/merchants/${r.id}`}
             actions={[
               { label: "Open detail", icon: ExternalLink, onClick: () => (window.location.href = `/merchants/${r.id}`) },
-              ...(canAssignProvider ? [{ label: "Assign provider", icon: Link2, onClick: () => setAssignFor(r) }] : []),
+              ...(canAssignProvider ? [{ label: "Assign banker", icon: Link2, onClick: () => setAssignFor(r) }] : []),
             ]}
           />
         )}

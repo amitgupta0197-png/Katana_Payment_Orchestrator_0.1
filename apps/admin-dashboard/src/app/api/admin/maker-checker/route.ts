@@ -1,4 +1,4 @@
-// Maker-checker queue (BRD §4 P0 acceptance: "Provider cannot approve own KYC").
+// Maker-checker queue (BRD §4 P0 acceptance: "Merchant cannot approve own KYC").
 //
 // GET  — list pending requests (and recent decided ones).
 // POST — decide a request: {request_id, decision: APPROVED|REJECTED, notes?}
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     if (r.resource_type === "provider") {
       const before = await rows<any>("provider",
         "SELECT kyc_status, status FROM providers WHERE id = $1::uuid", [r.resource_id]);
-      if (!before.length) return NextResponse.json({ error: "target provider missing" }, { status: 404 });
+      if (!before.length) return NextResponse.json({ error: "target merchant missing" }, { status: 404 });
 
       const fields: Record<string, unknown> = {};
       if (r.payload?.kyc_status) fields.kyc_status = r.payload.kyc_status;
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
       });
 
       await publish({
-        eventType: "provider.kyc_decided", producer: "provider_mgmt",
+        eventType: "merchant.kyc_decided", producer: "provider_mgmt",
         entityType: "provider", entityId: r.resource_id, actorId: s.user_id,
         payload: { request_id: body.request_id, action: r.action, fields },
       });

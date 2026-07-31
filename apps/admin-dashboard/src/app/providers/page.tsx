@@ -72,7 +72,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
       if (withBranch) {
         body.initial_branch = {
           merchant_code: branch.merchant_code.trim(),
-          legal_name: branch.legal_name.trim() || `${form.legal_name} Branch`,
+          legal_name: branch.legal_name.trim() || `${form.legal_name} Banker`,
           ...(branch.contact_email.trim() ? { contact_email: branch.contact_email.trim() } : {}),
         };
       }
@@ -85,7 +85,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
       return d as CreateResult;
     },
     onSuccess: (d) => {
-      toast.success("Provider created");
+      toast.success("Merchant created");
       qc.invalidateQueries({ queryKey: ["providers"] });
       if (d.provider_login || d.banker_login || d.branch) setResult(d);
       else onOpenChange(false);
@@ -98,20 +98,20 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setResult(null); }}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Create provider</DialogTitle>
+        <DialogHeader><DialogTitle>Create merchant</DialogTitle>
           <DialogDescription>
             {result
               ? "Share these credentials now — one-time passwords are shown only once."
-              : "Kind: PROVIDER, AGENT, PARTNER, FRANCHISE. Optionally provision the provider login, banker login and first branch in one go."}
+              : "Kind: PROVIDER, AGENT, PARTNER, FRANCHISE. Optionally provision the merchant login, DT banker login and first banker in one go."}
           </DialogDescription></DialogHeader>
         {result ? (
           <div className="space-y-2">
-            <CredentialLine title={`Provider login (${result.code})`} login={result.provider_login} />
-            <CredentialLine title={`Banker login (${result.banker_login?.banker_id ?? result.code})`} login={result.banker_login} />
+            <CredentialLine title={`Merchant login (${result.code})`} login={result.provider_login} />
+            <CredentialLine title={`DT banker login (${result.banker_login?.banker_id ?? result.code})`} login={result.banker_login} />
             {result.branch?.error
-              ? <div className="text-xs text-[color:var(--color-danger)]">Branch: {result.branch.error}</div>
-              : <CredentialLine title={`Branch login (${result.branch?.merchant_code ?? ""})`} login={result.branch?.login} />}
-            <p className="text-xs text-[color:var(--color-text-muted)]">Everyone signs in at /login — provider lands in the provider portal, banker in the banker portal, branch in the merchant portal.</p>
+              ? <div className="text-xs text-[color:var(--color-danger)]">Banker: {result.branch.error}</div>
+              : <CredentialLine title={`Banker login (${result.branch?.merchant_code ?? ""})`} login={result.branch?.login} />}
+            <p className="text-xs text-[color:var(--color-text-muted)]">Everyone signs in at /login — merchant lands in the merchant portal, banker in the banker portal, DT banker in the DT banker portal.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -127,27 +127,27 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
               <div className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Also provision</div>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={withProviderLogin} onChange={(e) => setWithProviderLogin(e.target.checked)} />
-                Provider login (uses contact email)
+                Merchant login (uses contact email)
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={withBanker} onChange={(e) => setWithBanker(e.target.checked)} />
-                Banker login (banker id = provider code)
+                DT banker login (banker id = merchant code)
               </label>
               {withBanker && (
                 <div className="space-y-1.5 pl-6">
-                  <Label>Banker email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label>
+                  <Label>DT banker email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label>
                   <Input type="email" value={bankerEmail} onChange={(e) => setBankerEmail(e.target.value)} placeholder="banker@example.com" />
                 </div>
               )}
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={withBranch} onChange={(e) => setWithBranch(e.target.checked)} />
-                First branch (merchant, mapped to this provider)
+                First banker (mapped to this merchant)
               </label>
               {withBranch && (
                 <div className="grid grid-cols-2 gap-3 pl-6">
-                  <div className="space-y-1.5"><Label>Branch code</Label><Input value={branch.merchant_code} onChange={(e) => setBranch({ ...branch, merchant_code: e.target.value })} placeholder="e.g. BR-001" /></div>
-                  <div className="space-y-1.5"><Label>Branch name</Label><Input value={branch.legal_name} onChange={(e) => setBranch({ ...branch, legal_name: e.target.value })} /></div>
-                  <div className="space-y-1.5 col-span-2"><Label>Branch email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label><Input type="email" value={branch.contact_email} onChange={(e) => setBranch({ ...branch, contact_email: e.target.value })} /></div>
+                  <div className="space-y-1.5"><Label>Banker code</Label><Input value={branch.merchant_code} onChange={(e) => setBranch({ ...branch, merchant_code: e.target.value })} placeholder="e.g. BR-001" /></div>
+                  <div className="space-y-1.5"><Label>Banker name</Label><Input value={branch.legal_name} onChange={(e) => setBranch({ ...branch, legal_name: e.target.value })} /></div>
+                  <div className="space-y-1.5 col-span-2"><Label>DT banker email <span className="text-[color:var(--color-text-subtle)]">(blank = contact email)</span></Label><Input type="email" value={branch.contact_email} onChange={(e) => setBranch({ ...branch, contact_email: e.target.value })} /></div>
                 </div>
               )}
             </div>
@@ -174,7 +174,7 @@ export default function ProvidersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const sp = useSearchParams();
 
-  // Cmd+K "New provider" deep-link.
+  // Cmd+K "New merchant" deep-link.
   useEffect(() => { if (sp.get("new") === "1" && canCreate) setCreateOpen(true); }, [sp, canCreate]);
 
   const q = useQuery({
@@ -202,7 +202,7 @@ export default function ProvidersPage() {
     { key: "kind", header: "Kind" },
     { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-    { key: "merchant_count", header: "Branches" },
+    { key: "merchant_count", header: "Bankers" },
     { key: "contact_email", header: "Contact" },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
@@ -212,7 +212,7 @@ export default function ProvidersPage() {
   return (
     <>
       <PageHeader
-        title="Providers"
+        title="Merchants"
         description="Sub-admin reseller entities and their KYC lifecycle (PRODUCT_VISION §3.1)."
         icon={UserPlus}
       />
@@ -230,10 +230,10 @@ export default function ProvidersPage() {
           { key: "suspended",    label: "Suspended",     predicate: (r) => r.status === "SUSPENDED" },
         ]}
         href={(r) => `/providers/${r.id}`}
-        fab={canCreate ? { label: "Provider", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
         savedViewKey="providers"
-        emptyTitle="No providers yet"
+        emptyTitle="No merchants yet"
         emptyDescription="Onboard your first reseller to start the KYC lifecycle."
         bulkActions={canUpdate || canDelete ? [
           ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const,

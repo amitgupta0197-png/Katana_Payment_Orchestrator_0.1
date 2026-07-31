@@ -26,7 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const s = g.session;
   const { id } = await params;
   if (s.persona === "PROVIDER" && s.scope_id !== id)
-    return NextResponse.json({ error: "providers can only read own integration" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only read own integration" }, { status: 403 });
 
   try {
     const cfg = await getProviderIntegration(id);
@@ -68,7 +68,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // Provider must exist.
   const exists = await rows<{ id: string }>("provider",
     `SELECT id::text FROM providers WHERE id = $1::uuid`, [id]).catch(() => []);
-  if (!exists.length) return NextResponse.json({ error: "provider not found" }, { status: 404 });
+  if (!exists.length) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
 
   // Going live needs the pieces to sign + route, or every branch order would fail.
   if (body.enabled && body.env === "PROD") {
@@ -84,12 +84,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, s.email, "provider.integration.updated", JSON.stringify({
+    `, [id, s.email, "merchant.integration.updated", JSON.stringify({
       vendor: "POOLPAY", enabled: saved.enabled, env: saved.env,
       base_url: saved.base_url, secret_rotated: typeof body.secret === "string" && body.secret.length > 0,
     })]).catch(() => {});
     await publish({
-      eventType: "provider.integration.updated",
+      eventType: "merchant.integration.updated",
       producer: "provider_mgmt",
       entityType: "provider", entityId: id, actorId: s.user_id,
       payload: { vendor: "POOLPAY", enabled: saved.enabled, env: saved.env },

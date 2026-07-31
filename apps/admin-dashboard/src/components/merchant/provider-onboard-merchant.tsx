@@ -47,7 +47,7 @@ export function ProviderOnboardMerchant({
       return r.json();
     },
     onSuccess: () => {
-      toast.success(`Merchant onboarded under ${providerLabel ?? "provider"} — APPLICATION stage`);
+      toast.success(`Banker onboarded under ${providerLabel ?? "merchant"} — APPLICATION stage`);
       setOpen(false);
       setForm({ merchant_code: "", legal_name: "", brand_name: "", business_type: "PRIVATE_LIMITED",
         category_mcc: "5411", contact_email: "", contact_phone: "", website: "", registered_address: "" });
@@ -61,19 +61,19 @@ export function ProviderOnboardMerchant({
   return (
     <>
       {!isControlled && (
-        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
+        <Button size="sm" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Onboard banker</Button>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Onboard merchant under {providerLabel ?? "this provider"}</DialogTitle>
+            <DialogTitle>Onboard merchant under {providerLabel ?? "this merchant"}</DialogTitle>
             <DialogDescription>
-              Creates a branch at APPLICATION stage, mapped to this provider for traceability.
+              Creates a banker at APPLICATION stage, mapped to this merchant for traceability.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Branch code</Label>
+              <Label>Banker code</Label>
               <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} placeholder="M-0001" />
             </div>
             <div className="space-y-1.5">

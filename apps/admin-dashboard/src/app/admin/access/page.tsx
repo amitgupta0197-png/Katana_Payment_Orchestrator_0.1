@@ -102,7 +102,7 @@ function AddUserDialog() {
             <div className="space-y-1.5">
               <Label>Scope ID</Label>
               <Input
-                placeholder={form.persona === "PROVIDER" ? "provider uuid" : "merchant code"}
+                placeholder={form.persona === "PROVIDER" ? "merchant uuid" : "merchant code"}
                 value={form.scope_id}
                 onChange={(e) => setForm({ ...form, scope_id: e.target.value })}
               />

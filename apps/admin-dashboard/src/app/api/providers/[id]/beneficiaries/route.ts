@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 function scopeDenied(session: any, id: string): NextResponse | null {
   if (session.persona === "PROVIDER" && session.scope_id !== id)
-    return NextResponse.json({ error: "providers can only manage their own beneficiaries" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only manage their own beneficiaries" }, { status: 403 });
   return null;
 }
 
@@ -61,7 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   try {
     const exists = await rows<{ id: string }>("provider", `SELECT id::text FROM providers WHERE id = $1::uuid`, [id]).catch(() => []);
-    if (!exists.length) return NextResponse.json({ error: "provider not found" }, { status: 404 });
+    if (!exists.length) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
 
     const ins = await rows<any>("provider", `
       INSERT INTO provider_beneficiary_accounts

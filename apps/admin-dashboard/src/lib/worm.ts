@@ -8,7 +8,7 @@ import { rows } from "@/lib/pg";
 export interface WormAppendInput {
   actorId?: string | null;
   actorEmail?: string | null;
-  action: string;          // "provider.kyc.approve" | "merchant.advance" | "submid.terminate"
+  action: string;          // "merchant.kyc.approve" | "merchant.advance" | "submid.terminate"
   resourceType: string;    // "provider" | "merchant" | "sub_mid"
   resourceId: string;
   before?: unknown;

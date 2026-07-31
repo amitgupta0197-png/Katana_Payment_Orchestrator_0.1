@@ -17,7 +17,7 @@ const REQUIRED_DOCS = ["PAN", "GST", "CIN", "MOA", "AOA", "BOARD_RESOLUTION", "A
 
 export default function ProviderKycPage() {
   const q = useQuery({
-    queryKey: ["pp:providers"],
+    queryKey: ["pp:merchants"],
     queryFn: async () => (await fetch("/api/providers").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { providers: Provider[] },
   });
 
@@ -35,13 +35,13 @@ export default function ProviderKycPage() {
   return (
     <>
       <PageHeader
-        title="Provider KYC"
-        description="Required KYC documents to keep your provider in good standing."
+        title="Merchant KYC"
+        description="Required KYC documents to keep your merchant in good standing."
         icon={FileCheck2}
       />
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle>{me?.legal_name ?? "Your provider"}</CardTitle>
+          <CardTitle>{me?.legal_name ?? "Your merchant"}</CardTitle>
           <CardDescription>
             Status: <Badge variant={statusVariant(me?.status)}>{me?.status ?? "—"}</Badge>{" "}
             · KYC: <Badge variant={statusVariant(me?.kyc_status)}>{me?.kyc_status ?? "—"}</Badge>

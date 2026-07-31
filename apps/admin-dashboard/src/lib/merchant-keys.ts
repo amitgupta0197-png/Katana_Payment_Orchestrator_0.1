@@ -18,7 +18,7 @@ export async function resolveMerchantScope(
   if (session.persona === "PROVIDER") {
     const codes = await resolveProviderMerchants(session);
     if (!codes.includes(code))
-      return { response: NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 }) };
+      return { response: NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 }) };
   }
   return { code };
 }

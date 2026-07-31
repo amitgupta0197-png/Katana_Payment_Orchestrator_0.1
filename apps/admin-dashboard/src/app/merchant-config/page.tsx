@@ -38,7 +38,7 @@ export default function MerchantConfigPage() {
 
   return (
     <>
-      <PageHeader title="Branch config" description="Feature-flag overrides per branch (PRODUCT_VISION §3.11)." icon={Sliders} />
+      <PageHeader title="Banker config" description="Feature-flag overrides per banker (PRODUCT_VISION §3.11)." icon={Sliders} />
       <Tabs defaultValue="flags">
         <TabsList>
           <TabsTrigger value="flags"><FlagIcon className="h-3.5 w-3.5" /> Flags
@@ -62,7 +62,7 @@ export default function MerchantConfigPage() {
           <DataView rows={overrides} columns={overrideCols} rowKey={(r) => r.id}
             search={{ placeholder: "Search by flag / subject…", fields: ["flag_key", "scope_value"] }}
             savedViewKey="merchant-config-overrides"
-            emptyTitle="No overrides yet" emptyDescription="Per-merchant overrides land here once set." />
+            emptyTitle="No overrides yet" emptyDescription="Per-banker overrides land here once set." />
         </TabsContent>
       </Tabs>
     </>

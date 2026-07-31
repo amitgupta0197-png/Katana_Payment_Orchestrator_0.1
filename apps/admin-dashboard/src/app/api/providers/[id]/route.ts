@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
 
   if (s.persona === "PROVIDER" && s.scope_id !== id)
-    return NextResponse.json({ error: "providers can only read own row" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only read own row" }, { status: 403 });
 
   try {
     const provider = await rows<any>("provider", `
@@ -109,9 +109,9 @@ const patchSchema = z.object({
 
 // Which transitions are sensitive enough to require a second approver.
 function isSensitive(fields: Record<string, unknown>): { action: string; payload: any } | null {
-  if (fields.kyc_status === "APPROVED") return { action: "provider.kyc.approve", payload: fields };
-  if (fields.kyc_status === "REJECTED") return { action: "provider.kyc.reject",  payload: fields };
-  if (fields.status     === "TERMINATED") return { action: "provider.status.terminate", payload: fields };
+  if (fields.kyc_status === "APPROVED") return { action: "merchant.kyc.approve", payload: fields };
+  if (fields.kyc_status === "REJECTED") return { action: "merchant.kyc.reject",  payload: fields };
+  if (fields.status     === "TERMINATED") return { action: "merchant.status.terminate", payload: fields };
   return null;
 }
 
@@ -132,7 +132,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     : new Set(["bank_account_no", "bank_ifsc", "contact_phone"]);
 
   if (s.persona === "PROVIDER" && s.scope_id !== id)
-    return NextResponse.json({ error: "providers can only update own row" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only update own row" }, { status: 403 });
 
   const fields = Object.fromEntries(
     Object.entries(body).filter(([k, v]) => allowed.has(k) && v !== undefined && k !== "notes"),
@@ -200,7 +200,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, before_state, after_state)
       VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb)
-    `, [id, s.email, "provider.updated", JSON.stringify(before[0]), JSON.stringify(fields)]).catch(() => {});
+    `, [id, s.email, "merchant.updated", JSON.stringify(before[0]), JSON.stringify(fields)]).catch(() => {});
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

@@ -67,7 +67,7 @@ export default function HardeningPage() {
     onSuccess: (b) => {
       setReport(b);
       qc.invalidateQueries({ queryKey: ["hardening"] });
-      toast.success(b.all_passed ? "All contract tests passed" : `Failures across ${b.reports.filter(r => r.failed).length} providers`);
+      toast.success(b.all_passed ? "All contract tests passed" : `Failures across ${b.reports.filter(r => r.failed).length} merchants`);
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });

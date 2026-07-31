@@ -105,7 +105,7 @@ function isFakeSender(sender: string | null | undefined, source: string): boolea
 const NOISE_APPS = [
   // Email clients
   "com.google.android.gm", "com.google.android.apps.inbox",
-  "com.microsoft.office.outlook", "com.samsung.android.email.provider",
+  "com.microsoft.office.outlook", "com.samsung.android.email.merchant",
   "com.yahoo.mobile.client.android.mail", "ru.mail.mailapp", "com.fsck.k9",
   // Chat / social
   "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger",

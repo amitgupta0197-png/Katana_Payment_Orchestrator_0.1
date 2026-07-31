@@ -141,8 +141,8 @@ export async function runCheckout(params: {
     await rows("checkout", `
       INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, reason)
       VALUES ($1::uuid, 'CREATED', 'FAILED', 'system', $2)
-    `, [orderRow.id, excluded.length ? `all providers excluded: ${excluded.map(e=>`${e.provider}=${e.reason}`).join(", ")}` : "no providers available for method"]).catch(() => {});
-    return { httpStatus: 503, body: { order: { ...orderRow, status: "FAILED" }, excluded, error: excluded.length ? "all providers excluded" : "no providers configured for method" } };
+    `, [orderRow.id, excluded.length ? `all providers excluded: ${excluded.map(e=>`${e.provider}=${e.reason}`).join(", ")}` : "no merchants available for method"]).catch(() => {});
+    return { httpStatus: 503, body: { order: { ...orderRow, status: "FAILED" }, excluded, error: excluded.length ? "all merchants excluded" : "no merchants configured for method" } };
   }
 
   // 3. Cascade through candidates until one resolves to a terminal-or-pending state.

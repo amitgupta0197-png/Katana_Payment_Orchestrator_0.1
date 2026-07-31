@@ -59,14 +59,14 @@ export default function SuperAdminCockpit() {
     if (s.queue.risk_cases > 0)
       alerts.push({ level: "info", title: `${s.queue.risk_cases} risk / AML cases`, detail: "Velocity hits + sanctions reviews.", href: "/risk", cta: "Review" });
     if (s.providers.kyc_pending > 0)
-      alerts.push({ level: "info", title: `${s.providers.kyc_pending} provider KYC pending`, href: "/providers?f=kyc:pending", cta: "Open" });
+      alerts.push({ level: "info", title: `${s.providers.kyc_pending} merchant KYC pending`, href: "/providers?f=kyc:pending", cta: "Open" });
     if (s.today.failed > 0 && s.today.transactions > 0 && (successRate ?? 100) < 95)
       alerts.push({ level: "critical", title: `Today's success rate is ${successRate}%`, detail: `${s.today.failed} of ${s.today.transactions} txns failed.`, href: "/checkout", cta: "Inspect" });
   }
 
   const quickActions = [
-    { label: "New provider",  icon: UserPlus,  href: "/providers?new=1" },
-    { label: "Onboard branch", icon: Store,  href: "/merchants?new=1" },
+    { label: "New merchant",  icon: UserPlus,  href: "/providers?new=1" },
+    { label: "Onboard banker", icon: Store,  href: "/merchants?new=1" },
     { label: "Approve queue", icon: ShieldCheck, href: "/admin/maker-checker" },
     { label: "KYB cases",    icon: FileCheck2, href: "/kyb" },
     { label: "Routing cockpit", icon: Activity, href: "/admin/routing" },
@@ -114,14 +114,14 @@ export default function SuperAdminCockpit() {
         <KpiTile label="KYB pending" value={s?.queue.kyb_pending ?? 0} icon={FileCheck2} variant={(s?.queue.kyb_pending ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} href="/kyb" />
         <KpiTile label="Disputes open" value={s?.queue.disputes_open ?? 0} icon={ShieldAlert} variant={(s?.queue.disputes_open ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} href="/disputes" />
         <KpiTile label="Risk / AML cases" value={s?.queue.risk_cases ?? 0} icon={ShieldAlert} loading={q.isLoading} href="/risk" />
-        <KpiTile label="Provider KYC pending" value={s?.providers.kyc_pending ?? 0} icon={UserPlus} loading={q.isLoading} href="/providers?f=kyc:pending" />
+        <KpiTile label="Merchant KYC pending" value={s?.providers.kyc_pending ?? 0} icon={UserPlus} loading={q.isLoading} href="/providers?f=kyc:pending" />
       </div>
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Portfolio</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Providers" value={s?.providers.total ?? 0} icon={UserPlus} loading={q.isLoading} href="/providers" />
-        <KpiTile label="Branches" value={s?.merchants.total ?? 0} icon={Store} loading={q.isLoading} href="/merchants" />
-        <KpiTile label="Branches live" value={s?.merchants.by_stage?.LIVE ?? 0} sublabel="reached LIVE stage" variant="success" loading={q.isLoading} href="/merchants?f=live" />
+        <KpiTile label="Merchants" value={s?.providers.total ?? 0} icon={UserPlus} loading={q.isLoading} href="/providers" />
+        <KpiTile label="Bankers" value={s?.merchants.total ?? 0} icon={Store} loading={q.isLoading} href="/merchants" />
+        <KpiTile label="Bankers live" value={s?.merchants.by_stage?.LIVE ?? 0} sublabel="reached LIVE stage" variant="success" loading={q.isLoading} href="/merchants?f=live" />
         <KpiTile label="In onboarding" value={STAGES.filter(x => x !== "LIVE").reduce((sum, st) => sum + (s?.merchants.by_stage?.[st] ?? 0), 0)} sublabel="across 5 pre-live stages" loading={q.isLoading} href="/merchants" />
       </div>
 

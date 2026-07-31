@@ -101,7 +101,7 @@ function KycDecisionDialog({
         <DialogHeader>
           <DialogTitle>{isApprove ? "Approve" : isReject ? "Reject" : "Mark in review"} — {provider.code}</DialogTitle>
           <DialogDescription>
-            {isApprove ? "Provider will be eligible to go live." : isReject ? "Provider cannot transact until re-submitted." : "Provider stays in IN_REVIEW state."}
+            {isApprove ? "Merchant will be eligible to go live." : isReject ? "Merchant cannot transact until re-submitted." : "Merchant stays in IN_REVIEW state."}
             {" "}Notes are written to the WORM audit log.
           </DialogDescription>
         </DialogHeader>
@@ -173,9 +173,9 @@ export default function ProviderDetailView({ id }: { id: string }) {
     return (
       <EmptyState
         icon={UserPlus}
-        title="Provider not found"
+        title="Merchant not found"
         description="It may have been terminated or you don't have access."
-        secondaryAction={{ label: "Back to providers", href: "/providers" }}
+        secondaryAction={{ label: "Back to merchants", href: "/providers" }}
       />
     );
   }
@@ -205,7 +205,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
     { key: "valid_to", header: "To", render: (r) => r.valid_to ? formatDateTime(r.valid_to) : "—" },
   ];
   const mapCols: Column<Mapping>[] = [
-    { key: "merchant_id", header: "Branch", render: (r) => (
+    { key: "merchant_id", header: "Banker", render: (r) => (
       <button onClick={() => setMerchantDrawer(r)} className="text-left text-[color:var(--color-brand)] hover:underline">
         <span className="font-medium">{r.merchant_name ?? r.merchant_code ?? r.merchant_id}</span>
         {r.merchant_code && r.merchant_name && <span className="ml-1.5 font-mono text-xs text-[color:var(--color-text-muted)]">{r.merchant_code}</span>}
@@ -217,7 +217,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
       <RowActions
         actions={[
           { label: "Open in drawer", icon: ExternalLink, onClick: () => setMerchantDrawer(r) },
-          { label: "Open branch page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
+          { label: "Open banker page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
         ]}
       />
     )},
@@ -302,12 +302,12 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Provider users ({users.length})</CardTitle>
           {canUpdate && (
-            <Button size="sm" onClick={() => toast.info("Add provider-user lands in WC-6 propagate")}><Plus className="h-4 w-4" /> Add user</Button>
+            <Button size="sm" onClick={() => toast.info("Add merchant-user lands in WC-6 propagate")}><Plus className="h-4 w-4" /> Add user</Button>
           )}
         </CardHeader>
         <CardContent>
           {users.length === 0
-            ? <EmptyState icon={Users} title="No provider users" description="Invite ops users so the provider team can self-manage." />
+            ? <EmptyState icon={Users} title="No merchant users" description="Invite ops users so the merchant team can self-manage." />
             : <DataTable columns={userCols} rows={users} rowKey={(r) => r.id} />}
         </CardContent>
       </Card>
@@ -327,17 +327,17 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
     )},
-    { key: "merchants", label: "Branches", icon: Network, count: mappings.length, content: (
+    { key: "merchants", label: "Bankers", icon: Network, count: mappings.length, content: (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
           {canMerchantCreate && (
-            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard branch</Button>
+            <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard banker</Button>
           )}
         </CardHeader>
         <CardContent>
           {mappings.length === 0
-            ? <EmptyState icon={Network} title="No branches mapped" description="Onboard branches under this provider to start volume." action={canMerchantCreate ? { label: "Onboard branch", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
+            ? <EmptyState icon={Network} title="No bankers mapped" description="Onboard bankers under this merchant to start volume." action={canMerchantCreate ? { label: "Onboard banker", icon: Plus, onClick: () => setOnboardOpen(true) } : undefined} />
             : <DataTable columns={mapCols} rows={mappings} rowKey={(r) => r.id} onRowClick={(r) => setMerchantDrawer(r)} />}
         </CardContent>
       </Card>
@@ -347,8 +347,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
         <IntegrationConfigCard providerId={id} canEdit={canAdmin} />
         <PaymentFunnel
           providerId={id}
-          title="Branch reconciliation funnel"
-          description="Live Katana Pay pay-ins across every branch under this provider."
+          title="Banker reconciliation funnel"
+          description="Live Katana Pay pay-ins across every banker under this merchant."
         />
       </div>
     )},
@@ -385,15 +385,15 @@ export default function ProviderDetailView({ id }: { id: string }) {
           {provider.status !== "TERMINATED" ? (
             <div className="flex items-center justify-between gap-3 rounded-md border border-[color:var(--color-danger)]/20 bg-[color:var(--color-danger-muted)]/30 p-3">
               <div>
-                <div className="text-sm font-medium">Terminate provider</div>
-                <div className="text-xs text-[color:var(--color-text-muted)]">Provider can no longer transact. Active branches must be re-mapped first.</div>
+                <div className="text-sm font-medium">Terminate merchant</div>
+                <div className="text-xs text-[color:var(--color-text-muted)]">Merchant can no longer transact. Active bankers must be re-mapped first.</div>
               </div>
               <Button variant="danger" onClick={() => { if (confirm(`Terminate ${provider.code}? This cannot be reversed without a maker-checker request.`)) statusMut.mutate("TERMINATED"); }}>
                 <XOctagon className="h-4 w-4" /> Terminate
               </Button>
             </div>
           ) : (
-            <Badge variant="danger">Provider is TERMINATED.</Badge>
+            <Badge variant="danger">Merchant is TERMINATED.</Badge>
           )}
         </CardContent>
       </Card>
@@ -418,7 +418,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   return (
     <>
       <DetailShell
-        breadcrumbs={[{ label: "Providers", href: "/providers" }, { label: provider.code }]}
+        breadcrumbs={[{ label: "Merchants", href: "/providers" }, { label: provider.code }]}
         backHref="/providers"
         title={provider.legal_name}
         subtitle={`Sub-admin reseller · PRODUCT_VISION §3.1`}
@@ -462,7 +462,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
                 <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-3">
                   <div className="text-[color:var(--color-text-muted)] text-xs uppercase tracking-wide mb-1">Mapping</div>
                   <div className="flex items-center justify-between">
-                    <span>Branch ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
+                    <span>Banker ID</span><span className="font-mono text-xs">{merchantDrawer.merchant_id}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Relation</span><Badge variant="brand">{merchantDrawer.relation}</Badge>
@@ -476,7 +476,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
                   <ActivityFeed resourceType="merchant" resourceId={merchantDrawer.merchant_id} limit={10} />
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <Button asChild className="flex-1"><Link href={`/merchants/${merchantDrawer.merchant_uuid ?? merchantDrawer.merchant_id}`}>Open branch page</Link></Button>
+                  <Button asChild className="flex-1"><Link href={`/merchants/${merchantDrawer.merchant_uuid ?? merchantDrawer.merchant_id}`}>Open banker page</Link></Button>
                 </div>
               </div>
             )}

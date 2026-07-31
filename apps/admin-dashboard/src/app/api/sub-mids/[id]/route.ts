@@ -26,7 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     // Scope check.
     if (s.persona === "PROVIDER" && sub[0].provider_id !== s.scope_id)
-      return NextResponse.json({ error: "sub-MID not owned by your provider" }, { status: 403 });
+      return NextResponse.json({ error: "sub-MID not owned by your merchant" }, { status: 403 });
     if (s.persona === "MERCHANT" && sub[0].merchant_id !== s.scope_id)
       return NextResponse.json({ error: "sub-MID not owned by your merchant" }, { status: 403 });
 

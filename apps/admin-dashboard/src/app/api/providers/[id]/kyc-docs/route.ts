@@ -36,7 +36,7 @@ function magicMatches(buf: Buffer, ct: string): boolean {
 // PROVIDER may only act on its own provider row.
 function scopeDenied(session: any, id: string): NextResponse | null {
   if (session.persona === "PROVIDER" && session.scope_id !== id)
-    return NextResponse.json({ error: "providers can only manage their own KYC docs" }, { status: 403 });
+    return NextResponse.json({ error: "merchants can only manage their own KYC docs" }, { status: 403 });
   return null;
 }
 
@@ -77,7 +77,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const exists = await rows<{ id: string }>("provider", `SELECT id::text FROM providers WHERE id = $1::uuid`, [id]).catch(() => []);
-    if (!exists.length) return NextResponse.json({ error: "provider not found" }, { status: 404 });
+    if (!exists.length) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
 
     const buf = Buffer.from(await file.arrayBuffer());
     if (!magicMatches(buf, ct))
@@ -99,12 +99,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       RETURNING id::text
     `, [id, docType, storageRef, sha]);
     if (!ins.length)
-      return NextResponse.json({ error: "this exact file was already uploaded for this provider" }, { status: 409 });
+      return NextResponse.json({ error: "this exact file was already uploaded for this merchant" }, { status: 409 });
 
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, s.email, "provider.kyc_doc.uploaded", JSON.stringify({ doc_type: docType, sha256: sha })]).catch(() => {});
+    `, [id, s.email, "merchant.kyc_doc.uploaded", JSON.stringify({ doc_type: docType, sha256: sha })]).catch(() => {});
 
     return NextResponse.json({ ok: true, document_id: ins[0].id, doc_type: docType, sha256: sha });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const m = await rows<any>("merchant", `SELECT merchant_code FROM merchants WHERE id = $1::uuid`, [id]);
     if (!m.length) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
     if (!codes.includes(m[0].merchant_code))
-      return NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 });
+      return NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 });
   }
 
   try {

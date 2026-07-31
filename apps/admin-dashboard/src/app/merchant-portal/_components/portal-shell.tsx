@@ -14,7 +14,7 @@ import { ThemeToggle } from "@/components/layout/theme-toggle";
 const NAV = [
   { href: "/merchant-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
   { href: "/merchant-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/merchant-portal/merchants",  label: "Branches",  icon: Store,           exact: false },
+  { href: "/merchant-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
   { href: "/merchant-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
   { href: "/merchant-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
   { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
@@ -38,7 +38,7 @@ export function ProviderPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Provider navigation"
+        aria-label="Merchant navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -48,7 +48,7 @@ export function ProviderPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Provider portal
+              Merchant portal
             </span>
           </div>
         </div>
@@ -75,7 +75,7 @@ export function ProviderPortalShell({
           })}
         </nav>
         <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · provider
+          v0.1.0 · merchant
         </div>
       </aside>
 
@@ -86,7 +86,7 @@ export function ProviderPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Provider</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Merchant</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

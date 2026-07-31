@@ -47,14 +47,14 @@ function ProviderRoutingCard({ sub }: { sub: SubMid }) {
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">Provider & pay-in routing</CardTitle>
+          <CardTitle className="text-base">Merchant & pay-in routing</CardTitle>
           <CardDescription>Assign to a provider; make active so new payins route through this sub-MID.</CardDescription>
         </div>
         <Badge variant={sub.active_payin ? "success" : "default"}>{sub.active_payin ? "active payin" : "inactive"}</Badge>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div className="space-y-1.5">
-          <span className="text-[color:var(--color-text-muted)]">Provider</span>
+          <span className="text-[color:var(--color-text-muted)]">Merchant</span>
           <select className={selClass} value={sub.provider_id || ""}
             onChange={(e) => m.mutate({ action: "assign_provider", provider_id: e.target.value || null })} disabled={m.isPending}>
             <option value="">— Unassigned —</option>
@@ -161,7 +161,7 @@ export default function SubMidDetailView({ id }: { id: string }) {
     <>
       <PageHeader
         title={sub.sub_mid_code}
-        description={`Main MID ${sub.main_mid_code} · merchant ${sub.merchant_id} · provider ${sub.provider_id || "—"}`}
+        description={`Main MID ${sub.main_mid_code} · banker ${sub.merchant_id} · merchant ${sub.provider_id || "—"}`}
         icon={Network}
         actions={
           <div className="flex items-center gap-2">
@@ -192,8 +192,8 @@ export default function SubMidDetailView({ id }: { id: string }) {
           <CardContent className="text-sm space-y-1">
             <div><span className="text-[color:var(--color-text-muted)]">Sub-MID code:</span> <span className="font-mono">{sub.sub_mid_code}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Main MID:</span> <span className="font-mono">{sub.main_mid_code}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Branch:</span> <span className="font-mono">{sub.merchant_id}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Provider:</span> <span className="font-mono">{sub.provider_id || "—"}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Banker:</span> <span className="font-mono">{sub.merchant_id}</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">Merchant:</span> <span className="font-mono">{sub.provider_id || "—"}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Requested:</span> {formatDateTime(sub.requested_at)}</div>
             <div><span className="text-[color:var(--color-text-muted)]">Approved:</span> {sub.approved_at ? formatDateTime(sub.approved_at) : "—"}</div>
             <div><span className="text-[color:var(--color-text-muted)]">Approved by:</span> {sub.approved_by || "—"}</div>

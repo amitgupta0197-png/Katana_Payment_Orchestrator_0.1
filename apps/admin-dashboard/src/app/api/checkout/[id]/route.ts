@@ -31,7 +31,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (s.persona === "PROVIDER") {
       const ids = await resolveProviderMerchants(s);
       if (!ids.includes(order[0].merchant_id))
-        return NextResponse.json({ error: "order's merchant not mapped to your provider" }, { status: 403 });
+        return NextResponse.json({ error: "order's merchant not mapped to your merchant" }, { status: 403 });
     }
 
     const events = await rows<any>("audit", `

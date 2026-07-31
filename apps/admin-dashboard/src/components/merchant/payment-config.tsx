@@ -64,7 +64,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 
   const block = useMutation({
     mutationFn: (next: boolean) => patch({ blocked: next }),
-    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Branch blocked — new pay-ins rejected" : "Branch unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
+    onSuccess: (d) => { toast[d.blocked ? "error" : "success"](d.blocked ? "Banker blocked — new pay-ins rejected" : "Banker unblocked"); qc.setQueryData(["merchant", merchantId, "payment-config"], d); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -78,7 +78,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Payment collection methods</CardTitle>
-          <CardDescription>Which methods this branch can collect payments through. Tap to toggle.</CardDescription>
+          <CardDescription>Which methods this banker can collect payments through. Tap to toggle.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           {blocked && <Badge variant="danger">BLOCKED</Badge>}
@@ -160,7 +160,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
       <CardContent className="space-y-3 text-sm">
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-          Enable Katana Pay collection for this branch
+          Enable Katana Pay collection for this banker
         </label>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -169,7 +169,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
           </div>
           <div className="space-y-1.5">
             <Label>Settlement VPA</Label>
-            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="branch@upi" />
+            <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="banker@upi" />
           </div>
           <div className="space-y-1.5">
             <Label>Environment</Label>

@@ -36,7 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, s.email, body.verified ? "provider.kyc_doc.verified" : "provider.kyc_doc.unverified",
+    `, [id, s.email, body.verified ? "merchant.kyc_doc.verified" : "merchant.kyc_doc.unverified",
         JSON.stringify({ doc_id: docId, doc_type: upd[0].doc_type })]).catch(() => {});
 
     return NextResponse.json({ document: upd[0] });
@@ -58,7 +58,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, s.email, "provider.kyc_doc.deleted", JSON.stringify({ doc_id: docId, doc_type: del[0].doc_type })]).catch(() => {});
+    `, [id, s.email, "merchant.kyc_doc.deleted", JSON.stringify({ doc_id: docId, doc_type: del[0].doc_type })]).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

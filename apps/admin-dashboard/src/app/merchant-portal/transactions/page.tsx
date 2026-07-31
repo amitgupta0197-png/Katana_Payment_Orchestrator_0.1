@@ -31,14 +31,14 @@ export default function ProviderTransactionsPage() {
   const t = d?.totals;
 
   const merCols: Column<ByMerchant>[] = [
-    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "count", header: "Txns", render: (r) => <span className="tabular-nums">{r.count}</span> },
     { key: "success", header: "Successful", render: (r) => <span className="tabular-nums">{r.success}</span> },
     { key: "gross", header: "Gross (reimbursable)", render: (r) => <span className="font-medium tabular-nums">{formatAmount(r.gross)}</span> },
   ];
   const recentCols: Column<Txn>[] = [
     { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
-    { key: "merchant_id", header: "Branch", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+    { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
     { key: "channel", header: "Channel", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
@@ -49,7 +49,7 @@ export default function ProviderTransactionsPage() {
     <>
       <PageHeader
         title="Transactions & Reimbursement"
-        description="Gross value across all channels for your assigned branches. Successful collections are reimbursable."
+        description="Gross value across all channels for your assigned bankers. Successful collections are reimbursable."
         icon={Receipt}
       />
 
@@ -57,18 +57,18 @@ export default function ProviderTransactionsPage() {
         <KpiTile label="Gross (reimbursable)" value={formatAmount(t?.gross ?? 0)} sublabel={`${t?.success_count ?? 0} successful`} icon={TrendingUp} variant="success" loading={q.isLoading} />
         <KpiTile label="Total transactions" value={t?.total_count ?? 0} icon={Receipt} loading={q.isLoading} />
         <KpiTile label="Pending" value={t?.pending_count ?? 0} variant={(t?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Branches" value={d?.merchants.length ?? 0} icon={Store} loading={q.isLoading} />
+        <KpiTile label="Bankers" value={d?.merchants.length ?? 0} icon={Store} loading={q.isLoading} />
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Gross by branch</CardTitle>
-            <CardDescription>Reimbursable gross per assigned branch.</CardDescription>
+            <CardTitle className="text-base">Gross by banker</CardTitle>
+            <CardDescription>Reimbursable gross per assigned banker.</CardDescription>
           </CardHeader>
           <CardContent>
             <DataTable columns={merCols} rows={d?.by_merchant ?? []} rowKey={(r) => r.merchant_id} loading={q.isLoading}
-              emptyState="No transactions yet for your branches." />
+              emptyState="No transactions yet for your bankers." />
           </CardContent>
         </Card>
         <Card>

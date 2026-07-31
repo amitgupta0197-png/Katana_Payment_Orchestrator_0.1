@@ -21,7 +21,7 @@ const codeBlock = "block whitespace-pre overflow-x-auto rounded-md border bg-[co
 export default function MerchantHelpPage() {
   return (
     <>
-      <PageHeader title="Help & guide" description="How to use your branch portal — API keys, webhooks, Sub-MIDs, and settlements." icon={HelpCircle} />
+      <PageHeader title="Help & guide" description="How to use your banker portal — API keys, webhooks, Sub-MIDs, and settlements." icon={HelpCircle} />
 
       {/* Quick links */}
       <Card className="mb-4">
@@ -127,12 +127,12 @@ X-Attempt:      1`}</code>
         <CardContent className="space-y-3 text-sm">
           <p>Open <strong>Sub-MIDs</strong> to see the MIDs assigned to you, each showing its parent Main MID, mode, KYC status, and whether settlement is enabled.</p>
           <div className="rounded-md border border-[color:var(--color-brand)]/30 bg-[color:var(--color-brand)]/5 p-3 text-xs">
-            <strong>Requesting a new Sub-MID:</strong> this is done by your <strong>provider / account manager</strong>, not self-service. Contact them with your expected volume and use-case, and the new Sub-MID will appear here once created.
+            <strong>Requesting a new Sub-MID:</strong> this is done by your <strong>merchant / account manager</strong>, not self-service. Contact them with your expected volume and use-case, and the new Sub-MID will appear here once created.
           </div>
           <ul className="space-y-1.5 text-xs text-[color:var(--color-text-muted)]">
             <li><Badge variant="info">TRAFFIC</Badge> handling live traffic.</li>
             <li><Badge variant="brand">KYC_APPROVED</Badge> KYC cleared.</li>
-            <li><strong>KYC status</strong> moves <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge>. Settlement is a separate switch that your provider enables.</li>
+            <li><strong>KYC status</strong> moves <Badge variant="warning">PENDING</Badge> → <Badge variant="success">APPROVED</Badge>. Settlement is a separate switch that your merchant enables.</li>
           </ul>
         </CardContent>
       </Card>

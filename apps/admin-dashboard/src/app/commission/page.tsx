@@ -25,7 +25,7 @@ export default function AdminCommissionPage() {
   const now = Date.now();
 
   const cols: Column<Rule>[] = [
-    { key: "provider_id", header: "Provider", render: (r) => <span className="font-mono text-xs">{r.provider_id?.slice(0, 8) ?? "—"}…</span> },
+    { key: "provider_id", header: "Merchant", render: (r) => <span className="font-mono text-xs">{r.provider_id?.slice(0, 8) ?? "—"}…</span> },
     { key: "rule_kind", header: "Kind", render: (r) => <Badge variant="brand">{r.rule_kind}</Badge> },
     { key: "rate_bps", header: "Rate (bps)", render: (r) => <span className="tabular-nums">{r.rate_bps}</span> },
     { key: "fixed_fee", header: "Fixed", render: (r) => <span className="tabular-nums">{formatAmount(r.fixed_fee, r.currency)}</span> },
@@ -35,13 +35,13 @@ export default function AdminCommissionPage() {
 
   return (
     <>
-      <PageHeader title="Commission" description="Provider commission rules across the platform (PRODUCT_VISION §3.11). Active rules accrue against branch volume." icon={Percent} />
+      <PageHeader title="Commission" description="Merchant commission rules across the platform (PRODUCT_VISION §3.11). Active rules accrue against banker volume." icon={Percent} />
       <DataView
         rows={rules}
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
-        search={{ placeholder: "Search by provider id or rule kind…", fields: ["provider_id", "rule_kind"] }}
+        search={{ placeholder: "Search by banker id or rule kind…", fields: ["provider_id", "rule_kind"] }}
         filters={[
           { key: "active",   label: "Active now", predicate: (r: Rule) => {
             if (new Date(r.valid_from).getTime() > now) return false;
@@ -55,7 +55,7 @@ export default function AdminCommissionPage() {
         savedViewKey="commission"
         refresh={() => q.refetch()}
         emptyTitle="No commission rules"
-        emptyDescription="Add a rule (bps + fixed) per provider to start accruing commission."
+        emptyDescription="Add a rule (bps + fixed) per banker to start accruing commission."
       />
     </>
   );

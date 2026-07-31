@@ -49,7 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const codes = await resolveProviderMerchants(s); // returns merchant_codes
     const m = await rows<{ merchant_code: string }>("merchant", `SELECT merchant_code FROM merchants WHERE id = $1::uuid`, [id]);
     if (!m.length || !codes.includes(m[0].merchant_code))
-      return NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 });
+      return NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 });
   }
 
   try {

@@ -58,7 +58,7 @@ export function scopeFor(
 
   if (s.persona === "PROVIDER") {
     if (!s.scope_id) throw new Error("PROVIDER session missing scope_id");
-    if (!cols.provider) throw new Error("table not provider-scopable; use providerMerchantJoin()");
+    if (!cols.provider) throw new Error("table not merchant-scopable; use providerMerchantJoin()");
     where.push(`${cols.provider} = $${i++}::uuid`);
     params.push(s.scope_id);
     return { where: `(${where.join(" AND ")})`, params, persona: s.persona, scope_id: s.scope_id };

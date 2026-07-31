@@ -140,7 +140,7 @@ export default function KybDetailView({ id }: { id: string }) {
   ];
   const screenCols: Column<ScreeningHit>[] = [
     { key: "hit_kind", header: "Kind", render: (r) => <Badge variant="danger">{r.hit_kind}</Badge> },
-    { key: "provider", header: "Provider", render: (r) => r.provider || "—" },
+    { key: "provider", header: "Merchant", render: (r) => r.provider || "—" },
     { key: "score", header: "Score", render: (r) => r.score || "—" },
     { key: "payload", header: "Payload", render: (r) => <span className="font-mono text-xs">{r.payload.slice(0, 60)}…</span> },
     { key: "created_at", header: "When", render: (r) => formatDateTime(r.created_at) },
@@ -158,7 +158,7 @@ export default function KybDetailView({ id }: { id: string }) {
         <Card>
           <CardHeader><CardTitle className="text-base">Case</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Branch</span><span className="font-mono">{kyb.merchant_id}</span></div>
+            <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Banker</span><span className="font-mono">{kyb.merchant_id}</span></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Status</span><Badge variant={statusVariant(kyb.status)}>{kyb.status}</Badge></div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Risk tier</span>{kyb.risk_tier ? <Badge variant={statusVariant(kyb.risk_tier)}>{kyb.risk_tier}</Badge> : <span>—</span>}</div>
             <div className="flex items-center justify-between"><span className="text-[color:var(--color-text-muted)]">Opened</span><span>{formatDateTime(kyb.opened_at)}</span></div>
@@ -193,7 +193,7 @@ export default function KybDetailView({ id }: { id: string }) {
         <CardHeader><CardTitle className="text-base">Documents ({docs.length})</CardTitle></CardHeader>
         <CardContent>
           {docs.length === 0
-            ? <EmptyState icon={FileText} title="No documents uploaded" description="The branch needs to upload PAN/GST/MOA before this case can advance." />
+            ? <EmptyState icon={FileText} title="No documents uploaded" description="The banker needs to upload PAN/GST/MOA before this case can advance." />
             : <DataTable columns={docCols} rows={docs} rowKey={(r) => r.id} />}
         </CardContent>
       </Card>
@@ -202,7 +202,7 @@ export default function KybDetailView({ id }: { id: string }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Screening hits ({screening.length})</CardTitle>
-          <CardDescription>Sanctions / PEP / adverse media providers.</CardDescription>
+          <CardDescription>Sanctions / PEP / adverse media merchants.</CardDescription>
         </CardHeader>
         <CardContent>
           {screening.length === 0

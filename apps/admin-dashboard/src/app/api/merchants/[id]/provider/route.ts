@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (s.persona === "PROVIDER") {
       const mapped = await resolveProviderMerchants(s);
       if (!mapped.includes(id) && !mapped.includes(merchant.merchant_code))
-        return NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 });
+        return NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 });
     }
 
     const mappings = await rows<any>("provider", `
@@ -90,7 +90,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const prov = await rows<any>("provider",
       `SELECT id, code FROM providers WHERE id = $1::uuid AND tenant_id = 'tenant-default'`, [body.provider_id]);
-    if (!prov.length) return NextResponse.json({ error: "provider not found" }, { status: 404 });
+    if (!prov.length) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
 
     await rows("provider", `
       INSERT INTO provider_merchant_mappings (provider_id, merchant_id, mapped_by)

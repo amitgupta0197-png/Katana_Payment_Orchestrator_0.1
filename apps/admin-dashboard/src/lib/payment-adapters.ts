@@ -1,4 +1,4 @@
-// Provider adapter contract (BRD §3 "Contract Testing" + §7 "provider adapter").
+// Provider adapter contract (BRD §3 "Contract Testing" + §7 "merchant adapter").
 //
 // Every PG / bank / VASP adapter implements `PaymentAdapter`. Real adapters
 // go through the BFF over gRPC to the provider-specific microservice; for

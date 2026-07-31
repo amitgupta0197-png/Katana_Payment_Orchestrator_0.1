@@ -53,7 +53,7 @@ export async function GET(req: Request) {
     } else if (providerParam || s.persona === "PROVIDER") {
       const providerId = providerParam ?? s.scope_id!;
       if (s.persona === "PROVIDER" && s.scope_id !== providerId)
-        return NextResponse.json({ error: "providers can only read own funnel" }, { status: 403 });
+        return NextResponse.json({ error: "merchants can only read own funnel" }, { status: 403 });
       scopeType = "provider"; scopeId = providerId;
       keys = await branchKeysForProvider(providerId);
     } else if (s.persona === "MERCHANT") {

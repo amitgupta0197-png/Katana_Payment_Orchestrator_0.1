@@ -93,7 +93,7 @@ export async function POST(req: Request) {
       SELECT id::text, label, beneficiary_name, account_number, ifsc, bank_name, mobile_number, vpa, transfer_mode
         FROM provider_beneficiary_accounts WHERE id = $1::uuid AND provider_id = $2::uuid AND active = true
     `, [body.beneficiary_id, providerId]))[0];
-    if (!ben) return NextResponse.json({ error: "beneficiary not found / not active for this provider" }, { status: 404 });
+    if (!ben) return NextResponse.json({ error: "beneficiary not found / not active for this merchant" }, { status: 404 });
 
     const purpose = body.purpose || purposeForAmount(body.amount);
     const ins = await rows<any>("provider", `

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const before = (await rows<any>("routingEngine",
       "SELECT circuit_state, consecutive_failures FROM provider_health_snapshot WHERE provider_code=$1",
       [provider]))[0];
-    if (!before) return NextResponse.json({ error: "provider not found in health snapshot" }, { status: 404 });
+    if (!before) return NextResponse.json({ error: "merchant not found in health snapshot" }, { status: 404 });
 
     if (body.action === "reset") {
       await resetCircuit(provider);

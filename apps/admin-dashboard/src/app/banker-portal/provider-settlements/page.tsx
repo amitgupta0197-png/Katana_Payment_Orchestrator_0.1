@@ -37,7 +37,7 @@ export default function BranchProviderSettlementsPage() {
   const toPay = list.filter((x) => x.status === "REQUESTED" || x.status === "REJECTED").reduce((s, x) => s + Number(x.amount || 0), 0);
 
   const cols: Column<Settlement>[] = [
-    { key: "provider", header: "Provider", render: (r) => <span className="font-medium">{r.provider_name ?? r.provider_code ?? "—"}</span> },
+    { key: "provider", header: "Merchant", render: (r) => <span className="font-medium">{r.provider_name ?? r.provider_code ?? "—"}</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "beneficiary", header: "Pay to", render: (r) => {
       const b = r.beneficiary_snapshot ?? {};
@@ -54,8 +54,8 @@ export default function BranchProviderSettlementsPage() {
   return (
     <>
       <PageHeader
-        title="Provider settlements"
-        description="Settlements your provider has raised. Pay the shown beneficiary account, then submit the UTR so the provider can verify it."
+        title="Merchant settlements"
+        description="Settlements your merchant has raised. Pay the shown beneficiary account, then submit the UTR so the merchant can verify it."
         icon={Banknote}
         actions={<Badge variant={q.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live · 10s</Badge>}
       />
@@ -67,9 +67,9 @@ export default function BranchProviderSettlementsPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Settlement requests</CardTitle><CardDescription>Submit the UTR after you pay — your provider verifies it in real time.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Settlement requests</CardTitle><CardDescription>Submit the UTR after you pay — your merchant verifies it in real time.</CardDescription></CardHeader>
         <CardContent>
-          <DataTable columns={cols} rows={list} rowKey={(r) => r.id} loading={q.isLoading} emptyState="No settlement requests from your provider yet." />
+          <DataTable columns={cols} rows={list} rowKey={(r) => r.id} loading={q.isLoading} emptyState="No settlement requests from your merchant yet." />
         </CardContent>
       </Card>
 
@@ -86,7 +86,7 @@ function SubmitUtrDialog({ settlement, onClose, onDone }: { settlement: Settleme
       const r = await fetch(`/api/settlements/${settlement!.id}/utr`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ utr, note: note || undefined }) });
       const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error ?? "Failed"); return d;
     },
-    onSuccess: () => { toast.success("UTR submitted", { description: "Your provider will verify it shortly." }); setUtr(""); setNote(""); onDone(); },
+    onSuccess: () => { toast.success("UTR submitted", { description: "Your merchant will verify it shortly." }); setUtr(""); setNote(""); onDone(); },
     onError: (e: Error) => toast.error("Couldn’t submit", { description: e.message }),
   });
   const b = settlement?.beneficiary_snapshot ?? {};

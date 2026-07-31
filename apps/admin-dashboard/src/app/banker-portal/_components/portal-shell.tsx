@@ -15,7 +15,7 @@ const NAV = [
   { href: "/banker-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
   { href: "/banker-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
   { href: "/banker-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
-  { href: "/banker-portal/provider-settlements", label: "Provider settlements", icon: Landmark, exact: false },
+  { href: "/banker-portal/provider-settlements", label: "Merchant settlements", icon: Landmark, exact: false },
   { href: "/banker-portal/reserves",    label: "Reserves",    icon: BookOpen,        exact: false },
   { href: "/banker-portal/sub-mids",    label: "Sub-MIDs",    icon: CreditCard,      exact: false },
   { href: "/banker-portal/api-keys",    label: "API keys",    icon: KeyRound,        exact: false },
@@ -40,7 +40,7 @@ export function MerchantPortalShell({
   return (
     <div className="flex min-h-screen">
       <aside
-        aria-label="Branch navigation"
+        aria-label="Banker navigation"
         className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
       >
         <div className="flex h-16 items-center gap-3 px-5 border-b">
@@ -50,7 +50,7 @@ export function MerchantPortalShell({
           <div className="flex flex-col">
             <span className="text-sm font-semibold leading-tight">Katana</span>
             <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Branch portal
+              Banker portal
             </span>
           </div>
         </div>
@@ -77,7 +77,7 @@ export function MerchantPortalShell({
           })}
         </nav>
         <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · branch
+          v0.1.0 · banker
         </div>
       </aside>
 
@@ -88,7 +88,7 @@ export function MerchantPortalShell({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Branch</Badge>
+            <Badge variant="brand" className="uppercase tracking-wide">Banker</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">

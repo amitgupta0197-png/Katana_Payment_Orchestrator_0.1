@@ -34,7 +34,7 @@ async function loadMerchant(session: any, id: string): Promise<{ ok: true; m: an
   if (session.persona === "PROVIDER") {
     const codes = await resolveProviderMerchants(session);
     if (!codes.includes(m.merchant_code))
-      return { ok: false, res: NextResponse.json({ error: "merchant not mapped to your provider" }, { status: 403 }) };
+      return { ok: false, res: NextResponse.json({ error: "merchant not mapped to your merchant" }, { status: 403 }) };
   }
   return { ok: true, m };
 }
