@@ -28,6 +28,7 @@ import {
   Sliders,
   ScrollText,
   Scale,
+  UserRound,
   Headphones,
   FileSearch,
   Briefcase,
@@ -77,6 +78,10 @@ const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
+// Account-level pages every signed-in persona must be able to reach, regardless of
+// how narrow their curated nav is.
+const ALWAYS_VISIBLE = ["/profile"];
+
 // Resolve the nav a given persona should see. SUPER_ADMIN/ADMIN see everything;
 // PROVIDER/MERCHANT use their existing tag-based subset; the internal personas use
 // the curated allow-list above; any unknown persona safely falls back to the full list.
@@ -84,13 +89,17 @@ export function personaNav(items: NavItem[], persona: NavPersona): NavItem[] {
   if (persona === "SUPER_ADMIN" || persona === "ADMIN") return filterNavForPersona(items, "SUPER_ADMIN");
   if (persona === "PROVIDER" || persona === "MERCHANT") return filterNavForPersona(items, persona);
   const allow = CURATED_NAV[persona];
-  if (allow) return items.filter((i) => allow.includes(i.href));
+  // ALWAYS_VISIBLE is appended to every curated list rather than repeated inside each
+  // one — otherwise adding an account-level page means editing five arrays, and any
+  // persona missed would have no way to change its own password.
+  if (allow) return items.filter((i) => allow.includes(i.href) || ALWAYS_VISIBLE.includes(i.href));
   return filterNavForPersona(items, "SUPER_ADMIN");
 }
 
 export const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live", group: "Overview", personas: SHARED_PERSONAS },
   { href: "/admin-log", label: "Admin Log", icon: ScrollText, status: "live", group: "Overview" },
+  { href: "/profile", label: "My Profile", icon: UserRound, status: "live", group: "Overview" },
 
   { href: "/providers",        label: "Providers",       icon: UserPlus, status: "live", group: "Payment Management" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },

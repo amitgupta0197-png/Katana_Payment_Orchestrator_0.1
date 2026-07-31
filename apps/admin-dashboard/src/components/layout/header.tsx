@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { LogOut, Shield } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
@@ -40,10 +41,16 @@ export async function Header() {
       )}
       <div className="flex items-center gap-3">
         {session && (
-          <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
+          // The identity block doubles as the way into account settings — that is where
+          // people look for "change my password", not in the sidebar.
+          <Link
+            href="/profile"
+            title="My profile — change password"
+            className="hidden sm:flex flex-col items-end leading-tight text-xs rounded-md px-2 py-1 -mr-1 transition-colors hover:bg-[color:var(--color-surface-muted)]"
+          >
             <span className="font-medium text-[color:var(--color-text)]">{session.full_name || session.email}</span>
             <span className="text-[color:var(--color-text-muted)]">{session.email}</span>
-          </div>
+          </Link>
         )}
         <ThemeToggle />
         {session ? (
