@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -11,6 +11,19 @@ export const metadata: Metadata = {
     default: "Katana — Payment Orchestrator",
   },
   description: "Operations console for the Katana Payment Orchestrator platform",
+};
+
+// Without this, mobile browsers assume a ~980px desktop viewport and scale the whole page
+// down — which is why the dashboard read as "not responsive" on a phone even though the
+// layouts already carry breakpoints. This makes CSS pixels match device pixels so those
+// breakpoints actually fire.
+//
+// maximumScale/userScalable are deliberately left at their defaults: pinch-zoom stays
+// available, because disabling it breaks accessibility for anyone who needs to zoom.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",   // respect the safe-area insets on notched phones
 };
 
 // Persona portals + login own their chrome. Sniff the path Next.js sets in

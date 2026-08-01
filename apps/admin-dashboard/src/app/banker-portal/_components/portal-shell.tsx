@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { PortalMobileNav } from "@/components/layout/portal-mobile-nav";
 
 const NAV = [
   { href: "/banker-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
@@ -84,11 +85,12 @@ export function MerchantPortalShell({
       <div className="flex flex-1 flex-col min-w-0">
         <header
           role="banner"
-          className="flex h-16 items-center justify-between gap-4 border-b bg-[color:var(--color-surface)] px-6"
+          className="flex h-16 items-center justify-between gap-2 border-b bg-[color:var(--color-surface)] px-4 sm:gap-4 sm:px-6"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-sm font-semibold truncate">{scopeLabel}</span>
-            <Badge variant="brand" className="uppercase tracking-wide">Banker</Badge>
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <PortalMobileNav nav={NAV} subtitle="Banker portal" />
+            <span className="truncate text-sm font-semibold">{scopeLabel}</span>
+            <Badge variant="brand" className="hidden uppercase tracking-wide sm:inline-flex">Banker</Badge>
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
@@ -97,13 +99,13 @@ export function MerchantPortalShell({
             </div>
             <ThemeToggle />
             <Button variant="secondary" size="sm" onClick={logout}>
-              <LogOut className="h-4 w-4" /> Logout
+              <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </header>
         <main
           role="main"
-          className="flex-1 overflow-y-auto px-6 py-8 bg-[color:var(--color-surface-muted)]"
+          className="flex-1 overflow-y-auto bg-[color:var(--color-surface-muted)] px-4 py-5 sm:px-6 sm:py-8"
         >
           <div className="mx-auto max-w-7xl">{children}</div>
         </main>

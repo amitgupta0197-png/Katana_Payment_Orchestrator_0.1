@@ -32,7 +32,11 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "clay-surface fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-3xl p-6",
+        // Mobile: leave a 1rem gutter either side instead of bleeding to the screen edge,
+        // and cap the height so a tall form scrolls INSIDE the dialog. Without max-h the
+        // content simply overflowed the viewport and the footer buttons became unreachable
+        // on a phone — the form could be filled in but not submitted.
+        "clay-surface fixed left-1/2 top-1/2 z-50 grid max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-3xl p-4 sm:w-full sm:p-6",
         className,
       )}
       {...props}
