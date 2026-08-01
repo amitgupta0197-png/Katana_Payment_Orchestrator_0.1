@@ -50,7 +50,14 @@ const createSchema = z.object({
   legal_name: z.string().min(2).max(255),
   contact_email: z.string().email(),
   contact_phone: z.string().optional(),
-  kind: z.enum(["PROVIDER","AGENT","PARTNER","FRANCHISE"]).default("PROVIDER"),
+  // Stored enum, constrained by providers.kind CHECK — the values predate the
+  // Provider→Merchant rename and cannot change without a data migration. "MERCHANT" is
+  // accepted as an alias and normalised to PROVIDER, because that is what the UI now calls
+  // this party and what any caller reading the current screens will send.
+  kind: z.preprocess(
+    (v) => (typeof v === "string" && v.toUpperCase() === "MERCHANT" ? "PROVIDER" : v),
+    z.enum(["PROVIDER","AGENT","PARTNER","FRANCHISE"]).default("PROVIDER"),
+  ),
   bank_account_no: z.string().optional(),
   bank_ifsc: z.string().optional(),
   settlement_currency: z.string().default("INR"),

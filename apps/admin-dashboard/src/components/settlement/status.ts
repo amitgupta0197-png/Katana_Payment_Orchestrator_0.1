@@ -19,3 +19,12 @@ export const SETTLEMENT_STATUS_LABEL: Record<string, string> = {
   REVIEW: "Under review",
   CANCELLED: "Cancelled",
 };
+
+/**
+ * Function form of the label map. The settlement controls expect this shape; the map is
+ * kept exported because other screens already index it directly. Falls back to the raw
+ * status so an unmapped value renders as itself rather than blank.
+ */
+export function settlementStatusLabel(s: string): string {
+  return SETTLEMENT_STATUS_LABEL[s] ?? s;
+}

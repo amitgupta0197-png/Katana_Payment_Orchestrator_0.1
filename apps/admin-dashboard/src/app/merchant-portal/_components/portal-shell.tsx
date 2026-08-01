@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle,
+  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Contact, Banknote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,11 @@ const NAV = [
   { href: "/merchant-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
   { href: "/merchant-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
   { href: "/merchant-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
+  { href: "/merchant-portal/settlements", label: "Settlements", icon: Banknote,      exact: false },
   { href: "/merchant-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
+  // The vendor registry page has existed all along but was never linked, so it was
+  // reachable only by typing the URL.
+  { href: "/merchant-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
   { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/merchant-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
   { href: "/merchant-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },

@@ -29,6 +29,16 @@ interface Provider {
   user_count: number; doc_count: number; merchant_count: number; created_at: string;
 }
 
+// Stored enum values (providers.kind CHECK constraint) shown in the current vocabulary.
+// PROVIDER is the party the UI now calls "Merchant" — the value cannot be renamed without
+// a data migration, so only the label changes here.
+const KIND_OPTIONS = [
+  { value: "PROVIDER",  label: "Merchant" },
+  { value: "AGENT",     label: "Agent" },
+  { value: "PARTNER",   label: "Partner" },
+  { value: "FRANCHISE", label: "Franchise" },
+];
+
 interface IssuedLogin { email?: string; password?: string | null; existing?: boolean; error?: string; banker_id?: string }
 interface CreateResult {
   code: string;
@@ -102,7 +112,7 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
           <DialogDescription>
             {result
               ? "Share these credentials now — one-time passwords are shown only once."
-              : "Kind: PROVIDER, AGENT, PARTNER, FRANCHISE. Optionally provision the merchant login, DT banker login and first banker in one go."}
+              : "Kind: Merchant, Agent, Partner or Franchise. Optionally provision the merchant login, DT banker login and first banker in one go."}
           </DialogDescription></DialogHeader>
         {result ? (
           <div className="space-y-2">
@@ -119,7 +129,21 @@ function CreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
               {(["code","legal_name","contact_email","contact_phone","kind"] as const).map((k) => (
                 <div key={k} className={k === "legal_name" ? "space-y-1.5 col-span-2" : "space-y-1.5"}>
                   <Label>{k.replace(/_/g," ")}</Label>
-                  <Input value={(form as Record<string, string>)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+                  {k === "kind" ? (
+                    // `kind` is a stored enum with a CHECK constraint — PROVIDER/AGENT/
+                    // PARTNER/FRANCHISE. It was a free-text box, so after the rename the
+                    // obvious thing to type here ("MERCHANT") was rejected by the API. Show
+                    // the new vocabulary, send the stored value.
+                    <select
+                      className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
+                      value={form.kind}
+                      onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                    >
+                      {KIND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  ) : (
+                    <Input value={(form as Record<string, string>)[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+                  )}
                 </div>
               ))}
             </div>
