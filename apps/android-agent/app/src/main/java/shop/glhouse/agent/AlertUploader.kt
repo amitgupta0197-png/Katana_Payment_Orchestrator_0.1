@@ -187,7 +187,11 @@ object AlertUploader {
             put("device_id", Prefs.deviceId(ctx))
             Prefs.merchantCode(ctx).takeIf { it.isNotBlank() }?.let { put("merchant_id", it) }
             put("label", Prefs.deviceLabel())
-            put("app_version", PARSER_VERSION)
+            // The REAL app version. This used to send PARSER_VERSION ("1.0"), so a phone
+            // running 2.37 reported itself as 1.0 — which sent us chasing a phantom "old
+            // build" for an hour on 2026-08-05. Parser version is reported separately.
+            put("app_version", BuildConfig.VERSION_NAME)
+            put("parser_version", PARSER_VERSION)
             put("notif_access", notifAccess)
             put("agent_enabled", Prefs.enabled(ctx))
             // Which payment-app capture engines this phone runs (merchant-selected).
@@ -195,6 +199,11 @@ object AlertUploader {
             // Whether hands-free capture is armed. Without it the dashboard cannot tell
             // that a "Get RRN" request can never be answered by this phone.
             put("auto_capture", Prefs.autoCapture(ctx))
+            // Capture counters: how many notifications this phone has seen, parsed, and —
+            // the number that matters — DROPPED because they looked like money but could
+            // not be parsed. A phone with seen>0 and parsed=0 is deaf, and until now that
+            // was invisible from the server.
+            Prefs.countersSnapshot(ctx).forEach { (k, v) -> put("ctr_$k", v) }
         }.toString()
 
     // cb(reachable): true once the server was reached (regardless of merchant validity),

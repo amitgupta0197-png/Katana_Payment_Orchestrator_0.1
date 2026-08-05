@@ -37,6 +37,7 @@ class ClipReaderActivity : Activity() {
         val masked = intent.getStringExtra("masked") ?: run { done(); return }
         val full = readClipboard()
         if (full != null && matchesMask(full, masked)) {
+            Prefs.bump(applicationContext, "capture_ok")
             RrnStore.record(
                 RrnRecord(
                     rrn = full,

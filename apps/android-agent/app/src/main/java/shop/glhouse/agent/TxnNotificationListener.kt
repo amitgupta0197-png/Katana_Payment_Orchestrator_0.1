@@ -63,13 +63,57 @@ class TxnNotificationListener : NotificationListenerService() {
             AlertStore.log(applicationContext, "${nowTag()} 🔔 paytm-notif: ${content.take(90)}")
         }
 
-        val txn = TxnParser.parse(content, sbn.packageName) ?: return
+        Prefs.bump(applicationContext, "seen")
 
+        val txn = TxnParser.parse(content, sbn.packageName)
+        if (txn == null) {
+            // THE SILENT DROP THIS EXISTS TO KILL. On 2026-08-05 a real ₹250 credit was
+            // discarded here — its notification ("Mr Kush … ₹250 · Bank Account") carries no
+            // credit keyword, so the parser returned null and the payment vanished with no
+            // counter, no log and nothing sent. From the server it was indistinguishable
+            // from "no payment happened".
+            //
+            // Anything that looks like money but did not parse is now counted and reported
+            // (redacted) so the format can be fixed instead of silently losing payments.
+            if (looksLikeMoney(content)) {
+                Prefs.bump(applicationContext, "dropped")
+                val redacted = redact(content)
+                AlertStore.log(applicationContext, "${nowTag()} ⚠️ unparsed: ${redacted.take(70)}")
+                // Report at most one sample per distinct format per day: enough to fix the
+                // parser, never enough to become a data-exfiltration channel or a flood.
+                val fmtKey = "unparsed|${sbn.packageName}|${redacted.hashCode()}"
+                if (!AlertStore.seenRecently(applicationContext, fmtKey)) {
+                    AlertUploader.sendAgentDebug(
+                        applicationContext, "unparsed",
+                        "pkg=${sbn.packageName}\n$redacted",
+                    )
+                }
+            }
+            return
+        }
+
+        Prefs.bump(applicationContext, "parsed")
         val key = "${txn.amount}|${txn.utr ?: content.hashCode()}"
         if (!AlertStore.seenRecently(applicationContext, key)) {
+            Prefs.bump(applicationContext, "uploaded")
             AlertUploader.send(applicationContext, txn, "NOTIFICATION", sbn.packageName)
         }
     }
+
+    // A notification worth reporting when it fails to parse: it mentions a currency amount.
+    // Deliberately broader than TxnParser — the whole point is to catch formats the parser
+    // does not yet understand, including ones with no credit/debit keyword at all.
+    private fun looksLikeMoney(s: String): Boolean =
+        Regex("(₹|Rs\\.?|INR)\\s?[0-9]").containsMatchIn(s)
+
+    // Keep the SHAPE of the message (that is what fixes a parser) and drop the PII.
+    // Amounts survive because amount extraction is exactly what we are debugging; long
+    // digit runs (account numbers, UTRs, phone numbers) are masked to the same length so
+    // format-detection still works without shipping the real values.
+    private fun redact(s: String): String =
+        s.replace(Regex("(?<![₹0-9])\\b\\d{6,}\\b")) { "#".repeat(it.value.length) }
+            .replace(Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+"), "<vpa>")
+            .take(300)
 
     private fun nowTag(): String =
         java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())

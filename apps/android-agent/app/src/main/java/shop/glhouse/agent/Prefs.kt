@@ -15,6 +15,20 @@ object Prefs {
 
     private fun sp(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
+    // ── Capture counters ─────────────────────────────────────────────────────
+    // Sent on every heartbeat. Without these a deaf phone is indistinguishable from a
+    // quiet one: a real ₹250 payment was dropped by the parser on 2026-08-05 and nothing
+    // anywhere recorded that it had even been seen. "dropped" is the number that matters —
+    // notifications that looked like money and could not be parsed.
+    fun bump(ctx: Context, key: String, by: Int = 1) {
+        val k = "ctr_$key"
+        sp(ctx).edit().putInt(k, sp(ctx).getInt(k, 0) + by).apply()
+    }
+    fun counter(ctx: Context, key: String): Int = sp(ctx).getInt("ctr_$key", 0)
+    fun countersSnapshot(ctx: Context): Map<String, Int> =
+        listOf("seen", "parsed", "dropped", "uploaded", "capture_try", "capture_ok", "capture_fail")
+            .associateWith { counter(ctx, it) }
+
     fun baseUrl(ctx: Context): String {
         val stored = sp(ctx).getString("base_url", null)?.trim()?.trimEnd('/')
         // One-time migration to the official domain. A phone still pointing at the old

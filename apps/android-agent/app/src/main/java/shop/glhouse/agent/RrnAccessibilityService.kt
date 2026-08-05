@@ -222,7 +222,7 @@ class RrnAccessibilityService : AccessibilityService() {
                     amount = amount, payer = payer, upiId = "",
                     paidAt = "", maskedRef = rrn, bank = "AIRTEL",
                 ))
-                if (fresh) Log.d(TAG, "airtel: RRN $rrn amount=$amount payer=$payer")
+                if (fresh) { Prefs.bump(this, "capture_ok"); Log.d(TAG, "airtel: RRN $rrn amount=$amount payer=$payer") }
             }
         }
 
@@ -297,7 +297,7 @@ class RrnAccessibilityService : AccessibilityService() {
             amount = amount, payer = payer, upiId = "",
             paidAt = "", maskedRef = rrn, bank = "GPAY",
         ))
-        if (fresh) Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer")
+        if (fresh) { Prefs.bump(this, "capture_ok"); Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer") }
     }
 
     // Flutter semantics live in contentDescription; also fold in any real text nodes.
@@ -309,6 +309,20 @@ class RrnAccessibilityService : AccessibilityService() {
     }
 
     // ---------------------------------------------------------------- detail
+
+    // A capture attempt that went nowhere, with the reason. Counted for the heartbeat and
+    // reported once per distinct reason per day so a Paytm layout change surfaces as a
+    // fixable message instead of a queue of expired requests.
+    private fun noteCaptureFail(reason: String) {
+        Prefs.bump(this, "capture_fail")
+        AlertStore.log(applicationContext, "${nowTag()} ⚠️ capture failed: $reason")
+        if (!AlertStore.seenRecently(applicationContext, "capfail|$reason")) {
+            AlertUploader.sendAgentDebug(applicationContext, "capture-fail", reason)
+        }
+    }
+
+    private fun nowTag(): String =
+        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
 
     private fun handleDetail(
         ordered: List<Pair<String, AccessibilityNodeInfo>>, texts: List<String>, autoMode: Boolean
@@ -329,6 +343,8 @@ class RrnAccessibilityService : AccessibilityService() {
         val rrnLabelIdx = texts.indexOfFirst { it.equals("RRN", true) }
         if (rrnLabelIdx < 0) return
 
+        Prefs.bump(this, "capture_try")
+
         var masked: String? = null
         var copyNode: AccessibilityNodeInfo? = null
         for (i in rrnLabelIdx + 1 until ordered.size) {
@@ -336,7 +352,13 @@ class RrnAccessibilityService : AccessibilityService() {
             if (masked == null && maskedRrn.containsMatchIn(t)) masked = maskedRrn.find(t)!!.value
             if (masked != null && t.trim().equals("Copy", true)) { copyNode = ordered[i].second; break }
         }
-        if (masked == null || copyNode == null) return
+        if (masked == null || copyNode == null) {
+            // The screen has an RRN label but not the shape we expect — usually a Paytm
+            // layout change. Previously this returned silently and the capture request just
+            // expired, telling nobody anything.
+            noteCaptureFail(if (masked == null) "no masked RRN after label" else "no Copy node after RRN")
+            return
+        }
         // Tell the auto-sweep whether this row is new or an already-captured
         // boundary (this is how the sweep knows where "new" ends).
         if (autoNavigating) lastOpenResult = if (RrnStore.isMaskedCaptured(masked)) R_OLD else R_NEW
@@ -346,6 +368,7 @@ class RrnAccessibilityService : AccessibilityService() {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Log.w(TAG, "screenshot capture needs Android 11+; cannot auto-tap on this device")
+            noteCaptureFail("Android ${Build.VERSION.SDK_INT} — on-screen capture needs Android 11+")
             attempts[masked] = MAX_ATTEMPTS
             return
         }

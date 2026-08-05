@@ -20,6 +20,9 @@ interface Device {
   // is paused on the device, so capture requests will expire unfulfilled no matter how
   // healthy the rest of the agent looks.
   capture_apps: string; auto_capture: boolean | null; rrn_capture_ready: boolean;
+  // Device-reported capture counters. `dropped` = notifications that looked like money and
+  // could not be parsed, i.e. payments this phone saw and lost.
+  counters: Record<string, number> | null;
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -32,11 +35,15 @@ export function MerchantPortalAgentCard() {
     queryFn: async () => {
       const r = await fetch("/api/banker-portal/agent");
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return (await r.json()) as { merchant_code: string; devices: Device[]; any_permitted: boolean };
+      return (await r.json()) as {
+        merchant_code: string; devices: Device[]; any_permitted: boolean;
+        unparsed?: { body: string; created_at: string }[];
+      };
     },
     refetchInterval: 20_000,
   });
   const devices = q.data?.devices ?? [];
+  const unparsed = q.data?.unparsed ?? [];
   const code = q.data?.merchant_code ?? "";
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
   const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
@@ -100,6 +107,30 @@ export function MerchantPortalAgentCard() {
               </span>
               <span className={MUTED}>{d.last_heartbeat ? `seen ${formatDateTime(d.last_heartbeat)}` : "no heartbeat"}</span>
             </div>
+            {d.counters && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className={MUTED}>
+                  Notifications: seen {d.counters.seen ?? 0} · parsed {d.counters.parsed ?? 0} · forwarded {d.counters.uploaded ?? 0}
+                </span>
+                {(d.counters.dropped ?? 0) > 0 && (
+                  <span>
+                    dropped <Badge variant="danger">{d.counters.dropped}</Badge>
+                  </span>
+                )}
+                {(d.counters.capture_try ?? 0) > 0 && (
+                  <span className={MUTED}>
+                    RRN captures: {d.counters.capture_ok ?? 0}/{d.counters.capture_try}
+                    {(d.counters.capture_fail ?? 0) > 0 ? ` · ${d.counters.capture_fail} failed` : ""}
+                  </span>
+                )}
+              </div>
+            )}
+            {(d.counters?.dropped ?? 0) > 0 && (
+              <div className="mt-1.5 text-xs text-[color:var(--color-danger)]">
+                This phone saw {d.counters!.dropped} payment notification(s) it could not read — those
+                credits were lost. The formats are listed below; they need a parser update.
+              </div>
+            )}
             {!d.rrn_capture_ready && (
               <div className={`mt-1.5 text-xs ${MUTED}`}>
                 {d.auto_capture === false
@@ -113,6 +144,29 @@ export function MerchantPortalAgentCard() {
             )}
           </div>
         ))}
+
+        {/* Notification formats the phone recognised as money but could not parse. Each one
+            is a payment that was seen and lost — and each is a parser fix. Values are
+            redacted on the device: long digit runs masked, VPAs replaced. */}
+        {unparsed.length > 0 && (
+          <div className="mt-4 rounded-lg border border-dashed p-3">
+            <div className="text-xs font-semibold">
+              Unreadable payment notifications ({unparsed.length})
+            </div>
+            <p className={`mt-1 text-xs ${MUTED}`}>
+              The agent saw these, recognised an amount, and could not understand the format — so
+              nothing was forwarded. Send these to support and the parser can be taught them.
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {unparsed.map((u, i) => (
+                <div key={i} className="rounded-md bg-[color:var(--color-surface-muted)] p-2">
+                  <div className={`text-[10px] ${MUTED}`}>{formatDateTime(u.created_at)}</div>
+                  <div className="mt-0.5 break-words font-mono text-[11px]">{u.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

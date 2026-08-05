@@ -10,6 +10,13 @@ plugins {
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply { if (keystorePropsFile.exists()) load(keystorePropsFile.inputStream()) }
 
+// HMAC key the agent signs device requests with. MUST equal the server's
+// AGENT_SIGNING_SECRET. Hoisted out of defaultConfig so the release guard below can see it.
+val DEV_SIGNING_SECRET = "dev-agent-signing-secret"
+val agentSigningSecret: String = (keystoreProps["agentSigningSecret"] as String?)
+    ?: (project.findProperty("agentSigningSecret") as String?)
+    ?: DEV_SIGNING_SECRET
+
 android {
     namespace = "shop.glhouse.agent"
     compileSdk = 34
@@ -18,15 +25,9 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 52
-        versionName = "2.38"
+        versionCode = 53
+        versionName = "2.39"
 
-        // HMAC key the agent uses to sign its requests to the orchestrator device routes.
-        // MUST equal the server's AGENT_SIGNING_SECRET. Read from keystore.properties
-        // (git-ignored) or a -PagentSigningSecret gradle prop; dev fallback otherwise.
-        val agentSigningSecret = (keystoreProps["agentSigningSecret"] as String?)
-            ?: (project.findProperty("agentSigningSecret") as String?)
-            ?: "dev-agent-signing-secret"
         buildConfigField("String", "AGENT_SIGNING_SECRET", "\"$agentSigningSecret\"")
     }
 
@@ -45,6 +46,21 @@ android {
             }
         }
     }
+
+    // A release APK built with the dev fallback secret can never authenticate: it 401s on
+    // every device route, so the phone silently fails to enroll. That shipped once
+    // (2026-08-05) because keystore.properties had no agentSigningSecret and the build
+    // quietly fell through to the default. Refuse to produce such an APK at all.
+    tasks.matching { it.name.startsWith("assemble") && it.name.contains("Release") }
+        .configureEach {
+            doFirst {
+                if (agentSigningSecret == DEV_SIGNING_SECRET) error(
+                    "Refusing to build a release APK with the dev signing secret.\n" +
+                    "Set agentSigningSecret in keystore.properties (git-ignored), or pass\n" +
+                    "-PagentSigningSecret=<value>. It MUST equal the server's AGENT_SIGNING_SECRET.",
+                )
+            }
+        }
 
     buildTypes {
         release {

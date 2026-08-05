@@ -25,14 +25,29 @@ const schema = z.object({
   capture_apps: z.string().max(200).optional(),
   // Hands-free capture armed. "Get RRN" is a no-op on the device without it.
   auto_capture: z.boolean().optional(),
+  parser_version: z.string().max(40).optional(),
   agent_enabled: z.boolean().optional(),  // device-reported: forwarding enabled
-});
+}).passthrough();   // ctr_* counters are read off the raw body below
+
+// Capture counters arrive as flat ctr_<name> fields so the agent can add one without a
+// schema change on either side. `dropped` is the important one: notifications that looked
+// like money and could not be parsed — i.e. payments being seen and lost.
+function readCounters(raw: Record<string, unknown>): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith("ctr_") && typeof v === "number" && Number.isFinite(v)) {
+      out[k.slice(4)] = Math.max(0, Math.trunc(v));
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export async function POST(req: Request) {
   const rawText = await req.text();
   const auth = verifyDeviceRequest(req, rawText);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body; try { body = schema.parse(JSON.parse(rawText)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+  const counters = readCounters(body as unknown as Record<string, unknown>);
 
   // Which public domain this device actually contacted (nginx forwards the original
   // Host). Recorded per-device so the glhouse.shop -> katanapay.co migration can be
@@ -54,8 +69,8 @@ export async function POST(req: Request) {
     }
 
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, counters, parser_version, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -69,10 +84,13 @@ export async function POST(req: Request) {
         -- able to overwrite a previously non-empty value.
         capture_apps = $10,
         auto_capture = $11,
+        counters = COALESCE($12::jsonb, vendor_devices.counters),
+        parser_version = COALESCE($13, vendor_devices.parser_version),
         last_heartbeat = now(), updated_at = now()
     `, [body.device_id, body.merchant_id ?? null, body.label ?? null, body.sim_id ?? null, body.app_hash ?? null,
         body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host,
-        body.capture_apps ?? null, body.auto_capture ?? null]);
+        body.capture_apps ?? null, body.auto_capture ?? null,
+        counters ? JSON.stringify(counters) : null, body.parser_version ?? null]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;

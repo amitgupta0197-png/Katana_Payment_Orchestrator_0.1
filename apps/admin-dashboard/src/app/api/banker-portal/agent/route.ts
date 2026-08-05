@@ -21,7 +21,7 @@ export async function GET() {
       SELECT device_id, COALESCE(label,'') AS label, status,
              notif_access, agent_enabled, COALESCE(app_version,'') AS app_version,
              COALESCE(capture_apps,'') AS capture_apps,
-             auto_capture,
+             auto_capture, counters,
              last_heartbeat,
              (last_heartbeat IS NOT NULL AND last_heartbeat >= now() - ($2 || ' seconds')::interval) AS online,
              created_at
@@ -38,10 +38,19 @@ export async function GET() {
       // separately rather than folding it into `permitted`, which gates alert forwarding.
       rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0 && d.auto_capture === true,
     }));
+    // Notification formats this phone saw, recognised as money, and could not parse. These
+    // are the payments being lost — each distinct sample is a parser fix.
+    const unparsed = await rows<{ body: string; created_at: string }>("vendorGateway", `
+      SELECT body, created_at FROM vendor_agent_debug
+       WHERE merchant_id = $1 AND label = 'unparsed'
+       ORDER BY created_at DESC LIMIT 10
+    `, [merchantCode]).catch(() => []);
+
     return NextResponse.json({
       merchant_code: merchantCode,
       devices: shaped,
       any_permitted: shaped.some((d: any) => d.permitted),
+      unparsed,
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
