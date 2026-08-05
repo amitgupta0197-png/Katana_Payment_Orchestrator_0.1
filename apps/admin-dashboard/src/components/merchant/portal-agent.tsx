@@ -16,6 +16,10 @@ interface Device {
   device_id: string; label: string; status: string;
   notif_access: boolean | null; agent_enabled: boolean | null; app_version: string;
   last_heartbeat: string | null; online: boolean; permitted: boolean;
+  // Payment apps the phone has capture engines enabled for. Empty = on-screen RRN capture
+  // is paused on the device, so capture requests will expire unfulfilled no matter how
+  // healthy the rest of the agent looks.
+  capture_apps: string; rrn_capture_ready: boolean;
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -84,8 +88,21 @@ export function MerchantPortalAgentCard() {
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
               <span>Approved: <Badge variant={d.status === "TRUSTED" ? "success" : "warning"}>{d.status === "TRUSTED" ? "yes" : "pending"}</Badge></span>
               <span>Notification access: <Badge variant={ynVar(d.notif_access)}>{yn(d.notif_access)}</Badge></span>
+              <span>
+                RRN capture:{" "}
+                <Badge variant={d.rrn_capture_ready ? "success" : "warning"}>
+                  {d.rrn_capture_ready ? d.capture_apps : "no payment app selected"}
+                </Badge>
+              </span>
               <span className={MUTED}>{d.last_heartbeat ? `seen ${formatDateTime(d.last_heartbeat)}` : "no heartbeat"}</span>
             </div>
+            {!d.rrn_capture_ready && (
+              <div className={`mt-1.5 text-xs ${MUTED}`}>
+                RRN capture is paused on this phone. Open the agent, pick the payment app it should
+                read (e.g. Paytm Business) and turn on Accessibility for the agent — until then
+                &ldquo;Get RRN&rdquo; requests expire unanswered.
+              </div>
+            )}
           </div>
         ))}
       </CardContent>

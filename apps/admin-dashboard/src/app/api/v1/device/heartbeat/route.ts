@@ -19,6 +19,10 @@ const schema = z.object({
   app_hash: z.string().max(128).optional(),
   app_version: z.string().max(40).optional(),
   notif_access: z.boolean().optional(),   // device-reported: notification access granted
+  // Payment apps this phone has capture engines enabled for. Empty string = none selected,
+  // which means on-screen RRN capture is PAUSED on the device — the difference between a
+  // phone that can return an RRN and one that never will.
+  capture_apps: z.string().max(200).optional(),
   agent_enabled: z.boolean().optional(),  // device-reported: forwarding enabled
 });
 
@@ -48,8 +52,8 @@ export async function POST(req: Request) {
     }
 
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -59,9 +63,13 @@ export async function POST(req: Request) {
         notif_access = COALESCE($7, vendor_devices.notif_access),
         agent_enabled = COALESCE($8, vendor_devices.agent_enabled),
         last_host = COALESCE($9, vendor_devices.last_host),
+        -- Not COALESCEd: an empty list is meaningful (capture switched off), so it must be
+        -- able to overwrite a previously non-empty value.
+        capture_apps = $10,
         last_heartbeat = now(), updated_at = now()
     `, [body.device_id, body.merchant_id ?? null, body.label ?? null, body.sim_id ?? null, body.app_hash ?? null,
-        body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host]);
+        body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host,
+        body.capture_apps ?? null]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;
