@@ -18,8 +18,8 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 51
-        versionName = "2.37"
+        versionCode = 52
+        versionName = "2.38"
 
         // HMAC key the agent uses to sign its requests to the orchestrator device routes.
         // MUST equal the server's AGENT_SIGNING_SECRET. Read from keystore.properties

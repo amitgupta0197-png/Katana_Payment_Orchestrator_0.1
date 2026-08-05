@@ -192,6 +192,9 @@ object AlertUploader {
             put("agent_enabled", Prefs.enabled(ctx))
             // Which payment-app capture engines this phone runs (merchant-selected).
             put("capture_apps", Prefs.captureApps(ctx).sorted().joinToString(","))
+            // Whether hands-free capture is armed. Without it the dashboard cannot tell
+            // that a "Get RRN" request can never be answered by this phone.
+            put("auto_capture", Prefs.autoCapture(ctx))
         }.toString()
 
     // cb(reachable): true once the server was reached (regardless of merchant validity),

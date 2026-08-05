@@ -56,8 +56,18 @@ object Prefs {
 
     // Hands-free RRN capture: while Paytm Business is left on the payments list, the
     // accessibility engine opens each new payment and captures its RRN automatically.
-    // Default off (it drives the foreground); intended for a dedicated capture phone.
-    fun autoCapture(ctx: Context): Boolean = sp(ctx).getBoolean("auto_capture", false)
+    //
+    // Default ON since 2026-08-05. It was off, and that silently broke the whole on-demand
+    // path: CommandPoller only re-sweeps `if (Prefs.autoCapture(ctx))`, so every dashboard
+    // "Get RRN" request was received, logged, and then dropped — four in a row expired
+    // unanswered on a phone that was otherwise correctly configured (TRUSTED, accessibility
+    // on, Paytm selected). A capture agent that cannot answer a capture request is not a
+    // useful default.
+    //
+    // This DRIVES THE FOREGROUND — it opens each payment and presses Back — so it assumes a
+    // dedicated capture phone. Anyone using the phone for other things can turn it off in
+    // the app; an explicit choice is stored and this default no longer applies to them.
+    fun autoCapture(ctx: Context): Boolean = sp(ctx).getBoolean("auto_capture", true)
     fun setAutoCapture(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("auto_capture", v).apply()
 
     // Payment apps this merchant receives money on. The accessibility engine only

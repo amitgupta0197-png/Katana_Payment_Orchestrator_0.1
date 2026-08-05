@@ -19,7 +19,7 @@ interface Device {
   // Payment apps the phone has capture engines enabled for. Empty = on-screen RRN capture
   // is paused on the device, so capture requests will expire unfulfilled no matter how
   // healthy the rest of the agent looks.
-  capture_apps: string; rrn_capture_ready: boolean;
+  capture_apps: string; auto_capture: boolean | null; rrn_capture_ready: boolean;
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -91,16 +91,24 @@ export function MerchantPortalAgentCard() {
               <span>
                 RRN capture:{" "}
                 <Badge variant={d.rrn_capture_ready ? "success" : "warning"}>
-                  {d.rrn_capture_ready ? d.capture_apps : "no payment app selected"}
+                  {d.rrn_capture_ready
+                    ? d.capture_apps
+                    : !d.capture_apps ? "no payment app selected"
+                    : d.auto_capture === false ? "auto-capture off"
+                    : "not reported"}
                 </Badge>
               </span>
               <span className={MUTED}>{d.last_heartbeat ? `seen ${formatDateTime(d.last_heartbeat)}` : "no heartbeat"}</span>
             </div>
             {!d.rrn_capture_ready && (
               <div className={`mt-1.5 text-xs ${MUTED}`}>
-                RRN capture is paused on this phone. Open the agent, pick the payment app it should
-                read (e.g. Paytm Business) and turn on Accessibility for the agent — until then
-                &ldquo;Get RRN&rdquo; requests expire unanswered.
+                {d.auto_capture === false
+                  ? <>Auto-capture is off on this phone, so &ldquo;Get RRN&rdquo; requests are received and then
+                      dropped. Turn on auto-capture in the agent and leave the payment app on its
+                      payments list.</>
+                  : <>RRN capture is paused on this phone. Open the agent, pick the payment app it
+                      should read (e.g. Paytm Business) and turn on Accessibility for the agent —
+                      until then &ldquo;Get RRN&rdquo; requests expire unanswered.</>}
               </div>
             )}
           </div>

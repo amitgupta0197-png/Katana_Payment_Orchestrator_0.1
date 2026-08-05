@@ -21,6 +21,7 @@ export async function GET() {
       SELECT device_id, COALESCE(label,'') AS label, status,
              notif_access, agent_enabled, COALESCE(app_version,'') AS app_version,
              COALESCE(capture_apps,'') AS capture_apps,
+             auto_capture,
              last_heartbeat,
              (last_heartbeat IS NOT NULL AND last_heartbeat >= now() - ($2 || ' seconds')::interval) AS online,
              created_at
@@ -35,7 +36,7 @@ export async function GET() {
       // On-screen RRN capture is paused on the device until a payment app is selected, so a
       // phone can be fully "permitted" and still never return an RRN. Surface that
       // separately rather than folding it into `permitted`, which gates alert forwarding.
-      rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0,
+      rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0 && d.auto_capture === true,
     }));
     return NextResponse.json({
       merchant_code: merchantCode,

@@ -23,6 +23,8 @@ const schema = z.object({
   // which means on-screen RRN capture is PAUSED on the device — the difference between a
   // phone that can return an RRN and one that never will.
   capture_apps: z.string().max(200).optional(),
+  // Hands-free capture armed. "Get RRN" is a no-op on the device without it.
+  auto_capture: z.boolean().optional(),
   agent_enabled: z.boolean().optional(),  // device-reported: forwarding enabled
 });
 
@@ -52,8 +54,8 @@ export async function POST(req: Request) {
     }
 
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -66,10 +68,11 @@ export async function POST(req: Request) {
         -- Not COALESCEd: an empty list is meaningful (capture switched off), so it must be
         -- able to overwrite a previously non-empty value.
         capture_apps = $10,
+        auto_capture = $11,
         last_heartbeat = now(), updated_at = now()
     `, [body.device_id, body.merchant_id ?? null, body.label ?? null, body.sim_id ?? null, body.app_hash ?? null,
         body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host,
-        body.capture_apps ?? null]);
+        body.capture_apps ?? null, body.auto_capture ?? null]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;
