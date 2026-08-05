@@ -68,11 +68,17 @@ export default function TransactionsPage() {
     queryKey: ["mp:credits"],
     queryFn: async () => (await fetch("/api/banker-portal/credits").then((r) => r.json())) as {
       credits: Credit[];
-      summary: { total: number; confirmed: number; unmatched: number; today_count: number; today_amount: number; last_at: string | null };
+      test_credits: Credit[];
+      summary: {
+        total: number; confirmed: number; unmatched: number;
+        today_count: number; today_amount: number; last_at: string | null;
+        test_count: number; test_amount: number;
+      };
     },
     refetchInterval: 15_000,   // this is the screen you watch while testing the agent
   });
   const credits = creditsQ.data?.credits ?? [];
+  const testCredits = creditsQ.data?.test_credits ?? [];
   const creditSummary = creditsQ.data?.summary;
 
   const creditCols: Column<Credit>[] = [
@@ -137,6 +143,32 @@ export default function TransactionsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Test alerts from the agent's "Test" button. Kept in their own card and excluded
+          from every total above, so a commissioning test can never be mistaken for — or
+          added to — real collected money. */}
+      {testCredits.length > 0 && (
+        <Card className="mb-4 border-dashed">
+          <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
+            <div className="min-w-0">
+              <CardTitle className="text-base text-[color:var(--color-text-muted)]">Test alerts</CardTitle>
+              <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
+                {creditSummary?.test_count ?? testCredits.length} test{(creditSummary?.test_count ?? testCredits.length) === 1 ? "" : "s"} · {formatAmount(creditSummary?.test_amount ?? 0)} — <b>not counted</b> in the totals above.
+              </p>
+            </div>
+            <Badge variant="default" className="shrink-0">excluded</Badge>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={creditCols}
+              rows={testCredits}
+              loading={creditsQ.isLoading}
+              rowKey={(r) => r.id}
+              emptyState="No test alerts."
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mb-4">
         <CardContent className="py-4">
