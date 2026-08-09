@@ -60,5 +60,18 @@ async function run() {
   return { checked: pending.length, confirmed, failed, still_pending: stillPending, unreachable, no_creds: noCreds };
 }
 
-export async function GET() { return NextResponse.json({ ok: true, ...(await run()) }); }
-export async function POST() { return NextResponse.json({ ok: true, ...(await run()) }); }
+// Whitelisted in middleware (PUBLIC_API), so it carries its own auth like the other crons.
+// Without this any caller could make us fire up to BATCH outbound Verify calls per request.
+function guard(req: Request) {
+  const key = process.env.FIFO_CRON_KEY;
+  if (!key) return NextResponse.json({ error: "cron disabled (FIFO_CRON_KEY unset)" }, { status: 503 });
+  if (req.headers.get("x-cron-key") !== key) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  return null;
+}
+
+export async function GET(req: Request) {
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+}
+export async function POST(req: Request) {
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+}
