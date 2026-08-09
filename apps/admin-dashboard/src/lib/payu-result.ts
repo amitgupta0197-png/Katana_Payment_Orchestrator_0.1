@@ -37,6 +37,55 @@ export interface PayuOutcome {
   applied: boolean;
 }
 
+/**
+ * Apply a result we obtained by ASKING PayU (Verify Payment API) rather than being told.
+ *
+ * No reverse hash here on purpose: the verify call was itself authenticated with our
+ * key+salt and answered by PayU directly, so the reply is trusted the same way a signed
+ * callback is. This is the authoritative channel — with UPI the customer approves in their
+ * app and frequently never returns to the browser, so neither surl/furl nor the webhook is
+ * guaranteed to fire.
+ *
+ * Shares the same "already final" guard as the callback path, so a payment can be
+ * confirmed by whichever channel gets there first without ever being counted twice.
+ */
+export async function applyVerifiedPayuStatus(input: {
+  txnid: string; payuStatus: string; mihpayid?: string; bankRefNum?: string;
+}): Promise<{ applied: boolean; status: "SUCCESS" | "FAILED" | "UNKNOWN"; reason?: string }> {
+  const o = (await rows<any>("checkout",
+    `SELECT id, merchant_id, status FROM checkout_orders WHERE txn_id = $1 LIMIT 1`,
+    [input.txnid]).catch(() => []))[0];
+  if (!o) return { applied: false, status: "UNKNOWN", reason: "unknown_txn" };
+  if (o.status === "SUCCESS" || o.status === "FAILED") {
+    return { applied: false, status: o.status, reason: "already_final" };
+  }
+
+  const s = input.payuStatus.toLowerCase();
+  // Only "success" is success. PayU explicitly advises treating pending AND failure as
+  // unsuccessful unless verified otherwise, so a pending payment is left alone to be
+  // re-checked on the next sweep rather than being written off.
+  if (s !== "success" && s !== "failure" && s !== "failed") {
+    return { applied: false, status: "UNKNOWN", reason: `still ${s}` };
+  }
+  const nextStatus: "SUCCESS" | "FAILED" = s === "success" ? "SUCCESS" : "FAILED";
+
+  await rows("checkout", `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid`, [nextStatus, o.id]).catch(() => {});
+  await rows("checkout", `
+    INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, reason, payload)
+    VALUES ($1::uuid, $2, $3, 'gateway', $4, $5::jsonb)
+  `, [o.id, o.status, nextStatus, `payu verify_payment: ${s}`,
+      JSON.stringify({ source: "verify_api", payu_status: s, mihpayid: input.mihpayid ?? null, bank_ref_num: input.bankRefNum ?? null })]).catch(() => {});
+  await enqueueWebhook({
+    merchantId: o.merchant_id, orderId: o.id,
+    eventType: nextStatus === "SUCCESS" ? "payment.success" : "payment.failed",
+    payload: { txn_id: input.txnid, provider: "PAYU", status: nextStatus,
+               mihpayid: input.mihpayid ?? null, bank_ref_num: input.bankRefNum ?? null,
+               source: "verify_api" },
+  }).catch(() => null);
+
+  return { applied: true, status: nextStatus };
+}
+
 /** Parse a PayU POST body, which may be JSON or form-encoded depending on channel. */
 export async function parsePayuBody(req: Request): Promise<Record<string, string>> {
   const ct = req.headers.get("content-type") ?? "";
