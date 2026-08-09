@@ -1,6 +1,6 @@
 // Provider transactions + gross value across ALL channels for the provider's
 // assigned merchants (for reimbursement). Unions checkout_orders (PayU / Cashfree
-// / Razorpay / … via selected_rail) and vendor_payin_orders (PoolPay / Quickpay).
+// / Razorpay / … via selected_rail) and vendor_payin_orders (Katana Pay / vendor PG).
 //
 // PROVIDER only (middleware restricts /api/merchant-portal/* to PROVIDER persona).
 

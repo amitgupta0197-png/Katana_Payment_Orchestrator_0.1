@@ -1,14 +1,16 @@
 "use client";
 
 // Provider Transactions & Reimbursement — gross value across all channels
-// (PoolPay / Quickpay / PayU / Cashfree / Razorpay …) for the provider's
+// (Katana Pay / vendor PG / PayU / Cashfree / Razorpay …) for the provider's
 // assigned merchants. Backed by /api/merchant-portal/transactions.
 
 import { useQuery } from "@tanstack/react-query";
-import { Receipt, TrendingUp, Store, Network } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Receipt, TrendingUp, Store, Network, Download } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
@@ -20,6 +22,7 @@ interface Txn { source: string; merchant_id: string; channel: string; method: st
 interface Data { merchants: string[]; totals: Totals; by_merchant: ByMerchant[]; by_channel: ByChannel[]; recent: Txn[] }
 
 export default function ProviderTransactionsPage() {
+  const router = useRouter();
   const q = useQuery({
     queryKey: ["pp:transactions"],
     queryFn: async () => (await fetch("/api/merchant-portal/transactions").then(async (r) => {
@@ -51,6 +54,11 @@ export default function ProviderTransactionsPage() {
         title="Transactions & Reimbursement"
         description="Gross value across all channels for your assigned bankers. Successful collections are reimbursable."
         icon={Receipt}
+        actions={
+          <Button variant="secondary" size="sm" asChild>
+            <a href="/api/merchant-portal/transactions/export"><Download className="h-4 w-4" /> Download CSV</a>
+          </Button>
+        }
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -74,7 +82,7 @@ export default function ProviderTransactionsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Gross by channel</CardTitle>
-            <CardDescription>Katana Pay · Quickpay · PayU · Cashfree · Razorpay …</CardDescription>
+            <CardDescription>Katana Pay · PayU · Cashfree · Razorpay …</CardDescription>
           </CardHeader>
           <CardContent>
             {(d?.by_channel ?? []).length === 0 ? (
@@ -107,7 +115,10 @@ export default function ProviderTransactionsPage() {
           <CardDescription>Across all channels, newest first.</CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Only CHECKOUT rows have a detail view — their ref is the order id. PoolPay /
+              vendor pay-ins live in another service and have no page to open. */}
           <DataTable columns={recentCols} rows={d?.recent ?? []} rowKey={(r) => `${r.source}:${r.ref}`} loading={q.isLoading}
+            onRowClick={(r) => { if (r.source === "CHECKOUT") router.push(`/merchant-portal/transactions/${r.ref}`); }}
             emptyState="No transactions yet." />
         </CardContent>
       </Card>

@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   let p: Record<string, string>;
   try { p = await parsePayuBody(req); } catch { return new NextResponse("bad request", { status: 400 }); }
 
-  const r = await applyPayuResult(p);
+  const r = await applyPayuResult(p, "return");
   if (!r.txnid) return new NextResponse("missing txnid", { status: 400 });
   if (!r.matched) return redirectTo(null, base, { txnid: r.txnid, status: "UNKNOWN", error: r.reason ?? "unknown_txn" });
 

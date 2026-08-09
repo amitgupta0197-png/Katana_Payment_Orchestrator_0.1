@@ -116,7 +116,8 @@ export const navItems: NavItem[] = [
   { href: "/bank-adapter", label: "Bank Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/crypto-rail", label: "Crypto Rails", icon: Coins, status: "live", group: "Money Movement" },
   { href: "/vendors/poolpay", label: "Katana Pay", icon: CreditCard, status: "live", group: "Money Movement" },
-  { href: "/vendors/quickpay", label: "Quickpay", icon: CreditCard, status: "live", group: "Money Movement" },
+  // Display name only — the rail code stays QUICKPAY in the DB, adapters and routes.
+  { href: "/vendors/quickpay", label: "Vendor PG", icon: CreditCard, status: "live", group: "Money Movement" },
 
   { href: "/partner-data", label: "Partner Data", icon: GitMerge, status: "live", group: "Money Movement" },
   { href: "/reserves", label: "Reserves", icon: BookOpen, status: "live", group: "Money Movement" },

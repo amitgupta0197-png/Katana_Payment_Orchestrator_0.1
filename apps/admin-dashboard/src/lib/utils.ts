@@ -48,9 +48,14 @@ export function statusVariant(status: string | null | undefined): StatusVariant 
 // Display label for a payment rail / vendor code. The stored vendor identifier
 // stays "POOLPAY" (DB value + API contract), but the product is branded "Katana
 // Pay" in the UI — so map it here at render time. Unknown codes pass through.
+// Display names for rail codes. The code is the contract (stored in rows, sent to
+// vendors); this map is the only place the customer-facing name is decided, so a
+// rename never has to touch data. Anything unmapped falls through to its raw code.
 const RAIL_LABELS: Record<string, string> = {
   POOLPAY: "Katana Pay",
   POOLPAY_PO: "Katana Pay Payout",
+  QUICKPAY: "Vendor PG",
+  QUICKPAY_PO: "Vendor PG Payout",
 };
 
 export function railLabel(code: string | null | undefined): string {

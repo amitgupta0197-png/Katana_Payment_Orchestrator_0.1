@@ -51,6 +51,7 @@ async function run() {
 
     const r = await applyVerifiedPayuStatus({
       txnid: o.txn_id, payuStatus: v.status, mihpayid: v.mihpayid, bankRefNum: v.bankRefNum,
+      raw: v.raw,
     });
     if (r.applied && r.status === "SUCCESS") confirmed++;
     else if (r.applied && r.status === "FAILED") failed++;

@@ -21,6 +21,7 @@ import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
+import { capturePaymentDetails } from "@/lib/payment-details";
 
 export interface PayuOutcome {
   /** false when the payload had no txnid, or no order matches it. */
@@ -51,11 +52,22 @@ export interface PayuOutcome {
  */
 export async function applyVerifiedPayuStatus(input: {
   txnid: string; payuStatus: string; mihpayid?: string; bankRefNum?: string;
+  /** PayU's transaction_details entry, kept verbatim for the merchant-facing detail view. */
+  raw?: Record<string, unknown>;
 }): Promise<{ applied: boolean; status: "SUCCESS" | "FAILED" | "UNKNOWN"; reason?: string }> {
   const o = (await rows<any>("checkout",
     `SELECT id, merchant_id, status FROM checkout_orders WHERE txn_id = $1 LIMIT 1`,
     [input.txnid]).catch(() => []))[0];
   if (!o) return { applied: false, status: "UNKNOWN", reason: "unknown_txn" };
+
+  // Detail is worth keeping even for an order that is already final or still pending:
+  // this is often the only channel that ever describes a payment whose callback was lost.
+  await capturePaymentDetails({
+    orderId: o.id, provider: "PAYU", source: "verify_api",
+    payload: { ...(input.raw ?? {}), status: input.payuStatus,
+               mihpayid: input.mihpayid, bank_ref_num: input.bankRefNum },
+  });
+
   if (o.status === "SUCCESS" || o.status === "FAILED") {
     return { applied: false, status: o.status, reason: "already_final" };
   }
@@ -106,7 +118,10 @@ export async function parsePayuBody(req: Request): Promise<Record<string, string
  * and the webhook racing each other cannot double-fire the merchant's webhook or
  * double-count the payment. Whichever arrives first wins; the second reports applied=false.
  */
-export async function applyPayuResult(p: Record<string, string>): Promise<PayuOutcome> {
+export async function applyPayuResult(
+  p: Record<string, string>,
+  source: "webhook" | "return" = "webhook",
+): Promise<PayuOutcome> {
   const txnid = p.txnid || p.txnId || "";
   const payuStatus = (p.status || "").toLowerCase();
   if (!txnid) return { matched: false, txnid: "", status: "UNKNOWN", hashOk: false, dest: null, reason: "missing txnid", applied: false };
@@ -129,6 +144,13 @@ export async function applyPayuResult(p: Record<string, string>): Promise<PayuOu
 
   const success = payuStatus === "success" && hashOk;
   const nextStatus: "SUCCESS" | "FAILED" = success ? "SUCCESS" : "FAILED";
+
+  // Record the gateway's own account of the payment before the status guard below —
+  // a duplicate delivery applies nothing to the order but may still carry detail the
+  // first delivery lacked, and there is no reason to discard it.
+  await capturePaymentDetails({
+    orderId: o.id, provider: "PAYU", source, hashVerified: hashOk, payload: p,
+  });
 
   let applied = false;
   if (o.status !== "SUCCESS" && o.status !== "FAILED") {

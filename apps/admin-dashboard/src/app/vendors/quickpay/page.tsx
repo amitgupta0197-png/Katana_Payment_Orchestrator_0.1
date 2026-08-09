@@ -1,6 +1,6 @@
 "use client";
 
-// L1 — Quickpay vendor cockpit. Tabbed (Orders / Credentials).
+// L1 — vendor PG cockpit (rail code QUICKPAY). Tabbed (Orders / Credentials).
 
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, KeyRound } from "lucide-react";
@@ -41,7 +41,7 @@ export default function QuickpayCockpit() {
 
   return (
     <>
-      <PageHeader title="Quickpay cockpit" description="Sandbox dispatcher + production observability (PRODUCT_VISION §3.6)." icon={CreditCard} />
+      <PageHeader title="Vendor PG cockpit" description="Sandbox dispatcher + production observability (PRODUCT_VISION §3.6)." icon={CreditCard} />
       <Tabs defaultValue="orders">
         <TabsList>
           <TabsTrigger value="orders">Orders
@@ -60,7 +60,7 @@ export default function QuickpayCockpit() {
               { key: "pending", label: "Pending", predicate: (r: Order) => r.status === "PENDING" || r.status === "INITIATED" },
             ]}
             savedViewKey="vendor-quickpay" refresh={() => q.refetch()}
-            emptyTitle="No Quickpay orders yet" />
+            emptyTitle="No vendor PG orders yet" />
         </TabsContent>
         <TabsContent value="creds">
           <DataView rows={creds} columns={credCols} rowKey={(r) => r.id}

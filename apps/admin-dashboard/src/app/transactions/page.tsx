@@ -1,7 +1,7 @@
 "use client";
 
 // Universal transactions — one normalized list across every channel
-// (PoolPay/Quickpay payins + PayU/Cashfree/Razorpay checkouts) in the canonical
+// (Katana Pay / vendor PG payins + PayU/Cashfree/Razorpay checkouts) in the canonical
 // §4 shape. Backed by /api/v1/transactions.
 
 import { useQuery } from "@tanstack/react-query";
@@ -44,7 +44,7 @@ export default function TransactionsPage() {
     <>
       <PageHeader
         title="Transactions (universal)"
-        description="One normalized view across all channels — Katana Pay, Quickpay, PayU, Cashfree, Razorpay. Canonical katana_order_id · provider · UTR · status."
+        description="One normalized view across all channels — Katana Pay, PayU, Cashfree, Razorpay. Canonical katana_order_id · provider · UTR · status."
         icon={Receipt}
       />
       <DataView

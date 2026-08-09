@@ -1,6 +1,6 @@
 // Universal transaction representation — one canonical shape across every
 // channel (checkout_orders for PayU/Cashfree/Razorpay; vendor_payin_orders for
-// PoolPay/Quickpay). This is the §4 "Universal Response":
+// Katana Pay / vendor PG). This is the §4 "Universal Response":
 //   { katana_order_id, provider, provider_txn_id, status, utr, amount,
 //     merchant_id, sub_mid }  (+ method, currency, created_at, source for UI)
 

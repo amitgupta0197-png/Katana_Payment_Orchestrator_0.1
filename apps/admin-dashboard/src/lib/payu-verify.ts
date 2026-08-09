@@ -34,6 +34,8 @@ export interface PayuVerifyResult {
   amount?: string;
   mode?: string;
   error?: string;
+  /** PayU's transaction_details entry, verbatim — fields we do not map are still useful. */
+  raw?: Record<string, unknown>;
 }
 
 function verifyUrl(env?: "TEST" | "PROD"): string {
@@ -87,6 +89,7 @@ export async function verifyPayuTxn(mid: GatewayMid, txnid: string): Promise<Pay
       amount: d.amt != null ? String(d.amt) : undefined,
       mode: d.mode ? String(d.mode) : undefined,
       error: d.error_Message || d.error_code || undefined,
+      raw: d as Record<string, unknown>,
     };
   } catch (e) {
     return { found: false, status: "unreachable" };
