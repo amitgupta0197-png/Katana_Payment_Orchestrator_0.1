@@ -51,12 +51,13 @@
   <a href="#enquiry">7. Status enquiry</a>
   <a href="#codes">8. Status &amp; response codes</a>
   <a href="#samples">9. Sample code (PHP / Node / Python)</a>
-  <a href="#golive">10. Go-live checklist</a>
+  <a href="#payu">10. Connect your PayU account (webhook)</a>
+  <a href="#golive">11. Go-live checklist</a>
 </div>
 
 <h2 id="creds">1. Credentials (Key + Salt)</h2>
 <p>Each integrating account gets a <b>Key</b> and a <b>Salt</b>, issued from the Katana dashboard
-(<b>Branch portal → Integration → Generate Key + Salt</b>, or ask your Katana admin).</p>
+(<b>Banker portal → Integration → Generate Key + Salt</b>, or ask your Katana admin).</p>
 <table>
   <tr><th>Field</th><th>Meaning</th></tr>
   <tr><td><code>Key</code></td><td>Public-ish identifier (<code>mk_…</code>) sent with every request.</td></tr>
@@ -201,11 +202,53 @@ data=requests.post("https://katanapay.co/api/v1/katana-pay/order",json=o).json()
   return strtoupper(hash("sha256",$str))===$got;
 }</pre>
 
-<h2 id="golive">10. Go-live checklist</h2>
+<h2 id="payu">10. Connect your PayU account (webhook)</h2>
+<p><b>Only if payments route through your own PayU MID.</b> If Katana settles you directly, skip this section — sections 1–9 are the whole integration.</p>
+
+<p>With UPI the customer approves inside their UPI app and usually never returns to the browser, so the
+redirect alone is not enough to confirm a payment. The webhook is the channel that fires regardless.</p>
+
+<h3>Step 1 — give Katana your PayU Key + Salt</h3>
+<p>Your PayU <b>Key</b> and <b>Salt</b> must be stored against your account in Katana before the webhook can do anything —
+we verify PayU's reply hash with <i>your</i> salt. Send them to your Katana account manager (they are stored encrypted).
+Until they are stored, callbacks arrive with <code>hash_verified: false</code> and the payment is <b>never</b> marked successful.</p>
+
+<h3>Step 2 — add the webhook in the PayU dashboard</h3>
+<p>PayU Dashboard → <b>Webhooks</b> → <b>Add webhook</b>:</p>
+<table>
+  <tr><th>Setting</th><th>Value</th></tr>
+  <tr><td>URL</td><td><code>https://katanapay.co/api/gateway/payu/webhook</code></td></tr>
+  <tr><td>Type</td><td>Payments</td></tr>
+  <tr><td>Event</td><td>Successful <span class="sub">(add Failed too if you want failures recorded)</span></td></tr>
+  <tr><td>Method</td><td>POST</td></tr>
+</table>
+<div class="note"><b>One URL serves every account.</b> We resolve which merchant a callback belongs to from the payload
+(<code>txnid</code> → order → merchant), so do <b>not</b> create a separate URL per merchant.</div>
+<p>PayU's <b>Test</b> button sends a GET — we answer <code>200</code>, so the check passes.</p>
+
+<h3>Step 3 — nothing to set for surl / furl</h3>
+<p>Katana sets the success and failure URLs on every transaction automatically. There is no dashboard field for you to fill in.</p>
+
+<h3>What confirms a payment</h3>
+<table>
+  <tr><th>Layer</th><th>When it fires</th><th>Reliability</th></tr>
+  <tr><td>Webhook</td><td>PayU calls us server-to-server</td><td class="ok">Fires even if the customer closes the tab</td></tr>
+  <tr><td>Browser return</td><td>Customer comes back from their UPI app</td><td class="warn">Often never happens on UPI</td></tr>
+  <tr><td>Reconciler</td><td>Sweeps pending orders every 15s and asks PayU directly</td><td class="ok">Safety net — a lost callback self-heals</td></tr>
+</table>
+<p>We reply <code>200</code> to any readable payload, including an unknown <code>txnid</code> — PayU retries non-2xx forever,
+and retrying an order we do not have would never start working. The response body says what happened:</p>
+<pre>{ "ok": true, "txn_id": "ORDER-1001", "matched": true,
+  "status": "SUCCESS", "hash_verified": true, "applied": true }</pre>
+<div class="note warnbox"><b>If <code>hash_verified</code> is false</b>, the Key/Salt stored with Katana do not match the ones the
+payment was made with — usually a test/production mix-up. Fix the stored pair; nothing is credited until the hash verifies.</div>
+
+<h2 id="golive">11. Go-live checklist</h2>
 <ul>
   <li>Generate your <b>Key + Salt</b> and store the Salt securely (server-side only).</li>
   <li>Set your default <b>return_url</b> and <b>webhook URL</b> in the dashboard (or pass them per order).</li>
   <li>Send your server's <b>public IP</b> to Katana for whitelisting.</li>
+  <li>If you use your own PayU MID: <b>webhook URL added</b> in the PayU dashboard and your PayU Key + Salt stored with Katana (§10).</li>
   <li>Test with a small amount; confirm you receive the callback and the <b>HASH verifies</b>.</li>
   <li>Treat callbacks as idempotent (same <code>ORDER_ID</code> may arrive more than once).</li>
   <li>Always confirm <b>server-side</b> before fulfilling — never trust the browser redirect alone.</li>

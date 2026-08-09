@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Contact, Banknote,
+  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Contact, Banknote, Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ const NAV = [
   { href: "/merchant-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
   { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/merchant-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
+  { href: "/merchant-portal/integration", label: "Integration", icon: Plug,          exact: false },
   { href: "/merchant-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
   { href: "/merchant-portal/help",       label: "Help & guide", icon: HelpCircle,    exact: false },
 ];
