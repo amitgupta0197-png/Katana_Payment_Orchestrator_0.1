@@ -27,6 +27,7 @@ const CONFIDENCE_THRESHOLD = 90;      // auto-confirm bar
 const MATCH_WINDOW_MIN = 30;          // order recency window for matching
 const DEDUP_HASH_HOURS = 24;          // same message hash within this = duplicate
 const NONCE_WINDOW_HOURS = 24;        // nonce reuse within this = replay
+const DEDUP_ECHO_SECONDS = 20;        // same device+amount, no RRN, within this = one payment pushed twice
 const REPLAY_SKEW_SECONDS = 300;      // ±5 min timestamp tolerance (signed mode)
 
 export type ManualReason =
@@ -315,6 +316,34 @@ export async function ingestTxnAlert(
        WHERE device_id = $1 AND nonce = $2 AND created_at >= now() - ($3 || ' hours')::interval LIMIT 1
     `, [deviceId, input.nonce, String(NONCE_WINDOW_HOURS)]).catch(() => []);
     if (dupNonce.length) { duplicate = true; dupDetail = "nonce reuse (replay)"; }
+  }
+  // ECHO: one payment delivered as TWO pushes. GPay posts an initial notification and then
+  // an updated one seconds later; the wording differs, so the hash differs, and each upload
+  // carries its own nonce — neither check above can see them as the same payment, and with
+  // no RRN on either side there is no identity to match on. Live example 2026-08-15: two
+  // ₹1 credits from one device in the SAME second, different hashes, different nonces.
+  //
+  // Falls back to "same device, same banker code, same amount, within seconds". The window
+  // is deliberately TIGHT: wrongly collapsing two genuine same-amount payments would
+  // UNDER-report real money, which is far worse than briefly showing a duplicate. A few
+  // seconds is long enough for the echo and short enough that a real pair is very unlikely.
+  if (!duplicate && !(utr && /^\d{12}$/.test(utr)) && amount > 0) {
+    const echo = await rows<{ id: string }>("vendorGateway", `
+      SELECT id::text FROM vendor_txn_alerts
+       WHERE direction = 'CREDIT'
+         AND device_id IS NOT DISTINCT FROM $1
+         AND merchant_id IS NOT DISTINCT FROM $2
+         AND amount = $3
+         AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
+         AND created_at >= now() - ($4 || ' seconds')::interval
+       ORDER BY created_at DESC LIMIT 1
+    `, [deviceId, input.merchant_id ?? null, amount.toFixed(2), String(DEDUP_ECHO_SECONDS)])
+      .catch(() => []);
+    if (echo.length) {
+      duplicate = true;
+      benignRecapture = true;   // a double-posted push is not a security event
+      dupDetail = `echo of the same credit within ${DEDUP_ECHO_SECONDS}s (no RRN to match on)`;
+    }
   }
 
   // 5) Order matching — UTR exact, then amount + payee VPA + recency.

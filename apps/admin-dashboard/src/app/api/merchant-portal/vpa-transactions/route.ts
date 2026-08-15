@@ -17,14 +17,24 @@ interface Alert {
   event_time: string | null; created_at: string;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const g = await gateOrResponse(["PROVIDER", "SUPER_ADMIN"]);
   if ("response" in g) return g.response;
   const s = g.session;
   try {
     const scoped = s.persona === "PROVIDER";
     const codes = await resolveProviderMerchants(s);
-    if (scoped && !codes.length) return NextResponse.json({ vpas: [], totals: empty(), recent: [] });
+    if (scoped && !codes.length) return NextResponse.json({ vpas: [], totals: empty(), recent: [], branches: [], branch: null });
+
+    // ?branch=CODE narrows the feed to ONE banker code — the code configured in that
+    // device's Katana agent. Scope-checked against the provider's own branches so a
+    // provider cannot read another provider's traffic by guessing a code.
+    const url = new URL(req.url);
+    const branchParam = url.searchParams.get("branch")?.trim() || null;
+    const branch = branchParam && (!scoped || codes.includes(branchParam)) ? branchParam : null;
+    if (branchParam && !branch) {
+      return NextResponse.json({ error: "branch out of scope" }, { status: 403 });
+    }
 
     // Settlement VPAs of the provider's branches — the accounts these credits land on.
     const vpaRows = scoped
@@ -33,10 +43,39 @@ export async function GET() {
            WHERE merchant_code = ANY($1::text[]) AND COALESCE(poolpay->>'settlement_vpa','') <> ''`, [codes]).catch(() => [])
       : [];
     const vpas = vpaRows.map((r) => r.vpa).filter(Boolean);
-    // Scope to the provider's branches by merchant (the inbox/device that captured the
-    // credit is merchant-tagged) OR by settlement VPA (when the alert carries a payee).
-    const where = scoped ? "WHERE (merchant_id = ANY($1::text[]) OR payee_vpa = ANY($2::text[]))" : "WHERE direction = 'CREDIT'";
-    const args = scoped ? [codes, vpas.length ? vpas : ["__none__"]] : [];
+    // DUPLICATE rows are the SAME payment seen a second time — the reconciler marks them
+    // when one credit reaches us on two channels (a GPay push and the on-device screen read
+    // of the same transaction). Showing them makes one payment look like several, and they
+    // would also double-count into `gross` below, so they are excluded from the feed and the
+    // totals alike.
+    const notDup = "COALESCE(outcome,'') <> 'DUPLICATE'";
+
+    // SEGREGATION BY BANKER CODE.
+    //
+    // The banker code typed into a device's Katana agent is stored on every credit it
+    // captures (merchant_id), and that is the ONLY trustworthy way to tell one banker's
+    // traffic from another's. Settlement VPAs are not: PRIMESX and PRVZS23 are both
+    // configured with 9355449766@okbizaxis, so an unqualified `OR payee_vpa = ANY(...)`
+    // showed every credit on that account under BOTH codes and made the agent's banker
+    // code look ignored (client report, 2026-08-15).
+    //
+    // So payee_vpa is now only a FALLBACK for rows that carry no banker code at all —
+    // it can never pull a credit that belongs to one banker into another's view. When a
+    // specific branch is selected we match on merchant_id alone: an untagged credit
+    // cannot be attributed to a branch, so it stays in the all-branches view where it is
+    // visible as something to fix, rather than being silently assigned.
+    let where: string;
+    let args: unknown[];
+    if (branch) {
+      where = `WHERE merchant_id = $1 AND ${notDup}`;
+      args = [branch];
+    } else if (scoped) {
+      where = `WHERE (merchant_id = ANY($1::text[]) OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[]))) AND ${notDup}`;
+      args = [codes, vpas.length ? vpas : ["__none__"]];
+    } else {
+      where = `WHERE direction = 'CREDIT' AND ${notDup}`;
+      args = [];
+    }
     const recent = await rows<Alert>("vendorGateway", `
       SELECT id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
              matched_order_ref, outcome, match_confidence, event_time, created_at
@@ -59,7 +98,7 @@ export async function GET() {
       unmatched: recent.filter((r) => r.outcome === "UNMATCHED" || r.outcome === "AMBIGUOUS").length,
       missingRrn,
     };
-    return NextResponse.json({ vpas, totals, recent });
+    return NextResponse.json({ vpas, totals, recent, branches: codes, branch });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 

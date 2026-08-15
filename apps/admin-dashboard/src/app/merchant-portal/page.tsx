@@ -71,11 +71,16 @@ export default function ProviderDashboard() {
     queryKey: ["pp:kyb"],
     queryFn: async () => (await fetch("/api/kyb").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { cases: KybRow[] },
   });
+  // Banker-code filter. Credits are tagged with the banker code configured in the capturing
+  // device's Katana agent; branches can share a settlement VPA, so this code is the only
+  // reliable way to separate one banker's traffic from another's.
+  const [vpaBranch, setVpaBranch] = useState<string>("");
   const vpaTxns = useQuery({
-    queryKey: ["pp:vpa-txns"],
-    queryFn: async () => (await fetch("/api/merchant-portal/vpa-transactions").then((r) => r.json())) as {
+    queryKey: ["pp:vpa-txns", vpaBranch],
+    queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
       totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number };
       recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string }>;
+      branches?: string[];
     },
     refetchInterval: 30_000,
   });
@@ -219,8 +224,23 @@ export default function ProviderDashboard() {
       </div>
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="text-base">VPA credits</CardTitle>
-          <CardDescription>Every UPI credit landing on your branches' settlement VPAs — payer, amount, UTR, and match.</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">VPA credits</CardTitle>
+              <CardDescription>Every UPI credit landing on your branches' settlement VPAs — payer, amount, UTR, and match.</CardDescription>
+            </div>
+            {(vpaTxns.data?.branches ?? []).length > 1 && (
+              <select
+                aria-label="Filter by banker code"
+                className="h-9 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 text-sm"
+                value={vpaBranch}
+                onChange={(e) => setVpaBranch(e.target.value)}
+              >
+                <option value="">All banker codes</option>
+                {(vpaTxns.data?.branches ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {(vpaTxns.data?.recent ?? []).length === 0
