@@ -3,6 +3,7 @@ package shop.glhouse.agent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
@@ -61,6 +62,29 @@ class RrnAccessibilityService : AccessibilityService() {
     private var backAttempts = 0            // how many BACKs we've pressed this return
     private var waitChecks = 0              // transitional re-checks while returning
 
+    // ---- GPay auto-navigation state ----
+    //
+    // Deliberately NOT shared with the Paytm sweep above. Only one app is ever in the
+    // foreground so the two can't literally interleave, but a sweep that is paused
+    // mid-flight (screen off, app switched) leaves its state set; sharing the fields would
+    // let a stale Paytm sweep position steer a GPay sweep into tapping the wrong rows.
+    private var gpaySweeping = false
+    private var gpaySweepPos = 0
+    private var gpayOpenGen = 0             // invalidates stale watchdog timers
+    private var gpayOpenRetries = 0
+    private var gpayAutoNavigating = false  // we auto-opened the current detail
+    private var gpayDetailReached = false
+    private var gpayBackScheduled = false
+    private var gpayLastResult = R_UNKNOWN
+    private var gpayBackAttempts = 0
+    private var gpayWaitChecks = 0
+    private var gpayRowRetried = false      // this row already got its second chance
+    private var lastGpaySweep = 0L
+    private var lastGpayDump = 0L
+    private var lastGpayNav = 0L
+    private var lastGpayRefresh = 0L
+    private var gpaySweepStarted = 0L       // for the stuck-sweep guard below
+
     companion object {
         private const val MAX_ATTEMPTS = 4
         private const val COPY_SETTLE_MS = 450L
@@ -74,11 +98,70 @@ class RrnAccessibilityService : AccessibilityService() {
         private const val R_NEW = 1
         private const val R_OLD = 2
 
+        // GPay auto-drive timings. The sweep interval is deliberately long: unlike Airtel
+        // (whose list carries the RRN and needs only a refresh tap) every GPay row costs an
+        // open + read + back, so sweeping tightly would keep the merchant's screen
+        // permanently hijacked.
+        private const val GPAY_SWEEP_INTERVAL_MS = 20_000L
+        // Watchdog for "the row tap never opened a detail". Generous on purpose: a budget
+        // handset can take several seconds to render a Flutter detail screen, and a tight
+        // deadline would skip rows that were merely still loading — silently losing RRNs on
+        // exactly the cheap phones most merchants actually use. A row is retried once at
+        // double this before being given up on.
+        private const val GPAY_DETAIL_WAIT_MS = 6000L
+        private const val GPAY_MAX_ROWS = 15            // rows opened per sweep pass
+
         // Set by CommandPoller when the dashboard raises a "Get RRN" request: forces the
         // next payments-list pass to re-sweep the visible rows (retrying any whose RRN we
         // don't yet have) instead of idling until a new payment arrives. Cleared on use.
         @Volatile private var forceResweep = false
         fun requestResweep() { forceResweep = true }
+
+        const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
+        @Volatile private var lastGpayLaunch = 0L
+        // The list is stale at the moment the push arrives, so a notification-armed sweep
+        // must refresh it first — see gpayTryRefresh.
+        @Volatile private var gpayRefreshPending = false
+
+        /**
+         * Go and fetch the RRN for a GPay payment we just heard about.
+         *
+         * WHY THIS EXISTS. The accessibility engine is purely reactive: it can only read what
+         * is on screen, so on its own it captures an RRN only if the merchant happens to be
+         * sitting on GPay's transactions list at the time. Put the phone down and the RRN is
+         * simply never collected — which is exactly what happened to a live ₹2 payment on
+         * 2026-08-14 (the notification landed, no ACCESSIBILITY row ever followed).
+         *
+         * The notification channel, by contrast, fires for EVERY payment. So we use the
+         * reliable signal to drive the unreliable one: a GPay credit push brings GPay to the
+         * front and arms an immediate sweep, which reads the RRN off the detail and returns.
+         *
+         * Throttled, and gated on auto-capture — this deliberately steals the foreground, so
+         * it is only ever appropriate on a dedicated capture phone, which is what auto-capture
+         * already signals.
+         */
+        fun requestGpayCapture(ctx: Context) {
+            if (!Prefs.enabled(ctx)) return
+            if (!Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, Prefs.APP_GPAY)) return
+            val now = System.currentTimeMillis()
+            if (now - lastGpayLaunch < 15_000L) return   // a burst of pushes = one trip
+            lastGpayLaunch = now
+            forceResweep = true
+            gpayRefreshPending = true
+            try {
+                val i = ctx.packageManager.getLaunchIntentForPackage(GPAY_PKG)
+                if (i == null) { Log.w("RRNCAP", "gpay: not installed; cannot auto-open"); return }
+                // Background activity launch is restricted on Android 14+; it is permitted for
+                // an app holding SYSTEM_ALERT_WINDOW, which this agent already requires for
+                // ClipReaderActivity. If the OS still blocks it the sweep simply doesn't run —
+                // the notification row is already uploaded, so no payment is lost either way.
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(i)
+                Log.d("RRNCAP", "gpay: opened by credit notification -> sweep armed")
+            } catch (e: Exception) {
+                Log.w("RRNCAP", "gpay: auto-open failed: ${e.message}")
+            }
+        }
     }
 
     private fun autoModeEnabled(): Boolean = Prefs.autoCapture(this)
@@ -261,34 +344,158 @@ class RrnAccessibilityService : AccessibilityService() {
     //   "Transaction details … UPI Transaction ID\n310182347603\nGoogle Transaction ID\n
     //    CICAg…\n … Customer paid\n₹15\nAmount you get\n₹15"
     // We take the number after "UPI Transaction ID" (the "Google Transaction ID" is
-    // Google's internal ref — ignored). Passive read: capture whenever a detail screen is
-    // visible — no tap/copy needed. GPay's LIST rows don't carry the RRN, so the merchant
-    // (or a future auto-drive) opens each payment; on the detail screen this just reads it.
-    private val gpayAmount = Regex("₹\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?")
+    // Google's internal ref — ignored).
+    //
+    // Two modes, same as Paytm:
+    //   MANUAL (auto-capture off) — passive. The merchant opens a payment, we read it.
+    //   AUTO   (auto-capture on)  — we drive: on the transactions LIST we open each row,
+    //                               read the RRN off the detail, press Back, repeat.
+    //
+    // The auto-drive exists because GPay's list rows do NOT carry the RRN — only the detail
+    // screen does — so unlike Airtel there is nothing to read without opening each payment.
+    // The sweep stops as soon as a row yields an RRN we already hold: rows are newest-first,
+    // so the first duplicate means everything below it is already captured.
+    // Currency is matched permissively (₹ / Rs / Rs. / INR). Which glyph actually reaches us
+    // depends on the handset's locale and font coverage, not on GPay, so pinning it to "₹"
+    // would silently stop capture on a ROM that renders the amount any other way.
+    private val gpayAmount = Regex("(?:₹|Rs\\.?|INR)\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?", RegexOption.IGNORE_CASE)
+    private val rrn12 = Regex("\\d{12}")
 
     private fun handleGpay(root: AccessibilityNodeInfo) {
         if (!Prefs.enabled(this)) return
-        val descs = ArrayList<String>()
-        collectDescs(root, descs)
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flattenAll(root, nodes)
         // Join everything so we can index label→value across nodes whether GPay bundles the
-        // block into one description or splits it. Only proceed on a detail screen.
-        val lines = descs.joinToString("\n").split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
-        val idIdx = lines.indexOfFirst { it.equals("UPI Transaction ID", true) }
-        if (idIdx < 0 || idIdx + 1 >= lines.size) return   // not a transaction detail screen
-        val rrn = lines[idIdx + 1].filter { it.isDigit() }
-        if (!Regex("\\d{12}").matches(rrn)) return
+        // block into one description or splits it.
+        val lines = nodes.joinToString("\n") { it.first }
+            .split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
 
-        // Amount the customer PAID (matches the order); fall back to "Amount you get" or a
-        // "₹X credited" summary line.
+        val rrn = gpayRrn(lines)
+        if (rrn != null) {
+            val fresh = captureGpayDetail(lines, rrn)
+            // If we opened this detail ourselves, note we arrived and head back to the list.
+            // Scheduled up-front (not after a successful read) so an unreadable detail can
+            // never strand the sweep on this screen.
+            if (gpayAutoNavigating) {
+                gpayDetailReached = true
+                gpayLastResult = if (fresh) R_NEW else R_OLD
+                if (!gpayBackScheduled) {
+                    gpayBackScheduled = true
+                    main.postDelayed({ gpayGoBackToList() }, 900)
+                }
+            }
+            return
+        }
+
+        // Not a detail screen — candidate list screen. Only drive when the merchant opted in.
+        if (!autoModeEnabled()) return
+        gpayMaybeDump(nodes)
+        if (findGpayRowNodes(nodes).isNotEmpty()) {
+            if (gpayTryRefresh(nodes)) return   // refresh first; sweep on the next pass
+            gpayHandleList(nodes)
+        } else gpayMaybeOpenList(nodes)
+    }
+
+    /**
+     * Refresh the list before sweeping a notification-triggered capture.
+     *
+     * GPay's transaction list is a CACHED view: the push for a payment arrives before the
+     * list itself contains that payment. Sweeping straight away therefore opens the previous
+     * payment's row — so every RRN landed exactly one payment late. Observed live
+     * 2026-08-14: the ₹4 at 16:32:47 sat with no RRN until the ₹1 at 16:34:21 triggered the
+     * next sweep, which then captured the ₹4.
+     *
+     * Tapping "Refresh transactions" makes the row we actually came for exist. We return true
+     * so this pass does nothing else; the refresh re-renders the list, which fires another
+     * accessibility event, and the sweep runs then with forceResweep still armed.
+     */
+    private fun gpayTryRefresh(nodes: List<Pair<String, AccessibilityNodeInfo>>): Boolean {
+        if (!gpayRefreshPending || gpaySweeping) return false
+        val now = System.currentTimeMillis()
+        if (now - lastGpayRefresh < 5_000L) return false
+        val btn = nodes.firstOrNull { (t, _) -> t.contains("Refresh transactions", true) }
+        if (btn == null) {
+            // Nothing to tap on this build/locale — sweep the list as-is rather than stall.
+            gpayRefreshPending = false
+            return false
+        }
+        gpayRefreshPending = false
+        lastGpayRefresh = now
+        clickNode(btn.second)
+        Log.d(TAG, "gpay: refreshing list before sweep")
+        return true
+    }
+
+    /**
+     * We're inside GPay but not on the transactions list (the launcher drops you on Home).
+     * Tap through to the list so the sweep has rows to work with — the same hands-free
+     * navigation the Airtel engine does from its home screen.
+     */
+    private fun gpayMaybeOpenList(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        if (gpaySweeping) return
+        val now = System.currentTimeMillis()
+        if (now - lastGpayNav < 8_000L) return
+        val target = nodes.firstOrNull { (t, n) ->
+            n.isClickable && (
+                t.startsWith("Transactions", true) ||      // the "Transactions | Tab 1 of 2" tab
+                t.equals("Show details", true) ||          // Home -> payments
+                t.contains("view all", true))
+        } ?: return
+        lastGpayNav = now
+        clickNode(target.second)
+        Log.d(TAG, "gpay: navigating to the transactions list")
+    }
+
+    /**
+     * The 12-digit UPI transaction id (RRN) on a GPay detail screen, or null if this screen
+     * isn't one.
+     *
+     * Label-first, then a translation-proof fallback. GPay follows the SYSTEM language, so a
+     * Hindi/Tamil/Marathi handset renders a translated label — a hard-coded English string
+     * would capture nothing at all on those phones. The fallback leans on the one fact that
+     * survives translation: the UPI id is the only BARE 12-digit number on the screen.
+     * Google's own reference is alphanumeric ("CICAg…") so it cannot collide, and amounts,
+     * dates and phone numbers are never exactly 12 digits. Requiring it to be alone on its
+     * line keeps a 12-digit substring of some longer id from being mistaken for it.
+     */
+    private fun gpayRrn(lines: List<String>): String? {
+        val labelIdx = lines.indexOfFirst { l ->
+            // "Google Transaction ID" sits right next to it and must never win.
+            !l.contains("google", true) && l.contains("upi", true) &&
+                (l.contains("transaction id", true) || l.contains("txn id", true) || l.contains("ref", true))
+        }
+        if (labelIdx >= 0 && labelIdx + 1 < lines.size) {
+            val v = lines[labelIdx + 1].filter { it.isDigit() }
+            if (rrn12.matches(v)) return v
+        }
+        val bare = lines
+            .filter { l -> l.isNotEmpty() && l.all { it.isDigit() || it.isWhitespace() } }
+            .map { l -> l.filter { it.isDigit() } }
+            .filter { rrn12.matches(it) }
+            .distinct()
+        return bare.singleOrNull()   // ambiguous screen -> capture nothing rather than guess
+    }
+
+    /**
+     * Read a GPay transaction detail. Returns true if this RRN is newly captured, false if
+     * we already had it — which is the sweep's stop signal.
+     */
+    private fun captureGpayDetail(lines: List<String>, rrn: String): Boolean {
+        // Amount the customer PAID (matches the order); fall back to "Amount you get", then a
+        // "credited" summary line, then simply the first amount on screen. That last step is
+        // what keeps a translated UI working — the amount stays a number whatever the labels
+        // around it say.
         fun amtAfter(label: String): String? {
             val i = lines.indexOfFirst { it.equals(label, true) }
             if (i < 0 || i + 1 >= lines.size) return null
             return gpayAmount.find(lines[i + 1])?.value
         }
         val amount = amtAfter("Customer paid") ?: amtAfter("Amount you get")
-            ?: lines.firstOrNull { it.contains("credited", true) }?.let { gpayAmount.find(it)?.value } ?: ""
+            ?: lines.firstOrNull { it.contains("credited", true) }?.let { gpayAmount.find(it)?.value }
+            ?: lines.firstNotNullOfOrNull { gpayAmount.find(it)?.value } ?: ""
 
-        // Payer: "Received from Shubham K".
+        // Payer: "Received from Shubham K". Best-effort — the server tolerates a blank name,
+        // and on a translated UI this simply comes back empty rather than wrong.
         val payer = lines.firstOrNull { it.startsWith("Received from", true) }
             ?.replaceFirst(Regex("(?i)^received from"), "")?.trim() ?: ""
 
@@ -298,14 +505,229 @@ class RrnAccessibilityService : AccessibilityService() {
             paidAt = "", maskedRef = rrn, bank = "GPAY",
         ))
         if (fresh) { Prefs.bump(this, "capture_ok"); Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer") }
+        else Log.d(TAG, "gpay: RRN $rrn already captured")
+        return fresh
+    }
+
+    // ------------------------------------------------------ GPay auto-drive
+
+    private fun gpayHandleList(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        val now = System.currentTimeMillis()
+        // Stuck-sweep guard. A sweep interrupted mid-flight (merchant switches app, screen
+        // off, GPay restarts) leaves gpaySweeping=true with no pending timer to ever clear
+        // it — every later sweep would be blocked for the life of the process and capture
+        // would quietly stop until the app was restarted. Time it out instead.
+        if (gpaySweeping && now - gpaySweepStarted > 90_000L) {
+            Log.w(TAG, "gpay: sweep stalled; resetting")
+            gpaySweeping = false
+        }
+        if (gpaySweeping) return
+        // forceResweep ("Get RRN" pressed on the dashboard) jumps the interval — the whole
+        // point of that button is not to wait.
+        if (!forceResweep && now - lastGpaySweep < GPAY_SWEEP_INTERVAL_MS) return
+        val rows = findGpayRowNodes(nodes)
+        if (rows.isEmpty()) return
+        if (forceResweep) { forceResweep = false; Log.d(TAG, "gpay: on-demand resweep") }
+
+        lastGpaySweep = now
+        gpaySweeping = true
+        gpaySweepStarted = now
+        gpaySweepPos = 0
+        gpayOpenRetries = 0
+        gpayRowRetried = false
+        Log.d(TAG, "gpay: sweeping ${rows.size} visible row(s)")
+        gpayOpenNext()
+    }
+
+    /**
+     * The payment rows on the GPay transactions list, top (newest) to bottom.
+     *
+     * Tuned against a real device dump (`vendor_agent_debug` label `gpay-list`), which is
+     * what this list actually looks like:
+     *
+     *   "Lincoln K\n14 Aug, 9:12 pm\n+ ₹1"   android.widget.Button  click=true
+     *   "Kush D\n14 Aug, 8:44 pm\n+ ₹1"      android.widget.Button  click=true
+     *   "Received since last settlement"     android.view.View      click=false
+     *   "₹2"                                 android.view.View      click=false
+     *   "14 Aug 2026\n₹3"                    android.view.View      click=false
+     *   "Settle now" / "Show details"        android.widget.Button  click=true
+     *
+     * A payment row carries NO "received/credited/paid" wording — the credit marker is the
+     * leading "+ ₹". A row is identified by carrying BOTH that marker and a time-of-day,
+     * which is exactly what separates it from everything else on the screen:
+     *
+     *   payment row    "+ ₹4"   and  "10:02 pm"    -> both        TAP
+     *   day header     "₹14"         "14 Aug 2026" -> no clock    skip
+     *   settlement sum "₹10"         -             -> amount only skip
+     *   Settle now / Show details / tabs           -> no amount   skip
+     *
+     * DO NOT reintroduce an isClickable requirement here. It looks like the obvious
+     * selector and it is a trap: these very rows reported click=true at 16:17 and
+     * click=FALSE at 16:33 on one device within one session (both dumps are in
+     * vendor_agent_debug). Flutter publishes its semantics inconsistently depending on where
+     * in the render cycle the tree is read, so gating on that flag silently matches nothing
+     * and capture stops dead with no error. [clickNode] walks up for a clickable ancestor
+     * and otherwise taps the node's own bounds, so opening a row never needs the flag set.
+     */
+    // "+ ₹1" — the credit marker. The currency symbol stays REQUIRED here (unlike the
+    // fallback below) because a bare "+<digits>" would also match a phone number.
+    private val gpayCredit = Regex("\\+\\s*(?:₹|Rs\\.?|INR)\\s*[0-9]", RegexOption.IGNORE_CASE)
+    // Accepts both 12-hour ("9:12 pm") and 24-hour ("21:12") clocks — the handset's clock
+    // setting decides which GPay renders, and a 24-hour phone must not fall out of the sweep.
+    private val gpayRowTime = Regex("\\d{1,2}:\\d{2}(?:\\s?[ap]\\.?m\\.?)?", RegexOption.IGNORE_CASE)
+
+    private fun findGpayRowNodes(nodes: List<Pair<String, AccessibilityNodeInfo>>): List<AccessibilityNodeInfo> {
+        fun collect(match: (String) -> Boolean): List<AccessibilityNodeInfo> {
+            val hits = ArrayList<Pair<Int, AccessibilityNodeInfo>>()
+            val seen = HashSet<Int>()
+            for ((raw, n) in nodes) {
+                if (!match(raw.replace('\n', ' '))) continue
+                val r = Rect().also { n.getBoundsInScreen(it) }
+                if (r.width() <= 0 || r.height() <= 0) continue
+                if (!seen.add(r.top)) continue   // same row reached via desc AND text
+                hits.add(r.top to n)
+            }
+            return hits.sortedBy { it.first }.take(GPAY_MAX_ROWS).map { it.second }
+        }
+        // Credit marker AND a clock — the combination no header or total on this screen has.
+        val rows = collect { gpayCredit.containsMatchIn(it) && gpayRowTime.containsMatchIn(it) }
+        if (rows.isNotEmpty()) return rows
+        // Locale fallback: a clock plus any amount. Looser, but a day header still has no
+        // time-of-day, so the aggregates stay excluded.
+        return collect { gpayAmount.containsMatchIn(it) && gpayRowTime.containsMatchIn(it) }
+    }
+
+    private fun gpayOpenNext() {
+        if (!gpaySweeping) return
+        val root = rootInActiveWindow
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        if (root != null) flattenAll(root, nodes)
+        val rows = findGpayRowNodes(nodes)
+        if (rows.isEmpty()) {
+            // List hasn't settled yet (previous detail still closing) — retry, then give up.
+            if (gpayOpenRetries++ < 6) main.postDelayed({ gpayOpenNext() }, 500) else {
+                gpaySweeping = false
+                Log.d(TAG, "gpay: list never settled; sweep abandoned")
+            }
+            return
+        }
+        gpayOpenRetries = 0
+        if (gpaySweepPos >= rows.size) {
+            gpaySweeping = false
+            Log.d(TAG, "gpay: swept all visible rows -> waiting for new payments")
+            return
+        }
+
+        val row = rows[gpaySweepPos]
+        gpayAutoNavigating = true
+        gpayBackScheduled = false
+        gpayDetailReached = false
+        gpayLastResult = R_UNKNOWN
+        val gen = ++gpayOpenGen
+        Prefs.bump(this, "capture_try")
+        Log.d(TAG, "gpay: opening row #$gpaySweepPos")
+        // The rows are real clickable Buttons, so ACTION_CLICK opens them — more reliable
+        // than a coordinate tap, which a mid-scroll list can land in the wrong place.
+        clickNode(row)
+        // Watchdog: if the tap never opened a detail, retry the row once with twice the
+        // patience before giving up on it. A slow phone under load routinely misses the first
+        // deadline; skipping straight past would drop that payment's RRN for good.
+        val wait = if (gpayRowRetried) GPAY_DETAIL_WAIT_MS * 2 else GPAY_DETAIL_WAIT_MS
+        main.postDelayed({
+            if (gen == gpayOpenGen && gpaySweeping && !gpayDetailReached) {
+                gpayAutoNavigating = false
+                if (!gpayRowRetried) {
+                    gpayRowRetried = true
+                    Log.w(TAG, "gpay: row #$gpaySweepPos did not open; retrying once")
+                    gpayOpenNext()
+                } else {
+                    Log.w(TAG, "gpay: row #$gpaySweepPos did not open; skipping")
+                    noteCaptureFail("gpay row did not open")
+                    gpayRowRetried = false
+                    gpaySweepPos++
+                    gpayOpenNext()
+                }
+            }
+        }, wait)
+    }
+
+    private fun gpayGoBackToList() {
+        gpayAutoNavigating = false
+        gpayBackScheduled = false
+        gpayBackAttempts = 0
+        gpayWaitChecks = 0
+        gpayPressBackThenVerify()
+    }
+
+    private fun gpayPressBackThenVerify() {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        main.postDelayed({ gpayVerifyOnList() }, 700)
+    }
+
+    private fun gpayVerifyOnList() {
+        if (!gpaySweeping) return
+        val root = rootInActiveWindow
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        if (root != null) flattenAll(root, nodes)
+        // Same detector as the capture path, so "am I still on a detail?" can never disagree
+        // with "did I read a detail?" — and it stays correct on a translated UI.
+        val lines = nodes.joinToString("\n") { it.first }
+            .split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
+        val stillOnDetail = gpayRrn(lines) != null
+        val onList = findGpayRowNodes(nodes).isNotEmpty()
+        val pkg = root?.packageName?.toString()
+        when {
+            // Check detail BEFORE list: a detail screen also shows an amount + "paid", so it
+            // can satisfy the row test. Reading it as "we're back" would tap on the detail.
+            stillOnDetail && gpayBackAttempts < 3 -> { gpayBackAttempts++; gpayPressBackThenVerify() }
+            onList -> gpayOnReturned()
+            pkg == "com.google.android.apps.nbu.paisa.merchant" && gpayWaitChecks < 6 -> {
+                gpayWaitChecks++; main.postDelayed({ gpayVerifyOnList() }, 500)   // mid-transition
+            }
+            else -> {
+                Log.w(TAG, "gpay: could not return to the list; pausing sweep")
+                gpaySweeping = false
+            }
+        }
+    }
+
+    private fun gpayOnReturned() {
+        if (!gpaySweeping) return
+        if (gpayLastResult == R_OLD) {
+            gpaySweeping = false
+            Log.d(TAG, "gpay: reached an already-captured payment -> sweep complete")
+            return
+        }
+        gpayRowRetried = false
+        gpaySweepPos++
+        gpayOpenNext()
+    }
+
+    /**
+     * One-shot diagnostic: upload the real node layout of a GPay screen so its structure can
+     * be inspected server-side (`vendor_agent_debug`). GPay is Flutter, so the selectors in
+     * [findGpayRows] are text heuristics rather than ids — this is how we tune them against
+     * what the app actually renders. Throttled to once every 2 minutes.
+     */
+    private fun gpayMaybeDump(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        val now = System.currentTimeMillis()
+        if (now - lastGpayDump < 120_000L) return
+        if (nodes.none { gpayAmount.containsMatchIn(it.first) }) return
+        lastGpayDump = now
+        val dump = nodes.joinToString("\n") { (t, n) ->
+            val r = Rect().also { n.getBoundsInScreen(it) }
+            "\"${t.replace("\n", "\\n")}\"  ${n.className}  click=${n.isClickable}  [${r.left},${r.top}][${r.right},${r.bottom}]"
+        }
+        AlertUploader.sendAgentDebug(this, "gpay-list", dump)
     }
 
     // Flutter semantics live in contentDescription; also fold in any real text nodes.
-    private fun collectDescs(node: AccessibilityNodeInfo?, out: MutableList<String>) {
+    // (`flatten` above reads only .text, which is empty throughout GPay.)
+    private fun flattenAll(node: AccessibilityNodeInfo?, out: MutableList<Pair<String, AccessibilityNodeInfo>>) {
         if (node == null) return
-        node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it) }
-        node.text?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it) }
-        for (i in 0 until node.childCount) collectDescs(node.getChild(i), out)
+        node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it to node) }
+        node.text?.toString()?.takeIf { it.isNotBlank() }?.let { out.add(it to node) }
+        for (i in 0 until node.childCount) flattenAll(node.getChild(i), out)
     }
 
     // ---------------------------------------------------------------- detail

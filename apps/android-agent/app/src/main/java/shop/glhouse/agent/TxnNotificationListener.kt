@@ -98,6 +98,19 @@ class TxnNotificationListener : NotificationListenerService() {
             Prefs.bump(applicationContext, "uploaded")
             AlertUploader.send(applicationContext, txn, "NOTIFICATION", sbn.packageName)
         }
+
+        // GPay pushes tell us a payment happened but usually NOT its RRN — the 12-digit UPI
+        // transaction id lives only on the in-app detail screen. The accessibility engine can
+        // read it, but only while GPay is actually on screen, so left alone it captures
+        // nothing whenever the merchant has put the phone down.
+        //
+        // This is the bridge: the channel that never misses a payment triggers the one that
+        // can read the RRN. Only when this push did not already carry a 12-digit reference,
+        // so a payment whose RRN we already have never steals the foreground.
+        val hasRrn = txn.utr?.let { Regex("^\\d{12}$").matches(it) } == true
+        if (!hasRrn && sbn.packageName == RrnAccessibilityService.GPAY_PKG) {
+            RrnAccessibilityService.requestGpayCapture(applicationContext)
+        }
     }
 
     // A notification worth reporting when it fails to parse: it mentions a currency amount.
