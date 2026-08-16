@@ -30,6 +30,7 @@ import {
   Headphones,
   FileSearch,
   Briefcase,
+  FileSpreadsheet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -96,6 +97,9 @@ export const navItems: NavItem[] = [
   { href: "/merchants",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
   { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
+  // Personas match the /api/statements gate — a link to an endpoint the viewer is refused by
+  // is worse than no link.
+  { href: "/statements",       label: "Statements",      icon: FileSpreadsheet, status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "FINANCE"] },
   { href: "/payin-order",      label: "Payin Order",     icon: Receipt,  status: "live", group: "Payment Management" },
   { href: "/summary",          label: "Summary",         icon: BarChart3,status: "live", group: "Payment Management" },
   { href: "/payout-order",     label: "Payout Order",    icon: Send,     status: "live", group: "Payment Management" },

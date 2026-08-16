@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, Receipt, Banknote, BookOpen, CreditCard,
-  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug,
+  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug, FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { PortalMobileNav } from "@/components/layout/portal-mobile-nav";
 const NAV = [
   { href: "/banker-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
   { href: "/banker-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
+  { href: "/banker-portal/statements",  label: "Statements",  icon: FileSpreadsheet, exact: false },
   { href: "/banker-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
   { href: "/banker-portal/provider-settlements", label: "Merchant settlements", icon: Landmark, exact: false },
   { href: "/banker-portal/reserves",    label: "Reserves",    icon: BookOpen,        exact: false },
