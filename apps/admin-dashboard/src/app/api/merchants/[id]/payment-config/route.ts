@@ -22,7 +22,13 @@ const patchSchema = z.object({
   poolpay: z.object({
     enabled: z.boolean().optional(),
     pay_id: z.string().max(120).optional(),
+    // The single payee a Katana Pay order is paid TO.
     settlement_vpa: z.string().max(120).optional(),
+    // Additional UPI IDs this banker also receives on. Recognised when attributing and
+    // reporting captured credits; never used as a payee. Trimmed, lowercased and deduped
+    // here so every reader can compare them directly against a captured payee_vpa.
+    settlement_vpas: z.array(z.string().max(120)).max(20).optional()
+      .transform((v) => v && [...new Set(v.map((s) => s.trim().toLowerCase()).filter(Boolean))]),
     env: z.enum(["SANDBOX", "PROD"]).optional(),
     notes: z.string().max(500).optional(),
   }).strict().optional(),

@@ -6,8 +6,9 @@
 // and heartbeat liveness. If nothing is enrolled, shows the setup details to give the
 // merchant. Reads /api/merchants/[id]/devices.
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Smartphone, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Copy, Download, Trash2, Mail } from "lucide-react";
+import { Smartphone, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Copy, Download, Trash2, Mail, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,80 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
     refetchInterval: 20_000,
   });
   const qc = useQueryClient();
+
+  // Settlement VPA — the UPI ID this banker collects on. Payments captured for this banker
+  // are stamped with it when the alert itself does not state one (most pushes do not), and
+  // a Katana Pay order created for this banker is paid TO it. Set it here so onboarding a
+  // banker is one screen rather than a database edit.
+  const cfg = useQuery({
+    queryKey: ["merchant", merchantId, "payment-config"],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${merchantId}/payment-config`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return (await r.json()) as { poolpay?: { settlement_vpa?: string | null; settlement_vpas?: string[] | null } };
+    },
+  });
+  const [vpa, setVpa] = useState<string | null>(null);
+  const savedVpa = cfg.data?.poolpay?.settlement_vpa ?? "";
+  const vpaValue = vpa ?? savedVpa;
+  const extraVpas = cfg.data?.poolpay?.settlement_vpas ?? [];
+  const saveVpa = useMutation({
+    mutationFn: async (next: string) => {
+      const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        // settlement_vpa is nested under poolpay in the PATCH contract, and the schema is
+        // .strict() — a flat field is rejected outright.
+        body: JSON.stringify({ poolpay: { settlement_vpa: next.trim() } }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);
+      return d;
+    },
+    onSuccess: () => {
+      toast.success("Settlement VPA saved");
+      setVpa(null);
+      qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payment-config"] });
+    },
+    onError: (e: Error) => toast.error("Could not save VPA", { description: e.message }),
+  });
+
+  // Additional VPAs. The whole list is sent on every change (the PATCH merges `poolpay`
+  // key by key, so a partial list would replace rather than extend it).
+  const [newVpa, setNewVpa] = useState("");
+  const [extraError, setExtraError] = useState<string | null>(null);
+  const saveExtras = useMutation({
+    mutationFn: async (next: string[]) => {
+      const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ poolpay: { settlement_vpas: next } }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);
+      return d;
+    },
+    onSuccess: () => {
+      setNewVpa("");
+      setExtraError(null);
+      qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payment-config"] });
+    },
+    onError: (e: Error) => toast.error("Could not save VPA list", { description: e.message }),
+  });
+
+  // A VPA that is already the primary, or already listed, would silently do nothing on
+  // save — say so instead, so the operator is not left wondering why nothing changed.
+  const addExtra = () => {
+    const v = newVpa.trim().toLowerCase();
+    if (!v) return;
+    if (!/^[a-z0-9.\-_]{2,}@[a-z][a-z0-9.\-]{1,}$/.test(v)) {
+      return setExtraError("Enter a UPI ID like name@bank.");
+    }
+    if (v === savedVpa.trim().toLowerCase()) return setExtraError("Already the primary settlement VPA.");
+    if (extraVpas.includes(v)) return setExtraError("Already in the list.");
+    setExtraError(null);
+    saveExtras.mutate([...extraVpas, v]);
+  };
   const devices = q.data?.devices ?? [];
   const inboxes: Inbox[] = (q.data as any)?.inboxes ?? [];
   const anyPermitted = q.data?.any_permitted ?? false;
@@ -108,6 +183,90 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
         </div>
       </CardHeader>
       <CardContent>
+        {/* The account this banker collects on. */}
+        <div className="mb-4 rounded-lg border border-[color:var(--color-border)] p-3">
+          <label htmlFor="settlement-vpa" className="text-xs font-medium">Settlement VPA / UPI ID</label>
+          <p className={`mt-0.5 text-xs ${MUTED}`}>
+            Where this banker receives money — e.g. <span className="font-mono">9355449766@okbizaxis</span>.
+            Credits captured for this banker are attributed to it, and Katana Pay orders are paid to it.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              id="settlement-vpa"
+              value={vpaValue}
+              onChange={(e) => setVpa(e.target.value)}
+              placeholder="name@bank"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-9 min-w-0 flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 font-mono text-sm"
+            />
+            <Button
+              size="sm"
+              disabled={saveVpa.isPending || !vpaValue.trim() || vpaValue.trim() === savedVpa}
+              onClick={() => saveVpa.mutate(vpaValue)}
+            >
+              {saveVpa.isPending ? "Saving…" : "Save"}
+            </Button>
+            {savedVpa && vpaValue.trim() === savedVpa && (
+              <Button size="sm" variant="ghost" title="Copy" onClick={() => copy(savedVpa)}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+          {!savedVpa && !cfg.isLoading && (
+            <p className="mt-2 text-xs text-[color:var(--color-warning,#d97706)]">
+              Not set — captured credits cannot be attributed to a UPI account for this banker.
+            </p>
+          )}
+
+          {/* Additional IDs. A banker often collects on more than one UPI ID; every one
+              listed here is recognised when attributing and reporting captured credits.
+              Money is still requested to the primary above — these are for matching only. */}
+          <div className="mt-4 border-t border-[color:var(--color-border)] pt-3">
+            <div className="text-xs font-medium">Additional VPAs / UPI IDs</div>
+            <p className={`mt-0.5 text-xs ${MUTED}`}>
+              Other UPI IDs this banker also receives on. Payments to any of them are recognised
+              and verified against this banker. Orders are still paid to the primary VPA above.
+            </p>
+
+            {extraVpas.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {extraVpas.map((v) => (
+                  <li key={v} className="flex items-center gap-2 rounded-md border border-[color:var(--color-border)] px-2 py-1.5">
+                    <span className="min-w-0 flex-1 truncate font-mono text-sm">{v}</span>
+                    <Button size="sm" variant="ghost" title="Copy" onClick={() => copy(v)}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost" title="Remove"
+                      disabled={saveExtras.isPending}
+                      onClick={() => saveExtras.mutate(extraVpas.filter((x) => x !== v))}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                aria-label="Additional settlement VPA"
+                value={newVpa}
+                onChange={(e) => setNewVpa(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addExtra(); } }}
+                placeholder="another@bank"
+                spellCheck={false}
+                autoComplete="off"
+                className="h-9 min-w-0 flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 font-mono text-sm"
+              />
+              <Button size="sm" variant="secondary" disabled={saveExtras.isPending || !newVpa.trim()} onClick={addExtra}>
+                <Plus className="h-3.5 w-3.5" /> {saveExtras.isPending ? "Saving…" : "Add"}
+              </Button>
+            </div>
+            {extraError && <p className="mt-1.5 text-xs text-[color:var(--color-danger)]">{extraError}</p>}
+          </div>
+        </div>
         {q.isLoading ? (
           <div className={`py-3 text-center text-sm ${MUTED}`}>Loading…</div>
         ) : devices.length === 0 ? (
