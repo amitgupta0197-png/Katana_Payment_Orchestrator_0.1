@@ -7,14 +7,25 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { settlementVpasFor } from "@/lib/settlement-vpa";
+import { verificationOf } from "@/lib/credit-verification";
 
 export const dynamic = "force-dynamic";
+
+// Newest N credits. The dashboard's KPI tiles are computed from exactly this set, so the
+// cap bounds the totals as well as the list — which is why the response reports when it has
+// been hit rather than letting a plateaued "total" read as the real number.
+const FEED_LIMIT = 1000;
 
 interface Alert {
   id: string; source: string; bank: string | null; amount: number; utr: string | null;
   order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; narration: string | null;
   matched_order_ref: string | null; outcome: string; match_confidence: number;
   event_time: string | null; created_at: string;
+  /** Who paid, as stated by the capturing screen. */
+  payer_name: string | null;
+  /** Everything else that screen said about the payment; shape varies per source. */
+  details: Record<string, string> | null;
 }
 
 export async function GET(req: Request) {
@@ -37,12 +48,9 @@ export async function GET(req: Request) {
     }
 
     // Settlement VPAs of the provider's branches — the accounts these credits land on.
-    const vpaRows = scoped
-      ? await rows<{ vpa: string }>("merchant", `
-          SELECT DISTINCT poolpay->>'settlement_vpa' AS vpa FROM merchant_payment_config
-           WHERE merchant_code = ANY($1::text[]) AND COALESCE(poolpay->>'settlement_vpa','') <> ''`, [codes]).catch(() => [])
-      : [];
-    const vpas = vpaRows.map((r) => r.vpa).filter(Boolean);
+    // A branch can be configured with several (one primary payee + additional IDs it also
+    // receives on); all of them are recognised here.
+    const vpas = scoped ? await settlementVpasFor(codes) : [];
     // DUPLICATE rows are the SAME payment seen a second time — the reconciler marks them
     // when one credit reaches us on two channels (a GPay push and the on-device screen read
     // of the same transaction). Showing them makes one payment look like several, and they
@@ -78,9 +86,10 @@ export async function GET(req: Request) {
     }
     const recent = await rows<Alert>("vendorGateway", `
       SELECT id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
-             matched_order_ref, outcome, match_confidence, event_time, created_at
+             matched_order_ref, outcome, match_confidence, event_time, created_at,
+             payer_name, details
         FROM vendor_txn_alerts ${where}
-       ORDER BY created_at DESC LIMIT 200
+       ORDER BY created_at DESC LIMIT ${FEED_LIMIT}
     `, args).catch(() => []);
 
     // A credit is "missing its RRN" when no 12-digit UPI reference has landed for it.
@@ -91,14 +100,32 @@ export async function GET(req: Request) {
     const missingRrn = recent.filter(
       (r) => !hasRrn(r.utr) && Date.now() - new Date(r.created_at).getTime() > GRACE_MS,
     ).length;
+
+    // Verification, not order matching. A direct VPA collection has no Katana order, so its
+    // `outcome` stays UNMATCHED forever — reporting that as the headline made every healthy
+    // payment look broken (16 unmatched / 0 confirmed on a day when all 16 were real).
+    // The banker portal has read these as "verified" since the RRN landed; this is the same
+    // rule, so both portals now agree on the same payment.
+    const withVerification = recent.map((r) => ({ ...r, verification: verificationOf(r, vpas) }));
+
     const totals = {
       count: recent.length,
       gross: recent.reduce((a, r) => a + Number(r.amount || 0), 0),
+      // Kept for any caller still reading them, but the dashboard now leads with the
+      // verification counts below.
       confirmed: recent.filter((r) => r.outcome === "CONFIRMED").length,
       unmatched: recent.filter((r) => r.outcome === "UNMATCHED" || r.outcome === "AMBIGUOUS").length,
       missingRrn,
+      verified: withVerification.filter((r) => r.verification === "verified" || r.verification === "matched").length,
+      awaitingRrn: withVerification.filter((r) => r.verification === "awaiting").length,
+      vpaMismatch: withVerification.filter((r) => r.verification === "vpa_mismatch").length,
     };
-    return NextResponse.json({ vpas, totals, recent, branches: codes, branch });
+    return NextResponse.json({
+      vpas, totals, recent: withVerification, branches: codes, branch,
+      // True when there are older credits beyond this window; the totals then describe the
+      // newest FEED_LIMIT, not all time. Use the Statements download for a full period.
+      truncated: recent.length >= FEED_LIMIT,
+    });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 

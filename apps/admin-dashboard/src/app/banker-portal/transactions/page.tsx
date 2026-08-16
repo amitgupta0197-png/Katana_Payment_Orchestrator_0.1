@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Label } from "@/components/ui/label";
+import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detail";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Order {
@@ -23,6 +24,13 @@ interface Credit {
   narration: string | null; outcome: string; match_confidence: number;
   matched_order_ref: string | null; detail: string | null;
   event_time: string | null; created_at: string;
+  payer_name: string | null;
+  /** Verification state, computed server-side. Distinct from order matching: a direct VPA
+   *  collection never has an order, so "matched" alone made every healthy payment amber. */
+  verification?: "matched" | "verified" | "awaiting" | "vpa_mismatch";
+  /** Full payment detail as the capturing screen stated it (GPay: payer, method,
+   *  customer-paid vs amount-you-get, both references, settlement note). */
+  details: Record<string, string> | null;
 }
 
 const STATUSES = ["", "PENDING", "SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED", "INITIATED", "CANCELLED", "REFUNDED", "CHARGEBACK"] as const;
@@ -81,17 +89,44 @@ export default function TransactionsPage() {
   const testCredits = creditsQ.data?.test_credits ?? [];
   const creditSummary = creditsQ.data?.summary;
 
+  // Id of the credit whose detail is expanded, or null. Everything shown is already on the
+  // row, so expanding costs no fetch.
+  const [detailOf, setDetailOf] = useState<string | null>(null);
+
+  // The detail block, rendered inline directly beneath its own row.
+  const renderCreditDetail = (r: Credit) => <CreditDetail details={r.details} />;
+
   const creditCols: Column<Credit>[] = [
     { key: "created_at", header: "When", render: (r) => formatDateTime(r.event_time ?? r.created_at) },
     { key: "amount", header: "Amount", render: (r) => <span className="font-medium">{formatAmount(r.amount)}</span> },
-    { key: "payer_vpa", header: "From", render: (r) => r.payer_vpa ? <span className="font-mono text-xs">{r.payer_vpa}</span> : "—" },
+    // The customer's NAME when the capture gave us one, falling back to their VPA. Showing
+    // the payee VPA here would just repeat your own account on every row.
+    { key: "payer_name", header: "From", render: (r) =>
+      r.payer_name ? <span>{r.payer_name}</span>
+        : r.payer_vpa ? <span className="font-mono text-xs">{r.payer_vpa}</span>
+        : "—" },
     { key: "utr", header: "UTR / RRN", render: (r) => r.utr ? <span className="font-mono text-xs">{r.utr}</span> : <span className="text-[color:var(--color-text-subtle)]">pending</span> },
-    { key: "outcome", header: "Match", render: (r) => (
-      <Badge variant={r.outcome === "CONFIRMED" ? "success" : r.outcome === "DUPLICATE" ? "default" : "warning"}>
-        {r.outcome === "CONFIRMED" ? "matched" : r.outcome.toLowerCase()}
-      </Badge>
-    ) },
+    { key: "outcome", header: "Status", render: (r) => {
+      // matched      - tied to a Katana order, which is now confirmed
+      // verified     - carries the UPI network's own 12-digit reference: a real transfer,
+      //                no order expected (this is what a direct VPA collection looks like)
+      // awaiting     - attributed, reference not in yet; usually seconds
+      // vpa mismatch - the payment named a payee VPA that is not this banker's: real problem
+      const v = r.verification ?? (r.outcome === "CONFIRMED" ? "matched" : "awaiting");
+      const label = v === "vpa_mismatch" ? "VPA mismatch" : v === "awaiting" ? "awaiting RRN" : v;
+      const variant = v === "matched" || v === "verified" ? "success" : v === "vpa_mismatch" ? "danger" : "default";
+      return <Badge variant={variant}>{label}</Badge>;
+    } },
     { key: "source", header: "Via", render: (r) => <span className="text-xs text-[color:var(--color-text-muted)]">{r.source === "DEVICE" ? "agent" : r.source.toLowerCase()}</span> },
+    { key: "details", header: "", render: (r) => hasCreditDetail(r.details) ? (
+      <button
+        type="button"
+        onClick={() => setDetailOf(detailOf === r.id ? null : r.id)}
+        className="rounded-md border border-[color:var(--color-border)] px-2 py-1 text-xs hover:bg-[color:var(--color-surface-hover)]"
+      >
+        {detailOf === r.id ? "Hide" : "Details"}
+      </button>
+    ) : <span className="text-xs text-[color:var(--color-text-subtle)]">—</span> },
   ];
 
   const cols: Column<Order>[] = [
@@ -133,6 +168,8 @@ export default function TransactionsPage() {
             rows={credits}
             loading={creditsQ.isLoading}
             rowKey={(r) => r.id}
+            renderExpanded={renderCreditDetail}
+            isExpanded={(r) => detailOf === r.id}
             emptyState="No credits yet. Once your agent reports a UPI credit it appears here within seconds."
           />
           {creditSummary && creditSummary.unmatched > 0 && (

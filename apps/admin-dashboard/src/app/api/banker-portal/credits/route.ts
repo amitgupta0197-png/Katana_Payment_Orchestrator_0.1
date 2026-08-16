@@ -10,6 +10,8 @@
 // vendor_txn_alerts.merchant_id keys on, so a banker only ever sees its own credits.
 import { NextResponse } from "next/server";
 import { gateOrResponse } from "@/lib/scope";
+import { settlementVpasFor } from "@/lib/settlement-vpa";
+import { verificationOf } from "@/lib/credit-verification";
 import { rows } from "@/lib/pg";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,10 @@ interface CreditRow {
   narration: string | null; outcome: string; match_confidence: number;
   matched_order_ref: string | null; detail: string | null;
   event_time: string | null; created_at: string;
+  /** Who paid, as stated by the capturing screen. */
+  payer_name: string | null;
+  /** Everything else that screen said about the payment; shape varies per source. */
+  details: Record<string, string> | null;
 }
 
 export async function GET() {
@@ -34,20 +40,27 @@ export async function GET() {
 
   // Some credits arrive attributed only by the VPA that was credited (e.g. an email alert
   // with no merchant id), so match on this banker's settlement VPA as well as its code.
-  const vpas = (await rows<{ vpa: string }>(
-    "merchant",
-    `SELECT DISTINCT poolpay->>'settlement_vpa' AS vpa FROM merchant_payment_config
-      WHERE merchant_code = $1 AND COALESCE(poolpay->>'settlement_vpa','') <> ''`,
-    [code],
-  ).catch(() => [])).map((r) => r.vpa);
+  // Every UPI ID this banker receives on — the primary payee plus any additional ones
+  // configured for it.
+  const vpas = await settlementVpasFor([code]);
 
   const recent = await rows<CreditRow>(
     "vendorGateway",
     `SELECT id::text, source, device_id, COALESCE(amount,0)::float AS amount,
             payer_vpa, payee_vpa, utr, narration, outcome, match_confidence,
-            matched_order_ref, detail, event_time, created_at
+            matched_order_ref, detail, event_time, created_at,
+            payer_name, details
        FROM vendor_txn_alerts
-      WHERE direction = 'CREDIT' AND (merchant_id = $1 OR payee_vpa = ANY($2::text[]))
+      -- DUPLICATE = the same payment seen a second time (a push and the on-device screen
+      -- read of one payment, seconds apart). The reconciler folds the RRN and the detail
+      -- onto the row we keep, so the duplicate carries nothing unique -- showing it makes
+      -- one payment look like two and double-counts it into the totals below.
+      WHERE direction = 'CREDIT'
+        AND COALESCE(outcome,'') <> 'DUPLICATE'
+        -- Banker code first: branches can share a settlement VPA (PRIMESX and PRVZS23 are
+        -- both 9355449766@okbizaxis), so an unqualified payee_vpa match pulls another
+        -- banker's credits into this view. Fall back to the VPA only for untagged rows.
+        AND (merchant_id = $1 OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[])))
       ORDER BY created_at DESC
       LIMIT 50`,
     [code, vpas],
@@ -57,7 +70,27 @@ export async function GET() {
   // synthetic notification — MainActivity.sendTestAlert() builds
   // "Rs.1.00 credited to test@upi UPI Ref <n>" — so the payer VPA is the marker. Real
   // payers are never test@upi.
-  const withFlag = recent.map((r) => ({ ...r, is_test: r.payer_vpa === TEST_PAYER_VPA }));
+  // VERIFICATION STATE (distinct from order matching).
+  //
+  // "unmatched" only ever meant "no pending Katana ORDER had this amount". For a direct VPA
+  // collection there is no order by definition, so every healthy payment rendered as an amber
+  // warning and the column carried no information.
+  //
+  // What actually proves a direct collection is the 12-digit RRN: it is the UPI network's own
+  // reference, unique per transaction, and it exists only because a real transfer happened.
+  //
+  // The settlement VPA deliberately does NOT decide this. On the dominant capture path the
+  // payee VPA is not reported by the payment at all -- txn-reconcile fills it in from this
+  // merchant's own configured settlement VPA when the alert lacks one -- so testing it against
+  // that same config compares a value to itself and passes always. It is used only in the one
+  // case where it carries information: an alert that DID state a payee VPA, disagreeing with
+  // every VPA configured for this banker, which is a genuine misconfiguration worth shouting
+  // about.
+  const withFlag = recent.map((r) => ({
+    ...r,
+    is_test: r.payer_vpa === TEST_PAYER_VPA,
+    verification: verificationOf(r, vpas),
+  }));
   const real = withFlag.filter((r) => !r.is_test);
   const tests = withFlag.filter((r) => r.is_test);
 
@@ -73,6 +106,10 @@ export async function GET() {
       total: real.length,
       confirmed: real.filter((r) => r.outcome === "CONFIRMED").length,
       unmatched: real.filter((r) => r.outcome === "UNMATCHED" || r.outcome === "AMBIGUOUS").length,
+      // Collections proved by a real UPI reference, whether or not an order existed.
+      verified: real.filter((r) => r.verification === "verified" || r.verification === "matched").length,
+      awaiting_rrn: real.filter((r) => r.verification === "awaiting").length,
+      vpa_mismatch: real.filter((r) => r.verification === "vpa_mismatch").length,
       today_count: todayReal.length,
       today_amount: +todayReal.reduce((s, r) => s + (r.amount ?? 0), 0).toFixed(2),
       last_at: real[0]?.created_at ?? null,

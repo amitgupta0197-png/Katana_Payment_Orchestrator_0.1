@@ -19,10 +19,15 @@ interface DataTableProps<T> {
   rowKey?: (row: T, idx: number) => string;
   onRowClick?: (row: T) => void;
   className?: string;
+  /** Extra content shown in a full-width row directly BELOW its row, when expanded.
+   *  Both must be supplied for expansion to happen; tables that pass neither are unchanged. */
+  renderExpanded?: (row: T) => React.ReactNode;
+  isExpanded?: (row: T) => boolean;
 }
 
 export function DataTable<T>({
   columns, rows, loading, emptyState, rowKey, onRowClick, className,
+  renderExpanded, isExpanded,
 }: DataTableProps<T>) {
   if (loading) {
     return (
@@ -58,7 +63,9 @@ export function DataTable<T>({
         <tbody>
           {rows.map((row, idx) => {
             const key = rowKey ? rowKey(row, idx) : String(idx);
+            const expanded = !!(renderExpanded && isExpanded?.(row));
             return (
+              <React.Fragment key={key}>
               <tr
                 key={key}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
@@ -78,6 +85,14 @@ export function DataTable<T>({
                   );
                 })}
               </tr>
+              {expanded && (
+                <tr className="border-b last:border-0 bg-[color:var(--color-surface-muted)]">
+                  <td colSpan={columns.length} className="px-4 py-3">
+                    {renderExpanded!(row)}
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             );
           })}
         </tbody>
