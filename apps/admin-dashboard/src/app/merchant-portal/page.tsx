@@ -19,6 +19,8 @@ import { ProviderCharts } from "@/components/provider/portfolio-charts";
 import { ProviderCreateOrderCard } from "@/components/provider/create-order-card";
 import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
+import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detail";
+import { verificationLabel, verificationVariant, type CreditVerification } from "@/lib/credit-verification";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 interface MerchantRow { id: string; merchant_code: string; stage: string; legal_name?: string; created_at?: string }
@@ -26,6 +28,9 @@ interface SubMidRow { id: string; sub_mid_code: string; kyc_status: string; sett
 interface KybRow { id: string; status: string; merchant_id: string; opened_at: string }
 
 const PIPELINE_STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"];
+
+/** Credits shown before the list has to be expanded — enough to fill a screen, not a page. */
+const VPA_PREVIEW = 12;
 
 // Per-row "Get RRN" action on a no-RRN VPA credit. Raises an on-demand capture request;
 // the merchant's agent then prompts/executes the Paytm Copy tap and the RRN fills in.
@@ -75,12 +80,19 @@ export default function ProviderDashboard() {
   // device's Katana agent; branches can share a settlement VPA, so this code is the only
   // reliable way to separate one banker's traffic from another's.
   const [vpaBranch, setVpaBranch] = useState<string>("");
+  // Id of the VPA credit whose full payment detail is expanded, or null.
+  const [vpaDetailOf, setVpaDetailOf] = useState<string | null>(null);
+  // Opens showing every captured credit. It used to open at 12 with the rest behind a
+  // button, which put a different number on the list than on the tile above it.
+  const [showAllVpa, setShowAllVpa] = useState(true);
   const vpaTxns = useQuery({
     queryKey: ["pp:vpa-txns", vpaBranch],
     queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
-      totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number };
-      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string }>;
+      totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number };
+      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
       branches?: string[];
+      /** True when older credits exist beyond the returned window. */
+      truncated?: boolean;
     },
     refetchInterval: 30_000,
   });
@@ -109,6 +121,9 @@ export default function ProviderDashboard() {
   const pop = dt.data?.population ?? null;
 
   const allMerchants = merchants.data?.merchants ?? [];
+  // Every credit the API returned. The KPI tiles above the list are computed from this same
+  // set, so the list must be able to show all of it — see the Show all control below.
+  const vpaCredits = vpaTxns.data?.recent ?? [];
   const subs = subMids.data?.sub_mids ?? [];
   const kybCases = kyb.data?.cases ?? [];
 
@@ -183,7 +198,8 @@ export default function ProviderDashboard() {
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Operations</h2>
       <ProviderCreateOrderCard />
 
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Transactions</h2>
+      {/* API-based order generation — the merchant's own site calls the order API and hosts/redirects the checkout. */}
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Merchant Hosted Checkout</h2>
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Gross collected" value={formatAmount(txns.data?.totals?.gross ?? 0)} sublabel={`${txns.data?.totals?.success_count ?? 0} successful`} icon={Wallet} variant="success" loading={txns.isLoading} href="/merchant-portal/transactions" />
         <KpiTile label="Total transactions" value={txns.data?.totals?.total_count ?? 0} icon={Store} loading={txns.isLoading} href="/merchant-portal/transactions" />
@@ -192,7 +208,7 @@ export default function ProviderDashboard() {
       </div>
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
-          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>Latest collections across your branches (all channels).</CardDescription></div>
+          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>API order generation — latest collections across your branches (all channels).</CardDescription></div>
           <Button variant="secondary" size="sm" asChild><Link href="/merchant-portal/transactions">View all <ChevronRight className="h-3.5 w-3.5" /></Link></Button>
         </CardHeader>
         <CardContent>
@@ -214,20 +230,23 @@ export default function ProviderDashboard() {
         </CardContent>
       </Card>
 
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">VPA credit transactions</h2>
+      {/* Non-API flow — the payer pays a settlement VPA directly; the gateway hosts/reconciles the collection. */}
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Gateway Hosted Checkout</h2>
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <KpiTile label="Total VPA credits" value={vpaTxns.data?.totals?.count ?? 0} icon={Wallet} loading={vpaTxns.isLoading} />
         <KpiTile label="Gross received" value={formatAmount(vpaTxns.data?.totals?.gross ?? 0)} icon={Wallet} variant="success" loading={vpaTxns.isLoading} />
-        <KpiTile label="Confirmed" value={vpaTxns.data?.totals?.confirmed ?? 0} icon={Activity} variant="success" loading={vpaTxns.isLoading} />
-        <KpiTile label="Unmatched" value={vpaTxns.data?.totals?.unmatched ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.unmatched ?? 0) > 0 ? "warning" : "default"} loading={vpaTxns.isLoading} />
-        <KpiTile label="Missing RRN" value={vpaTxns.data?.totals?.missingRrn ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.missingRrn ?? 0) > 0 ? "warning" : "success"} loading={vpaTxns.isLoading} />
+        {/* Verified, not "confirmed". A direct VPA collection never has a Katana order to be
+            confirmed against — what proves it is the UPI network's own 12-digit RRN. */}
+        <KpiTile label="Verified" value={vpaTxns.data?.totals?.verified ?? 0} icon={Activity} variant="success" loading={vpaTxns.isLoading} />
+        <KpiTile label="Awaiting RRN" value={vpaTxns.data?.totals?.awaitingRrn ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.awaitingRrn ?? 0) > 0 ? "warning" : "default"} loading={vpaTxns.isLoading} />
+        <KpiTile label="VPA mismatch" value={vpaTxns.data?.totals?.vpaMismatch ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.vpaMismatch ?? 0) > 0 ? "danger" : "success"} loading={vpaTxns.isLoading} />
       </div>
       <Card className="mb-6">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="text-base">VPA credits</CardTitle>
-              <CardDescription>Every UPI credit landing on your branches' settlement VPAs — payer, amount, UTR, and match.</CardDescription>
+              <CardDescription>Non-API collections — every UPI credit landing on your branches' settlement VPAs: payer, amount, UTR, and match.</CardDescription>
             </div>
             {(vpaTxns.data?.branches ?? []).length > 1 && (
               <select
@@ -243,11 +262,13 @@ export default function ProviderDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          {(vpaTxns.data?.recent ?? []).length === 0
+          {vpaCredits.length === 0
             ? <div className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">{vpaTxns.isLoading ? "Loading…" : "No VPA credits captured yet."}</div>
             : (
-              <ol className="flex flex-col gap-2 text-sm">
-                {(vpaTxns.data?.recent ?? []).slice(0, 12).map((r) => {
+              // A long list scrolls inside the card rather than pushing the rest of the
+              // dashboard off the page.
+              <ol className={`flex flex-col gap-2 text-sm ${showAllVpa && vpaCredits.length > VPA_PREVIEW ? "max-h-[70vh] overflow-y-auto pr-1" : ""}`}>
+                {(showAllVpa ? vpaCredits : vpaCredits.slice(0, VPA_PREVIEW)).map((r) => {
                   // RRN = the 12-digit UPI reference; UTR = any other all-digit bank ref.
                   const rrn = r.utr && /^\d{12}$/.test(r.utr) ? r.utr : null;
                   const utr = !rrn && r.utr && /^\d+$/.test(r.utr) ? r.utr : null;
@@ -255,25 +276,69 @@ export default function ProviderDashboard() {
                   // or a matched Katana order — de-duped against whatever is already shown.
                   const utrOrderId = r.utr && !/^\d+$/.test(r.utr) ? r.utr : null;
                   const orderId = [r.order_ref, utrOrderId, r.matched_order_ref].find((v) => v && v !== r.utr) ?? null;
+                  const expanded = vpaDetailOf === r.id;
                   return (
-                  <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2">
-                    <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
-                    <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
-                      {r.payer_vpa ? <>from <span className="font-mono">{r.payer_vpa}</span> </> : null}
-                      → <span className="font-mono">{r.payee_vpa}</span>
-                      {rrn ? <> · RRN <span className="font-mono">{rrn}</span></> : null}
-                      {utr ? <> · UTR <span className="font-mono">{utr}</span></> : null}
-                      {orderId ? <> · Order ID <span className="font-mono">{orderId}</span></> : null}
-                      {!rrn ? <> · <span className="text-[color:var(--color-warning,#b45309)]">no RRN</span></> : null}
-                    </span>
-                    <Badge variant={r.outcome === "CONFIRMED" ? "success" : r.outcome === "DUPLICATE" ? "danger" : "warning"}>{r.outcome}</Badge>
-                    <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
-                    {!rrn ? <CaptureRrnButton alertId={r.id} /> : null}
+                  <li key={r.id} className="rounded-md border px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
+                      <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
+                        {/* The payer's NAME when the capture gave us one — a name is what the
+                            person reading this recognises; the VPA is the fallback. */}
+                        {r.payer_name ? <>from <span className="font-medium text-[color:var(--color-text)]">{r.payer_name}</span> </>
+                          : r.payer_vpa ? <>from <span className="font-mono">{r.payer_vpa}</span> </> : null}
+                        → <span className="font-mono">{r.payee_vpa}</span>
+                        {rrn ? <> · RRN <span className="font-mono">{rrn}</span></> : null}
+                        {utr ? <> · UTR <span className="font-mono">{utr}</span></> : null}
+                        {orderId ? <> · Order ID <span className="font-mono">{orderId}</span></> : null}
+                        {!rrn ? <> · <span className="text-[color:var(--color-warning,#b45309)]">no RRN</span></> : null}
+                      </span>
+                      {(() => {
+                        const v = r.verification ?? (r.outcome === "CONFIRMED" ? "matched" : "awaiting");
+                        return <Badge variant={verificationVariant(v)}>{verificationLabel(v)}</Badge>;
+                      })()}
+                      <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
+                      {hasCreditDetail(r.details) ? (
+                        <button
+                          type="button"
+                          onClick={() => setVpaDetailOf(expanded ? null : r.id)}
+                          aria-expanded={expanded}
+                          className="rounded-md border border-[color:var(--color-border)] px-2 py-1 text-xs hover:bg-[color:var(--color-surface-muted)]"
+                        >
+                          {expanded ? "Hide" : "Details"}
+                        </button>
+                      ) : null}
+                      {!rrn ? <CaptureRrnButton alertId={r.id} /> : null}
+                    </div>
+                    {/* Everything shown is already on the row, so expanding costs no fetch. */}
+                    {expanded && (
+                      <div className="mt-2 border-t border-[color:var(--color-border)] pt-2">
+                        <CreditDetail details={r.details} />
+                      </div>
+                    )}
                   </li>
                   );
                 })}
               </ol>
             )}
+          {/* The card used to cut the list at 12 with nothing said, so the tile above it
+              ("18") and the rows below it disagreed and the missing credits looked lost.
+              Say what is hidden and let it be opened. */}
+          {vpaCredits.length > VPA_PREVIEW && (
+            <div className="mt-3 flex items-center justify-center gap-3 border-t border-[color:var(--color-border)] pt-3">
+              <span className="text-xs text-[color:var(--color-text-muted)]">
+                Showing {showAllVpa ? vpaCredits.length : VPA_PREVIEW} of {vpaCredits.length}
+              </span>
+              <Button variant="secondary" size="sm" onClick={() => setShowAllVpa(!showAllVpa)}>
+                {showAllVpa ? "Show fewer" : `Show all ${vpaCredits.length}`}
+              </Button>
+            </div>
+          )}
+          {vpaTxns.data?.truncated && (
+            <p className="mt-2 text-center text-xs text-[color:var(--color-text-muted)]">
+              Showing the most recent {vpaCredits.length} credits — older ones exist.
+              Use <Link href="/merchant-portal/statements" className="underline">Statements</Link> for a full period.
+            </p>
+          )}
         </CardContent>
       </Card>
 
