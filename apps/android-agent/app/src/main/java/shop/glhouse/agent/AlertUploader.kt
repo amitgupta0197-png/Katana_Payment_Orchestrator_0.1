@@ -45,6 +45,9 @@ object AlertUploader {
             txn.utr?.let { put("utr", it) }
             txn.orderRef?.let { put("order_ref", it) }
             txn.payerVpa?.let { put("payer_vpa", it) }
+            // The UPI ID credited, read off the payment app. The server verifies it against the
+            // banker's configured settlement VPAs and flags a mismatch rather than trusting it.
+            txn.payeeVpa?.let { put("payee_vpa", it) }
             txn.payerName?.let { put("payer_name", it) }
             txn.details?.takeIf { it.isNotEmpty() }?.let { d ->
                 put("details", JSONObject().apply { d.forEach { (k, v) -> put(k, v.take(300)) } })
@@ -92,6 +95,7 @@ object AlertUploader {
             utr = rec.rrn,
             payerVpa = rec.upiId.ifBlank { null },
             payerName = rec.payer.ifBlank { null },
+            payeeVpa = rec.payeeVpa?.ifBlank { null },
             bank = rec.bank,
             raw = raw.ifBlank { rec.rrn },
             details = rec.details,

@@ -55,8 +55,6 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
       return (await r.json()) as { poolpay?: {
         settlement_vpa?: string | null;
         settlement_vpas?: string[] | null;
-        /** Shop / business label → the UPI ID that business collects on. */
-        business_vpas?: { marker: string; vpa: string }[] | null;
       } };
     },
   });
@@ -107,44 +105,6 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
     },
     onError: (e: Error) => toast.error("Could not save VPA list", { description: e.message }),
   });
-
-  // WHICH SHOP COLLECTS ON WHICH UPI ID. One Google Pay for Business app holds several
-  // businesses — this merchant runs four shops from one phone, each with its own UPI ID — and
-  // the payment never names its destination. Mapping the shop label the capture reports to a
-  // UPI ID is what lets a credit say where the money actually landed.
-  const businessVpas = cfg.data?.poolpay?.business_vpas ?? [];
-  const [newMarker, setNewMarker] = useState("");
-  const [newMarkerVpa, setNewMarkerVpa] = useState("");
-  const [markerError, setMarkerError] = useState<string | null>(null);
-  const allVpas = [savedVpa.trim().toLowerCase(), ...extraVpas].filter(Boolean);
-  const saveBusinessVpas = useMutation({
-    mutationFn: async (next: { marker: string; vpa: string }[]) => {
-      const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ poolpay: { business_vpas: next } }),
-      });
-      const d = await r.json().catch(() => null);
-      if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);
-      return d;
-    },
-    onSuccess: () => {
-      setNewMarker(""); setNewMarkerVpa(""); setMarkerError(null);
-      toast.success("Shop mapping saved");
-      qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payment-config"] });
-    },
-    onError: (e: Error) => toast.error("Could not save shop mapping", { description: e.message }),
-  });
-  const addBusiness = () => {
-    const marker = newMarker.trim();
-    const vpa = newMarkerVpa.trim().toLowerCase();
-    if (!marker || !vpa) return setMarkerError("Enter the shop name and pick a UPI ID.");
-    // Short labels match too much: "13" would hit "Shop No 13" and "Shop No 130" alike.
-    if (marker.replace(/[^a-z0-9]+/gi, "").length < 4) return setMarkerError("Use the shop name as the app shows it — at least 4 characters.");
-    if (businessVpas.some((e) => e.marker.trim().toLowerCase() === marker.toLowerCase())) return setMarkerError("That shop is already mapped.");
-    setMarkerError(null);
-    saveBusinessVpas.mutate([...businessVpas, { marker, vpa }]);
-  };
 
   // A VPA that is already the primary, or already listed, would silently do nothing on
   // save — say so instead, so the operator is not left wondering why nothing changed.
@@ -310,66 +270,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
             {extraError && <p className="mt-1.5 text-xs text-[color:var(--color-danger)]">{extraError}</p>}
           </div>
 
-          {/* SHOP → UPI ID. One Google Pay for Business app holds several businesses (this
-              merchant runs four shops from one phone), each collecting on its own UPI ID, and
-              the payment itself never names which one received it. Mapping the shop label the
-              capture reports is therefore the only way a credit can show its real destination —
-              without it every row can only say "settlement account". */}
-          <div className="mt-4 border-t border-[color:var(--color-border)] pt-3">
-            <div className="text-xs font-medium">Shops / businesses → UPI ID</div>
-            <p className={`mt-0.5 text-xs ${MUTED}`}>
-              One payment app can hold several businesses, each with its own UPI ID. Name each shop
-              exactly as the app shows it (e.g. <span className="font-mono">Shop No 13</span>) and pick
-              the UPI ID it collects on — captured credits then show which shop received the money.
-            </p>
 
-            {businessVpas.length > 0 && (
-              <ul className="mt-2 flex flex-col gap-1.5">
-                {businessVpas.map((e) => (
-                  <li key={e.marker} className="flex flex-wrap items-center gap-2 rounded-md border border-[color:var(--color-border)] px-2 py-1.5">
-                    <span className="min-w-0 flex-1 truncate text-sm">{e.marker}</span>
-                    <span className="font-mono text-xs">{e.vpa}</span>
-                    {/* A mapping pointing at a UPI ID the banker no longer holds is ignored at
-                        ingestion; say so here rather than letting it look active. */}
-                    {!allVpas.includes(e.vpa) && <Badge variant="warning" title="Not one of this banker's settlement VPAs — ignored until it is added above">stale</Badge>}
-                    <Button
-                      size="sm" variant="ghost" title="Remove"
-                      disabled={saveBusinessVpas.isPending}
-                      onClick={() => saveBusinessVpas.mutate(businessVpas.filter((x) => x.marker !== e.marker))}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input
-                aria-label="Shop or business name"
-                value={newMarker}
-                onChange={(e) => setNewMarker(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addBusiness(); } }}
-                placeholder="Shop No 13"
-                spellCheck={false}
-                autoComplete="off"
-                className="h-9 min-w-0 flex-1 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 text-sm"
-              />
-              <select
-                aria-label="UPI ID this shop collects on"
-                value={newMarkerVpa}
-                onChange={(e) => setNewMarkerVpa(e.target.value)}
-                className="h-9 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 font-mono text-xs"
-              >
-                <option value="">pick a UPI ID</option>
-                {allVpas.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <Button size="sm" variant="secondary" disabled={saveBusinessVpas.isPending || !newMarker.trim() || !newMarkerVpa} onClick={addBusiness}>
-                <Plus className="h-3.5 w-3.5" /> {saveBusinessVpas.isPending ? "Saving…" : "Add"}
-              </Button>
-            </div>
-            {markerError && <p className="mt-1.5 text-xs text-[color:var(--color-danger)]">{markerError}</p>}
-          </div>
         </div>
         {q.isLoading ? (
           <div className={`py-3 text-center text-sm ${MUTED}`}>Loading…</div>

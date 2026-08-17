@@ -77,6 +77,20 @@ class TxnNotificationListener : NotificationListenerService() {
 
         Prefs.bump(applicationContext, "seen")
 
+        // A PUSH IS A TRIGGER, NOT A CREDIT RECORD — so trigger BEFORE parsing.
+        //
+        // Paytm's credit push is just "Payment Received on Paytm for Business": no amount, no
+        // payer, no reference. TxnParser rightly returns null (there is no money figure to
+        // forward), and until now that also meant the function returned before reaching the code
+        // that opens the payment — so the RRN was only captured if the merchant tapped the payment
+        // by hand. Live proof, 2026-08-17 19:19:53: the notification was logged and nothing
+        // followed it.
+        //
+        // What that push DOES carry is an intent to the payment that just arrived, which is all
+        // the capture engine needs. The amount, payer and RRN then come off the detail screen —
+        // richer than any notification would have been.
+        maybeTriggerCapture(sbn, content)
+
         val txn = TxnParser.parse(content, sbn.packageName)
         if (txn == null) {
             // THE SILENT DROP THIS EXISTS TO KILL. On 2026-08-05 a real ₹250 credit was
@@ -110,48 +124,43 @@ class TxnNotificationListener : NotificationListenerService() {
             Prefs.bump(applicationContext, "uploaded")
             AlertUploader.send(applicationContext, txn, "NOTIFICATION", sbn.packageName)
         }
-
-        // GPay pushes tell us a payment happened but usually NOT its RRN — the 12-digit UPI
-        // transaction id lives only on the in-app detail screen. The accessibility engine can
-        // read it, but only while GPay is actually on screen, so left alone it captures
-        // nothing whenever the merchant has put the phone down.
-        //
-        // This is the bridge: the channel that never misses a payment triggers the one that
-        // can read the RRN. Only when this push did not already carry a 12-digit reference,
-        // so a payment whose RRN we already have never steals the foreground.
-        val hasRrn = txn.utr?.let { Regex("^\\d{12}$").matches(it) } == true
-        // A settlement notice ("₹40,006.00 for transactions settled to your bank account") has no
-        // RRN because no UPI transaction happened — it is GPay paying its own held balance into
-        // the bank. Chasing one opens the app and sweeps the screens for a reference that does
-        // not exist, and it does so at 2am when the merchant is asleep. The server still receives
-        // and records the notice; it simply never counts as a collection.
-        val isSettlement = TxnParser.isSettlement(content, txn.utr, txn.payerName)
-        if (isSettlement) AlertStore.log(applicationContext, "${nowTag()} 🏦 settlement notice (no RRN to capture)")
-        if (!hasRrn && !isSettlement && sbn.packageName == RrnAccessibilityService.GPAY_PKG) {
-            // Preferred route: fire the notification's OWN intent, which lands directly on
-            // THIS payment's detail screen — where the RRN lives.
-            //
-            // This exists because the transactions list turned out to be unreachable on a
-            // real device (2026-08-15): GPay's Home shows "Show all payments", but that
-            // control cannot be activated at all — not by the accessibility engine, not by
-            // adb input tap at its exact centre, and not by the merchant's own finger on a
-            // freshly restarted app. Any design that has to walk Home -> list is therefore
-            // dead on this build. The notification sidesteps the whole journey: it opens the
-            // one screen we actually need, for the one payment we care about.
-            // QUEUED, not fired immediately: there is one screen, so two payments arriving
-            // together would otherwise interrupt each other mid-read. The queue drains them
-            // back-to-back at roughly 2s each instead of dropping the second.
-            RrnAccessibilityService.enqueueGpayCapture(
-                applicationContext, sbn.notification?.contentIntent,
-            )
-        }
     }
 
-    // Report everything a GPay for Business notification carries beyond the three fields we
-    // read, so we can find out whether the receiving BUSINESS (and therefore its UPI ID) is
-    // identifiable at capture time. Reported at most once per distinct field shape — enough to
-    // answer the question, never a stream. Values are digit-masked: a shop label survives, an
-    // amount or reference does not.
+    /**
+     * Send the capture engine to the payment this push is about.
+     *
+     * Both business apps hide the 12-digit RRN behind their own detail screen: GPay prints it
+     * there, Paytm masks it and needs a Copy tap. Neither list live-updates, so without a trigger
+     * the engine only looks when a human opens the app.
+     *
+     * Fired for a payment-received notice, whatever else the push does or does not contain — the
+     * notification's own intent lands on that exact payment. Settlement notices are excluded:
+     * they are the app paying its own balance to the bank, and no RRN exists to find. When the
+     * push carries no intent, enqueueCapture falls back to opening the app and re-sweeping.
+     */
+    private fun maybeTriggerCapture(sbn: StatusBarNotification, content: String) {
+        val app = when (sbn.packageName) {
+            RrnAccessibilityService.GPAY_PKG -> Prefs.APP_GPAY
+            "com.paytm.business", "net.one97.paytm.merchant" -> Prefs.APP_PAYTM
+            else -> return
+        }
+        // Marketing pushes ("Setup for ₹1 · Soundbox rental") must not send the phone hunting.
+        if (!Regex("(payment received|received|credited|deposited|you got)", RegexOption.IGNORE_CASE)
+                .containsMatchIn(content)) return
+        if (TxnParser.isSettlement(content)) return
+        AlertStore.log(applicationContext, "${nowTag()} 🎯 ${app.lowercase()}: opening the payment to read its RRN")
+        RrnAccessibilityService.enqueueCapture(applicationContext, sbn.notification?.contentIntent, app)
+    }
+
+    /**
+     * Report what a business-app credit push carries beyond the three fields we read, so we can
+     * tell whether the receiving BUSINESS is identifiable at capture time. One payment app can
+     * hold several businesses (four shops on this merchant's phone), each with its own UPI ID, and
+     * nothing we store today names the shop.
+     *
+     * Once per distinct field shape, digit runs masked: a shop label survives, an amount or
+     * reference does not. Diagnostic only — no capture behaviour depends on it.
+     */
     private fun reportNotificationShape(sbn: StatusBarNotification, extras: android.os.Bundle) {
         val n = sbn.notification ?: return
         val lines = mutableListOf<String>()
@@ -159,25 +168,19 @@ class TxnNotificationListener : NotificationListenerService() {
         lines += "channel=${n.channelId ?: "-"}"
         lines += "group=${n.group ?: "-"} groupKey=${sbn.groupKey ?: "-"}"
         lines += "shortcut=${n.shortcutId ?: "-"}"
-        // Every string-ish extra the notification carries, not just the three we consume. This is
-        // where a multi-account app normally names the account.
         for (key in extras.keySet().sorted()) {
             val v = extras.get(key) ?: continue
             val text = when (v) {
                 is CharSequence -> v.toString()
                 is Array<*> -> v.filterIsInstance<CharSequence>().joinToString(" | ")
-                else -> continue                       // icons, bundles, parcelables: not text
+                else -> continue
             }
             if (text.isBlank()) continue
             lines += "$key=${redact(text).take(120)}"
         }
-        val body = lines.joinToString("\n")
-        // Shape, not content, decides "have we reported this already": the keys plus the
-        // channel/tag identity. Two payments to the same shop report once; a payment to a
-        // DIFFERENT shop has a different identity and reports again, which is the whole point.
         val key = "notif-shape|${sbn.tag}|${n.channelId}|${extras.keySet().sorted().joinToString(",")}"
         if (AlertStore.seenRecently(applicationContext, key)) return
-        AlertUploader.sendAgentDebug(applicationContext, "gpay-notif-shape", body)
+        AlertUploader.sendAgentDebug(applicationContext, "gpay-notif-shape", lines.joinToString("\n"))
         AlertStore.log(applicationContext, "${nowTag()} 🔎 reported notification shape (${lines.size} fields)")
     }
 

@@ -11,6 +11,10 @@ data class ParsedTxn(
     val bank: String?,
     val raw: String,
     val orderRef: String? = null,   // Paytm Order ID (from the detail screen) — merge key
+    // UPI ID the money was credited TO, when the capturing screen shows it. A merchant can
+    // hold several — four GPay for Business accounts in one app, each with its own ID — so
+    // this is the only thing that can say which one a payment actually landed on.
+    val payeeVpa: String? = null,
     // Everything else the source screen said about this payment (payment method, the
     // customer-paid vs amount-you-get pair, the app's own reference, settlement wording).
     // Free-form because a GPay detail screen, a Paytm receipt and a bank SMS do not

@@ -15,6 +15,8 @@ data class RrnRecord(
     val bank: String = "PAYTM",   // "PAYTM" (masked/copy) or "AIRTEL" (read full off screen)
     /** Everything else the detail screen stated about this payment. */
     val details: Map<String, String>? = null,
+    /** UPI ID the money was credited TO, when the app showed it — see RrnAccessibilityService. */
+    val payeeVpa: String? = null,
 )
 
 /**

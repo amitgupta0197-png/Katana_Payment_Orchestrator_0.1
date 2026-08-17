@@ -25,8 +25,6 @@ import { rows } from "@/lib/pg";
 import { confirmPoolPayOrder, type ConfirmPoolPayResult } from "@/lib/poolpay-order";
 import { processPayin } from "@/lib/dt-payin";
 import { isSettlementCredit, SETTLEMENT_TXN_TYPE } from "@/lib/settlement-credit";
-import { businessVpasFromConfig, resolveBusinessVpa } from "@/lib/business-vpa";
-import { vpasFromConfig } from "@/lib/settlement-vpa";
 
 // Policy knobs (architecture §6 / §8).
 const CONFIDENCE_THRESHOLD = 90;      // auto-confirm bar
@@ -57,10 +55,6 @@ export interface TxnAlertInput {
   raw?: string;
   /** Full payment detail as stated by the capturing screen; shape varies per source. */
   details?: Record<string, string>;
-  /** Business / shop the payment was made to, when the capture can name it. One payment-app
-   *  account can hold several businesses, each with its own UPI ID, so this is what makes the
-   *  destination knowable (resolved via lib/business-vpa.ts). */
-  business?: string;
   event_time?: string;
   nonce?: string;
   parser_version?: string;
@@ -256,7 +250,7 @@ export async function ingestTxnAlert(
   // with a source marker so the UI never presents a derivation as the payment's own words.
   const statedPayee = input.payee_vpa?.trim().toLowerCase() || null;
   let payee = statedPayee;
-  let payeeSource: "STATED" | "BUSINESS" | "DEVICE" | null = statedPayee ? "STATED" : null;
+  let payeeSource: "STATED" | "DEVICE" | null = statedPayee ? "STATED" : null;
   const payerName = input.payer_name?.trim() || null;
   const raw = (input.raw ?? "").slice(0, 2000);
   const actor = `alert:${source}${deviceId ? `:${deviceId}` : ""}`;
@@ -356,27 +350,6 @@ export async function ingestTxnAlert(
   //
   // Deliberately AFTER the settlement branch: a settlement leg is a deposit into the bank
   // account, not a credit to a UPI ID, so it must not acquire one.
-  // 2a) DESTINATION FROM THE BUSINESS THE PAYMENT WAS MADE TO.
-  //
-  // One Google Pay for Business app holds several businesses — a live merchant runs four shops
-  // from one phone, each with its own UPI ID — so neither the payment nor the phone identifies
-  // the destination on its own. The shop label the capture reports does, against the per-banker
-  // map configured beside the VPA list. Tried BEFORE the device fallback because it
-  // distinguishes shops within one phone, which the device mapping cannot.
-  if (!payee && input.merchant_id) {
-    const cfg = await rows<{ poolpay: unknown }>("merchant",
-      `SELECT poolpay FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchant_id]).catch(() => []);
-    const entries = businessVpasFromConfig(cfg[0]?.poolpay);
-    if (entries.length) {
-      // Most explicit signal first: the agent's own business field, then the detail screen's
-      // values, then the notification text as a last resort.
-      const candidates = [input.business, ...Object.values(input.details ?? {}), raw, input.narration];
-      const allowed = vpasFromConfig(cfg[0]?.poolpay);
-      const hit = resolveBusinessVpa(entries, candidates, allowed);
-      if (hit) { payee = hit.vpa; payeeSource = "BUSINESS"; }
-    }
-  }
-
   // THE MAPPING IS PER PHONE *AND* PER BANKER. A phone's banker code is typed into the agent
   // and can be changed: "Author new" captured for PRIMESX and later for PRVZS23. The mapping was
   // validated against one banker's configured VPAs, so it may only be applied to that banker's
@@ -515,12 +488,16 @@ export async function ingestTxnAlert(
       const twinHasRrn = twin[0].utr && /^\d{12}$/.test(twin[0].utr);
       const foldRrn = utr && /^\d{12}$/.test(utr) && !twinHasRrn;
       const foldDetails = input.details && Object.keys(input.details).length > 0 && !twin[0].details;
-      if (foldRrn || foldDetails || payerName) {
+      if (foldRrn || foldDetails || payerName || statedPayee) {
         await rows("vendorGateway", `
           UPDATE vendor_txn_alerts
              SET utr        = COALESCE($2, utr),
                  details    = COALESCE(details, $3::jsonb),
                  payer_name = COALESCE(payer_name, $4),
+                 -- Destination account, if this delivery is the one that knew it.
+                 payee_vpa        = COALESCE(payee_vpa, $5),
+                 payee_vpa_source = CASE WHEN payee_vpa IS NULL AND $5::text IS NOT NULL
+                                         THEN 'STATED' ELSE payee_vpa_source END,
                  detail     = COALESCE(detail,'') || ' · enriched from re-notification'
            WHERE id = $1::uuid
         `, [
@@ -528,6 +505,7 @@ export async function ingestTxnAlert(
           foldRrn ? utr : null,
           foldDetails ? JSON.stringify(input.details) : null,
           payerName ?? null,
+          statedPayee,
         ]).catch(() => {});
         if (foldRrn) dupDetail += ` · RRN ${utr} folded onto the original`;
         if (foldDetails) dupDetail += " · detail folded onto the original";
@@ -721,9 +699,17 @@ export async function ingestTxnAlert(
           payer_name = COALESCE(payer_name, $4),
           payer_vpa  = COALESCE(payer_vpa, $5),
           bank       = COALESCE(bank, $6),
+          -- The DESTINATION account travels too. A notification never names which of the
+          -- merchant's UPI IDs was credited; the on-device screen read does, and that read
+          -- arrives as this second sighting. Without folding it across, the row the dashboard
+          -- shows would stay blank while the answer sat on a row marked duplicate.
+          payee_vpa        = COALESCE(payee_vpa, $8),
+          payee_vpa_source = CASE WHEN payee_vpa IS NULL AND $8::text IS NOT NULL
+                                  THEN 'STATED' ELSE payee_vpa_source END,
           detail     = COALESCE(detail,'') || ' · +' || $7
         WHERE id = $1::uuid
-      `, [tgtId, rrn, orderRef, payerName, input.payer_vpa ?? null, input.bank ?? null, source]).catch(() => {});
+      `, [tgtId, rrn, orderRef, payerName, input.payer_vpa ?? null, input.bank ?? null, source,
+          statedPayee]).catch(() => {});
       // An on-demand capture request against this credit is now fulfilled — close it so
       // the dashboard button clears and the agent stops re-issuing it.
       if (rrn) await closeCaptureRequest(tgtId);

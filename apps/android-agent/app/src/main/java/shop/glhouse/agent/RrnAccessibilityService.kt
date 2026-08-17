@@ -101,6 +101,9 @@ class RrnAccessibilityService : AccessibilityService() {
         private const val COPY_BAND_FRAC = 0.06f
         // Auto mode timings.
         private const val AUTO_DETAIL_BACK_MS = 2600L // return to list this long after opening a detail
+        // Longer than the sweep's own return: a bridge-opened Paytm detail has to read the masked
+        // reference, tap Copy and let the clipboard reader run before it is safe to press BACK.
+        private const val BRIDGE_BACK_MS = 5000L
         // Result of the last auto-opened detail (new = captured, old = boundary).
         private const val R_UNKNOWN = 0
         private const val R_NEW = 1
@@ -158,8 +161,14 @@ class RrnAccessibilityService : AccessibilityService() {
          */
         // Payments waiting to be opened and read, one at a time. There is a single screen, so
         // captures are inherently serial — but they must QUEUE rather than be dropped.
-        private val pendingCaptures = ArrayDeque<PendingIntent>()
+        // Each queued capture remembers WHICH APP it came from: the queue serves Paytm and GPay
+        // alike, and only GPay needs its list refreshed afterwards.
+        private val pendingCaptures = ArrayDeque<Pair<PendingIntent, String>>()
         @Volatile private var captureBusy = false
+        /** When a notification intent last opened a payment detail; 0 = never. */
+        @Volatile private var bridgeOpenedAt = 0L
+        /** A detail opened by us stays "ours" this long — beyond it, assume the merchant drove. */
+        private const val BRIDGE_OWNED_MS = 60_000L
         private val pump = Handler(Looper.getMainLooper())
         private const val CAPTURE_DEADLINE_MS = 9_000L   // give up on one payment, move on
         private const val CAPTURE_QUEUE_MAX = 60         // bound: never grow without limit
@@ -174,16 +183,30 @@ class RrnAccessibilityService : AccessibilityService() {
          * end). Queuing keeps the same one-at-a-time behaviour on screen while letting a
          * burst drain back-to-back instead of being thrown away.
          */
-        fun enqueueGpayCapture(ctx: Context, intent: PendingIntent?) {
+        /**
+         * Queue a payment for capture from a credit push, for EITHER payment app.
+         *
+         * Paytm was previously left out, and the consequence was exactly what the merchant
+         * reported (2026-08-17): a ₹1 payment landed, the credit was forwarded, but the RRN only
+         * appeared after they opened the payment BY HAND. The engine reads Paytm perfectly — the
+         * live log shows masked RRN → Copy → clipboard → upload in under 4 seconds — but nothing
+         * ever told it to look. Its list does not live-update, so the only way it noticed a new
+         * payment was an accessibility event from someone touching the app.
+         *
+         * Airtel gets there by re-tapping its own refresh, GPay by this queue. Now Paytm uses the
+         * queue too: the notification's own intent opens that payment, and `forceResweep` makes
+         * the list sweep again in case the intent lands somewhere else.
+         */
+        fun enqueueCapture(ctx: Context, intent: PendingIntent?, app: String) {
             if (!Prefs.enabled(ctx)) return
-            if (!Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, Prefs.APP_GPAY)) return
-            if (intent == null) { requestGpayCapture(ctx); return }   // no intent: sweep instead
+            if (!Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, app)) return
+            if (intent == null) { requestAppCapture(ctx, app); return }   // no intent: sweep instead
             synchronized(pendingCaptures) {
                 if (pendingCaptures.size >= CAPTURE_QUEUE_MAX) {
-                    Log.w("RRNCAP", "gpay: capture queue full; dropping oldest")
+                    Log.w("RRNCAP", "capture queue full; dropping oldest")
                     pendingCaptures.removeFirstOrNull()
                 }
-                pendingCaptures.addLast(intent)
+                pendingCaptures.addLast(intent to app)
             }
             pumpCaptures(ctx)
         }
@@ -191,14 +214,19 @@ class RrnAccessibilityService : AccessibilityService() {
         /** Start the next queued capture if nothing is in flight. */
         private fun pumpCaptures(ctx: Context) {
             if (captureBusy) return
-            val next = synchronized(pendingCaptures) { pendingCaptures.removeFirstOrNull() } ?: return
+            val (next, app) = synchronized(pendingCaptures) { pendingCaptures.removeFirstOrNull() } ?: return
             captureBusy = true
             forceResweep = true
-            gpayRefreshPending = true
+            // Stamped so the engine knows this detail screen was opened by US, not by the
+            // merchant — and must therefore be left again once the RRN is read.
+            bridgeOpenedAt = System.currentTimeMillis()
+            // GPay's transactions list is a static search result that must be re-run; Paytm's
+            // sweep re-reads whatever the list shows, so it needs no refresh flag.
+            if (app == Prefs.APP_GPAY) gpayRefreshPending = true
             val ok = try { next.send(); true } catch (e: Exception) {
-                Log.w("RRNCAP", "gpay: queued intent failed: ${e.javaClass.simpleName}"); false
+                Log.w("RRNCAP", "${app.lowercase()}: queued intent failed: ${e.javaClass.simpleName}"); false
             }
-            if (!ok) requestGpayCapture(ctx)
+            if (!ok) requestAppCapture(ctx, app)
             // Never let one unreadable payment wedge the queue.
             pump.postDelayed({
                 if (captureBusy) { captureBusy = false; pumpCaptures(ctx) }
@@ -212,17 +240,23 @@ class RrnAccessibilityService : AccessibilityService() {
             pump.postDelayed({ pumpCaptures(ctx) }, 250)   // let the screen settle between payments
         }
 
-        fun requestGpayCapture(ctx: Context) {
+        /** Open the payment app and re-sweep — the fallback when a push carries no intent. */
+        fun requestAppCapture(ctx: Context, app: String) {
             if (!Prefs.enabled(ctx)) return
-            if (!Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, Prefs.APP_GPAY)) return
+            if (!Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, app)) return
             val now = System.currentTimeMillis()
             if (now - lastGpayLaunch < 15_000L) return   // a burst of pushes = one trip
             lastGpayLaunch = now
             forceResweep = true
-            gpayRefreshPending = true
+            if (app == Prefs.APP_GPAY) gpayRefreshPending = true
+            // Paytm ships under two package names; open whichever this phone actually has.
+            val pkg = if (app == Prefs.APP_GPAY) GPAY_PKG
+                else listOf("com.paytm.business", "net.one97.paytm.merchant")
+                    .firstOrNull { runCatching { ctx.packageManager.getLaunchIntentForPackage(it) }.getOrNull() != null }
+                    ?: "com.paytm.business"
             try {
-                val i = ctx.packageManager.getLaunchIntentForPackage(GPAY_PKG)
-                if (i == null) { Log.w("RRNCAP", "gpay: not installed; cannot auto-open"); return }
+                val i = ctx.packageManager.getLaunchIntentForPackage(pkg)
+                if (i == null) { Log.w("RRNCAP", "$pkg not installed; cannot auto-open"); return }
                 // Background activity launch is restricted on Android 14+; it is permitted for
                 // an app holding SYSTEM_ALERT_WINDOW, which this agent already requires for
                 // ClipReaderActivity. If the OS still blocks it the sweep simply doesn't run —
@@ -271,7 +305,13 @@ class RrnAccessibilityService : AccessibilityService() {
         // Only run the engines for the payment apps this merchant selected in the UI —
         // a Paytm-only phone never reacts to Airtel screens and vice versa.
         when (root.packageName?.toString()) {
-            "com.paytm.business" -> if (Prefs.captureAppOn(this, Prefs.APP_PAYTM)) handlePaytm(root)
+            // BOTH Paytm-for-Business package names route to the same engine. The service has
+            // always WATCHED net.one97.paytm.merchant (it is in accessibility_config.xml and in
+            // the runtime packageNames), but nothing handled it — so on a phone carrying that
+            // build, events arrived and were dropped, and capture would have looked dead for no
+            // visible reason. The screens are the same, so the same engine reads them.
+            "com.paytm.business", "net.one97.paytm.merchant" ->
+                if (Prefs.captureAppOn(this, Prefs.APP_PAYTM)) handlePaytm(root)
             "com.apbl.merchant"  -> if (Prefs.captureAppOn(this, Prefs.APP_AIRTEL)) handleAirtel(root)   // Airtel Payments Bank Merchant
             "com.google.android.apps.nbu.paisa.merchant" -> if (Prefs.captureAppOn(this, Prefs.APP_GPAY)) handleGpay(root)  // Google Pay for Business
             else -> return
@@ -306,6 +346,9 @@ class RrnAccessibilityService : AccessibilityService() {
     // Airtel settlement reference used to be captured too and then hidden on the
     // dashboard — dead weight. v2.33: skip it at the source (real payments are always the
     // 12-digit UPI RRN; settlements are 15-digit).
+    // How many familiar rows in a row end a sweep. Three is enough to stop quickly on a quiet
+    // list while still stepping past a stale row or two at the top.
+    private val STOP_AFTER_OLD = 3
     private val airtelRrn = Regex("(?<!\\d)\\d{12}(?!\\d)")
     private val airtelAmount = Regex("₹\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?")
     private val airtelName = Regex("^[A-Za-z][A-Za-z .]{2,39}$")
@@ -317,6 +360,12 @@ class RrnAccessibilityService : AccessibilityService() {
     )
     private var lastAirtelDump = 0L      // throttle the debug dump
     private var lastAirtelRefresh = 0L   // throttle the hands-free "search" re-tap
+    /** Paytm's detail block for the payment being captured, as JSON; read before the copy tap. */
+    private var paytmDetailsJson = ""
+    /** Consecutive already-captured rows in this sweep; see onReturned. */
+    private var oldStreak = 0
+    /** True while a bridge-opened detail is queued to be closed; see returnFromDetail. */
+    private var bridgeBackScheduled = false
 
     // Click a node via its nearest clickable ancestor (ACTION_CLICK), falling back to a
     // real tap gesture at its centre. Used to re-run Airtel's "search" for hands-free refresh.
@@ -441,6 +490,12 @@ class RrnAccessibilityService : AccessibilityService() {
         // block into one description or splits it.
         val lines = nodes.joinToString("\n") { it.first }
             .split('\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
+
+        // Every GPay screen is a chance to learn which business is active: its QR / profile screen
+        // states "UPI ID: …", and that is the account this business collects on. Read on every
+        // pass, not just on a payment screen, because the merchant may open the QR at any time —
+        // and once read, captures can finally say which of the four IDs was credited.
+        noteVisibleVpa(lines)
 
         val rrn = gpayRrn(lines)
         if (rrn != null) {
@@ -588,6 +643,80 @@ class RrnAccessibilityService : AccessibilityService() {
         return bare.singleOrNull()   // ambiguous screen -> capture nothing rather than guess
     }
 
+    // ── WHICH UPI ID WAS CREDITED ────────────────────────────────────────────────────────
+    //
+    // A merchant can hold several. This one runs FOUR Google Pay for Business accounts in one
+    // app — +91 93554 49766, 81282 85317, 95596 78405, 90919 04144, each with its own UPI ID and
+    // its own QR — and a payment lands on exactly one of them. Neither the credit notification
+    // nor the phone identifies which: the notification says "₹60,000 received from ANKIT K D",
+    // and the phone serves all four. The dashboard could therefore only ever show one ID for
+    // every payment, which is what the merchant reported (2026-08-17).
+    //
+    // The app itself does show the ID — on the QR / profile screen of whichever business is
+    // active ("UPI ID: 9091904144@okbizaxis"). So we read it wherever it appears and remember it
+    // as the active business's collecting ID; a captured payment then carries the ID that was on
+    // screen in the business context it was read from.
+    //
+    // Two guards, because a WRONG destination is worse than a missing one:
+    //   • an ID found on the payment's OWN detail screen always beats the remembered one;
+    //   • the remembered one expires (ACTIVE_VPA_TTL_MS). A stale read from a business the
+    //     merchant has since switched away from must never be stamped onto a new payment.
+    private val vpaRe = Regex("\\b([A-Za-z0-9][A-Za-z0-9._-]{1,60}@[A-Za-z][A-Za-z0-9.-]{1,20})\\b")
+    // Handles of PAYERS, not of the merchant: a payer VPA on a receipt must never be mistaken
+    // for the account credited. Consumer handles dominate the payer side; business ones
+    // (@okbizaxis, @paytm-merchant style) dominate the payee side.
+    private val payerHandles = setOf(
+        "oksbi", "okhdfcbank", "okicici", "okaxis", "ybl", "ibl", "axl", "apl", "paytm", "upi",
+    )
+    private var activeVpa: String? = null
+    private var activeVpaAt = 0L
+    private val ACTIVE_VPA_TTL_MS = 10 * 60 * 1000L
+
+    /**
+     * An EMAIL IS NOT A UPI ID. Live on-device (2026-08-17) this read
+     * "sulemani80551234@gmail.com" and "arthurkumar009@gmail.com" off a GPay account screen and
+     * called them the collecting UPI ID — which would have stamped a Gmail address onto captured
+     * credits as their destination and then flagged every one as a VPA mismatch.
+     *
+     * The distinction is structural, not a denylist: a UPI handle has NO dot (@okbizaxis, @oksbi,
+     * @ybl, @pty, @axl …) while an email domain always does. So a dotted handle is rejected
+     * outright, and that alone rules out every address on the screen.
+     */
+    private fun isUpiHandle(vpa: String): Boolean {
+        val handle = vpa.substringAfter('@', "")
+        return handle.isNotEmpty() && !handle.contains('.')
+    }
+
+    /** Remember any merchant UPI ID visible on screen as the active business's collecting ID. */
+    private fun noteVisibleVpa(lines: List<String>) {
+        for (line in lines) {
+            // "UPI ID: x@y" is the labelled form the QR / profile screen uses. A bare VPA is
+            // accepted only from a short line — a field rather than a sentence that happens to
+            // contain a handle.
+            val labelled = line.contains("upi id", ignoreCase = true)
+            if (!labelled && line.length > 60) continue
+            val m = vpaRe.find(line) ?: continue
+            val vpa = m.groupValues[1].lowercase()
+            val handle = vpa.substringAfter('@')
+            if (!isUpiHandle(vpa)) continue                        // an email address, not a VPA
+            if (!labelled && handle in payerHandles) continue      // looks like a payer's handle
+            if (vpa != activeVpa) {
+                Log.d(TAG, "gpay: active business UPI ID = $vpa")
+                AlertStore.log(applicationContext, "${nowTag()} 🏷️ collecting on $vpa")
+            }
+            activeVpa = vpa
+            activeVpaAt = System.currentTimeMillis()
+            return
+        }
+    }
+
+    /** The UPI ID to stamp on a capture: the payment's own screen first, else the active one. */
+    private fun payeeVpaFor(fields: Map<String, String>): String? {
+        fields["payee_vpa"]?.takeIf { it.isNotBlank() }?.let { return it.lowercase() }
+        val v = activeVpa ?: return null
+        return if (System.currentTimeMillis() - activeVpaAt <= ACTIVE_VPA_TTL_MS) v else null
+    }
+
     // Labels on the GPay detail screen, each followed by its value on the next line.
     // Verified against a live device dump 2026-08-15 (OnePlus 8, Android 13).
     private val gpayLabels = mapOf(
@@ -659,6 +788,18 @@ class RrnAccessibilityService : AccessibilityService() {
                     gpayDetailFields.putIfAbsent("paid_at", line)
             }
         }
+        // The destination account, if this screen names it — the strongest form, since it belongs
+        // to the payment being read rather than to whatever business was last on screen.
+        for (line in lines) {
+            if (!line.contains("upi id", ignoreCase = true)) continue
+            // "UPI Transaction ID" is the RRN label, not an account.
+            if (line.contains("transaction", ignoreCase = true)) continue
+            val v = vpaRe.find(line)?.groupValues?.get(1)?.lowercase() ?: continue
+            if (!isUpiHandle(v)) continue                          // an email address, not a VPA
+            gpayDetailFields.putIfAbsent("payee_vpa", v)
+        }
+        noteVisibleVpa(lines)
+
         // Diagnostic, per pass (the screen arrives in halves as it scrolls): tell us what this
         // screen says that we are not indexing — specifically, whether it names the UPI ID that
         // received the payment.
@@ -717,6 +858,12 @@ class RrnAccessibilityService : AccessibilityService() {
                 gpayBackScheduled = true
                 main.postDelayed({ gpayGoBackToList() }, 600)
             }
+        } else if (!bridgeBackScheduled &&
+                   System.currentTimeMillis() - bridgeOpenedAt < BRIDGE_OWNED_MS) {
+            // Opened by a notification rather than the sweep — leave it as Paytm now does, so the
+            // phone is not parked on one payment's screen.
+            bridgeBackScheduled = true
+            main.postDelayed({ returnFromDetail(0) }, 800)
         }
     }
 
@@ -737,15 +884,17 @@ class RrnAccessibilityService : AccessibilityService() {
 
         val payer = fields["received_from"] ?: ""
 
+        val payee = payeeVpaFor(fields)
         val fresh = RrnStore.record(RrnRecord(
             rrn = rrn, capturedAt = System.currentTimeMillis(),
             amount = amount, payer = payer, upiId = "",
             paidAt = fields["paid_at"] ?: "", maskedRef = rrn, bank = "GPAY",
             details = fields.takeIf { it.isNotEmpty() },
+            payeeVpa = payee,
         ))
         if (fresh) {
             Prefs.bump(this, "capture_ok")
-            Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer fields=${fields.keys.sorted()}")
+            Log.d(TAG, "gpay: RRN $rrn amount=$amount payer=$payer payee=${payee ?: "-"} fields=${fields.keys.sorted()}")
         } else Log.d(TAG, "gpay: RRN $rrn already captured")
         return fresh
     }
@@ -1036,6 +1185,20 @@ class RrnAccessibilityService : AccessibilityService() {
             }
         }
 
+        // WHO OPENED THIS SCREEN DECIDES WHETHER WE LEAVE IT.
+        //
+        // The return above only runs for a detail the SWEEP opened. Since the notification bridge
+        // started opening payments directly, `autoNavigating` is false for those — so the RRN was
+        // captured and the app was then left sitting on the payment's detail page, which is what
+        // the merchant reported (2026-08-17). Their own taps must NOT be undone (yanking the
+        // screen away mid-read would be worse), so the trigger is narrow: only a detail this agent
+        // opened via a notification intent, and only within a minute of doing so.
+        if (autoMode && !autoNavigating && !bridgeBackScheduled &&
+            System.currentTimeMillis() - bridgeOpenedAt < BRIDGE_OWNED_MS) {
+            bridgeBackScheduled = true
+            main.postDelayed({ returnFromDetail(0) }, BRIDGE_BACK_MS)
+        }
+
         val now = System.currentTimeMillis()
         if (now < detailBusyUntil) return
 
@@ -1094,7 +1257,11 @@ class RrnAccessibilityService : AccessibilityService() {
         val paidAt = texts.firstOrNull { it.startsWith("Paid at", true) } ?: ""
         val payer = valueAfter(texts, "Name:") ?: valueAfter(texts, "From") ?: ""
         val upiId = valueAfter(texts, "UPI ID:") ?: ""
-        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer attempt=${n + 1} -> scroll+screenshot")
+        paytmDetailsJson = runCatching {
+            val f = paytmDetailFields(texts)
+            if (f.isEmpty()) "" else org.json.JSONObject(f as Map<*, *>).toString()
+        }.getOrDefault("")
+        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${paytmDetailsJson.length}b attempt=${n + 1} -> scroll+screenshot")
         swipeUp { swipeUp { captureViaScreenshot(masked, amount, payer, upiId, paidAt, copyX, bandX0, bandX1) } }
     }
 
@@ -1127,6 +1294,7 @@ class RrnAccessibilityService : AccessibilityService() {
         if (sweeping) return
         sweeping = true
         sweepPos = 0
+        oldStreak = 0
         openNext()
     }
 
@@ -1141,20 +1309,21 @@ class RrnAccessibilityService : AccessibilityService() {
             return
         }
         openRetries = 0
-        val rows = findRows(ordered)
+        val rows = findRowNodes(ordered)
         if (sweepPos >= rows.size) {
             sweeping = false; handledCount = count
             Log.d(TAG, "auto: swept all visible rows -> waiting for new payments")
             return
         }
-        val (x, y) = rows[sweepPos]
+        val node = rows[sweepPos]
         autoNavigating = true
         backScheduled = false
         detailReached = false
         lastOpenResult = R_UNKNOWN
         val gen = ++openGen
-        Log.d(TAG, "auto: opening row #$sweepPos (y=$y)")
-        tap(x, y)
+        val rb = Rect().also { node.getBoundsInScreen(it) }
+        Log.d(TAG, "auto: opening row #$sweepPos (${if (node.isClickable) "ACTION_CLICK" else "tap"} @ ${rb.exactCenterX().toInt()},${rb.exactCenterY().toInt()})")
+        clickNode(node)
         // Watchdog: if the tap never opened a detail, skip this row and continue.
         main.postDelayed({
             if (gen == openGen && sweeping && !detailReached) {
@@ -1164,13 +1333,36 @@ class RrnAccessibilityService : AccessibilityService() {
         }, 4500)
     }
 
+    /**
+     * One row finished; decide whether to continue down the list.
+     *
+     * AN ALREADY-CAPTURED ROW IS NO LONGER THE END OF THE SWEEP. It used to be: the list was
+     * assumed to be strictly newest-first, so the first familiar payment meant everything below it
+     * was familiar too. Live on 2026-08-17 that assumption cost two real payments — the count rose
+     * to 4 and then 5, the sweep opened row #0 both times, found a payment it already had, and
+     * stopped, so neither new RRN was ever captured:
+     *
+     *     auto: 1 new payment(s) (count=4); sweeping
+     *     auto: opening row #0 (ACTION_CLICK @ 433,1138)
+     *     auto: reached already-captured txn -> sweep complete
+     *
+     * Paytm's summary total updates before its rows re-render, so row #0 can still be the previous
+     * payment while a newer one exists further down (or not yet drawn). Re-visiting a captured row
+     * costs about two seconds and stores nothing (RrnStore dedupes), whereas stopping early loses
+     * money silently — so the sweep now steps over familiar rows and only gives up after
+     * STOP_AFTER_OLD of them in a row, or when the visible rows run out.
+     */
     private fun onReturned() {
         if (!sweeping) return
         if (lastOpenResult == R_OLD) {
-            sweeping = false
-            Log.d(TAG, "auto: reached already-captured txn -> sweep complete")
-            return
-        }
+            oldStreak++
+            if (oldStreak >= STOP_AFTER_OLD) {
+                sweeping = false
+                Log.d(TAG, "auto: $oldStreak already-captured in a row -> sweep complete")
+                return
+            }
+            Log.d(TAG, "auto: row #$sweepPos already captured; continuing ($oldStreak/$STOP_AFTER_OLD)")
+        } else oldStreak = 0
         sweepPos++
         openNext()
     }
@@ -1183,17 +1375,35 @@ class RrnAccessibilityService : AccessibilityService() {
         return -1
     }
 
-    /** Tap points (screen-centre X, row Y) for each transaction row, top to bottom. */
-    private fun findRows(ordered: List<Pair<String, AccessibilityNodeInfo>>): List<Pair<Float, Float>> {
-        val sw = resources.displayMetrics.widthPixels
-        val ys = ArrayList<Float>()
+    /**
+     * The transaction rows on Paytm's payments list, top to bottom — as NODES, not coordinates.
+     *
+     * This used to return (screen-centre X, centre-Y of the row's time text) and tap that point.
+     * On a live device (2026-08-17) that aimed at y=1992 for a row whose clickable ViewGroup spans
+     * [1988..2139]: the point landed in a non-clickable child at the row's top edge, the tap did
+     * nothing, and the sweep logged "row #0 did not open; skipping" for a payment that opens
+     * perfectly well — a tap 70px lower reached its detail screen on the first try.
+     *
+     * A coordinate is a guess about layout; the row itself is the target. So the time text is only
+     * used to FIND the row, and what comes back is its nearest clickable ancestor, which
+     * clickNode() activates with ACTION_CLICK (falling back to a real tap at that node's own
+     * centre). Rows are deduped by their bounds because several child texts match the time.
+     */
+    private fun findRowNodes(ordered: List<Pair<String, AccessibilityNodeInfo>>): List<AccessibilityNodeInfo> {
+        val out = ArrayList<Pair<Int, AccessibilityNodeInfo>>()
+        val seen = HashSet<Int>()
         for ((t, n) in ordered) {
             if (!timeRx.containsMatchIn(t)) continue
-            val r = Rect().also { n.getBoundsInScreen(it) }
+            var target: AccessibilityNodeInfo? = n
+            var depth = 0
+            while (target != null && !target.isClickable && depth < 6) { target = target.parent; depth++ }
+            val node = target ?: continue
+            val r = Rect().also { node.getBoundsInScreen(it) }
             if (r.width() <= 0 || r.height() <= 0) continue
-            ys.add(r.exactCenterY())
+            if (!seen.add(r.top / 10)) continue
+            out.add(r.top to node)
         }
-        return ys.distinctBy { (it / 10f).toInt() }.sorted().map { sw / 2f to it }
+        return out.sortedBy { it.first }.map { it.second }
     }
 
     private fun goBackToList() {
@@ -1209,6 +1419,36 @@ class RrnAccessibilityService : AccessibilityService() {
         main.postDelayed({ verifyOnList() }, 700)
     }
 
+    /**
+     * Leave a detail screen this agent opened from a notification.
+     *
+     * Independent of the sweep's own return path, because there is no sweep in this case — the
+     * intent took us straight to one payment. Presses BACK up to three times: Paytm's detail is a
+     * WebView that sometimes consumes the first press for its own history. Waits while our own
+     * clipboard-reader activity is in the foreground, so a BACK can never kill it before it has
+     * read the RRN.
+     */
+    private fun returnFromDetail(attempt: Int) {
+        val root = rootInActiveWindow
+        val texts = ArrayList<Pair<String, AccessibilityNodeInfo>>().also { if (root != null) flatten(root, it) }.map { it.first }
+        val pkg = root?.packageName?.toString()
+        // Our reader is on screen: give it time to finish rather than pressing BACK through it.
+        if (pkg == packageName && attempt < 8) {
+            main.postDelayed({ returnFromDetail(attempt + 1) }, 400); return
+        }
+        val onDetail = texts.any { it.equals("RRN", true) } ||
+            texts.any { it.equals("UPI Transaction ID", true) }
+        if (!onDetail) { bridgeBackScheduled = false; return }        // already back on the list
+        if (attempt >= 4) {
+            bridgeBackScheduled = false
+            Log.w(TAG, "auto: still on the payment detail after $attempt tries; leaving it")
+            return
+        }
+        Log.d(TAG, "auto: leaving the payment detail (BACK ${attempt + 1})")
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        main.postDelayed({ returnFromDetail(attempt + 1) }, 800)
+    }
+
     private fun verifyOnList() {
         if (!sweeping) return
         val root = rootInActiveWindow
@@ -1221,7 +1461,7 @@ class RrnAccessibilityService : AccessibilityService() {
         when {
             onList -> onReturned() // reached a payments list — continue the sweep
             onDetail && backAttempts < 3 -> { backAttempts++; pressBackThenVerify() } // WebView ate the BACK
-            (pkg == "com.paytm.business" || pkg == packageName) && waitChecks < 6 -> {
+            (pkg == "com.paytm.business" || pkg == "net.one97.paytm.merchant" || pkg == packageName) && waitChecks < 6 -> {
                 waitChecks++; main.postDelayed({ verifyOnList() }, 500) // reader/transition — wait it out
             }
             else -> {
@@ -1340,6 +1580,60 @@ class RrnAccessibilityService : AccessibilityService() {
         if (!fired) Log.w(TAG, "dispatchGesture returned false")
     }
 
+    /**
+     * WHAT THE PAYTM DETAIL SCREEN SAYS, beyond the RRN.
+     *
+     * GPay captures land with a full block — payer, method, customer-paid vs amount-you-get, both
+     * references — and the dashboard offers a "Details" expansion for them. Paytm captures landed
+     * with an amount and a reference and nothing else, so the same payment read as thinner on the
+     * screen that is supposed to explain it (merchant report 2026-08-17).
+     *
+     * Paytm states plenty; it just labels it three different ways, so all three are handled:
+     *   "Counter Name (POS ID): DEFAULT"  — label and value in ONE node, split on the colon
+     *   "Payment Amount₹ 1"               — label and value fused, split at the currency symbol
+     *   "Name:" then "Kush Desai"         — label node followed by its value node
+     * Keys are snake_case so they read the same as the GPay block on the dashboard.
+     */
+    private fun paytmDetailFields(texts: List<String>): Map<String, String> {
+        fun key(label: String) = label.trim().trimEnd(':').lowercase()
+            .replace(Regex("\\(.*?\\)"), " ")                 // drop parentheticals: "(POS ID)"
+            .replace(Regex("[^a-z0-9]+"), "_").trim('_')
+        // Only fields worth showing an operator; anything else on that screen is chrome.
+        val wanted = setOf(
+            "payment_amount", "amount_to_be_settled", "paid_at", "paid_using", "counter_name",
+            "order_id", "response_code", "name", "payment_option", "comment", "customer_details",
+        )
+        val out = LinkedHashMap<String, String>()
+        for ((i, raw) in texts.withIndex()) {
+            val t = raw.trim()
+            if (t.isEmpty() || t.length > 120) continue
+            // 1) "Label: value" in one node.
+            val colon = t.indexOf(':')
+            if (colon in 1 until t.length - 1) {
+                val k = key(t.substring(0, colon))
+                val v = t.substring(colon + 1).trim()
+                if (k in wanted && v.isNotEmpty()) { out.putIfAbsent(k, v); continue }
+            }
+            // 2) A bare label whose value is the next node ("Name:" / "RRN" / "Order ID:").
+            if (t.endsWith(":") || t.equals("RRN", true)) {
+                val k = key(t)
+                val v = texts.getOrNull(i + 1)?.trim().orEmpty()
+                if (k in wanted && v.isNotEmpty() && !v.endsWith(":")) { out.putIfAbsent(k, v); continue }
+            }
+            // 3) Label and value fused around the amount ("Payment Amount₹ 1").
+            val cur = t.indexOfFirst { it == '₹' }
+            if (cur > 0) {
+                val k = key(t.substring(0, cur))
+                val v = t.substring(cur).trim()
+                if (k in wanted && v.isNotEmpty()) { out.putIfAbsent(k, v); continue }
+            }
+            // 4) Sentence forms that carry their own label.
+            if (t.startsWith("Paid at", true)) out.putIfAbsent("paid_at", t.removePrefix("Paid at").trim().trimStart(','))
+            if (t.startsWith("Paid Using", true)) out.putIfAbsent("paid_using", t.removePrefix("Paid Using").trim())
+        }
+        return out
+    }
+
     private fun launchReader(masked: String, amount: String, payer: String, upiId: String, paidAt: String) {
         val i = Intent(this, ClipReaderActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1349,6 +1643,9 @@ class RrnAccessibilityService : AccessibilityService() {
             putExtra("payer", payer)
             putExtra("upiId", upiId)
             putExtra("paidAt", paidAt)
+            // The detail block is read HERE, while the payment's screen is still up: the reader
+            // activity comes to the foreground on top of it and can no longer see it.
+            putExtra("details", paytmDetailsJson)
         }
         runCatching { startActivity(i) }.onFailure { Log.w(TAG, "reader launch failed: ${it.message}") }
     }

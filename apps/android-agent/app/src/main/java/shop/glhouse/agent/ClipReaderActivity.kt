@@ -46,7 +46,10 @@ class ClipReaderActivity : Activity() {
                     payer = intent.getStringExtra("payer") ?: "",
                     upiId = intent.getStringExtra("upiId") ?: "",
                     paidAt = intent.getStringExtra("paidAt") ?: "",
-                    maskedRef = masked
+                    maskedRef = masked,
+                    // Everything the Paytm payment screen stated, snapshotted by the service before
+                    // this activity took the foreground (which hides that screen from us).
+                    details = parseDetails(intent.getStringExtra("details")),
                 )
             )
             done()
@@ -59,6 +62,17 @@ class ClipReaderActivity : Activity() {
             Log.w(TAG, "clipboard did not match masked=$masked (got=$full); giving up")
             done()
         }
+    }
+
+    /** The service's JSON snapshot of the payment screen → the map stored with the capture. */
+    private fun parseDetails(json: String?): Map<String, String>? {
+        if (json.isNullOrBlank()) return null
+        return runCatching {
+            val o = org.json.JSONObject(json)
+            val out = LinkedHashMap<String, String>()
+            for (k in o.keys()) o.optString(k).takeIf { it.isNotBlank() }?.let { out[k] = it }
+            out.ifEmpty { null }
+        }.getOrNull()
     }
 
     private fun readClipboard(): String? {
