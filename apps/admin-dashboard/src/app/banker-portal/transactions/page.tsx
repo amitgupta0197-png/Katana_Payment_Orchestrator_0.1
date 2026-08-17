@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Label } from "@/components/ui/label";
 import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detail";
+import { paymentAppOf, PAYMENT_APP_DOT } from "@/lib/payment-app";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Order {
@@ -25,6 +26,9 @@ interface Credit {
   matched_order_ref: string | null; detail: string | null;
   event_time: string | null; created_at: string;
   payer_name: string | null;
+  /** Which payment app the credit arrived on. */
+  bank: string | null;
+  sender: string | null;
   /** Verification state, computed server-side. Distinct from order matching: a direct VPA
    *  collection never has an order, so "matched" alone made every healthy payment amber. */
   verification?: "matched" | "verified" | "awaiting" | "vpa_mismatch";
@@ -126,7 +130,20 @@ export default function TransactionsPage() {
       const variant = v === "matched" || v === "verified" ? "success" : v === "vpa_mismatch" ? "danger" : "default";
       return <Badge variant={variant}>{label}</Badge>;
     } },
-    { key: "source", header: "Via", render: (r) => <span className="text-xs text-[color:var(--color-text-muted)]">{r.source === "DEVICE" ? "agent" : r.source.toLowerCase()}</span> },
+    // The APP, not the plumbing. This column used to print the ingestion channel ("agent",
+    // "notification"), which told the merchant nothing about where their money came in — every row
+    // said the same thing. `bank`/`sender` already identify the app on every credit.
+    { key: "source", header: "Via", render: (r) => {
+      const app = paymentAppOf({ bank: r.bank, sender: r.sender, source: r.source });
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-[color:var(--color-text-muted)]" title={`${r.source.toLowerCase()} capture`}>
+          {app.key !== "UNKNOWN" && (
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: PAYMENT_APP_DOT[app.key] }} />
+          )}
+          {app.label}
+        </span>
+      );
+    } },
     { key: "details", header: "", render: (r) => hasCreditDetail(r.details) ? (
       <button
         type="button"

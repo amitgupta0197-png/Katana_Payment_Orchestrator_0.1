@@ -31,6 +31,9 @@ interface CreditRow {
   payer_name: string | null;
   /** Everything else that screen said about the payment; shape varies per source. */
   details: Record<string, string> | null;
+  /** Which payment app the money arrived on — `bank` from a screen-read, `sender` from a push. */
+  bank: string | null;
+  sender: string | null;
 }
 
 export async function GET() {
@@ -48,7 +51,7 @@ export async function GET() {
   const COLS = `id::text, source, device_id, COALESCE(amount,0)::float AS amount,
             payer_vpa, payee_vpa, utr, narration, outcome, match_confidence,
             matched_order_ref, detail, event_time, created_at,
-            payer_name, details`;
+            payer_name, details, bank, sender`;
   // Banker code first: branches can share a settlement VPA (PRIMESX and PRVZS23 are both
   // 9355449766@okbizaxis), so an unqualified payee_vpa match pulls another banker's credits
   // into this view. Fall back to the VPA only for untagged rows.

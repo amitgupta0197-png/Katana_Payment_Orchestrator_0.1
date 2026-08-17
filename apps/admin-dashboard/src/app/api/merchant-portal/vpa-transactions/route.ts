@@ -31,6 +31,8 @@ interface Alert {
   /** STATED (the capture named the payee VPA) | DEVICE (from the capturing phone's mapping)
    *  | null (unknown — the row shows the banker's settlement account). */
   payee_vpa_source: string | null;
+  /** App package / SMS header that reported this credit — with `bank`, it identifies the app. */
+  sender: string | null;
   matched_order_ref: string | null; outcome: string; match_confidence: number;
   event_time: string | null; created_at: string;
   /** Who paid, as stated by the capturing screen. */
@@ -106,7 +108,7 @@ export async function GET(req: Request) {
     }
     const FEED_COLS = `id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
              matched_order_ref, outcome, match_confidence, event_time, created_at,
-             payer_name, details, merchant_id, device_id, payee_vpa_source`;
+             payer_name, details, merchant_id, device_id, payee_vpa_source, sender`;
     const recent = await rows<Alert>("vendorGateway", `
       SELECT ${FEED_COLS}
         FROM vendor_txn_alerts WHERE ${owned} AND ${isCollection}

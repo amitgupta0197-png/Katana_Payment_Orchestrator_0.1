@@ -21,6 +21,7 @@ import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detail";
 import { verificationLabel, verificationVariant, type CreditVerification } from "@/lib/credit-verification";
+import { paymentAppOf, PAYMENT_APP_DOT, type PaymentAppInput } from "@/lib/payment-app";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 interface MerchantRow { id: string; merchant_code: string; stage: string; legal_name?: string; created_at?: string }
@@ -59,6 +60,22 @@ function CaptureRrnButton({ alertId }: { alertId: string }) {
   );
 }
 
+/** Small brand-tinted mark naming the app a credit arrived on. Renders nothing when unknown,
+ *  rather than showing an empty chip on rows whose channel we genuinely cannot name. */
+function PaymentAppBadge({ bank, sender, source }: PaymentAppInput) {
+  const app = paymentAppOf({ bank, sender, source });
+  if (app.key === "UNKNOWN") return null;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[color:var(--color-border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[color:var(--color-text-muted)]"
+      title={`Received on ${app.label}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: PAYMENT_APP_DOT[app.key] }} />
+      {app.label}
+    </span>
+  );
+}
+
 export default function ProviderDashboard() {
   const merchants = useQuery({
     queryKey: ["pp:merchants"],
@@ -89,7 +106,7 @@ export default function ProviderDashboard() {
     queryKey: ["pp:vpa-txns", vpaBranch],
     queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
       totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number; verifiedAmount?: number; awaitingAmount?: number; mismatchAmount?: number; settledCount?: number; settled?: number };
-      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; merchant_id: string | null; device_id: string | null; payee_vpa_source: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
+      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; merchant_id: string | null; device_id: string | null; payee_vpa_source: string | null; sender: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
       /** Payouts from the payment app into the bank account — the same money as the credits
        *  above, one leg later. Listed on its own and counted in no collection total. */
       settlements?: Array<{ id: string; amount: number; payee_vpa: string | null; created_at: string; source: string }>;
@@ -319,6 +336,10 @@ export default function ProviderDashboard() {
                   return (
                   <li key={r.id} className="rounded-md border px-3 py-2">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {/* WHICH APP THE MONEY CAME IN ON. Already captured on every credit — as
+                          `bank` from a screen-read, as the posting package from a push — and shown
+                          nowhere until now, so a Paytm and a GPay collection looked identical. */}
+                      <PaymentAppBadge bank={r.bank} sender={r.sender} source={null} />
                       <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
                       <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
                         {/* The payer's NAME when the capture gave us one — a name is what the
@@ -333,22 +354,11 @@ export default function ProviderDashboard() {
                             the credit is genuinely attributed by. */}
                         → {r.payee_vpa
                             ? <>
-                                <span className="font-mono">{r.payee_vpa}</span>
-                                {/* Say where the destination came from when it was not the
+                                <span className="font-mono">{r.payee_vpa}</span>                                {/* Say where the destination came from when it was not the
                                     payment's own words: derived from the capturing phone's
                                     mapping (one phone, one payment-app login). Shown quietly —
                                     it is sound, just not stated by the payment. */}
-                                {r.payee_vpa_source === "BUSINESS" ? (
-                                  <span
-                                    className="text-[color:var(--color-text-subtle)]"
-                                    title={`Resolved from the shop the payment app named for this payment. One app holds several businesses, each collecting on its own UPI ID.`}
-                                  > · by shop</span>
-                                ) : r.payee_vpa_source === "DEVICE" && r.device_id ? (
-                                  <span
-                                    className="text-[color:var(--color-text-subtle)]"
-                                    title={`This phone (${r.device_id}) collects on ${r.payee_vpa}. The payment app does not name the destination, so it comes from the device's mapping.`}
-                                  > · via {r.device_id}</span>
-                                ) : null}
+
                               </>
                             : <span
                                 className="text-[color:var(--color-text-subtle)]"
