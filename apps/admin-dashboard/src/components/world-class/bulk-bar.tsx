@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 export interface BulkAction {
   label: string;
   icon?: LucideIcon;
-  onClick: () => void;
+  /**
+   * Invoked with the keys of the selected rows. It takes an argument because without one a bulk
+   * action cannot know WHAT it was asked to act on — which is why Providers' bulk Suspend and
+   * Delete sat as "coming next" toasts while looking like working buttons.
+   */
+  onClick: (selectedKeys: string[]) => void;
   variant?: "default" | "secondary" | "danger";
   disabled?: boolean;
 }
@@ -21,9 +26,11 @@ interface BulkBarProps {
   onClear: () => void;
   onSelectAll?: () => void;
   actions: BulkAction[];
+  /** Keys of the selected rows, passed to whichever action is pressed. */
+  selectedKeys: string[];
 }
 
-export function BulkBar({ count, total, onClear, onSelectAll, actions }: BulkBarProps) {
+export function BulkBar({ count, total, onClear, onSelectAll, actions, selectedKeys }: BulkBarProps) {
   if (count === 0) return null;
   return (
     <div className="fixed inset-x-0 bottom-6 z-30 mx-auto flex w-fit max-w-[95%] items-center gap-3 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 shadow-lg">
@@ -45,7 +52,7 @@ export function BulkBar({ count, total, onClear, onSelectAll, actions }: BulkBar
             size="sm"
             variant={a.variant === "danger" ? "danger" : a.variant === "secondary" ? "secondary" : "default"}
             disabled={a.disabled}
-            onClick={a.onClick}
+            onClick={() => a.onClick(selectedKeys)}
           >
             {Icon ? <Icon className="h-4 w-4" /> : null}
             {a.label}

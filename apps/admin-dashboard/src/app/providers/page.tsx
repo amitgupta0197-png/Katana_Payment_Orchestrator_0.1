@@ -218,6 +218,40 @@ export default function ProvidersPage() {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
+  // BULK ACTIONS RUN PER ROW, and report per row.
+  //
+  // There is no batch endpoint, and inventing one would hide the interesting part: some rows
+  // legitimately refuse. A delete is declined for an APPROVED merchant or one carrying settlement
+  // history (the API answers 409 with a reason), so "18 selected" can end as "15 deleted, 3
+  // skipped" — and the operator has to be told which, or they will assume it all worked.
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const runBulk = async (
+    ids: string[],
+    verb: string,
+    run: (id: string) => Promise<Response>,
+  ) => {
+    setBulkBusy(true);
+    const skipped: string[] = [];
+    let done = 0;
+    // Sequential: 18 concurrent writes against one Postgres pool is how you turn a tidy-up into
+    // an outage, and the list is small enough that it costs a second.
+    for (const id of ids) {
+      try {
+        const r = await run(id);
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) done++;
+        else skipped.push(`${d.code ?? id.slice(0, 8)}: ${d.error ?? `HTTP ${r.status}`}`);
+      } catch (e) {
+        skipped.push(`${id.slice(0, 8)}: ${(e as Error).message}`);
+      }
+    }
+    setBulkBusy(false);
+    qc.invalidateQueries({ queryKey: ["providers"] });
+    if (done && !skipped.length) toast.success(`${done} merchant${done === 1 ? "" : "s"} ${verb}`);
+    else if (done) toast.warning(`${done} ${verb}, ${skipped.length} skipped`, { description: skipped.slice(0, 4).join(" · ") });
+    else toast.error(`Nothing ${verb}`, { description: skipped.slice(0, 4).join(" · ") });
+  };
+
   const cols: Column<Provider>[] = [
     { key: "code", header: "Code",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/providers/${r.id}`}>{r.code}</Link> },
@@ -260,10 +294,30 @@ export default function ProvidersPage() {
         emptyTitle="No merchants yet"
         emptyDescription="Onboard your first reseller to start the KYC lifecycle."
         bulkActions={canUpdate || canDelete ? [
-          ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const,
-            onClick: () => toast.info("Bulk suspend coming next — wire to PATCH /api/providers/:id") }] : []),
-          ...(canDelete ? [{ label: "Delete",  icon: Trash2,  variant: "danger" as const,
-            onClick: () => toast.info("Bulk delete coming next — wire to DELETE /api/providers/:id") }] : []),
+          ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const, disabled: bulkBusy,
+            onClick: (ids: string[]) => {
+              if (!ids.length) return;
+              if (!confirm(`Suspend ${ids.length} merchant${ids.length === 1 ? "" : "s"}? They stop transacting until reactivated.`)) return;
+              runBulk(ids, "suspended", (id) => fetch(`/api/providers/${id}`, {
+                method: "PATCH", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "SUSPENDED" }),
+              }));
+            } }] : []),
+          ...(canDelete ? [{ label: "Delete", icon: Trash2, variant: "danger" as const, disabled: bulkBusy,
+            onClick: (ids: string[]) => {
+              if (!ids.length) return;
+              // Named codes, not just a count: this is irreversible, and "18 selected" is easy to
+              // mis-read after filtering. Approved merchants and any row with settlement history
+              // are refused by the API and reported back as skipped.
+              const codes = rows.filter((r) => ids.includes(r.id)).map((r) => r.code);
+              const shown = codes.slice(0, 8).join(", ") + (codes.length > 8 ? `, +${codes.length - 8} more` : "");
+              if (!confirm(
+                `Permanently delete ${ids.length} merchant${ids.length === 1 ? "" : "s"}?\n\n${shown}\n\n`
+                + "This cannot be undone. Their bankers are unmapped but not deleted. "
+                + "Merchants with approved KYC or settlement history will be skipped — terminate those instead.",
+              )) return;
+              runBulk(ids, "deleted", (id) => fetch(`/api/providers/${id}`, { method: "DELETE" }));
+            } }] : []),
         ] : []}
         rowActions={(r) => (
           <RowActions

@@ -18,6 +18,10 @@ export type EventType =
   | "reconciliation.break_opened"
   | "risk.alert"
   | "merchant.kyc_decided"
+  // A provider row removed outright (housekeeping: onboarding tests, duplicates, typo'd codes).
+  // Distinct from merchant.status.terminate, which keeps the record. The event IS the audit
+  // trail here: provider_audit_logs cascades away with the row it belongs to.
+  | "provider.deleted"
   | "merchant.integration.updated"
   | "maker_checker.requested"
   | "maker_checker.decided"

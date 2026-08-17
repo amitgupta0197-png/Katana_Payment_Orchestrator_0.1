@@ -204,3 +204,110 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
+
+/**
+ * DELETE a provider outright.
+ *
+ * DISTINCT FROM TERMINATION. `PATCH { status: "TERMINATED" }` is the lifecycle verb for a real
+ * merchant — reversible, maker-checker gated, and it keeps the record and its history. This is
+ * the housekeeping verb for rows that should never have been a merchant: onboarding tests,
+ * duplicates, typo'd codes. Every child table cascades (users, KYC docs, commission rules,
+ * merchant mappings, beneficiary accounts, integration config, notification channels, vendors),
+ * so one statement removes the whole tree.
+ *
+ * Because it is irreversible, it refuses anything that looks live:
+ *   • KYC APPROVED — an approved merchant is a real relationship; terminate it instead.
+ *   • settlement history — provider_branch_settlements cascades, and money records must not be
+ *     destroyed as a side effect of tidying a list.
+ * Mapped bankers do NOT block it: the mapping is deleted, the banker itself lives in another
+ * service and is left untouched, merely unmapped.
+ */
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const g = await gateOrResponse(["SUPER_ADMIN"]);
+  if ("response" in g) return g.response;
+  const s = g.session;
+  const { id } = await params;
+
+  try {
+    const before = await rows<{ code: string; legal_name: string; kyc_status: string; status: string }>(
+      "provider",
+      `SELECT code, legal_name, kyc_status, status FROM providers WHERE id = $1::uuid`, [id],
+    );
+    if (!before.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const p = before[0];
+
+    if (p.kyc_status === "APPROVED")
+      return NextResponse.json({
+        error: `${p.code} has APPROVED KYC — terminate it instead of deleting, so its history survives`,
+        code: p.code, reason: "KYC_APPROVED",
+      }, { status: 409 });
+
+    const settled = await rows<{ n: string }>("provider",
+      `SELECT COUNT(*)::text AS n FROM provider_branch_settlements WHERE provider_id = $1::uuid`, [id],
+    ).catch(() => [{ n: "0" }]);
+    if (Number(settled[0]?.n ?? 0) > 0)
+      return NextResponse.json({
+        error: `${p.code} has ${settled[0].n} settlement record(s) — deleting would destroy money history; terminate it instead`,
+        code: p.code, reason: "HAS_SETTLEMENTS",
+      }, { status: 409 });
+
+    // Counted before the delete so the response can say what went with it.
+    const [maps] = await rows<{ n: string }>("provider",
+      `SELECT COUNT(*)::text AS n FROM provider_merchant_mappings WHERE provider_id = $1::uuid`, [id],
+    ).catch(() => [{ n: "0" }]);
+
+    const gone = await rows<{ id: string }>("provider",
+      `DELETE FROM providers WHERE id = $1::uuid RETURNING id::text`, [id]);
+    if (!gone.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    // THE LOGIN MUST GO WITH IT.
+    //
+    // A provider's login is not in this database: creating one writes an `auth.users` row and an
+    // `iam.user_personas` grant scoped to the provider id. Delete only the provider row and that
+    // credential still authenticates — against a scope that no longer exists. So the grant is
+    // revoked here, and any account left with NO personas at all is disabled: a login with no
+    // scope can do nothing except exist as a way in.
+    //
+    // Best-effort by design. The provider row is already gone and must not be resurrected by a
+    // failure in another service; a stranded persona is visible in IAM, whereas a half-rolled-back
+    // delete is not. Counts are reported so the caller can see what happened.
+    let personasRevoked = 0;
+    let loginsDisabled = 0;
+    try {
+      const revoked = await rows<{ user_id: string }>("iam", `
+        DELETE FROM user_personas
+         WHERE persona_kind = 'PROVIDER' AND scope_id = $1
+         RETURNING user_id::text
+      `, [id]);
+      personasRevoked = revoked.length;
+      for (const { user_id } of revoked) {
+        const left = await rows<{ n: string }>("iam",
+          `SELECT COUNT(*)::text AS n FROM user_personas WHERE user_id = $1::uuid`, [user_id]).catch(() => [{ n: "1" }]);
+        if (Number(left[0]?.n ?? 1) > 0) continue;         // still has another role — leave it alone
+        const off = await rows<{ id: string }>("auth", `
+          UPDATE users SET status = 'disabled', updated_at = now()
+           WHERE id = $1::uuid AND status <> 'disabled' RETURNING id::text
+        `, [user_id]).catch(() => []);
+        loginsDisabled += off.length;
+      }
+    } catch { /* reported as 0 below; the provider is already deleted */ }
+
+    // The audit row cannot hang off the deleted provider (its FK cascades), so the trail is the
+    // event stream — which is where cross-service history belongs anyway.
+    await publish({
+      eventType: "provider.deleted",
+      producer: "provider_mgmt",
+      entityType: "provider", entityId: id, actorId: s.user_id,
+      payload: { code: p.code, legal_name: p.legal_name, kyc_status: p.kyc_status, status: p.status,
+                 mappings_removed: Number(maps?.n ?? 0), personas_revoked: personasRevoked,
+                 logins_disabled: loginsDisabled, actor: s.email },
+    }).catch(() => {});
+
+    return NextResponse.json({
+      deleted: true, id, code: p.code,
+      mappings_removed: Number(maps?.n ?? 0),
+      personas_revoked: personasRevoked,
+      logins_disabled: loginsDisabled,
+    });
+  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+}

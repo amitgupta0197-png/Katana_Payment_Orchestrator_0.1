@@ -422,7 +422,13 @@ export function DataView<T>({
         total={filtered.length}
         onClear={() => setSelected(new Set())}
         onSelectAll={() => setSelected(new Set(filtered.map(rowKey)))}
-        actions={bulkActions.map((a) => ({ ...a, onClick: () => { a.onClick(); /* caller decides whether to clear */ } }))}
+        selectedKeys={selectedRows.map(rowKey)}
+        // The selection is cleared once an action has been handed the keys: leaving rows ticked
+        // after a bulk delete invites a second run against ids that no longer exist.
+        actions={bulkActions.map((a) => ({
+          ...a,
+          onClick: (keys: string[]) => { a.onClick(keys); setSelected(new Set()); },
+        }))}
       />
     </div>
   );
