@@ -24,6 +24,13 @@ interface Alert {
   /** Banker code the capturing agent stamped — the credit's real owner, and what the UI shows
    *  when the payment itself did not state which settlement VPA received it. */
   merchant_id: string | null;
+  /** Phone that captured this credit; with `payee_vpa_source = 'DEVICE'` it is where the
+   *  destination VPA came from, so the UI can show the derivation rather than imply the
+   *  payment named it. */
+  device_id: string | null;
+  /** STATED (the capture named the payee VPA) | DEVICE (from the capturing phone's mapping)
+   *  | null (unknown — the row shows the banker's settlement account). */
+  payee_vpa_source: string | null;
   matched_order_ref: string | null; outcome: string; match_confidence: number;
   event_time: string | null; created_at: string;
   /** Who paid, as stated by the capturing screen. */
@@ -99,7 +106,7 @@ export async function GET(req: Request) {
     }
     const FEED_COLS = `id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
              matched_order_ref, outcome, match_confidence, event_time, created_at,
-             payer_name, details, merchant_id`;
+             payer_name, details, merchant_id, device_id, payee_vpa_source`;
     const recent = await rows<Alert>("vendorGateway", `
       SELECT ${FEED_COLS}
         FROM vendor_txn_alerts WHERE ${owned} AND ${isCollection}

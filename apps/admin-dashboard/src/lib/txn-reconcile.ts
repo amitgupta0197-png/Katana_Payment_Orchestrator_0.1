@@ -245,9 +245,12 @@ export async function ingestTxnAlert(
   // stated value — verificationOf()'s VPA-mismatch test compared the config against itself
   // and could never fire.
   //
-  // Now: null means "the payment did not say", which the UI renders as the banker's
-  // settlement account rather than inventing a UPI ID.
-  const payee = input.payee_vpa?.trim().toLowerCase() || null;
+  // Now: null means "the payment did not say". A destination can still be established — see
+  // the device mapping below — but only from something an operator asserted, and it is stored
+  // with a source marker so the UI never presents a derivation as the payment's own words.
+  const statedPayee = input.payee_vpa?.trim().toLowerCase() || null;
+  let payee = statedPayee;
+  let payeeSource: "STATED" | "DEVICE" | null = statedPayee ? "STATED" : null;
   const payerName = input.payer_name?.trim() || null;
   const raw = (input.raw ?? "").slice(0, 2000);
   const actor = `alert:${source}${deviceId ? `:${deviceId}` : ""}`;
@@ -326,15 +329,41 @@ export async function ingestTxnAlert(
       RETURNING id::text
     `, [
       source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
-      amount.toFixed(2), utr, payee, input.narration ?? null, raw,
+      amount.toFixed(2), utr, statedPayee, input.narration ?? null, raw,
       input.event_time ?? null, messageHash, input.nonce ?? null, input.parser_version ?? null,
       SETTLEMENT_TXN_TYPE, deviceStatus, detail, input.merchant_id ?? null,
       input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
     ]).catch(() => []);
     await audit(actor, "ALERT_SETTLEMENT", "txn_alert", ins[0]?.id ?? null,
-      `₹${amount.toFixed(2)} settled to bank account · ${payee ?? "unknown payee"}`);
+      `₹${amount.toFixed(2)} settled to bank account · ${statedPayee ?? "account not named"}`);
     return { alert_id: ins[0]?.id ?? null, outcome: "SETTLEMENT", confidence: 0, matched_order_ref: null,
       device_status: deviceStatus, detail };
+  }
+
+  // 2b) DESTINATION FROM THE CAPTURING DEVICE.
+  //
+  // The payment does not say which of the banker's UPI IDs it landed on, but the phone does:
+  // one phone holds one GPay for Business login, and the agent only ever sees its own phone's
+  // notifications. So when an operator has recorded what that device receives on (validated
+  // against the banker's own configured VPAs), every credit it captures inherits it — marked
+  // DEVICE, never passed off as the payment's own statement.
+  //
+  // Deliberately AFTER the settlement branch: a settlement leg is a deposit into the bank
+  // account, not a credit to a UPI ID, so it must not acquire one.
+  // THE MAPPING IS PER PHONE *AND* PER BANKER. A phone's banker code is typed into the agent
+  // and can be changed: "Author new" captured for PRIMESX and later for PRVZS23. The mapping was
+  // validated against one banker's configured VPAs, so it may only be applied to that banker's
+  // traffic — otherwise re-typing the code would silently stamp one banker's UPI ID onto
+  // another's credits. An alert carrying no banker code still takes it: the device is then the
+  // only thing that knows where the money went.
+  if (!payee && deviceId) {
+    const dv = await rows<{ v: string | null; m: string | null }>("vendorGateway",
+      `SELECT receiving_vpa AS v, merchant_id AS m FROM vendor_devices WHERE device_id = $1`,
+      [deviceId]).catch(() => []);
+    const v = dv[0]?.v?.trim().toLowerCase();
+    const owner = dv[0]?.m?.trim() || null;
+    const sameBanker = !input.merchant_id || !owner || owner === input.merchant_id;
+    if (v && sameBanker) { payee = v; payeeSource = "DEVICE"; }
   }
 
   // 3) Duplicate / replay detection.
@@ -683,9 +712,10 @@ export async function ingestTxnAlert(
     INSERT INTO vendor_txn_alerts
       (source, device_id, bank, sender, direction, amount, utr, order_ref, payer_vpa, payer_name, payee_vpa, narration, raw,
        event_time, message_hash, nonce, parser_version, txn_type, device_status,
-       matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id, details)
+       matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id, details,
+       payee_vpa_source)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, COALESCE($14::timestamptz, now()),
-            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb)
+            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb,$27)
     RETURNING id::text
   `, [
     source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
@@ -693,6 +723,7 @@ export async function ingestTxnAlert(
     input.event_time ?? null, messageHash, input.nonce ?? null, input.parser_version ?? null, "CREDIT", deviceStatus,
     order?.id ?? null, order?.order_id ?? null, confidence, outcome, detail, input.merchant_id ?? null,
     input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
+    payeeSource,
   ]))[0];
   const alertId = ins.id;
 

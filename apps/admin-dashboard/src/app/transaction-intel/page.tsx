@@ -25,6 +25,8 @@ interface Summary {
   cases: any[];
   security: any[];
   devices: any[];
+  /** Settlement VPAs per banker code — the values a device may be mapped to. */
+  vpa_options?: Record<string, string[]>;
   recent: any[];
 }
 
@@ -69,6 +71,11 @@ export default function TransactionIntelConsole() {
     post(`/api/v1/recon/security/${id}`, { action }, action === "REVIEW" ? "Alert marked reviewed" : "Alert dismissed");
   const setDevice = (device_id: string, status: string) =>
     post("/api/v1/recon/devices", { device_id, status }, `Device ${status.toLowerCase()}`);
+  // Map a phone to the UPI ID it collects on. Saving also attributes that device's existing
+  // credits, which is why the toast reports a count rather than a bare "saved".
+  const setDeviceVpa = (device_id: string, receiving_vpa: string, merchant_id?: string) =>
+    post("/api/v1/recon/devices", { device_id, receiving_vpa, merchant_id: merchant_id || undefined },
+      receiving_vpa ? `Device receives on ${receiving_vpa}` : "Receiving UPI ID cleared");
 
   const cases = d?.cases ?? [];
   const security = d?.security ?? [];
@@ -171,12 +178,39 @@ export default function TransactionIntelConsole() {
                         <span className="font-mono text-sm">{dev.device_id}</span>
                         <Badge variant={deviceVariant(dev.status)}>{dev.status}</Badge>
                         {dev.label && <span className={`text-xs ${MUTED}`}>{dev.label}</span>}
+                        {/* Seen on credits but no longer enrolled — device_id is the name typed
+                            into the agent, so a rename leaves its captures behind. Listed so
+                            those credits can still be attributed to a UPI ID. */}
+                        {dev.unenrolled && <Badge variant="default" title="Not enrolled — seen only on captured credits">history only</Badge>}
                       </div>
                       <div className={`mt-1 text-xs ${MUTED}`}>
                         {dev.merchant_id || "no merchant"}{dev.sim_id ? ` · SIM ${dev.sim_id}` : ""} · {dev.last_heartbeat ? `last heartbeat ${formatDateTime(dev.last_heartbeat)}` : "no heartbeat"}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* WHICH UPI ID THIS PHONE RECEIVES ON. The payment never says — GPay for
+                          Business reports payer, method and amounts, never the destination — so
+                          a banker collecting on four IDs saw every credit under one of them. One
+                          phone holds one GPay login, so stating it here is what makes the
+                          destination knowable; credits this device captures then carry it, and
+                          past ones are attributed on save. */}
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <span className={MUTED}>Receives on</span>
+                        <select
+                          className="h-8 rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 text-xs font-mono"
+                          value={dev.receiving_vpa ?? ""}
+                          onChange={(e) => setDeviceVpa(dev.device_id, e.target.value, dev.merchant_id)}
+                          disabled={!dev.merchant_id}
+                          title={dev.merchant_id
+                            ? "The UPI ID this phone's payment app collects on"
+                            : "Assign this device to a banker first"}
+                        >
+                          <option value="">{dev.merchant_id ? "not set" : "no banker"}</option>
+                          {(d?.vpa_options?.[dev.merchant_id] ?? []).map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      </label>
                       {dev.status !== "TRUSTED"
                         ? <Button size="sm" onClick={() => setDevice(dev.device_id, "TRUSTED")}><ShieldCheck className="h-4 w-4" /> Trust</Button>
                         : <Button size="sm" variant="secondary" onClick={() => setDevice(dev.device_id, "SUSPENDED")}><Ban className="h-4 w-4" /> Suspend</Button>}

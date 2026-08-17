@@ -89,7 +89,7 @@ export default function ProviderDashboard() {
     queryKey: ["pp:vpa-txns", vpaBranch],
     queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
       totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number; verifiedAmount?: number; awaitingAmount?: number; mismatchAmount?: number; settledCount?: number; settled?: number };
-      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; merchant_id: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
+      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; merchant_id: string | null; device_id: string | null; payee_vpa_source: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
       /** Payouts from the payment app into the bank account — the same money as the credits
        *  above, one leg later. Listed on its own and counted in no collection total. */
       settlements?: Array<{ id: string; amount: number; payee_vpa: string | null; created_at: string; source: string }>;
@@ -332,7 +332,19 @@ export default function ProviderDashboard() {
                             say, the banker's account (its code) is the honest answer: that is what
                             the credit is genuinely attributed by. */}
                         → {r.payee_vpa
-                            ? <span className="font-mono">{r.payee_vpa}</span>
+                            ? <>
+                                <span className="font-mono">{r.payee_vpa}</span>
+                                {/* Say where the destination came from when it was not the
+                                    payment's own words: derived from the capturing phone's
+                                    mapping (one phone, one payment-app login). Shown quietly —
+                                    it is sound, just not stated by the payment. */}
+                                {r.payee_vpa_source === "DEVICE" && r.device_id ? (
+                                  <span
+                                    className="text-[color:var(--color-text-subtle)]"
+                                    title={`This phone (${r.device_id}) collects on ${r.payee_vpa}. The payment app does not name the destination, so it comes from the device's mapping.`}
+                                  > · via {r.device_id}</span>
+                                ) : null}
+                              </>
                             : <span
                                 className="text-[color:var(--color-text-subtle)]"
                                 title="This payment app does not report which of your UPI IDs received the money. The credit is attributed by the banker code its capture device stamped."
