@@ -11,7 +11,8 @@
 import { NextResponse } from "next/server";
 import { gateOrResponse } from "@/lib/scope";
 import { settlementVpasFor } from "@/lib/settlement-vpa";
-import { verificationOf } from "@/lib/credit-verification";
+import { verificationOf, isProven, sumAmount } from "@/lib/credit-verification";
+import { IS_COLLECTION, IS_SETTLEMENT } from "@/lib/settlement-credit";
 import { rows } from "@/lib/pg";
 
 export const dynamic = "force-dynamic";
@@ -44,23 +45,37 @@ export async function GET() {
   // configured for it.
   const vpas = await settlementVpasFor([code]);
 
-  const recent = await rows<CreditRow>(
-    "vendorGateway",
-    `SELECT id::text, source, device_id, COALESCE(amount,0)::float AS amount,
+  const COLS = `id::text, source, device_id, COALESCE(amount,0)::float AS amount,
             payer_vpa, payee_vpa, utr, narration, outcome, match_confidence,
             matched_order_ref, detail, event_time, created_at,
-            payer_name, details
-       FROM vendor_txn_alerts
-      -- DUPLICATE = the same payment seen a second time (a push and the on-device screen
-      -- read of one payment, seconds apart). The reconciler folds the RRN and the detail
-      -- onto the row we keep, so the duplicate carries nothing unique -- showing it makes
-      -- one payment look like two and double-counts it into the totals below.
-      WHERE direction = 'CREDIT'
-        AND COALESCE(outcome,'') <> 'DUPLICATE'
-        -- Banker code first: branches can share a settlement VPA (PRIMESX and PRVZS23 are
-        -- both 9355449766@okbizaxis), so an unqualified payee_vpa match pulls another
-        -- banker's credits into this view. Fall back to the VPA only for untagged rows.
-        AND (merchant_id = $1 OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[])))
+            payer_name, details`;
+  // Banker code first: branches can share a settlement VPA (PRIMESX and PRVZS23 are both
+  // 9355449766@okbizaxis), so an unqualified payee_vpa match pulls another banker's credits
+  // into this view. Fall back to the VPA only for untagged rows.
+  const OWNED = `direction = 'CREDIT'
+        AND (merchant_id = $1 OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[])))`;
+
+  // Only real collected money. Excluded, and why (shared predicate — see lib/settlement-credit):
+  //   DUPLICATE  = one payment seen twice (a push and the on-device screen read). The
+  //                reconciler folds the RRN and detail onto the row we keep, so the duplicate
+  //                carries nothing unique; showing it makes one payment look like two.
+  //   SETTLEMENT = the payment app paying its held balance into the bank account. Same money
+  //                as the credits above, one leg later; listed on its own below.
+  const recent = await rows<CreditRow>(
+    "vendorGateway",
+    `SELECT ${COLS} FROM vendor_txn_alerts
+      WHERE ${OWNED} AND ${IS_COLLECTION}
+      ORDER BY created_at DESC
+      LIMIT 50`,
+    [code, vpas],
+  ).catch(() => []);
+
+  // Settlement legs — proof that the collections above reached the bank account. Never added
+  // to any collection total; shown so a filtered-out upload is still accounted for.
+  const settlements = await rows<CreditRow>(
+    "vendorGateway",
+    `SELECT ${COLS} FROM vendor_txn_alerts
+      WHERE ${OWNED} AND ${IS_SETTLEMENT}
       ORDER BY created_at DESC
       LIMIT 50`,
     [code, vpas],
@@ -96,12 +111,19 @@ export async function GET() {
 
   const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
   const todayReal = real.filter((r) => isToday(r.created_at));
+  // Today's money, split by whether the UPI network has corroborated it. A credit with no RRN
+  // is a claim the phone reported; it usually firms up within minutes, but until it does it is
+  // not banked money and is never added to the day's takings.
+  const todayProven = todayReal.filter((r) => isProven(r.verification));
+  const todayAwaiting = todayReal.filter((r) => r.verification === "awaiting");
 
   return NextResponse.json({
     // Real credits only — the UI lists these and every total below counts only these.
     credits: real,
     // Test alerts are returned separately so the UI can show them without mixing them in.
     test_credits: tests,
+    // Settlements to the bank account — recorded, listed on their own, counted nowhere.
+    settlements,
     summary: {
       total: real.length,
       confirmed: real.filter((r) => r.outcome === "CONFIRMED").length,
@@ -111,10 +133,17 @@ export async function GET() {
       awaiting_rrn: real.filter((r) => r.verification === "awaiting").length,
       vpa_mismatch: real.filter((r) => r.verification === "vpa_mismatch").length,
       today_count: todayReal.length,
-      today_amount: +todayReal.reduce((s, r) => s + (r.amount ?? 0), 0).toFixed(2),
+      // All-in figure, kept for reconciliation: today_amount === today_verified_amount +
+      // today_awaiting_amount + any VPA-mismatch money. The UI leads with the verified half.
+      today_amount: sumAmount(todayReal),
+      today_verified_amount: sumAmount(todayProven),
+      today_awaiting_count: todayAwaiting.length,
+      today_awaiting_amount: sumAmount(todayAwaiting),
       last_at: real[0]?.created_at ?? null,
       test_count: tests.length,
-      test_amount: +tests.reduce((s, r) => s + (r.amount ?? 0), 0).toFixed(2),
+      test_amount: sumAmount(tests),
+      settled_count: settlements.length,
+      settled_amount: sumAmount(settlements),
     },
   });
 }

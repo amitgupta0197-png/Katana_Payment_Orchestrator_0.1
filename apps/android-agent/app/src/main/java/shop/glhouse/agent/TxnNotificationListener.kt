@@ -108,7 +108,14 @@ class TxnNotificationListener : NotificationListenerService() {
         // can read the RRN. Only when this push did not already carry a 12-digit reference,
         // so a payment whose RRN we already have never steals the foreground.
         val hasRrn = txn.utr?.let { Regex("^\\d{12}$").matches(it) } == true
-        if (!hasRrn && sbn.packageName == RrnAccessibilityService.GPAY_PKG) {
+        // A settlement notice ("₹40,006.00 for transactions settled to your bank account") has no
+        // RRN because no UPI transaction happened — it is GPay paying its own held balance into
+        // the bank. Chasing one opens the app and sweeps the screens for a reference that does
+        // not exist, and it does so at 2am when the merchant is asleep. The server still receives
+        // and records the notice; it simply never counts as a collection.
+        val isSettlement = TxnParser.isSettlement(content, txn.utr, txn.payerName)
+        if (isSettlement) AlertStore.log(applicationContext, "${nowTag()} 🏦 settlement notice (no RRN to capture)")
+        if (!hasRrn && !isSettlement && sbn.packageName == RrnAccessibilityService.GPAY_PKG) {
             // Preferred route: fire the notification's OWN intent, which lands directly on
             // THIS payment's detail screen — where the RRN lives.
             //

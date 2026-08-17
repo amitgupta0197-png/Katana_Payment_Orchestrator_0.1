@@ -10,6 +10,8 @@
 
 import { rows } from "@/lib/pg";
 import { inr, esc } from "@/lib/telegram";
+import { IS_COLLECTION } from "@/lib/settlement-credit";
+import { RRN_PROVEN_SQL } from "@/lib/credit-verification";
 
 // UTC instant of the most recent IST midnight — comparable to a timestamptz column.
 const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'";
@@ -21,29 +23,43 @@ const SETTLEMENT_TERMINAL =
   "'VERIFIED','RECONCILED','REJECTED','FAILED','CANCELLED','REVERSED','DRAFT','INSUFFICIENT_BALANCE','INVALID_BENEFICIARY'";
 
 // ── Report 1: collections (captured bank credits) for a day window ────────────
-// `dateClause` is the SQL created_at filter for the window (today vs yesterday); the
-// rest of the filter (CREDIT, non-duplicate, exclude airtel settlement) is shared and
-// mirrors the vpa-transactions dashboard endpoint.
+// `dateClause` is the SQL created_at filter for the window (today vs yesterday); the rest of
+// the filter is the shared IS_COLLECTION predicate, so this report, the provider dashboard,
+// the banker portal and the statements all agree on what counts as collected money. It
+// excludes second sightings of one payment (DUPLICATE) and settlement legs — the payment app
+// paying its held balance into the bank account, which is the same money one leg later. The
+// bespoke airtel-settlement exclusion this report used to carry is subsumed by it.
 async function collectionsReport(title: string, dateClause: string): Promise<string> {
-  const base = `COALESCE(direction,'CREDIT') = 'CREDIT' AND outcome <> 'DUPLICATE'
-    AND NOT (bank = 'AIRTEL' AND COALESCE(raw,'') LIKE '%airtel-settlement%')`;
+  const base = `COALESCE(direction,'CREDIT') = 'CREDIT' AND ${IS_COLLECTION}`;
   try {
-    const [tot] = await rows<{ count: number; gross: number; confirmed: number }>("vendorGateway", `
+    // The reported total is PROVEN money only — credits carrying the UPI network's own 12-digit
+    // RRN, or matched to a confirmed order. Credits still without one are a claim the phone
+    // made; they are reported on their own line so the headline figure is one you could take to
+    // the bank, and the pending amount is still visible rather than silently folded in.
+    const [tot] = await rows<{ count: number; gross: number; confirmed: number; proven_n: number; proven: number; pending_n: number; pending: number }>("vendorGateway", `
       SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0)::float AS gross,
-             COUNT(*) FILTER (WHERE outcome = 'CONFIRMED')::int AS confirmed
+             COUNT(*) FILTER (WHERE outcome = 'CONFIRMED')::int AS confirmed,
+             COUNT(*) FILTER (WHERE ${RRN_PROVEN_SQL})::int AS proven_n,
+             COALESCE(SUM(amount) FILTER (WHERE ${RRN_PROVEN_SQL}),0)::float AS proven,
+             COUNT(*) FILTER (WHERE NOT ${RRN_PROVEN_SQL})::int AS pending_n,
+             COALESCE(SUM(amount) FILTER (WHERE NOT ${RRN_PROVEN_SQL}),0)::float AS pending
         FROM vendor_txn_alerts WHERE ${base} AND ${dateClause}
     `);
     const perBank = await rows<{ bank: string; n: number; amt: number }>("vendorGateway", `
-      SELECT COALESCE(NULLIF(bank,''),'OTHER') AS bank, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amt
+      SELECT COALESCE(NULLIF(bank,''),'OTHER') AS bank, COUNT(*)::int AS n,
+             COALESCE(SUM(amount) FILTER (WHERE ${RRN_PROVEN_SQL}),0)::float AS amt
         FROM vendor_txn_alerts WHERE ${base} AND ${dateClause}
        GROUP BY 1 ORDER BY amt DESC
     `);
     const lines = perBank.map((b) => `   • ${esc(b.bank)}: <b>${inr(b.amt)}</b> (${b.n})`).join("\n");
     return [
       `💰 <b>${title}</b>`,
-      `Total: <b>${inr(tot?.gross)}</b> across <b>${tot?.count ?? 0}</b> payments`,
+      `Verified: <b>${inr(tot?.proven)}</b> across <b>${tot?.proven_n ?? 0}</b> payments`,
+      (tot?.pending_n ?? 0) > 0
+        ? `Awaiting RRN: ${inr(tot?.pending)} (${tot?.pending_n}) — <i>not in the figure above</i>`
+        : "",
       `Reconciled: ${tot?.confirmed ?? 0}/${tot?.count ?? 0}`,
-      perBank.length ? `\n<b>By app:</b>\n${lines}` : "",
+      perBank.length ? `\n<b>By app (verified):</b>\n${lines}` : "",
     ].filter(Boolean).join("\n");
   } catch {
     return `💰 <b>${title}</b>\n   ⚠️ unavailable`;

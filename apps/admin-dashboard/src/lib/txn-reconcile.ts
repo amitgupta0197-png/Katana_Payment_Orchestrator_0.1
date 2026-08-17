@@ -4,6 +4,9 @@
 //
 // Pipeline for one CREDIT alert:
 //   1) OTP / auth-message guard  — never store or act on OTP/PIN/password messages.
+//   1e) Settlement guard         — the app moving its own held money to the merchant's bank
+//                                  is not new money; recorded, never counted (see
+//                                  lib/settlement-credit.ts).
 //   2) Raw event storage         — append-only, with a content hash (forensics §4).
 //   3) Duplicate detection       — same message hash / nonce replay → DUPLICATE.
 //   4) Device trust              — only TRUSTED enrolled devices may auto-confirm.
@@ -21,6 +24,7 @@ import { createHash } from "crypto";
 import { rows } from "@/lib/pg";
 import { confirmPoolPayOrder, type ConfirmPoolPayResult } from "@/lib/poolpay-order";
 import { processPayin } from "@/lib/dt-payin";
+import { isSettlementCredit, SETTLEMENT_TXN_TYPE } from "@/lib/settlement-credit";
 
 // Policy knobs (architecture §6 / §8).
 const CONFIDENCE_THRESHOLD = 90;      // auto-confirm bar
@@ -60,7 +64,12 @@ export interface TxnAlertInput {
 
 export interface TxnAlertResult {
   alert_id: string | null;
-  outcome: "CONFIRMED" | "UNMATCHED" | "AMBIGUOUS" | "DUPLICATE" | "REJECTED";
+  // REJECTED and SETTLEMENT are classifications, not match outcomes, and are not stored in
+  // vendor_txn_alerts.outcome (whose CHECK constraint allows only the four matching states).
+  // A rejected alert is never stored at all; a settlement is stored with outcome UNMATCHED —
+  // literally true, no order matched it — and txn_type = 'SETTLEMENT', which is what excludes
+  // it from every collection feed.
+  outcome: "CONFIRMED" | "UNMATCHED" | "AMBIGUOUS" | "DUPLICATE" | "REJECTED" | "SETTLEMENT";
   confidence: number;
   matched_order_ref: string | null;
   device_status: string;
@@ -268,6 +277,56 @@ export async function ingestTxnAlert(
         `INSERT INTO vendor_devices (device_id, status, merchant_id) VALUES ($1,'UNKNOWN',$2) ON CONFLICT DO NOTHING`,
         [deviceId, input.merchant_id ?? null]).catch(() => {});
     }
+  }
+
+  // 1e) SETTLEMENT GUARD — old money moving one leg further, not a new collection.
+  //
+  // "₹40,006.00 deposited — ₹40,006.00 for transactions settled to your bank account" is GPay
+  // for Business paying yesterday's captured collections into the merchant's bank account. The
+  // parser sees "deposited" and forwards it; every dedup layer below is blind to it because a
+  // settlement shares no identity with the payments it settles (no RRN, its own wording, its
+  // own nonce, hours later, no stated payment time). Left alone it lands as a fresh
+  // "awaiting RRN" credit and states the same takings twice — which is exactly what the
+  // 2026-08-17 report showed: ₹125,046 of settlement legs counted as collections.
+  //
+  // So it is diverted here, ahead of duplicate detection and order matching. The row is still
+  // stored — a settlement is the proof that collected money reached the bank, and dropping it
+  // would leave the phone's upload unaccounted for — but it never matches an order, never
+  // opens a manual case, never consumes a DT lot, and never appears in a collection total.
+  if (isSettlementCredit({ raw, narration: input.narration, payer_name: payerName, payer_vpa: input.payer_vpa, utr })) {
+    // The app re-posts its settlement notice as readily as it re-posts a payment, so keep one
+    // row per notice: identical text from the same device inside a day is the same leg.
+    const already = await rows<{ id: string }>("vendorGateway", `
+      SELECT id::text FROM vendor_txn_alerts
+       WHERE message_hash = $1 AND COALESCE(txn_type,'') = $2
+         AND created_at >= now() - ($3 || ' hours')::interval
+       LIMIT 1
+    `, [messageHash, SETTLEMENT_TXN_TYPE, String(DEDUP_HASH_HOURS)]).catch(() => []);
+    if (already.length) {
+      await audit(actor, "ALERT_SETTLEMENT_DUP", "txn_alert", already[0].id, `settlement notice re-posted (₹${amount.toFixed(2)})`);
+      return { alert_id: already[0].id, outcome: "SETTLEMENT", confidence: 0, matched_order_ref: null,
+        device_status: deviceStatus, detail: "settlement to bank account — already recorded" };
+    }
+    const detail = "settled to bank account by the payment app — not a customer payment, excluded from collections";
+    const ins = await rows<{ id: string }>("vendorGateway", `
+      INSERT INTO vendor_txn_alerts
+        (source, device_id, bank, sender, direction, amount, utr, payee_vpa, narration, raw,
+         event_time, message_hash, nonce, parser_version, txn_type, device_status,
+         match_confidence, outcome, detail, merchant_id, details)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()),
+              $12,$13,$14,$15,$16,0,'UNMATCHED',$17,$18,$19::jsonb)
+      RETURNING id::text
+    `, [
+      source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
+      amount.toFixed(2), utr, payee, input.narration ?? null, raw,
+      input.event_time ?? null, messageHash, input.nonce ?? null, input.parser_version ?? null,
+      SETTLEMENT_TXN_TYPE, deviceStatus, detail, input.merchant_id ?? null,
+      input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
+    ]).catch(() => []);
+    await audit(actor, "ALERT_SETTLEMENT", "txn_alert", ins[0]?.id ?? null,
+      `₹${amount.toFixed(2)} settled to bank account · ${payee ?? "unknown payee"}`);
+    return { alert_id: ins[0]?.id ?? null, outcome: "SETTLEMENT", confidence: 0, matched_order_ref: null,
+      device_status: deviceStatus, detail };
   }
 
   // 3) Duplicate / replay detection.

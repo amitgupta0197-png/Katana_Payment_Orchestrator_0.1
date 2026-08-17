@@ -77,16 +77,25 @@ export default function TransactionsPage() {
     queryFn: async () => (await fetch("/api/banker-portal/credits").then((r) => r.json())) as {
       credits: Credit[];
       test_credits: Credit[];
+      /** Payouts from the payment app into your bank account — the same money as the credits,
+       *  one leg later. Excluded from every total below. */
+      settlements?: Credit[];
       summary: {
         total: number; confirmed: number; unmatched: number;
         today_count: number; today_amount: number; last_at: string | null;
+        /** Today's money the UPI network has corroborated — the figure to lead with. */
+        today_verified_amount?: number;
+        /** Today's credits still without an RRN. Reported, never added to the verified figure. */
+        today_awaiting_count?: number; today_awaiting_amount?: number;
         test_count: number; test_amount: number;
+        settled_count?: number; settled_amount?: number;
       };
     },
     refetchInterval: 15_000,   // this is the screen you watch while testing the agent
   });
   const credits = creditsQ.data?.credits ?? [];
   const testCredits = creditsQ.data?.test_credits ?? [];
+  const settlements = creditsQ.data?.settlements ?? [];
   const creditSummary = creditsQ.data?.summary;
 
   // Id of the credit whose detail is expanded, or null. Everything shown is already on the
@@ -129,6 +138,15 @@ export default function TransactionsPage() {
     ) : <span className="text-xs text-[color:var(--color-text-subtle)]">—</span> },
   ];
 
+  // Same columns for the settlement list, except the verification badge: a settlement has no
+  // RRN to wait for (no UPI transaction happened), so reusing the credit column would label
+  // every row a permanent "awaiting RRN" problem.
+  const settlementCols: Column<Credit>[] = creditCols.map((c) =>
+    c.key === "outcome"
+      ? { ...c, header: "Status", render: () => <Badge variant="default">settlement</Badge> }
+      : c,
+  );
+
   const cols: Column<Order>[] = [
     { key: "client_ref", header: "Ref", render: (r) => <span className="font-mono text-xs">{r.client_ref}</span> },
     { key: "txn_id", header: "UTR / TXN", render: (r) => r.txn_id ? <span className="font-mono text-xs">{r.txn_id}</span> : "—" },
@@ -150,9 +168,16 @@ export default function TransactionsPage() {
         <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
           <div className="min-w-0">
             <CardTitle className="text-base">Incoming credits</CardTitle>
+            {/* Today's takings are stated as PROVEN money, with anything still waiting on its
+                RRN named beside it rather than folded in. A credit with no RRN is a claim the
+                phone made; until the network confirms it, adding it to the day's total presents
+                unproven money as banked. */}
             <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
               {creditSummary
-                ? `${creditSummary.today_count} today · ${formatAmount(creditSummary.today_amount)} · ${creditSummary.unmatched} unmatched`
+                ? `${creditSummary.today_count} today · ${formatAmount(creditSummary.today_verified_amount ?? 0)} verified`
+                  + ((creditSummary.today_awaiting_amount ?? 0) > 0
+                      ? ` · ${formatAmount(creditSummary.today_awaiting_amount ?? 0)} awaiting RRN (not counted)`
+                      : "")
                 : "Live feed from your collection phone."}
             </p>
           </div>
@@ -180,6 +205,34 @@ export default function TransactionsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Settled to bank. The payment app pays the day's collections into your bank account and
+          posts a notification for it ("₹40,006 for transactions settled to your bank account").
+          The phone forwards that like any other credit, so it used to appear above as a second,
+          payer-less copy of money already listed — and added itself to today's total. It is kept
+          here instead: the same money, one leg later, counted nowhere. */}
+      {settlements.length > 0 && (
+        <Card className="mb-4 border-dashed">
+          <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
+            <div className="min-w-0">
+              <CardTitle className="text-base text-[color:var(--color-text-muted)]">Settled to bank</CardTitle>
+              <p className="mt-1 text-xs text-[color:var(--color-text-muted)]">
+                {creditSummary?.settled_count ?? settlements.length} settlement{(creditSummary?.settled_count ?? settlements.length) === 1 ? "" : "s"} · {formatAmount(creditSummary?.settled_amount ?? 0)} — the credits above reaching your bank account. <b>Not counted</b> in the totals.
+              </p>
+            </div>
+            <Badge variant="default" className="shrink-0">excluded</Badge>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={settlementCols}
+              rows={settlements}
+              loading={creditsQ.isLoading}
+              rowKey={(r) => r.id}
+              emptyState="No settlements yet."
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Test alerts from the agent's "Test" button. Kept in their own card and excluded
           from every total above, so a commissioning test can never be mistaken for — or

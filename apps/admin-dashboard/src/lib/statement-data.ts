@@ -10,6 +10,7 @@
 
 import { rows } from "./pg";
 import { settlementVpasFor } from "./settlement-vpa";
+import { IS_COLLECTION } from "./settlement-credit";
 import type { StatementChannel, StatementRange, StatementRow } from "./statement";
 
 export interface StatementQuery {
@@ -143,9 +144,11 @@ async function vpaRows(q: StatementQuery): Promise<StatementRow[]> {
           + ` OR (merchant_id IS NULL AND payee_vpa = ANY($${vpaParam}::text[])))`;
   }
 
-  // DUPLICATE rows are the same payment seen twice (a push and the on-device screen read);
-  // including them would double the statement total.
-  const where = `WHERE direction = 'CREDIT' AND COALESCE(outcome,'') <> 'DUPLICATE'
+  // Only collected money. DUPLICATE rows are the same payment seen twice (a push and the
+  // on-device screen read) and SETTLEMENT rows are the payment app paying its held balance
+  // into the bank account — including either would double the statement total, once as the
+  // customer's payment and again as the same money arriving in the bank.
+  const where = `WHERE direction = 'CREDIT' AND ${IS_COLLECTION}
                    AND COALESCE(event_time, created_at) >= $1::timestamptz
                    AND COALESCE(event_time, created_at) <  $2::timestamptz${scope}`;
   const base = `

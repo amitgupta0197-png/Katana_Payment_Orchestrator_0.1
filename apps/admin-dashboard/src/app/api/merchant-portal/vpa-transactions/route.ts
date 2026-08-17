@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { settlementVpasFor } from "@/lib/settlement-vpa";
-import { verificationOf } from "@/lib/credit-verification";
+import { verificationOf, isProven, sumAmount } from "@/lib/credit-verification";
+import { IS_COLLECTION, IS_SETTLEMENT } from "@/lib/settlement-credit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +52,19 @@ export async function GET(req: Request) {
     // A branch can be configured with several (one primary payee + additional IDs it also
     // receives on); all of them are recognised here.
     const vpas = scoped ? await settlementVpasFor(codes) : [];
-    // DUPLICATE rows are the SAME payment seen a second time — the reconciler marks them
-    // when one credit reaches us on two channels (a GPay push and the on-device screen read
-    // of the same transaction). Showing them makes one payment look like several, and they
-    // would also double-count into `gross` below, so they are excluded from the feed and the
-    // totals alike.
-    const notDup = "COALESCE(outcome,'') <> 'DUPLICATE'";
+    // WHAT COUNTS AS COLLECTED MONEY. Two classes of row are excluded from the feed and from
+    // every total below, for the same reason: neither is new money.
+    //
+    //   DUPLICATE  — the same payment seen a second time (a GPay push and the on-device screen
+    //                read of one transaction). Showing it makes one payment look like several.
+    //   SETTLEMENT — the payment app moving money it already holds into the bank account
+    //                ("₹40,006 for transactions settled to your bank account"). That is
+    //                yesterday's collections travelling one leg further, and counting it stated
+    //                the same takings twice (₹125,046 of phantom gross, 2026-08-17).
+    //
+    // Both live in one shared predicate so this screen, the banker portal, the statements and
+    // the Telegram report cannot drift apart on what "collected" means.
+    const isCollection = IS_COLLECTION;
 
     // SEGREGATION BY BANKER CODE.
     //
@@ -72,24 +80,37 @@ export async function GET(req: Request) {
     // specific branch is selected we match on merchant_id alone: an untagged credit
     // cannot be attributed to a branch, so it stays in the all-branches view where it is
     // visible as something to fix, rather than being silently assigned.
-    let where: string;
+    // Ownership half of the filter, shared by the collection feed and the settlement feed so
+    // both describe the same accounts.
+    let owned: string;
     let args: unknown[];
     if (branch) {
-      where = `WHERE merchant_id = $1 AND ${notDup}`;
+      owned = `merchant_id = $1`;
       args = [branch];
     } else if (scoped) {
-      where = `WHERE (merchant_id = ANY($1::text[]) OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[]))) AND ${notDup}`;
+      owned = `(merchant_id = ANY($1::text[]) OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[])))`;
       args = [codes, vpas.length ? vpas : ["__none__"]];
     } else {
-      where = `WHERE direction = 'CREDIT' AND ${notDup}`;
+      owned = `direction = 'CREDIT'`;
       args = [];
     }
-    const recent = await rows<Alert>("vendorGateway", `
-      SELECT id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
+    const FEED_COLS = `id::text, source, bank, amount::float AS amount, utr, order_ref, payer_vpa, payee_vpa, narration,
              matched_order_ref, outcome, match_confidence, event_time, created_at,
-             payer_name, details
-        FROM vendor_txn_alerts ${where}
+             payer_name, details`;
+    const recent = await rows<Alert>("vendorGateway", `
+      SELECT ${FEED_COLS}
+        FROM vendor_txn_alerts WHERE ${owned} AND ${isCollection}
        ORDER BY created_at DESC LIMIT ${FEED_LIMIT}
+    `, args).catch(() => []);
+
+    // The settlement legs, listed separately. Not collected money — but worth showing, because
+    // this is the record of collected money actually reaching the bank account, and because a
+    // settlement that has been filtered out of the totals must still be visible somewhere or
+    // the phone's upload looks like it vanished.
+    const settlements = await rows<Alert>("vendorGateway", `
+      SELECT ${FEED_COLS}
+        FROM vendor_txn_alerts WHERE ${owned} AND ${IS_SETTLEMENT}
+       ORDER BY created_at DESC LIMIT 200
     `, args).catch(() => []);
 
     // A credit is "missing its RRN" when no 12-digit UPI reference has landed for it.
@@ -108,20 +129,44 @@ export async function GET(req: Request) {
     // rule, so both portals now agree on the same payment.
     const withVerification = recent.map((r) => ({ ...r, verification: verificationOf(r, vpas) }));
 
+    // MONEY IS REPORTED IN THREE BUCKETS, NEVER AS ONE NUMBER.
+    //
+    // A credit with no RRN is a claim the network has not corroborated yet. Folding it into the
+    // received total presents unproven money as banked money — and since most such rows do get
+    // their RRN minutes later, the total kept drifting upwards for reasons nobody could tie to a
+    // payment. Proven money is the headline; the rest sits beside it, added to nothing.
+    const proven   = withVerification.filter((r) => isProven(r.verification));
+    const awaiting = withVerification.filter((r) => r.verification === "awaiting");
+    const mismatch = withVerification.filter((r) => r.verification === "vpa_mismatch");
+
     const totals = {
       count: recent.length,
-      gross: recent.reduce((a, r) => a + Number(r.amount || 0), 0),
+      // Every collection added together, proven or not. Kept for reconciliation and for callers
+      // that need the all-in figure; the dashboard leads with `verifiedAmount` instead, and
+      // gross === verifiedAmount + awaitingAmount + mismatchAmount always holds.
+      gross: sumAmount(recent),
       // Kept for any caller still reading them, but the dashboard now leads with the
       // verification counts below.
       confirmed: recent.filter((r) => r.outcome === "CONFIRMED").length,
       unmatched: recent.filter((r) => r.outcome === "UNMATCHED" || r.outcome === "AMBIGUOUS").length,
       missingRrn,
-      verified: withVerification.filter((r) => r.verification === "verified" || r.verification === "matched").length,
-      awaitingRrn: withVerification.filter((r) => r.verification === "awaiting").length,
-      vpaMismatch: withVerification.filter((r) => r.verification === "vpa_mismatch").length,
+      verified: proven.length,
+      awaitingRrn: awaiting.length,
+      vpaMismatch: mismatch.length,
+      // Money proven by a UPI RRN (or by a confirmed order match) — the collected total.
+      verifiedAmount: sumAmount(proven),
+      // Claimed but not yet corroborated. Reported, never added to the total above.
+      awaitingAmount: sumAmount(awaiting),
+      // Credits naming a payee VPA that belongs to no configured banker — a flagged problem,
+      // counted separately so it can neither inflate the total nor be quietly lost.
+      mismatchAmount: sumAmount(mismatch),
+      // Money the payment app has paid out to the bank account. Reported separately and never
+      // added to `gross` — it is the same money as the collections above, one leg later.
+      settledCount: settlements.length,
+      settled: settlements.reduce((a, r) => a + Number(r.amount || 0), 0),
     };
     return NextResponse.json({
-      vpas, totals, recent: withVerification, branches: codes, branch,
+      vpas, totals, recent: withVerification, settlements, branches: codes, branch,
       // True when there are older credits beyond this window; the totals then describe the
       // newest FEED_LIMIT, not all time. Use the Statements download for a full period.
       truncated: recent.length >= FEED_LIMIT,

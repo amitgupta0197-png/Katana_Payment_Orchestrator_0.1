@@ -20,6 +20,8 @@ import {
 
 interface Preview {
   label: string; count: number; gross: number; fee: number; net: number;
+  /** Credits with no UPI reference yet: in the file, excluded from gross/fee/net. */
+  awaiting_count?: number; awaiting_gross?: number;
   checkout_count: number; vpa_count: number; filename: string;
 }
 
@@ -157,9 +159,21 @@ export function DownloadStatement({
               <dl className="mt-3 flex flex-col gap-2 text-sm">
                 <Row label="Period" value={preview.data?.label ?? "…"} />
                 <Row label="Transactions" value={preview.isLoading ? "…" : String(preview.data?.count ?? 0)} />
-                <Row label="Gross" value={preview.isLoading ? "…" : formatAmount(preview.data?.gross ?? 0)} />
+                <Row label="Gross · RRN verified" value={preview.isLoading ? "…" : formatAmount(preview.data?.gross ?? 0)} />
                 <Row label="Processing fee" value={preview.isLoading ? "…" : formatAmount(preview.data?.fee ?? 0)} />
                 <Row label="Net" value={preview.isLoading ? "…" : formatAmount(preview.data?.net ?? 0)} strong />
+                {/* Credits still without a UPI reference are quoted apart from the totals above
+                    — unproven money must not read as banked money — but they ARE in the file, so
+                    say so rather than letting the numbers look like they disagree. */}
+                {!preview.isLoading && (preview.data?.awaiting_count ?? 0) > 0 && (
+                  <>
+                    <Row label="Awaiting RRN (not in Gross)" value={formatAmount(preview.data?.awaiting_gross ?? 0)} />
+                    <p className="text-xs text-[color:var(--color-text-muted)]">
+                      {preview.data?.awaiting_count} credit{(preview.data?.awaiting_count ?? 0) === 1 ? "" : "s"} still
+                      waiting on a UPI reference — listed in the file, excluded from the totals above.
+                    </p>
+                  </>
+                )}
                 {channel === "ALL" && preview.data && (
                   <p className="pt-1 text-xs text-[color:var(--color-text-muted)]">
                     {preview.data.checkout_count} merchant-hosted · {preview.data.vpa_count} gateway-hosted

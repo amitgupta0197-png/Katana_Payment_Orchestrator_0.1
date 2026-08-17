@@ -55,6 +55,31 @@ object TxnParser {
             "(?=\\s*(?:$|[,.\\n·—|(]|\\bvia\\b|\\bon\\b|\\bupi\\b|\\bref\\b|\\butr\\b|\\brrn\\b|@))",
         Pattern.CASE_INSENSITIVE)
 
+    // SETTLEMENT, not a collection. The payment app posts this when it moves money it already
+    // holds into the merchant's bank account: "₹40,006.00 deposited — ₹40,006.00 for
+    // transactions settled to your bank account" (GPay for Business). It parses as a credit
+    // ("deposited"), and the server records it for the audit trail, but there is no customer
+    // and no UPI transaction behind it — so nothing on this phone should chase an RRN for it.
+    private val SETTLEMENT = Pattern.compile(
+        "(settled\\s+to\\s+your\\s+(bank\\s+)?account|transactions?\\s+settled|" +
+            "(deposited|credited|transferred)\\s+to\\s+your\\s+(bank|current|savings)\\s+account|" +
+            "settlement\\s+(of|amount|credited|processed|completed|done|successful|initiated))",
+        Pattern.CASE_INSENSITIVE)
+
+    /**
+     * True when this text is the payment app reporting a settlement to the bank account rather
+     * than a customer payment. Mirrors `isSettlementCredit()` in the server's
+     * lib/settlement-credit.ts, including its fail-safe: a message that names a payer or
+     * carries a 12-digit RRN is a real payment whatever else it says.
+     */
+    fun isSettlement(text: String?, utr: String? = null, payerName: String? = null): Boolean {
+        val t = (text ?: "").trim()
+        if (t.isEmpty() || !SETTLEMENT.matcher(t).find()) return false
+        if (!payerName.isNullOrBlank()) return false
+        if (utr != null && Regex("^\\d{12}$").matches(utr)) return false
+        return true
+    }
+
     private val BANKS = listOf(
         "HDFC", "SBI", "ICICI", "AXIS", "KOTAK", "PNB", "YESBANK", "IDFC",
         "BOB", "CANARA", "UNION", "INDUSIND", "PAYTM", "PHONEPE", "GPAY",

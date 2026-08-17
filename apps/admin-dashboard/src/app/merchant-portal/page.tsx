@@ -88,8 +88,11 @@ export default function ProviderDashboard() {
   const vpaTxns = useQuery({
     queryKey: ["pp:vpa-txns", vpaBranch],
     queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
-      totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number };
+      totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number; verifiedAmount?: number; awaitingAmount?: number; mismatchAmount?: number; settledCount?: number; settled?: number };
       recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
+      /** Payouts from the payment app into the bank account — the same money as the credits
+       *  above, one leg later. Listed on its own and counted in no collection total. */
+      settlements?: Array<{ id: string; amount: number; payee_vpa: string | null; created_at: string; source: string }>;
       branches?: string[];
       /** True when older credits exist beyond the returned window. */
       truncated?: boolean;
@@ -124,6 +127,10 @@ export default function ProviderDashboard() {
   // Every credit the API returned. The KPI tiles above the list are computed from this same
   // set, so the list must be able to show all of it — see the Show all control below.
   const vpaCredits = vpaTxns.data?.recent ?? [];
+  // Settlement legs: the payment app paying its held balance into the bank account. Kept out
+  // of the credit list and every total above — it is the same money as those credits, one leg
+  // later — and shown below so the movement is still on the record.
+  const vpaSettlements = vpaTxns.data?.settlements ?? [];
   const subs = subMids.data?.sub_mids ?? [];
   const kybCases = kyb.data?.cases ?? [];
 
@@ -232,14 +239,46 @@ export default function ProviderDashboard() {
 
       {/* Non-API flow — the payer pays a settlement VPA directly; the gateway hosts/reconciles the collection. */}
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Gateway Hosted Checkout</h2>
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <KpiTile label="Total VPA credits" value={vpaTxns.data?.totals?.count ?? 0} icon={Wallet} loading={vpaTxns.isLoading} />
-        <KpiTile label="Gross received" value={formatAmount(vpaTxns.data?.totals?.gross ?? 0)} icon={Wallet} variant="success" loading={vpaTxns.isLoading} />
+      {/* MONEY PROVEN, MONEY CLAIMED — reported side by side, never added together. A credit
+          with no RRN is only a claim: the phone saw a notification, and the UPI network has not
+          corroborated it yet. It used to be inside "Gross received", which presented unproven
+          money as banked money and made the total creep for reasons no single payment explained.
+          The received tile now counts only what an RRN (or a confirmed order match) proves;
+          everything still being proved is its own tile. */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          label="Total VPA credits"
+          value={vpaTxns.data?.totals?.count ?? 0}
+          sublabel={`${formatAmount(vpaTxns.data?.totals?.gross ?? 0)} all-in`}
+          icon={Wallet}
+          loading={vpaTxns.isLoading}
+        />
         {/* Verified, not "confirmed". A direct VPA collection never has a Katana order to be
             confirmed against — what proves it is the UPI network's own 12-digit RRN. */}
-        <KpiTile label="Verified" value={vpaTxns.data?.totals?.verified ?? 0} icon={Activity} variant="success" loading={vpaTxns.isLoading} />
-        <KpiTile label="Awaiting RRN" value={vpaTxns.data?.totals?.awaitingRrn ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.awaitingRrn ?? 0) > 0 ? "warning" : "default"} loading={vpaTxns.isLoading} />
-        <KpiTile label="VPA mismatch" value={vpaTxns.data?.totals?.vpaMismatch ?? 0} icon={Activity} variant={(vpaTxns.data?.totals?.vpaMismatch ?? 0) > 0 ? "danger" : "success"} loading={vpaTxns.isLoading} />
+        <KpiTile
+          label="Received · RRN verified"
+          value={formatAmount(vpaTxns.data?.totals?.verifiedAmount ?? 0)}
+          sublabel={`${vpaTxns.data?.totals?.verified ?? 0} credits proven`}
+          icon={Wallet}
+          variant="success"
+          loading={vpaTxns.isLoading}
+        />
+        <KpiTile
+          label="Awaiting RRN"
+          value={formatAmount(vpaTxns.data?.totals?.awaitingAmount ?? 0)}
+          sublabel={`${vpaTxns.data?.totals?.awaitingRrn ?? 0} credits · not in Received`}
+          icon={Activity}
+          variant={(vpaTxns.data?.totals?.awaitingRrn ?? 0) > 0 ? "warning" : "default"}
+          loading={vpaTxns.isLoading}
+        />
+        <KpiTile
+          label="VPA mismatch"
+          value={vpaTxns.data?.totals?.vpaMismatch ?? 0}
+          sublabel={(vpaTxns.data?.totals?.vpaMismatch ?? 0) > 0 ? `${formatAmount(vpaTxns.data?.totals?.mismatchAmount ?? 0)} · not in Received` : "none"}
+          icon={Activity}
+          variant={(vpaTxns.data?.totals?.vpaMismatch ?? 0) > 0 ? "danger" : "success"}
+          loading={vpaTxns.isLoading}
+        />
       </div>
       <Card className="mb-6">
         <CardHeader>
@@ -341,6 +380,46 @@ export default function ProviderDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Settled to bank. These used to appear in the list above as extra "awaiting RRN"
+          credits, which stated the same takings twice — a ₹40,006 settlement of a ₹40,000 and
+          a ₹6 collection read as ₹40,006 of new money. They are their own thing: the payment
+          app moving money it already holds into the bank account. Worth seeing (it is the proof
+          the collections landed), never worth counting. */}
+      {vpaSettlements.length > 0 && (
+        <Card className="mb-6 border-dashed">
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base text-[color:var(--color-text-muted)]">Settled to bank</CardTitle>
+                <CardDescription>
+                  The payment app paying collected money into the bank account — the same money as the credits
+                  above, one leg later. <b>Not counted</b> in any total.
+                </CardDescription>
+              </div>
+              <Badge variant="default" className="shrink-0 whitespace-nowrap">
+                {formatAmount(vpaTxns.data?.totals?.settled ?? 0)} · {vpaSettlements.length}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ol className={`flex flex-col gap-2 text-sm ${vpaSettlements.length > VPA_PREVIEW ? "max-h-[40vh] overflow-y-auto pr-1" : ""}`}>
+              {vpaSettlements.map((r) => (
+                <li key={r.id} className="rounded-md border border-dashed px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="tabular-nums font-semibold">{formatAmount(r.amount)}</span>
+                    <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">
+                      settled to bank account{r.payee_vpa ? <> · <span className="font-mono">{r.payee_vpa}</span></> : null}
+                    </span>
+                    <Badge variant="default">settlement</Badge>
+                    <span className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatDateTime(r.created_at)}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      )}
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Katana Pay reconciliation</h2>
       <PaymentFunnel description="Live Katana Pay pay-ins across all your bankers — created → reconciled." />

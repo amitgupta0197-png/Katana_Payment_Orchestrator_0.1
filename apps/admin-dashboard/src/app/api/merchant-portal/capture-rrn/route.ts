@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { SETTLEMENT_TXN_TYPE } from "@/lib/settlement-credit";
 
 export const dynamic = "force-dynamic";
 
@@ -25,13 +26,19 @@ export async function POST(req: Request) {
   try {
     // Load the target credit and confirm it is in the caller's scope. A PROVIDER may
     // only request captures for credits tagged to one of their branches.
-    const alert = (await rows<{ id: string; merchant_id: string | null; amount: number; utr: string | null; payer_vpa: string | null }>(
+    const alert = (await rows<{ id: string; merchant_id: string | null; amount: number; utr: string | null; payer_vpa: string | null; txn_type: string | null }>(
       "vendorGateway",
-      `SELECT id::text, merchant_id, amount::float AS amount, utr, payer_vpa
+      `SELECT id::text, merchant_id, amount::float AS amount, utr, payer_vpa, txn_type
          FROM vendor_txn_alerts WHERE id = $1::uuid`,
       [body.alert_id],
     ))[0];
     if (!alert) return NextResponse.json({ error: "credit not found" }, { status: 404 });
+
+    // A settlement leg has no RRN to fetch — no UPI transaction happened, the payment app
+    // simply moved its own balance to the bank. Sending the phone after one would walk the
+    // GPay screens for a reference that does not exist.
+    if (alert.txn_type === SETTLEMENT_TXN_TYPE)
+      return NextResponse.json({ error: "this is a bank settlement, not a customer payment — it has no RRN" }, { status: 400 });
 
     if (s.persona === "PROVIDER") {
       const codes = await resolveProviderMerchants(s);
