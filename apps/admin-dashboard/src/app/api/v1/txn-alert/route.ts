@@ -34,6 +34,11 @@ const schema = z.object({
   payee_vpa: z.string().max(120).optional(),
   narration: z.string().max(500).optional(),
   raw: z.string().max(2000).optional(),
+  // Everything else the capturing screen said about this payment (payment method, the
+  // customer-paid vs amount-you-get pair, the app's own reference, settlement wording).
+  // Free-form and capped: the field set differs per source and per app version, and this
+  // arrives from a device, so it is bounded rather than trusted.
+  details: z.record(z.string().max(300)).optional(),
   event_time: z.string().optional(),
   nonce: z.string().max(120).optional(),
   parser_version: z.string().max(40).optional(),

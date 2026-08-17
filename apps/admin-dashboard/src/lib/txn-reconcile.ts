@@ -49,6 +49,8 @@ export interface TxnAlertInput {
   payee_vpa?: string;
   narration?: string;
   raw?: string;
+  /** Full payment detail as stated by the capturing screen; shape varies per source. */
+  details?: Record<string, string>;
   event_time?: string;
   nonce?: string;
   parser_version?: string;
@@ -345,6 +347,70 @@ export async function ingestTxnAlert(
       dupDetail = `echo of the same credit within ${DEDUP_ECHO_SECONDS}s (no RRN to match on)`;
     }
   }
+  // SAME PAYMENT, RE-NOTIFIED LATER. GPay posts a credit again minutes afterwards under a
+  // different title — "Payments you receive will be shown here — ₹11 received from Kush D
+  // at 10:01 pm" vs "₹11 received from Kush D at 10:01 pm". Different wording means a
+  // different hash, a fresh upload means a different nonce, and the ten-minute gap is far
+  // outside the echo window, so nothing above sees them as one payment. They also cannot
+  // enrich-merge, because that only folds across DIFFERENT sources and both are pushes.
+  //
+  // Both texts do state the payment's OWN time, and two notifications for one payment always
+  // agree on it. So the identity is amount + that in-text time — exact rather than windowed,
+  // which is what makes it safe: two genuine same-amount payments occur at different times
+  // and are never collapsed.
+  // IDENTITY AT VOLUME. amount + in-text time is a good identifier for a shop doing a few
+  // payments an hour, and a BAD one as volume rises: two customers paying the same amount in
+  // the same minute stop being rare, and merging them under-reports real money. So it is used
+  // only while we have nothing better. A 12-digit RRN is unique per UPI transaction and is
+  // handled by the RRN check far above; this fallback deliberately does not run once the
+  // incoming alert carries one.
+  const textTime = (input.raw ?? "").match(/\b(\d{1,2}:\d{2}\s?[ap]\.?m\.?)\b/i)?.[1];
+  const ownRrn = utr && /^\d{12}$/.test(utr) ? utr : null;
+  if (!duplicate && textTime && amount > 0) {
+    const twin = await rows<{ id: string; utr: string | null; details: unknown }>("vendorGateway", `
+      SELECT id::text, utr, details FROM vendor_txn_alerts
+       WHERE direction = 'CREDIT'
+         AND merchant_id IS NOT DISTINCT FROM $1
+         AND amount = $2
+         AND raw ILIKE '%' || $3 || '%'
+         -- RRN wins over the heuristic: a candidate carrying a DIFFERENT 12-digit reference
+         -- is provably a different payment, however well amount and time line up. This is
+         -- what keeps amount+time safe as volume rises -- as soon as either side has a real
+         -- reference, that reference decides.
+         AND ($4::text IS NULL OR utr IS NULL OR utr !~ '^[0-9]{12}$' OR utr = $4::text)
+         AND created_at >= now() - interval '24 hours'
+       ORDER BY created_at ASC LIMIT 1
+    `, [input.merchant_id ?? null, amount.toFixed(2), textTime, ownRrn]).catch(() => []);
+    if (twin.length) {
+      duplicate = true;
+      benignRecapture = true;
+      dupDetail = `same payment re-notified (₹${amount.toFixed(2)} at "${textTime}")`;
+      // The row we keep must end up with everything we learned, not just whichever half
+      // arrived first. A later delivery is frequently the ONLY one carrying the reference,
+      // the payer's name or the full detail block, and marking it duplicate without folding
+      // those across would hide the richest record behind the poorest one.
+      const twinHasRrn = twin[0].utr && /^\d{12}$/.test(twin[0].utr);
+      const foldRrn = utr && /^\d{12}$/.test(utr) && !twinHasRrn;
+      const foldDetails = input.details && Object.keys(input.details).length > 0 && !twin[0].details;
+      if (foldRrn || foldDetails || payerName) {
+        await rows("vendorGateway", `
+          UPDATE vendor_txn_alerts
+             SET utr        = COALESCE($2, utr),
+                 details    = COALESCE(details, $3::jsonb),
+                 payer_name = COALESCE(payer_name, $4),
+                 detail     = COALESCE(detail,'') || ' · enriched from re-notification'
+           WHERE id = $1::uuid
+        `, [
+          twin[0].id,
+          foldRrn ? utr : null,
+          foldDetails ? JSON.stringify(input.details) : null,
+          payerName ?? null,
+        ]).catch(() => {});
+        if (foldRrn) dupDetail += ` · RRN ${utr} folded onto the original`;
+        if (foldDetails) dupDetail += " · detail folded onto the original";
+      }
+    }
+  }
 
   // 5) Order matching — UTR exact, then amount + payee VPA + recency.
   let order: Cand | null = null;
@@ -479,6 +545,11 @@ export async function ingestTxnAlert(
       const compl = await rows<{ id: string }>("vendorGateway", `
         SELECT id::text FROM vendor_txn_alerts
          WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
+           -- A row already judged DUPLICATE is the same payment seen twice, not a second
+           -- candidate. Counting it made "exactly one complementary row" fail and blocked
+           -- the merge entirely: a ₹6 push arriving twice left the RRN stranded on its own
+           -- row while the credit still showed "no RRN" (live 2026-08-15).
+           AND COALESCE(outcome,'') <> 'DUPLICATE'
            AND created_at >= now() - interval '15 minutes'
            AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
               OR ($5::text IS NOT NULL AND order_ref IS NULL) )
@@ -545,15 +616,16 @@ export async function ingestTxnAlert(
     INSERT INTO vendor_txn_alerts
       (source, device_id, bank, sender, direction, amount, utr, order_ref, payer_vpa, payer_name, payee_vpa, narration, raw,
        event_time, message_hash, nonce, parser_version, txn_type, device_status,
-       matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id)
+       matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id, details)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, COALESCE($14::timestamptz, now()),
-            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb)
     RETURNING id::text
   `, [
     source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
     amount.toFixed(2), storedRef, orderRef, input.payer_vpa ?? null, payerName, payee, input.narration ?? null, raw,
     input.event_time ?? null, messageHash, input.nonce ?? null, input.parser_version ?? null, "CREDIT", deviceStatus,
     order?.id ?? null, order?.order_id ?? null, confidence, outcome, detail, input.merchant_id ?? null,
+    input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
   ]))[0];
   const alertId = ins.id;
 

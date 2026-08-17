@@ -109,7 +109,22 @@ class TxnNotificationListener : NotificationListenerService() {
         // so a payment whose RRN we already have never steals the foreground.
         val hasRrn = txn.utr?.let { Regex("^\\d{12}$").matches(it) } == true
         if (!hasRrn && sbn.packageName == RrnAccessibilityService.GPAY_PKG) {
-            RrnAccessibilityService.requestGpayCapture(applicationContext)
+            // Preferred route: fire the notification's OWN intent, which lands directly on
+            // THIS payment's detail screen — where the RRN lives.
+            //
+            // This exists because the transactions list turned out to be unreachable on a
+            // real device (2026-08-15): GPay's Home shows "Show all payments", but that
+            // control cannot be activated at all — not by the accessibility engine, not by
+            // adb input tap at its exact centre, and not by the merchant's own finger on a
+            // freshly restarted app. Any design that has to walk Home -> list is therefore
+            // dead on this build. The notification sidesteps the whole journey: it opens the
+            // one screen we actually need, for the one payment we care about.
+            // QUEUED, not fired immediately: there is one screen, so two payments arriving
+            // together would otherwise interrupt each other mid-read. The queue drains them
+            // back-to-back at roughly 2s each instead of dropping the second.
+            RrnAccessibilityService.enqueueGpayCapture(
+                applicationContext, sbn.notification?.contentIntent,
+            )
         }
     }
 

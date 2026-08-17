@@ -85,7 +85,16 @@ export function db(key: DbKey): Pool {
     user: PG_USER,
     password: PG_PASSWORD,
     database: DB_NAMES[key],
-    max: 5,
+    // Sized PER DATABASE, and deliberately not raised across the board: there are ~27 pools
+    // here and Postgres is running with max_connections=100, so a uniform bump would promise
+    // far more connections than the server has and exhaust it under load.
+    //
+    // Only the credit-ingestion database gets more. Every captured payment runs several
+    // un-batched queries there (duplicate checks, twin merge, order matching), so that is
+    // where a burst actually queues; the rest are occasional dashboard reads.
+    max: key === "vendorGateway"
+      ? Number(process.env.PG_POOL_MAX_INGEST ?? 20)
+      : Number(process.env.PG_POOL_MAX ?? 5),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
   });

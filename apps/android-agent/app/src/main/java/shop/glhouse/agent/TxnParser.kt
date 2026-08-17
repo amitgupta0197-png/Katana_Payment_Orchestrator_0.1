@@ -11,6 +11,11 @@ data class ParsedTxn(
     val bank: String?,
     val raw: String,
     val orderRef: String? = null,   // Paytm Order ID (from the detail screen) — merge key
+    // Everything else the source screen said about this payment (payment method, the
+    // customer-paid vs amount-you-get pair, the app's own reference, settlement wording).
+    // Free-form because a GPay detail screen, a Paytm receipt and a bank SMS do not
+    // describe a payment with the same fields.
+    val details: Map<String, String>? = null,
 )
 
 // Heuristic parser for Indian bank UPI-credit alerts. Handles the common shapes

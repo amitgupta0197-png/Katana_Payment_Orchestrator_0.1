@@ -13,6 +13,8 @@ data class RrnRecord(
     val paidAt: String,
     val maskedRef: String,
     val bank: String = "PAYTM",   // "PAYTM" (masked/copy) or "AIRTEL" (read full off screen)
+    /** Everything else the detail screen stated about this payment. */
+    val details: Map<String, String>? = null,
 )
 
 /**

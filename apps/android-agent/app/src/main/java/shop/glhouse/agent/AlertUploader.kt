@@ -46,6 +46,9 @@ object AlertUploader {
             txn.orderRef?.let { put("order_ref", it) }
             txn.payerVpa?.let { put("payer_vpa", it) }
             txn.payerName?.let { put("payer_name", it) }
+            txn.details?.takeIf { it.isNotEmpty() }?.let { d ->
+                put("details", JSONObject().apply { d.forEach { (k, v) -> put(k, v.take(300)) } })
+            }
             put("raw", txn.raw.take(2000))
         }.toString()
 
@@ -91,6 +94,7 @@ object AlertUploader {
             payerName = rec.payer.ifBlank { null },
             bank = rec.bank,
             raw = raw.ifBlank { rec.rrn },
+            details = rec.details,
         )
         send(ctx, txn, "ACCESSIBILITY", rec.bank)
     }
