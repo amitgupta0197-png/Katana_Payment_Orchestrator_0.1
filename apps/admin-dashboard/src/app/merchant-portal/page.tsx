@@ -338,7 +338,12 @@ export default function ProviderDashboard() {
                                     payment's own words: derived from the capturing phone's
                                     mapping (one phone, one payment-app login). Shown quietly —
                                     it is sound, just not stated by the payment. */}
-                                {r.payee_vpa_source === "DEVICE" && r.device_id ? (
+                                {r.payee_vpa_source === "BUSINESS" ? (
+                                  <span
+                                    className="text-[color:var(--color-text-subtle)]"
+                                    title={`Resolved from the shop the payment app named for this payment. One app holds several businesses, each collecting on its own UPI ID.`}
+                                  > · by shop</span>
+                                ) : r.payee_vpa_source === "DEVICE" && r.device_id ? (
                                   <span
                                     className="text-[color:var(--color-text-subtle)]"
                                     title={`This phone (${r.device_id}) collects on ${r.payee_vpa}. The payment app does not name the destination, so it comes from the device's mapping.`}

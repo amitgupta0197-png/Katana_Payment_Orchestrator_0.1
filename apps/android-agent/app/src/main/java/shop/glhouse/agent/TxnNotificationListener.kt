@@ -55,6 +55,18 @@ class TxnNotificationListener : NotificationListenerService() {
         val content = listOf(title, big.ifBlank { text }).filter { it.isNotBlank() }.joinToString(" — ")
         if (content.isBlank()) return
 
+        // WHICH BUSINESS RECEIVED IT? One GPay for Business app holds SEVERAL businesses — this
+        // merchant has four ("Shop No 13/14/15/16"), each with its own UPI ID — and the money
+        // must be attributable to the right one. Nothing we store today identifies the business:
+        // of 76 captured credits, none mentions a shop in its text or detail block.
+        //
+        // We have only ever read title/text/bigText off a notification. Everything else it
+        // carries is untouched, and a multi-account app usually identifies the account there:
+        // subText, a per-account channel id, or the posting tag. So dump the lot ONCE per
+        // distinct shape (redacted, digit runs masked) and let the data say whether the business
+        // is recoverable. Diagnostic only — no capture behaviour depends on it.
+        if (sbn.packageName == RrnAccessibilityService.GPAY_PKG) reportNotificationShape(sbn, extras)
+
         val isPaytm = sbn.packageName?.contains("paytm", ignoreCase = true) == true
 
         // DIAGNOSTIC: log what Paytm actually posts, so we can confirm whether payment
@@ -133,6 +145,40 @@ class TxnNotificationListener : NotificationListenerService() {
                 applicationContext, sbn.notification?.contentIntent,
             )
         }
+    }
+
+    // Report everything a GPay for Business notification carries beyond the three fields we
+    // read, so we can find out whether the receiving BUSINESS (and therefore its UPI ID) is
+    // identifiable at capture time. Reported at most once per distinct field shape — enough to
+    // answer the question, never a stream. Values are digit-masked: a shop label survives, an
+    // amount or reference does not.
+    private fun reportNotificationShape(sbn: StatusBarNotification, extras: android.os.Bundle) {
+        val n = sbn.notification ?: return
+        val lines = mutableListOf<String>()
+        lines += "tag=${sbn.tag ?: "-"}"
+        lines += "channel=${n.channelId ?: "-"}"
+        lines += "group=${n.group ?: "-"} groupKey=${sbn.groupKey ?: "-"}"
+        lines += "shortcut=${n.shortcutId ?: "-"}"
+        // Every string-ish extra the notification carries, not just the three we consume. This is
+        // where a multi-account app normally names the account.
+        for (key in extras.keySet().sorted()) {
+            val v = extras.get(key) ?: continue
+            val text = when (v) {
+                is CharSequence -> v.toString()
+                is Array<*> -> v.filterIsInstance<CharSequence>().joinToString(" | ")
+                else -> continue                       // icons, bundles, parcelables: not text
+            }
+            if (text.isBlank()) continue
+            lines += "$key=${redact(text).take(120)}"
+        }
+        val body = lines.joinToString("\n")
+        // Shape, not content, decides "have we reported this already": the keys plus the
+        // channel/tag identity. Two payments to the same shop report once; a payment to a
+        // DIFFERENT shop has a different identity and reports again, which is the whole point.
+        val key = "notif-shape|${sbn.tag}|${n.channelId}|${extras.keySet().sorted().joinToString(",")}"
+        if (AlertStore.seenRecently(applicationContext, key)) return
+        AlertUploader.sendAgentDebug(applicationContext, "gpay-notif-shape", body)
+        AlertStore.log(applicationContext, "${nowTag()} 🔎 reported notification shape (${lines.size} fields)")
     }
 
     // A notification worth reporting when it fails to parse: it mentions a currency amount.

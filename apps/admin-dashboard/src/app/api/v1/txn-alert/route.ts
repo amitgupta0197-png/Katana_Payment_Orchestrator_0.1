@@ -39,6 +39,10 @@ const schema = z.object({
   // Free-form and capped: the field set differs per source and per app version, and this
   // arrives from a device, so it is bounded rather than trusted.
   details: z.record(z.string().max(300)).optional(),
+  // Business / shop the payment was made to, when the capture can name it. One payment-app
+  // account holds several businesses, each with its own UPI ID, so this is what lets a credit
+  // be attributed to the right one.
+  business: z.string().max(160).optional(),
   event_time: z.string().optional(),
   nonce: z.string().max(120).optional(),
   parser_version: z.string().max(40).optional(),

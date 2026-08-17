@@ -29,6 +29,16 @@ const patchSchema = z.object({
     // here so every reader can compare them directly against a captured payee_vpa.
     settlement_vpas: z.array(z.string().max(120)).max(20).optional()
       .transform((v) => v && [...new Set(v.map((s) => s.trim().toLowerCase()).filter(Boolean))]),
+    // WHICH BUSINESS COLLECTS ON WHICH UPI ID. One Google Pay for Business app holds several
+    // businesses — a live merchant runs four shops from one phone, each with its own UPI ID —
+    // and the payment never names its destination. So the shop label the capture reports is
+    // mapped to a UPI ID here, and credits inherit it (see lib/business-vpa.ts).
+    business_vpas: z.array(z.object({
+      marker: z.string().min(2).max(160),
+      vpa: z.string().min(3).max(120),
+    })).max(40).optional()
+      .transform((v) => v && v.map((e) => ({ marker: e.marker.trim(), vpa: e.vpa.trim().toLowerCase() }))
+        .filter((e) => e.marker && e.vpa)),
     env: z.enum(["SANDBOX", "PROD"]).optional(),
     notes: z.string().max(500).optional(),
   }).strict().optional(),

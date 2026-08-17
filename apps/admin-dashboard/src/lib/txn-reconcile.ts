@@ -25,6 +25,8 @@ import { rows } from "@/lib/pg";
 import { confirmPoolPayOrder, type ConfirmPoolPayResult } from "@/lib/poolpay-order";
 import { processPayin } from "@/lib/dt-payin";
 import { isSettlementCredit, SETTLEMENT_TXN_TYPE } from "@/lib/settlement-credit";
+import { businessVpasFromConfig, resolveBusinessVpa } from "@/lib/business-vpa";
+import { vpasFromConfig } from "@/lib/settlement-vpa";
 
 // Policy knobs (architecture §6 / §8).
 const CONFIDENCE_THRESHOLD = 90;      // auto-confirm bar
@@ -55,6 +57,10 @@ export interface TxnAlertInput {
   raw?: string;
   /** Full payment detail as stated by the capturing screen; shape varies per source. */
   details?: Record<string, string>;
+  /** Business / shop the payment was made to, when the capture can name it. One payment-app
+   *  account can hold several businesses, each with its own UPI ID, so this is what makes the
+   *  destination knowable (resolved via lib/business-vpa.ts). */
+  business?: string;
   event_time?: string;
   nonce?: string;
   parser_version?: string;
@@ -250,7 +256,7 @@ export async function ingestTxnAlert(
   // with a source marker so the UI never presents a derivation as the payment's own words.
   const statedPayee = input.payee_vpa?.trim().toLowerCase() || null;
   let payee = statedPayee;
-  let payeeSource: "STATED" | "DEVICE" | null = statedPayee ? "STATED" : null;
+  let payeeSource: "STATED" | "BUSINESS" | "DEVICE" | null = statedPayee ? "STATED" : null;
   const payerName = input.payer_name?.trim() || null;
   const raw = (input.raw ?? "").slice(0, 2000);
   const actor = `alert:${source}${deviceId ? `:${deviceId}` : ""}`;
@@ -350,6 +356,27 @@ export async function ingestTxnAlert(
   //
   // Deliberately AFTER the settlement branch: a settlement leg is a deposit into the bank
   // account, not a credit to a UPI ID, so it must not acquire one.
+  // 2a) DESTINATION FROM THE BUSINESS THE PAYMENT WAS MADE TO.
+  //
+  // One Google Pay for Business app holds several businesses — a live merchant runs four shops
+  // from one phone, each with its own UPI ID — so neither the payment nor the phone identifies
+  // the destination on its own. The shop label the capture reports does, against the per-banker
+  // map configured beside the VPA list. Tried BEFORE the device fallback because it
+  // distinguishes shops within one phone, which the device mapping cannot.
+  if (!payee && input.merchant_id) {
+    const cfg = await rows<{ poolpay: unknown }>("merchant",
+      `SELECT poolpay FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchant_id]).catch(() => []);
+    const entries = businessVpasFromConfig(cfg[0]?.poolpay);
+    if (entries.length) {
+      // Most explicit signal first: the agent's own business field, then the detail screen's
+      // values, then the notification text as a last resort.
+      const candidates = [input.business, ...Object.values(input.details ?? {}), raw, input.narration];
+      const allowed = vpasFromConfig(cfg[0]?.poolpay);
+      const hit = resolveBusinessVpa(entries, candidates, allowed);
+      if (hit) { payee = hit.vpa; payeeSource = "BUSINESS"; }
+    }
+  }
+
   // THE MAPPING IS PER PHONE *AND* PER BANKER. A phone's banker code is typed into the agent
   // and can be changed: "Author new" captured for PRIMESX and later for PRVZS23. The mapping was
   // validated against one banker's configured VPAs, so it may only be applied to that banker's
