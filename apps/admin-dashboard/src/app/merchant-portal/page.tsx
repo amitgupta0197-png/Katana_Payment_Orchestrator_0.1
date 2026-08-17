@@ -89,7 +89,7 @@ export default function ProviderDashboard() {
     queryKey: ["pp:vpa-txns", vpaBranch],
     queryFn: async () => (await fetch(`/api/merchant-portal/vpa-transactions${vpaBranch ? `?branch=${encodeURIComponent(vpaBranch)}` : ""}`).then((r) => r.json())) as {
       totals?: { count: number; gross: number; confirmed: number; unmatched: number; missingRrn: number; verified: number; awaitingRrn: number; vpaMismatch: number; verifiedAmount?: number; awaitingAmount?: number; mismatchAmount?: number; settledCount?: number; settled?: number };
-      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
+      recent?: Array<{ id: string; amount: number; utr: string | null; order_ref: string | null; payer_vpa: string | null; payee_vpa: string | null; matched_order_ref: string | null; outcome: string; bank: string | null; created_at: string; payer_name: string | null; merchant_id: string | null; details: Record<string, string> | null; verification?: CreditVerification }>;
       /** Payouts from the payment app into the bank account — the same money as the credits
        *  above, one leg later. Listed on its own and counted in no collection total. */
       settlements?: Array<{ id: string; amount: number; payee_vpa: string | null; created_at: string; source: string }>;
@@ -325,7 +325,20 @@ export default function ProviderDashboard() {
                             person reading this recognises; the VPA is the fallback. */}
                         {r.payer_name ? <>from <span className="font-medium text-[color:var(--color-text)]">{r.payer_name}</span> </>
                           : r.payer_vpa ? <>from <span className="font-mono">{r.payer_vpa}</span> </> : null}
-                        → <span className="font-mono">{r.payee_vpa}</span>
+                        {/* ONLY A VPA THE PAYMENT ITSELF NAMED. GPay for Business does not report
+                            which of a banker's UPI IDs the customer paid, and this used to print
+                            the banker's PRIMARY VPA regardless — so four payments that arrived on
+                            four different IDs all read as the same one. When the capture did not
+                            say, the banker's account (its code) is the honest answer: that is what
+                            the credit is genuinely attributed by. */}
+                        → {r.payee_vpa
+                            ? <span className="font-mono">{r.payee_vpa}</span>
+                            : <span
+                                className="text-[color:var(--color-text-subtle)]"
+                                title="This payment app does not report which of your UPI IDs received the money. The credit is attributed by the banker code its capture device stamped."
+                              >
+                                {r.merchant_id ? <><span className="font-mono">{r.merchant_id}</span> · settlement account</> : "settlement account"}
+                              </span>}
                         {rrn ? <> · RRN <span className="font-mono">{rrn}</span></> : null}
                         {utr ? <> · UTR <span className="font-mono">{utr}</span></> : null}
                         {orderId ? <> · Order ID <span className="font-mono">{orderId}</span></> : null}

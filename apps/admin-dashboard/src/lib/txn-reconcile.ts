@@ -227,19 +227,27 @@ export async function ingestTxnAlert(
   const amount = Number(input.amount);
   const utr = input.utr?.trim() || null;
   const orderRef = input.order_ref?.trim() || null;
-  // Payee (settlement VPA) credited. Paytm/PhonePe "payment received" emails name the
-  // account ("In Account of X") but not the VPA, so when the alert is merchant-scoped
-  // (e.g. a merchant's own inbox) fall back to that merchant's configured settlement
-  // VPA. This attributes the credit to the right branch and lets it reconcile + show
-  // on the provider dashboard even when the email text carries no VPA.
-  let payee = input.payee_vpa?.trim().toLowerCase() || null;
-  if (!payee && input.merchant_id) {
-    const sv = await rows<{ v: string | null }>(
-      "merchant", `SELECT poolpay->>'settlement_vpa' AS v FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchant_id],
-    ).catch(() => []);
-    const v = sv[0]?.v?.trim().toLowerCase();
-    if (v) payee = v;
-  }
+  // Payee (settlement VPA) credited — STORED ONLY WHEN THE CAPTURE ACTUALLY STATED IT.
+  //
+  // This used to fall back to the banker's configured PRIMARY settlement VPA whenever the
+  // alert carried none, on the theory that it named the right account anyway. It does not: a
+  // banker can receive on several UPI IDs (PRVZS23 has four), and GPay for Business never
+  // reports which one the customer paid — not in the push, not on the detail screen. So the
+  // fallback stamped the primary VPA onto every credit and the dashboard displayed it as
+  // fact, showing one VPA for payments that had actually arrived on different ones (client
+  // report 2026-08-17: 74 of 76 stored credits carried the primary, and not one carried any
+  // of the three additional IDs).
+  //
+  // Nothing depended on the guess. Attribution is by the banker code the agent stamps
+  // (`merchant_id`), which is the only trustworthy key since bankers SHARE settlement VPAs;
+  // the payee_vpa scoping fallback applies only to rows with NO banker code, and the guess
+  // required one, so it never fed that path. It did defeat the one check that wanted a real
+  // stated value — verificationOf()'s VPA-mismatch test compared the config against itself
+  // and could never fire.
+  //
+  // Now: null means "the payment did not say", which the UI renders as the banker's
+  // settlement account rather than inventing a UPI ID.
+  const payee = input.payee_vpa?.trim().toLowerCase() || null;
   const payerName = input.payer_name?.trim() || null;
   const raw = (input.raw ?? "").slice(0, 2000);
   const actor = `alert:${source}${deviceId ? `:${deviceId}` : ""}`;

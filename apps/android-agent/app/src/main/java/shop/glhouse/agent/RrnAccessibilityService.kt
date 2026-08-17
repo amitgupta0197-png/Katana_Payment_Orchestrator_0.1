@@ -659,7 +659,48 @@ class RrnAccessibilityService : AccessibilityService() {
                     gpayDetailFields.putIfAbsent("paid_at", line)
             }
         }
+        // Diagnostic, per pass (the screen arrives in halves as it scrolls): tell us what this
+        // screen says that we are not indexing — specifically, whether it names the UPI ID that
+        // received the payment.
+        reportUnknownGpayFields(lines)
     }
+
+    // WHICH UPI ID RECEIVED THE MONEY? A banker can collect on several (PRVZS23 has four), and
+    // nothing we capture today says which one a given payment landed on — the dashboard could
+    // only ever show the banker's primary VPA, so payments to different IDs all read the same
+    // (client question 2026-08-17). The GPay detail screen might name it: we index just six
+    // labels off that screen and discard every other labelled line, so if a "received in" /
+    // "paid to" line is sitting there we would never know.
+    //
+    // This reports the lines we throw away — ONCE per distinct screen layout, redacted the same
+    // way the unparsed-notification reporter is (digit runs masked, so amounts and references
+    // cannot travel). If the receiving UPI ID turns out to be on screen, capturing it is then
+    // one entry in `gpayLabels`. Purely diagnostic: it changes no capture behaviour.
+    private fun reportUnknownGpayFields(lines: List<String>) {
+        val known = gpayLabels.keys
+        val unknown = lines.filter { l ->
+            l.isNotBlank() && l.length in 3..80 && l !in known &&
+                !l.startsWith("Received from", true) &&
+                !l.contains("credited", true) &&
+                !gpayRowTime.containsMatchIn(l) &&
+                // A value line (a bare number / amount) tells us nothing about labels.
+                !l.all { it.isDigit() || it.isWhitespace() || it == '₹' || it == ',' || it == '.' }
+        }.distinct()
+        if (unknown.isEmpty()) return
+        // A VPA in ANY line is the answer to the question, so say so loudly in the report.
+        val vpaSeen = unknown.any { Regex("[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}").containsMatchIn(it) }
+        val body = (if (vpaSeen) "VPA-LIKE TEXT PRESENT\n" else "") +
+            unknown.joinToString("\n") { maskDigits(it) }
+        val key = "gpay-fields|${unknown.sorted().joinToString("|").hashCode()}"
+        if (AlertStore.seenRecently(applicationContext, key)) return
+        AlertUploader.sendAgentDebug(applicationContext, "gpay-detail-unknown-fields", body)
+        AlertStore.log(applicationContext, "${nowTag()} 🔎 reported ${unknown.size} unindexed GPay fields")
+    }
+
+    // Keep the SHAPE of a line and drop the values: long digit runs become X of the same
+    // length, so a label is still readable while amounts, references and phone numbers are not.
+    private fun maskDigits(s: String): String =
+        Regex("\\d{4,}").replace(s) { "X".repeat(it.value.length) }
 
     /** Commit the assembled record exactly once. */
     private fun finishGpayDetail(rrn: String) {
