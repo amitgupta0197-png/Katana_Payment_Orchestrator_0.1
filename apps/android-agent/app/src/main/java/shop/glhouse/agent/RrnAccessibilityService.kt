@@ -1356,8 +1356,18 @@ class RrnAccessibilityService : AccessibilityService() {
             val f = paytmDetailFields(texts)
             if (f.isEmpty()) "" else org.json.JSONObject(f as Map<*, *>).toString()
         }.getOrDefault("")
-        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${detailsJson.length}b attempt=${n + 1} -> scroll+screenshot")
-        swipeUp { swipeUp { captureViaScreenshot(masked, amount, payer, upiId, paidAt, detailsJson, copyX, bandX0, bandX1) } }
+        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${detailsJson.length}b attempt=${n + 1} -> screenshot")
+        // SCREENSHOT FIRST, SCROLL ONLY IF WE HAVE TO.
+        //
+        // Two swipes always ran before the screenshot, on the assumption that the Copy link is
+        // below the fold. Often it is not — on a short payment screen it is visible the moment
+        // the detail opens — and the pair of gestures costs about 1.1 seconds of every single
+        // capture. At six payments in one minute (live burst 2026-08-18 20:52) that second is
+        // the difference between clearing the minute and falling behind it.
+        //
+        // So the cheap attempt goes first and the scroll becomes the fallback, which also turns
+        // "no Copy link on screen" from a dead end into a retry.
+        captureViaScreenshot(masked, amount, payer, upiId, paidAt, detailsJson, copyX, bandX0, bandX1, false)
     }
 
     // ------------------------------------------------------------------ list
@@ -1708,8 +1718,16 @@ class RrnAccessibilityService : AccessibilityService() {
 
     private fun captureViaScreenshot(
         masked: String, amount: String, payer: String, upiId: String, paidAt: String,
-        detailsJson: String, copyX: Float, bandX0: Int, bandX1: Int
+        detailsJson: String, copyX: Float, bandX0: Int, bandX1: Int, scrolled: Boolean
     ) {
+        // Retry this same capture with the screen scrolled down, or give up if we already have.
+        fun scrollAndRetry(why: String) {
+            if (scrolled) { noteCaptureFail(why); onPaytmCaptureDone(applicationContext); return }
+            Log.d(TAG, "$why -> scrolling and looking again")
+            swipeUp { swipeUp {
+                captureViaScreenshot(masked, amount, payer, upiId, paidAt, detailsJson, copyX, bandX0, bandX1, true)
+            } }
+        }
       runCatching {
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
@@ -1723,24 +1741,25 @@ class RrnAccessibilityService : AccessibilityService() {
                 // cost the same as three real captures during a burst.
                 if (bmp == null) {
                     Log.w(TAG, "screenshot bitmap null")
-                    noteCaptureFail("screenshot unreadable"); onPaytmCaptureDone(applicationContext); return
+                    scrollAndRetry("screenshot unreadable"); return
                 }
                 val y = findCopyRowY(bmp, bandX0, bandX1)
                 bmp.recycle()
                 if (y <= 0f) {
-                    Log.w(TAG, "Copy link not found in screenshot")
-                    noteCaptureFail("no Copy link on screen"); onPaytmCaptureDone(applicationContext); return
+                    scrollAndRetry("no Copy link on screen"); return
                 }
                 Log.d(TAG, "found Copy at ($copyX,$y) -> tapping")
                 tapAndRead(copyX, y, masked, amount, payer, upiId, paidAt, detailsJson)
             }
             override fun onFailure(errorCode: Int) {
                 Log.w(TAG, "takeScreenshot failed: $errorCode")
-                noteCaptureFail("screenshot failed ($errorCode)")
-                onPaytmCaptureDone(applicationContext)
+                scrollAndRetry("screenshot failed ($errorCode)")
             }
         })
-      }.onFailure { Log.w(TAG, "takeScreenshot threw: ${it.message}") }
+      }.onFailure {
+          Log.w(TAG, "takeScreenshot threw: ${it.message}")
+          scrollAndRetry("screenshot threw")
+      }
     }
 
     private fun findCopyRowY(bmp: Bitmap, bandX0: Int, bandX1: Int): Float {
