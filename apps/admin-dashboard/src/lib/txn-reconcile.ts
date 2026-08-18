@@ -778,13 +778,28 @@ export async function ingestTxnAlert(
       [alertId, manualCaseId, securityAlertId]).catch(() => {});
   }
 
-  // #1 auto-fill the RRN for email credits that arrived without one — the payment lives on
-  // the merchant's Paytm Business screen; nudge a live capture device to re-sweep and
-  // backfill it. EMAIL only (ACCESSIBILITY credits already carry their on-device RRN);
-  // skip duplicates. No-op when the merchant has no active device.
-  if (source === "EMAIL" && !rrn && !duplicate && input.merchant_id) {
+  // AUTO-FILL THE RRN FOR ANY CREDIT THAT ARRIVED WITHOUT ONE.
+  //
+  // This was EMAIL-only, on the reasoning that a device capture already carries its on-device
+  // RRN. It does when the phone kept up. Under real volume it does not: a burst of payments
+  // arrives as pushes faster than the phone can open each one, so the credit is recorded from
+  // the notification (which never states the reference) and the RRN is simply missing — and
+  // because nothing raised a capture request for a NOTIFICATION credit, nobody went back for
+  // it. That is the manual "Get RRN" clicking the merchant ended up doing by hand for every
+  // payment the agent could not reach in time (live run 2026-08-18, ~60-70% captured).
+  //
+  // The request is what drives the phone to go and look, so raise it for whatever channel the
+  // credit came in on. It is deduped by the partial-unique index on alert_id, expires by
+  // itself after 30 minutes, and is skipped entirely when the merchant has no live device —
+  // so a quiet merchant is unaffected and a busy one gets an automatic retry per payment
+  // instead of an operator clicking a button per row.
+  //
+  // ACCESSIBILITY is excluded: that channel exists only because the RRN was read off the
+  // screen, so one arriving without a 12-digit reference is a failed read, not a payment
+  // awaiting one — asking the same screen again would just loop.
+  if (!rrn && !duplicate && source !== "ACCESSIBILITY" && input.merchant_id) {
     const reqId = await maybeAutoCaptureRequest(input.merchant_id, alertId, amount, input.payer_vpa ?? null);
-    if (reqId) await audit(actor, "CAPTURE_AUTO_REQUESTED", "txn_alert", alertId, "no RRN on email credit → auto capture request to live device");
+    if (reqId) await audit(actor, "CAPTURE_AUTO_REQUESTED", "txn_alert", alertId, `no RRN on ${source.toLowerCase()} credit → auto capture request to live device`);
   }
 
   // Apply confirmation when policy is satisfied.

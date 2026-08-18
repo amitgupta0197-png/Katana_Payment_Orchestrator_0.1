@@ -53,7 +53,15 @@ class RrnAccessibilityService : AccessibilityService() {
     private var baselineDone = false
     private var handledCount = 0
     private var sweeping = false
-    private var sweepPos = 0
+    /**
+     * Rows already visited in THIS sweep, keyed by their own text (time, amount, payer).
+     *
+     * Position was the old key, and position is not stable across a scroll — which is why the
+     * sweep could never scroll. A key that travels with the row can: the sweep walks the visible
+     * rows, scrolls, and keeps walking, without re-opening what it has just seen.
+     */
+    private val sweptKeys = HashSet<String>()
+    private var sweepScrolls = 0
     private var lastOpenResult = R_UNKNOWN
     private var autoNavigating = false      // we auto-opened the current detail
     private var backScheduled = false
@@ -101,6 +109,10 @@ class RrnAccessibilityService : AccessibilityService() {
         private const val COPY_BAND_FRAC = 0.06f
         // Auto mode timings.
         private const val AUTO_DETAIL_BACK_MS = 2600L // return to list this long after opening a detail
+        // How far down the list one sweep may scroll. A BURST PUSHES ITS OWN BACKLOG BELOW THE
+        // FOLD: payments arriving faster than they can be opened drive the un-captured ones off
+        // screen, and a sweep that only ever read the visible rows could never go and get them.
+        private const val MAX_SWEEP_SCROLLS = 4
         // Longer than the sweep's own return: a bridge-opened Paytm detail has to read the masked
         // reference, tap Copy and let the clipboard reader run before it is safe to press BACK.
         private const val BRIDGE_BACK_MS = 5000L
@@ -165,13 +177,29 @@ class RrnAccessibilityService : AccessibilityService() {
         // alike, and only GPay needs its list refreshed afterwards.
         private val pendingCaptures = ArrayDeque<Pair<PendingIntent, String>>()
         @Volatile private var captureBusy = false
+        /**
+         * Which capture currently holds the slot. Every release stamps a new generation, so a
+         * timer armed for an EARLIER payment can no longer end a LATER one. Harmless while the
+         * only release was the deadline itself; essential now that a capture finishes as soon as
+         * its RRN is read — payment #2 would otherwise be cut off nine seconds after #1 started.
+         */
+        @Volatile private var captureGen = 0
+        /** The running service, so the queue can drive the screen between payments. */
+        @Volatile private var instance: RrnAccessibilityService? = null
+        /** Pause between one payment being finished with and the next being opened. */
+        private const val CAPTURE_SETTLE_MS = 900L
         /** When a notification intent last opened a payment detail; 0 = never. */
         @Volatile private var bridgeOpenedAt = 0L
         /** A detail opened by us stays "ours" this long — beyond it, assume the merchant drove. */
         private const val BRIDGE_OWNED_MS = 60_000L
         private val pump = Handler(Looper.getMainLooper())
-        private const val CAPTURE_DEADLINE_MS = 9_000L   // give up on one payment, move on
-        private const val CAPTURE_QUEUE_MAX = 60         // bound: never grow without limit
+        // Only a backstop now that both apps report completion — long enough that a slow phone
+        // rendering a detail screen is not cut off, short enough that one unreadable payment
+        // cannot stall a burst.
+        private const val CAPTURE_DEADLINE_MS = 8_000L   // give up on one payment, move on
+        // Bound, not a policy: at roughly three seconds a payment this is over ten minutes of
+        // backlog, and anything beyond it is recovered by the list sweep instead.
+        private const val CAPTURE_QUEUE_MAX = 200        // bound: never grow without limit
 
         /**
          * Queue a payment for capture, using the notification's own intent so we land
@@ -203,7 +231,11 @@ class RrnAccessibilityService : AccessibilityService() {
             if (intent == null) { requestAppCapture(ctx, app); return }   // no intent: sweep instead
             synchronized(pendingCaptures) {
                 if (pendingCaptures.size >= CAPTURE_QUEUE_MAX) {
+                    // Counted, not just logged: a dropped capture is a payment whose RRN nobody
+                    // will ever go and fetch, and it must be visible on the dashboard rather than
+                    // inferred from a gap. The list sweep is the backstop for these.
                     Log.w("RRNCAP", "capture queue full; dropping oldest")
+                    Prefs.bump(ctx, "capture_drop")
                     pendingCaptures.removeFirstOrNull()
                 }
                 pendingCaptures.addLast(intent to app)
@@ -216,6 +248,13 @@ class RrnAccessibilityService : AccessibilityService() {
             if (captureBusy) return
             val (next, app) = synchronized(pendingCaptures) { pendingCaptures.removeFirstOrNull() } ?: return
             captureBusy = true
+            val gen = ++captureGen
+            // Whatever the previous payment left behind stops applying now: its return timer must
+            // not press BACK out of the payment we are about to open, and its per-screen busy gate
+            // must not delay reading this one. Posted to the main thread because a push arrives on
+            // a binder thread, and this state is otherwise only ever touched from the engine's own
+            // thread; the post still lands before the new screen's first accessibility event.
+            instance?.let { svc -> pump.post { svc.onNewCaptureStarting() } }
             forceResweep = true
             // Stamped so the engine knows this detail screen was opened by US, not by the
             // merchant — and must therefore be left again once the RRN is read.
@@ -227,17 +266,52 @@ class RrnAccessibilityService : AccessibilityService() {
                 Log.w("RRNCAP", "${app.lowercase()}: queued intent failed: ${e.javaClass.simpleName}"); false
             }
             if (!ok) requestAppCapture(ctx, app)
-            // Never let one unreadable payment wedge the queue.
+            // Never let one unreadable payment wedge the queue — but only ever end the payment
+            // this timer was armed for (see captureGen).
             pump.postDelayed({
-                if (captureBusy) { captureBusy = false; pumpCaptures(ctx) }
+                if (captureBusy && gen == captureGen) {
+                    Log.w("RRNCAP", "capture deadline reached; moving on to the next payment")
+                    Prefs.bump(ctx, "capture_timeout")
+                    captureBusy = false; captureGen++
+                    pumpCaptures(ctx)
+                }
             }, CAPTURE_DEADLINE_MS)
         }
 
+        /** How many payments are still waiting to be opened. */
+        fun pendingCaptureCount(): Int = synchronized(pendingCaptures) { pendingCaptures.size }
+
         /** A capture finished (or was skipped as already-held) — release the queue. */
-        fun onCaptureFinished(ctx: Context) {
+        fun onCaptureFinished(ctx: Context, settleMs: Long = 250L) {
             if (!captureBusy) return
             captureBusy = false
-            pump.postDelayed({ pumpCaptures(ctx) }, 250)   // let the screen settle between payments
+            captureGen++
+            pump.postDelayed({ pumpCaptures(ctx) }, settleMs)   // let the screen settle between payments
+        }
+
+        /**
+         * A Paytm payment is finished with — its RRN is captured, or we already held it, or the
+         * screen could not be read.
+         *
+         * WHY THIS EXISTS. Paytm never had a completion signal at all: only GPay called
+         * [onCaptureFinished], so every queued Paytm payment held the capture slot until the
+         * nine-second deadline expired — a hard ceiling of under seven payments a minute, no
+         * matter that a real capture takes about three seconds end to end. On a merchant doing
+         * live volume (2026-08-18) that is precisely the shape of the loss reported: the early
+         * payments captured, the rest arriving faster than the queue could drain, and the
+         * remainder opened by hand.
+         *
+         * Reading the clipboard is the moment the payment is done with, so it says so here: the
+         * detail screen is left immediately rather than on a fixed five-second timer, and the
+         * next payment starts about three seconds after this one — roughly three times the
+         * throughput, with no change to what is captured.
+         */
+        fun onPaytmCaptureDone(ctx: Context) {
+            instance?.leavePaytmDetailNow()
+            // A backlog gets the short pause: nothing has to settle, because the next payment's
+            // own intent navigates the screen rather than a BACK press. The pause is for the LAST
+            // payment, which does return to the list.
+            onCaptureFinished(ctx, if (pendingCaptureCount() > 0) 350L else CAPTURE_SETTLE_MS)
         }
 
         /** Open the payment app and re-sweep — the fallback when a push carries no intent. */
@@ -274,6 +348,7 @@ class RrnAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         RrnStore.init(applicationContext)
         // Set the watched package list at RUNTIME. Android caches the packageNames from the
         // accessibility XML at first bind and does NOT reload it on app update, so a package
@@ -346,9 +421,11 @@ class RrnAccessibilityService : AccessibilityService() {
     // Airtel settlement reference used to be captured too and then hidden on the
     // dashboard — dead weight. v2.33: skip it at the source (real payments are always the
     // 12-digit UPI RRN; settlements are 15-digit).
-    // How many familiar rows in a row end a sweep. Three is enough to stop quickly on a quiet
-    // list while still stepping past a stale row or two at the top.
-    private val STOP_AFTER_OLD = 3
+    // How many familiar rows in a row end a sweep. Three was enough for a quiet list, where the
+    // only stale rows are the one or two at the top that re-rendered late. Under real volume the
+    // captured and un-captured rows interleave — the queue opens payments out of list order — so
+    // three familiar rows no longer means the new ones are behind us.
+    private val STOP_AFTER_OLD = 5
     private val airtelRrn = Regex("(?<!\\d)\\d{12}(?!\\d)")
     private val airtelAmount = Regex("₹\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?")
     private val airtelName = Regex("^[A-Za-z][A-Za-z .]{2,39}$")
@@ -360,12 +437,19 @@ class RrnAccessibilityService : AccessibilityService() {
     )
     private var lastAirtelDump = 0L      // throttle the debug dump
     private var lastAirtelRefresh = 0L   // throttle the hands-free "search" re-tap
-    /** Paytm's detail block for the payment being captured, as JSON; read before the copy tap. */
-    private var paytmDetailsJson = ""
     /** Consecutive already-captured rows in this sweep; see onReturned. */
     private var oldStreak = 0
     /** True while a bridge-opened detail is queued to be closed; see returnFromDetail. */
     private var bridgeBackScheduled = false
+    /**
+     * Which bridge-opened payment the pending return belongs to.
+     *
+     * The return used to be a bare five-second timer. That was safe only because the next payment
+     * could not start for nine seconds; now that a capture ends as soon as its RRN is read, the
+     * timer left over from payment #1 would fire while payment #2 is on screen and press BACK out
+     * of a capture in progress. Every scheduled return carries the generation it was armed for.
+     */
+    private var bridgeGen = 0
 
     // Click a node via its nearest clickable ancestor (ACTION_CLICK), falling back to a
     // real tap gesture at its centre. Used to re-run Airtel's "search" for hands-free refresh.
@@ -863,7 +947,8 @@ class RrnAccessibilityService : AccessibilityService() {
             // Opened by a notification rather than the sweep — leave it as Paytm now does, so the
             // phone is not parked on one payment's screen.
             bridgeBackScheduled = true
-            main.postDelayed({ returnFromDetail(0) }, 800)
+            val bgen = bridgeGen
+            main.postDelayed({ returnFromDetail(0, bgen) }, 800)
         }
     }
 
@@ -1196,7 +1281,8 @@ class RrnAccessibilityService : AccessibilityService() {
         if (autoMode && !autoNavigating && !bridgeBackScheduled &&
             System.currentTimeMillis() - bridgeOpenedAt < BRIDGE_OWNED_MS) {
             bridgeBackScheduled = true
-            main.postDelayed({ returnFromDetail(0) }, BRIDGE_BACK_MS)
+            val gen = bridgeGen
+            main.postDelayed({ returnFromDetail(0, gen) }, BRIDGE_BACK_MS)
         }
 
         val now = System.currentTimeMillis()
@@ -1224,9 +1310,14 @@ class RrnAccessibilityService : AccessibilityService() {
         // Tell the auto-sweep whether this row is new or an already-captured
         // boundary (this is how the sweep knows where "new" ends).
         if (autoNavigating) lastOpenResult = if (RrnStore.isMaskedCaptured(masked)) R_OLD else R_NEW
-        if (RrnStore.isMaskedCaptured(masked)) return
+        // ALREADY HELD, OR GIVEN UP ON — the answer is known the moment the masked reference is
+        // read, so release the capture slot now. Sitting here until the deadline expired is what
+        // let a re-opened payment cost as much queue time as a real capture.
         val n = attempts.getOrDefault(masked, 0)
-        if (n >= MAX_ATTEMPTS) return
+        if (RrnStore.isMaskedCaptured(masked) || n >= MAX_ATTEMPTS) {
+            if (!autoNavigating) onPaytmCaptureDone(applicationContext)
+            return
+        }
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             Log.w(TAG, "screenshot capture needs Android 11+; cannot auto-tap on this device")
@@ -1257,12 +1348,16 @@ class RrnAccessibilityService : AccessibilityService() {
         val paidAt = texts.firstOrNull { it.startsWith("Paid at", true) } ?: ""
         val payer = valueAfter(texts, "Name:") ?: valueAfter(texts, "From") ?: ""
         val upiId = valueAfter(texts, "UPI ID:") ?: ""
-        paytmDetailsJson = runCatching {
+        // Read for THIS payment and carried through the capture chain. It used to live in a
+        // field, which was safe only while payments were nine seconds apart: back-to-back
+        // captures would let the next screen's block overwrite this one's before the reader
+        // activity picked it up, and the RRN would be filed with another payment's details.
+        val detailsJson = runCatching {
             val f = paytmDetailFields(texts)
             if (f.isEmpty()) "" else org.json.JSONObject(f as Map<*, *>).toString()
         }.getOrDefault("")
-        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${paytmDetailsJson.length}b attempt=${n + 1} -> scroll+screenshot")
-        swipeUp { swipeUp { captureViaScreenshot(masked, amount, payer, upiId, paidAt, copyX, bandX0, bandX1) } }
+        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${detailsJson.length}b attempt=${n + 1} -> scroll+screenshot")
+        swipeUp { swipeUp { captureViaScreenshot(masked, amount, payer, upiId, paidAt, detailsJson, copyX, bandX0, bandX1) } }
     }
 
     // ------------------------------------------------------------------ list
@@ -1271,6 +1366,10 @@ class RrnAccessibilityService : AccessibilityService() {
         val count = parseCount(ordered.map { it.first })
         if (count < 0) return // not the payments list (no "N Payments" header)
         if (sweeping) return  // a sweep is already running; the pump drives it
+        // The notification queue is draining: each queued payment opens its own detail directly,
+        // which is both faster and exact. A sweep started now would tap a row out from under it.
+        // forceResweep is sticky, so the sweep still runs once the queue is empty.
+        if (captureBusy || pendingCaptureCount() > 0) return
 
         // On-demand "Get RRN": re-sweep the currently-visible rows now (dedupe still skips
         // ones we already captured, so this only retries the still-missing RRNs).
@@ -1293,7 +1392,8 @@ class RrnAccessibilityService : AccessibilityService() {
     private fun startSweep() {
         if (sweeping) return
         sweeping = true
-        sweepPos = 0
+        sweptKeys.clear()
+        sweepScrolls = 0
         oldStreak = 0
         openNext()
     }
@@ -1305,32 +1405,61 @@ class RrnAccessibilityService : AccessibilityService() {
         if (root != null) flatten(root, ordered)
         val count = parseCount(ordered.map { it.first })
         if (count < 0) { // list not settled yet (detail still closing) -> retry
-            if (openRetries++ < 8) main.postDelayed({ openNext() }, 500) else sweeping = false
+            if (openRetries++ < 8) main.postDelayed({ openNext() }, 500)
+            else endSweep(handledCount, "list never settled")
             return
         }
         openRetries = 0
         val rows = findRowNodes(ordered)
-        if (sweepPos >= rows.size) {
-            sweeping = false; handledCount = count
-            Log.d(TAG, "auto: swept all visible rows -> waiting for new payments")
+        val next = rows.firstOrNull { it.first !in sweptKeys }
+        if (next == null) {
+            // Everything on screen has been visited. Scroll and keep going — the payments this
+            // sweep exists to rescue are exactly the ones a burst pushed below the fold.
+            if (sweepScrolls < MAX_SWEEP_SCROLLS) {
+                sweepScrolls++
+                Log.d(TAG, "auto: visible rows done -> scrolling for more ($sweepScrolls/$MAX_SWEEP_SCROLLS)")
+                swipeUp { openNext() }
+                return
+            }
+            endSweep(count, "reached the sweep depth limit")
             return
         }
-        val node = rows[sweepPos]
+        val (key, node) = next
+        sweptKeys.add(key)
         autoNavigating = true
         backScheduled = false
         detailReached = false
         lastOpenResult = R_UNKNOWN
         val gen = ++openGen
         val rb = Rect().also { node.getBoundsInScreen(it) }
-        Log.d(TAG, "auto: opening row #$sweepPos (${if (node.isClickable) "ACTION_CLICK" else "tap"} @ ${rb.exactCenterX().toInt()},${rb.exactCenterY().toInt()})")
+        Log.d(TAG, "auto: opening row ${sweptKeys.size} (${if (node.isClickable) "ACTION_CLICK" else "tap"} @ ${rb.exactCenterX().toInt()},${rb.exactCenterY().toInt()})")
         clickNode(node)
-        // Watchdog: if the tap never opened a detail, skip this row and continue.
+        // Watchdog: if the tap never opened a detail, skip this row and continue. The row is
+        // already marked visited, so the next call moves on rather than re-tapping it.
         main.postDelayed({
             if (gen == openGen && sweeping && !detailReached) {
-                Log.w(TAG, "auto: row #$sweepPos did not open; skipping")
-                sweepPos++; openNext()
+                Log.w(TAG, "auto: row did not open; skipping")
+                openNext()
             }
         }, 4500)
+    }
+
+    /**
+     * End the sweep and put the list back where the merchant left it.
+     *
+     * A sweep that scrolled must scroll back: Paytm shows new payments at the TOP, so a list left
+     * scrolled down would leave both the merchant and the next sweep looking at old rows.
+     */
+    private fun endSweep(count: Int, why: String) {
+        sweeping = false
+        handledCount = count
+        Log.d(TAG, "auto: sweep complete ($why; ${sweptKeys.size} rows visited)")
+        scrollBackToTop(sweepScrolls)
+    }
+
+    private fun scrollBackToTop(remaining: Int) {
+        if (remaining <= 0) return
+        swipeDown { scrollBackToTop(remaining - 1) }
     }
 
     /**
@@ -1357,13 +1486,11 @@ class RrnAccessibilityService : AccessibilityService() {
         if (lastOpenResult == R_OLD) {
             oldStreak++
             if (oldStreak >= STOP_AFTER_OLD) {
-                sweeping = false
-                Log.d(TAG, "auto: $oldStreak already-captured in a row -> sweep complete")
+                endSweep(handledCount, "$oldStreak already-captured rows in a row")
                 return
             }
-            Log.d(TAG, "auto: row #$sweepPos already captured; continuing ($oldStreak/$STOP_AFTER_OLD)")
+            Log.d(TAG, "auto: row already captured; continuing ($oldStreak/$STOP_AFTER_OLD)")
         } else oldStreak = 0
-        sweepPos++
         openNext()
     }
 
@@ -1389,9 +1516,10 @@ class RrnAccessibilityService : AccessibilityService() {
      * clickNode() activates with ACTION_CLICK (falling back to a real tap at that node's own
      * centre). Rows are deduped by their bounds because several child texts match the time.
      */
-    private fun findRowNodes(ordered: List<Pair<String, AccessibilityNodeInfo>>): List<AccessibilityNodeInfo> {
-        val out = ArrayList<Pair<Int, AccessibilityNodeInfo>>()
+    private fun findRowNodes(ordered: List<Pair<String, AccessibilityNodeInfo>>): List<Pair<String, AccessibilityNodeInfo>> {
+        val out = ArrayList<Triple<Int, String, AccessibilityNodeInfo>>()
         val seen = HashSet<Int>()
+        val keys = HashSet<String>()
         for ((t, n) in ordered) {
             if (!timeRx.containsMatchIn(t)) continue
             var target: AccessibilityNodeInfo? = n
@@ -1401,9 +1529,59 @@ class RrnAccessibilityService : AccessibilityService() {
             val r = Rect().also { node.getBoundsInScreen(it) }
             if (r.width() <= 0 || r.height() <= 0) continue
             if (!seen.add(r.top / 10)) continue
-            out.add(r.top to node)
+            val key = rowKey(node)
+            if (!keys.add(key)) continue
+            out.add(Triple(r.top, key, node))
         }
-        return out.sortedBy { it.first }.map { it.second }
+        return out.sortedBy { it.first }.map { it.second to it.third }
+    }
+
+    /**
+     * What a row says about itself — time, amount, payer — as its identity across a scroll.
+     *
+     * Deliberately the row's own text and not its position: a scroll changes every position and
+     * nothing else, so a positional key made scrolling impossible. Two rows sharing this key are
+     * the same payment; the masked-reference ledger still decides what is actually captured.
+     */
+    private fun rowKey(node: AccessibilityNodeInfo): String {
+        val parts = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flatten(node, parts)
+        return parts.joinToString("|") { it.first.trim() }.take(140)
+    }
+
+    /**
+     * Leave a bridge-opened payment NOW, because its RRN is in hand.
+     *
+     * Called from the clipboard reader the instant the value is stored. Three things have to
+     * happen together: the per-screen busy gate is cleared (it exists to stop us re-firing on the
+     * SAME screen, and must not tax the NEXT payment), the pending fixed-delay return is
+     * superseded, and a fresh return starts immediately. `returnFromDetail` waits while our own
+     * reader activity is still foreground, so this can safely be called before it finishes.
+     */
+    private fun leavePaytmDetailNow() {
+        onNewCaptureStarting()
+        // A detail the SWEEP opened has its own return path (goBackToList) — don't double-drive it.
+        if (autoNavigating) return
+        // STILL PAYMENTS WAITING? Then don't press BACK at all: the next one's notification intent
+        // navigates straight to its own screen, so a BACK here would only race that navigation —
+        // and cost the better part of a second per payment for nothing. The last payment in the
+        // queue is the one that puts the phone back on the list.
+        if (pendingCaptureCount() > 0) return
+        returnFromDetail(0)
+    }
+
+    /**
+     * Drop the state that belonged to the payment we have just finished with.
+     *
+     * Both halves matter once captures run back-to-back: a pending return armed for the previous
+     * payment would otherwise fire while the next one is on screen and press BACK out of a capture
+     * in progress, and the per-screen busy gate — which exists only to stop us re-firing on the
+     * SAME screen — would tax the next payment for four and a half seconds it does not owe.
+     */
+    private fun onNewCaptureStarting() {
+        detailBusyUntil = 0L
+        bridgeGen++
+        bridgeBackScheduled = false
     }
 
     private fun goBackToList() {
@@ -1428,13 +1606,15 @@ class RrnAccessibilityService : AccessibilityService() {
      * clipboard-reader activity is in the foreground, so a BACK can never kill it before it has
      * read the RRN.
      */
-    private fun returnFromDetail(attempt: Int) {
+    private fun returnFromDetail(attempt: Int, gen: Int = bridgeGen) {
+        // Superseded: this return was armed for a payment we have already left.
+        if (gen != bridgeGen) return
         val root = rootInActiveWindow
         val texts = ArrayList<Pair<String, AccessibilityNodeInfo>>().also { if (root != null) flatten(root, it) }.map { it.first }
         val pkg = root?.packageName?.toString()
         // Our reader is on screen: give it time to finish rather than pressing BACK through it.
         if (pkg == packageName && attempt < 8) {
-            main.postDelayed({ returnFromDetail(attempt + 1) }, 400); return
+            main.postDelayed({ returnFromDetail(attempt + 1, gen) }, 400); return
         }
         val onDetail = texts.any { it.equals("RRN", true) } ||
             texts.any { it.equals("UPI Transaction ID", true) }
@@ -1446,7 +1626,7 @@ class RrnAccessibilityService : AccessibilityService() {
         }
         Log.d(TAG, "auto: leaving the payment detail (BACK ${attempt + 1})")
         performGlobalAction(GLOBAL_ACTION_BACK)
-        main.postDelayed({ returnFromDetail(attempt + 1) }, 800)
+        main.postDelayed({ returnFromDetail(attempt + 1, gen) }, 800)
     }
 
     private fun verifyOnList() {
@@ -1466,7 +1646,7 @@ class RrnAccessibilityService : AccessibilityService() {
             }
             else -> {
                 Log.w(TAG, "auto: could not return to payments list; pausing sweep")
-                sweeping = false
+                endSweep(handledCount, "could not get back to the list")
             }
         }
     }
@@ -1509,9 +1689,26 @@ class RrnAccessibilityService : AccessibilityService() {
         if (!dispatchGesture(gesture, cb, null)) main.postDelayed(onDone, 300)
     }
 
+    private fun swipeDown(onDone: () -> Unit) {
+        val dm = resources.displayMetrics
+        val x = dm.widthPixels / 2f
+        val path = Path().apply {
+            moveTo(x, dm.heightPixels * 0.27f)
+            lineTo(x, dm.heightPixels * 0.72f)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 250))
+            .build()
+        val cb = object : GestureResultCallback() {
+            override fun onCompleted(d: GestureDescription?) { main.postDelayed(onDone, 300) }
+            override fun onCancelled(d: GestureDescription?) { main.postDelayed(onDone, 300) }
+        }
+        if (!dispatchGesture(gesture, cb, null)) main.postDelayed(onDone, 300)
+    }
+
     private fun captureViaScreenshot(
         masked: String, amount: String, payer: String, upiId: String, paidAt: String,
-        copyX: Float, bandX0: Int, bandX1: Int
+        detailsJson: String, copyX: Float, bandX0: Int, bandX1: Int
     ) {
       runCatching {
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
@@ -1521,15 +1718,26 @@ class RrnAccessibilityService : AccessibilityService() {
                         ?.copy(Bitmap.Config.ARGB_8888, false)
                 }.getOrNull()
                 result.hardwareBuffer.close()
-                if (bmp == null) { Log.w(TAG, "screenshot bitmap null"); return }
+                // EVERY DEAD END RELEASES THE QUEUE. These paths used to return silently, and the
+                // payment then held the capture slot for the full deadline — one unreadable screen
+                // cost the same as three real captures during a burst.
+                if (bmp == null) {
+                    Log.w(TAG, "screenshot bitmap null")
+                    noteCaptureFail("screenshot unreadable"); onPaytmCaptureDone(applicationContext); return
+                }
                 val y = findCopyRowY(bmp, bandX0, bandX1)
                 bmp.recycle()
-                if (y <= 0f) { Log.w(TAG, "Copy link not found in screenshot"); return }
+                if (y <= 0f) {
+                    Log.w(TAG, "Copy link not found in screenshot")
+                    noteCaptureFail("no Copy link on screen"); onPaytmCaptureDone(applicationContext); return
+                }
                 Log.d(TAG, "found Copy at ($copyX,$y) -> tapping")
-                tapAndRead(copyX, y, masked, amount, payer, upiId, paidAt)
+                tapAndRead(copyX, y, masked, amount, payer, upiId, paidAt, detailsJson)
             }
             override fun onFailure(errorCode: Int) {
                 Log.w(TAG, "takeScreenshot failed: $errorCode")
+                noteCaptureFail("screenshot failed ($errorCode)")
+                onPaytmCaptureDone(applicationContext)
             }
         })
       }.onFailure { Log.w(TAG, "takeScreenshot threw: ${it.message}") }
@@ -1565,7 +1773,8 @@ class RrnAccessibilityService : AccessibilityService() {
     }
 
     private fun tapAndRead(
-        x: Float, y: Float, masked: String, amount: String, payer: String, upiId: String, paidAt: String
+        x: Float, y: Float, masked: String, amount: String, payer: String, upiId: String, paidAt: String,
+        detailsJson: String
     ) {
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
@@ -1573,9 +1782,13 @@ class RrnAccessibilityService : AccessibilityService() {
             .build()
         val fired = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(d: GestureDescription?) {
-                main.postDelayed({ launchReader(masked, amount, payer, upiId, paidAt) }, COPY_SETTLE_MS)
+                main.postDelayed({ launchReader(masked, amount, payer, upiId, paidAt, detailsJson) }, COPY_SETTLE_MS)
             }
-            override fun onCancelled(d: GestureDescription?) { Log.w(TAG, "tap cancelled") }
+            override fun onCancelled(d: GestureDescription?) {
+                Log.w(TAG, "tap cancelled")
+                noteCaptureFail("copy tap cancelled")
+                onPaytmCaptureDone(applicationContext)
+            }
         }, null)
         if (!fired) Log.w(TAG, "dispatchGesture returned false")
     }
@@ -1634,7 +1847,9 @@ class RrnAccessibilityService : AccessibilityService() {
         return out
     }
 
-    private fun launchReader(masked: String, amount: String, payer: String, upiId: String, paidAt: String) {
+    private fun launchReader(
+        masked: String, amount: String, payer: String, upiId: String, paidAt: String, detailsJson: String
+    ) {
         val i = Intent(this, ClipReaderActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -1645,9 +1860,13 @@ class RrnAccessibilityService : AccessibilityService() {
             putExtra("paidAt", paidAt)
             // The detail block is read HERE, while the payment's screen is still up: the reader
             // activity comes to the foreground on top of it and can no longer see it.
-            putExtra("details", paytmDetailsJson)
+            putExtra("details", detailsJson)
         }
-        runCatching { startActivity(i) }.onFailure { Log.w(TAG, "reader launch failed: ${it.message}") }
+        runCatching { startActivity(i) }.onFailure {
+            Log.w(TAG, "reader launch failed: ${it.message}")
+            noteCaptureFail("clipboard reader could not start")
+            onPaytmCaptureDone(applicationContext)
+        }
     }
 
     private fun flatten(node: AccessibilityNodeInfo?, out: MutableList<Pair<String, AccessibilityNodeInfo>>) {
@@ -1657,4 +1876,9 @@ class RrnAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
+    }
 }

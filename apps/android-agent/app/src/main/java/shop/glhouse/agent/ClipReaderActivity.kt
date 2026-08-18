@@ -93,6 +93,12 @@ class ClipReaderActivity : Activity() {
     }
 
     private fun done() {
+        // THE PAYMENT IS FINISHED WITH HERE — captured or given up on. Saying so releases the
+        // capture queue and leaves the payment screen immediately, instead of the engine waiting
+        // out an eight-second deadline that assumed nothing would ever report completion. This is
+        // the difference between draining a burst at about seven payments a minute and about
+        // seventeen.
+        RrnAccessibilityService.onPaytmCaptureDone(applicationContext)
         finish()
         overridePendingTransition(0, 0)
     }

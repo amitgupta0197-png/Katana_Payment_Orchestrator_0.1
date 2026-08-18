@@ -26,7 +26,11 @@ object Prefs {
     }
     fun counter(ctx: Context, key: String): Int = sp(ctx).getInt("ctr_$key", 0)
     fun countersSnapshot(ctx: Context): Map<String, Int> =
-        listOf("seen", "parsed", "dropped", "uploaded", "capture_try", "capture_ok", "capture_fail")
+        listOf("seen", "parsed", "dropped", "uploaded", "capture_try", "capture_ok", "capture_fail",
+               // Burst diagnostics: a payment whose capture ran out of time, and one that was
+               // never opened at all because the queue was already full. Both mean "an RRN this
+               // phone should have fetched and did not", which is otherwise invisible.
+               "capture_timeout", "capture_drop")
             .associateWith { counter(ctx, it) }
 
     fun baseUrl(ctx: Context): String {
