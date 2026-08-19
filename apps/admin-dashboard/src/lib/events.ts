@@ -22,6 +22,11 @@ export type EventType =
   // Distinct from merchant.status.terminate, which keeps the record. The event IS the audit
   // trail here: provider_audit_logs cascades away with the row it belongs to.
   | "provider.deleted"
+  // A banker row removed outright, same housekeeping rule as provider.deleted: onboarding tests,
+  // duplicates, typo'd codes. Distinct from the SUSPENDED/TERMINATED stages, which keep the
+  // record. The event IS the trail — merchant_activity is deleted along with the banker it
+  // belongs to, so nothing else survives to say the row ever existed.
+  | "merchant.deleted"
   | "merchant.integration.updated"
   | "maker_checker.requested"
   | "maker_checker.decided"
@@ -38,6 +43,7 @@ export type Producer =
   | "reconciliation"
   | "risk_engine"
   | "provider_mgmt"
+  | "merchant_mgmt"
   | "auth"
   | "admin_console";
 

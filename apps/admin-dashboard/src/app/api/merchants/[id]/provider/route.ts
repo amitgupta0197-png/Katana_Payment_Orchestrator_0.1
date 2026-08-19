@@ -119,14 +119,27 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const providerId = url.searchParams.get("provider_id");
   if (!providerId) return NextResponse.json({ error: "provider_id query param required" }, { status: 400 });
   try {
-    await rows("provider", `
-      DELETE FROM provider_merchant_mappings WHERE provider_id = $1::uuid AND merchant_id = $2::uuid
-    `, [providerId, id]);
+    const merchant = await resolveMerchant(id);
+    if (!merchant) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    // MATCH BOTH KEY FORMS. merchant_id holds the merchant UUID on newer rows and the
+    // merchant_code on very old ones, so a uuid-only DELETE removed nothing for a legacy mapping
+    // — and still answered {ok:true}, which reads as "unmapped" while the banker stays on the
+    // list. The row count is returned for the same reason: the caller must be able to tell an
+    // unmap that happened from one that matched nothing.
+    const removed = await rows<{ id: string }>("provider", `
+      DELETE FROM provider_merchant_mappings
+       WHERE provider_id = $1::uuid AND (merchant_id::text = $2 OR merchant_id::text = $3)
+       RETURNING id::text
+    `, [providerId, id, merchant.merchant_code]);
+    if (!removed.length)
+      return NextResponse.json({ error: "that banker is not mapped to this merchant" }, { status: 404 });
+
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'PROVIDER_UNASSIGNED', $2, $3::jsonb)
     `, [id, s.email, JSON.stringify({ provider_id: providerId })]).catch(() => {});
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, removed: removed.length, merchant_code: merchant.merchant_code });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

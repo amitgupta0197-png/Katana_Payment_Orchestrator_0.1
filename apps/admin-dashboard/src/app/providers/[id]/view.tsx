@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   UserPlus, ShieldCheck, AlertTriangle, FileCheck2, Users, Activity, Settings,
   AlertOctagon, Receipt, Network, Plus, CheckCircle2, Circle, Pause, Play, XOctagon, ExternalLink, Plug,
+  Unlink, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
   const canAdmin = useCan("providers", "admin");
   const canDelete = useCan("providers", "delete");
   const canMerchantCreate = useCan("merchants", "create");
+  const canMerchantUpdate = useCan("merchants", "update");
+  const canMerchantDelete = useCan("merchants", "delete");
   const [merchantDrawer, setMerchantDrawer] = useState<Mapping | null>(null);
   const [kycDialog, setKycDialog] = useState<"APPROVED" | "REJECTED" | "IN_REVIEW" | null>(null);
   const [onboardOpen, setOnboardOpen] = useState(false);
@@ -156,6 +159,52 @@ export default function ProviderDetailView({ id }: { id: string }) {
       qc.invalidateQueries({ queryKey: ["providers"] });
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
+  });
+
+  // A banker's name as an operator reads it — used in confirms and toasts, where "which one?"
+  // has to be answerable without cross-referencing a uuid.
+  const bankerLabel = (m: Mapping) =>
+    [m.merchant_name, m.merchant_code].filter(Boolean).join(" · ") || m.merchant_id;
+
+  // UNMAP — the reversible one. The banker keeps its record, devices and captured credits; it
+  // just stops belonging to this merchant, and can be re-onboarded here at any time.
+  const unmapMut = useMutation({
+    mutationFn: async (m: Mapping) => {
+      const r = await fetch(`/api/merchants/${m.merchant_uuid ?? m.merchant_id}/provider?provider_id=${id}`,
+        { method: "DELETE" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      return d;
+    },
+    onSuccess: (_d, m) => {
+      toast.success(`${bankerLabel(m)} unmapped`, { description: "The banker itself is untouched — re-onboard it here to map it again." });
+      qc.invalidateQueries({ queryKey: ["provider", id] });
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["merchants"] });
+    },
+    onError: (e: Error) => toast.error("Could not unmap", { description: e.message }),
+  });
+
+  // DELETE — the irreversible one. The API refuses any banker that is live or has handled money,
+  // and reports why, so a refusal is shown to the operator rather than swallowed.
+  const deleteBankerMut = useMutation({
+    mutationFn: async (m: Mapping) => {
+      const r = await fetch(`/api/merchants/${m.merchant_uuid ?? m.merchant_id}`, { method: "DELETE" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      return d as { code: string; devices_removed: number; logins_disabled: number };
+    },
+    onSuccess: (d) => {
+      const also = [
+        d.devices_removed ? `${d.devices_removed} device enrolment${d.devices_removed === 1 ? "" : "s"}` : null,
+        d.logins_disabled ? `${d.logins_disabled} login${d.logins_disabled === 1 ? "" : "s"} disabled` : null,
+      ].filter(Boolean).join(" · ");
+      toast.success(`${d.code} deleted`, { description: also || undefined });
+      qc.invalidateQueries({ queryKey: ["provider", id] });
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["merchants"] });
+    },
+    onError: (e: Error) => toast.error("Not deleted", { description: e.message }),
   });
 
   const inlineSave = (field: string) => async (next: string) => {
@@ -218,6 +267,33 @@ export default function ProviderDetailView({ id }: { id: string }) {
         actions={[
           { label: "Open in drawer", icon: ExternalLink, onClick: () => setMerchantDrawer(r) },
           { label: "Open banker page", icon: ExternalLink, onClick: () => window.open(`/merchants/${r.merchant_uuid ?? r.merchant_id}`, "_blank") },
+          // Two different things, deliberately worded so they cannot be confused at the moment of
+          // clicking: one removes the RELATIONSHIP, the other removes the BANKER.
+          ...(canMerchantUpdate ? [{
+            label: "Unmap from this merchant", icon: Unlink, separatorBefore: true,
+            disabled: unmapMut.isPending,
+            onClick: () => {
+              if (!confirm(
+                `Unmap ${bankerLabel(r)} from ${provider.code}?\n\n`
+                + "It stops appearing under this merchant. The banker itself, its devices and its "
+                + "captured credits are all kept — you can onboard it here again.",
+              )) return;
+              unmapMut.mutate(r);
+            },
+          }] : []),
+          ...(canMerchantDelete ? [{
+            label: "Delete banker…", icon: Trash2, variant: "danger" as const,
+            disabled: deleteBankerMut.isPending,
+            onClick: () => {
+              if (!confirm(
+                `Permanently delete ${bankerLabel(r)}?\n\n`
+                + "This cannot be undone. Its device enrolments and login go with it.\n\n"
+                + "A banker with any captured credit, pay-in or settlement, or with a capture "
+                + "phone still reporting, will be refused — suspend those instead.",
+              )) return;
+              deleteBankerMut.mutate(r);
+            },
+          }] : []),
         ]}
       />
     )},
