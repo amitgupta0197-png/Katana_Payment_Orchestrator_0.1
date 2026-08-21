@@ -23,6 +23,13 @@ class ClipReaderActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
     private var attempts = 0
 
+    companion object {
+        // ~3s of polling. Paytm's Copy is near-instant when the phone is idle; under a burst of
+        // back-to-back payments it is not, and the previous 1.2s budget was expiring before the
+        // value arrived — silently, which is why it took a live 18-payment run to find.
+        private const val MAX_READS = 20
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         overridePendingTransition(0, 0)
@@ -55,14 +62,41 @@ class ClipReaderActivity : Activity() {
             done()
             return
         }
-        // Copy JS may not have landed yet; retry briefly before giving up.
-        if (attempts++ < 8) {
+        // Copy may not have landed yet; retry before giving up. The old budget was 8 × 150ms —
+        // 1.2 seconds, which is generous on an idle phone and not nearly enough during a burst,
+        // when the copy has to queue behind whatever the previous payment left running.
+        if (attempts++ < MAX_READS) {
             main.postDelayed({ tryRead() }, 150)
         } else {
+            // THE SILENT DROP THAT COST EIGHTEEN PAYMENTS. This branch used to log to logcat and
+            // vanish: no counter, nothing sent, nothing on the dashboard. capture_try had already
+            // been counted, capture_ok never was, capture_fail never was — so from the server a
+            // phone losing every payment looked exactly like a phone with nothing to do. Four of
+            // these in a row and RrnAccessibilityService abandons the payment for good.
+            //
+            // What the clipboard actually held is the whole diagnosis and it must travel: empty
+            // means the Copy tap never landed, another payment's reference means the burst raced,
+            // and a non-numeric value means Paytm's layout moved and we tapped the wrong control.
+            Prefs.bump(applicationContext, "capture_noclip")
+            val got = when {
+                full == null -> "empty/non-numeric"
+                else -> "a different reference"
+            }
+            AlertStore.log(applicationContext, "${nowTag()} ⚠️ copy did not reach the clipboard ($got)")
+            if (!AlertStore.seenRecently(applicationContext, "noclip|$got")) {
+                AlertUploader.sendAgentDebug(
+                    applicationContext, "capture-noclip",
+                    "the Copy tap fired but the clipboard never carried this payment's reference " +
+                        "after ${MAX_READS * 150}ms — clipboard held $got",
+                )
+            }
             Log.w(TAG, "clipboard did not match masked=$masked (got=$full); giving up")
             done()
         }
     }
+
+    private fun nowTag(): String =
+        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
 
     /** The service's JSON snapshot of the payment screen → the map stored with the capture. */
     private fun parseDetails(json: String?): Map<String, String>? {

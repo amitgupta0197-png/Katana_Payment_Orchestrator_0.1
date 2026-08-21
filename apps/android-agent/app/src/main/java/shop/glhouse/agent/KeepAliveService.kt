@@ -30,14 +30,38 @@ class KeepAliveService : Service() {
             startForeground(NOTIF_ID, n)
         }
         CommandPoller.start(applicationContext)   // poll for on-demand "Get RRN" requests
-        ScreenAwake.apply(applicationContext)      // hold the screen on if keep-awake is enabled
+        ScreenAwake.apply(applicationContext)      // hold the screen on if charging and enabled
+        registerPowerWatcher()
         return START_STICKY   // ask the OS to restart us if it kills the process
+    }
+
+    /**
+     * Re-evaluate the keep-awake overlay whenever the charger comes or goes.
+     *
+     * The overlay is only held while charging, so without this a phone put on charge would stay
+     * asleep until something else happened to call apply() — and capture would not resume even
+     * though the condition for it had. Plugging in must be enough on its own.
+     */
+    private fun registerPowerWatcher() {
+        if (powerWatcher != null) return
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) { ScreenAwake.apply(applicationContext) }
+        }
+        val f = android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+        }
+        runCatching { registerReceiver(r, f) }.onSuccess { powerWatcher = r }
     }
 
     override fun onDestroy() {
         CommandPoller.stop()
+        powerWatcher?.let { r -> runCatching { unregisterReceiver(r) } }
+        powerWatcher = null
         super.onDestroy()
     }
+
+    private var powerWatcher: android.content.BroadcastReceiver? = null
 
     private fun buildNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

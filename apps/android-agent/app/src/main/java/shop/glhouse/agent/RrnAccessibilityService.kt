@@ -44,9 +44,77 @@ class RrnAccessibilityService : AccessibilityService() {
     // Matches both the Home header ("8 Payment, Today") and the list header
     // ("211 Payments") — "Payment" is a prefix of both.
     private val countRx = Regex("([0-9][0-9,]*)\\s+Payment", RegexOption.IGNORE_CASE)
+    // The home screen's summary row, which opens the full payments list. The ", Today" suffix is
+    // what separates it from the full list's own "… from N Payments" header.
+    private val homeSummaryRx = Regex("from\\s+[0-9][0-9,]*\\s+Payment,\\s*Today", RegexOption.IGNORE_CASE)
+    // THE SCREEN THE SWEEP MUST NEVER DRIVE. Paytm's payments list and its bank-settlement
+    // screen are two tabs of ONE activity (PaymentsSettlementsActivity), so returning from a
+    // payment detail can land on the settlement tab without any navigation the sweep can see.
+    // That tab carries "Settle Now" — a button that moves real money — and on 2026-08-21 a
+    // backfill spent 58 consecutive scrolls sitting on it. A sweep that cannot see payment rows
+    // has no business scrolling; recognising this screen by name is what stops it.
+    // MATCH ONLY WHAT IS UNIQUE TO THAT TAB. "Settle Now" also sits on every payment DETAIL
+    // screen ("Want to instantly settle the collected amount?"), and "Bank Settlements" is the
+    // label of the tab NEXT to Payments — so it is on screen while the payments list is showing.
+    // Matching either ended healthy sweeps instantly. These two strings appear on the settlement
+    // tab and nowhere else.
+    private val settlementScreenRx =
+        Regex("Previous Settlements|Available for settlement", RegexOption.IGNORE_CASE)
+
+    // CONTROLS THAT MOVE MONEY. THE AGENT PRESSES NONE OF THEM, EVER.
+    //
+    // Settling and refunding are the merchant's decisions, taken by hand in Paytm. This agent
+    // exists to READ an RRN off the screen; it has no business authorising a transfer, and no
+    // capture is worth the risk of one. The danger is not that it decides to — it is that it
+    // taps a coordinate the layout has moved a button under. That is exactly what happened on
+    // 2026-08-21: the Copy link was believed to be at (919,1843) and Paytm's "Settle Now"
+    // occupies [717,1796][993,1892] — its precise centre. Eighteen payments produced no RRN and
+    // eighteen presses of a button that moves money.
+    //
+    // Geometry fixes (matching Copy by its row) make that mis-aim unlikely. This makes it
+    // impossible: every tap and every click is checked against what is actually under it first,
+    // so no future layout change, mis-read or stale coordinate can press one of these.
+    private val moneyControlRx = Regex(
+        "^\\s*(settle now|settle|instantly settle|refund to customer|refund|issue refund|" +
+            "proceed to refund|confirm refund|transfer now|withdraw)\\s*$",
+        RegexOption.IGNORE_CASE)
+
+    /**
+     * The label of a money-moving control lying under this screen point, or null when the point
+     * is safe to tap. Bounds-based on purpose: what matters is what the finger would LAND on,
+     * not what the tree says we intended to hit.
+     */
+    private fun moneyControlAt(x: Float, y: Float): String? {
+        val root = rootInActiveWindow ?: return null
+        val all = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flattenAll(root, all)
+        val px = x.toInt(); val py = y.toInt()
+        for ((text, n) in all) {
+            val t = text.trim()
+            if (t.isEmpty() || !moneyControlRx.containsMatchIn(t)) continue
+            val r = Rect().also { n.getBoundsInScreen(it) }
+            if (r.width() > 0 && r.height() > 0 && r.contains(px, py)) return t
+        }
+        return null
+    }
+
+    /** True when this node — or the clickable ancestor we would press — is a money control. */
+    private fun isMoneyControl(n: AccessibilityNodeInfo): Boolean {
+        val t = (n.text ?: n.contentDescription ?: "").toString().trim()
+        return t.isNotEmpty() && moneyControlRx.containsMatchIn(t)
+    }
+    // Row keys seen at the previous scroll, and how many scrolls in a row have produced exactly
+    // the same ones. A WebView list that has stopped advancing reports an unchanged row set, and
+    // scrolling it again cannot do anything except waste the budget next to a money control.
+    private var lastRowKeys: Set<String> = emptySet()
+    private var sweepStallScrolls = 0
 
     // ---- detail-capture state ----
     private val attempts = HashMap<String, Int>()
+    // How many times we have scrolled a payment's detail screen looking for its RRN Copy link.
+    // Paytm renders that block below the fold, so it has to be scrolled to before it exists as a
+    // laid-out node — and a screen that never yields one must give up rather than scroll forever.
+    private val scrollsForCopy = HashMap<String, Int>()
     private var detailBusyUntil = 0L
 
     // ---- auto-navigation state ----
@@ -103,6 +171,34 @@ class RrnAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val MAX_ATTEMPTS = 4
+        private const val MAX_COPY_SCROLLS = 6
+        // How long to wait between position re-reads, and how many times to look, before the
+        // Copy link is considered to have stopped moving.
+        private const val SETTLE_MS = 260L
+        private const val SETTLE_TRIES = 4
+        // Long enough for a swipe to dispatch, land and re-lay-out the detail before the next
+        // accessibility event is allowed to act on it.
+        private const val SCROLL_WAIT_MS = 1200L
+        // THE SAME WAIT, BUT FOR THE DETAIL SCREEN, WHICH IS NOT THE LIST.
+        //
+        // 1200ms was measured on the payments list: a long, lazily-loaded WebView that fetches
+        // the next screenful after the gesture ends. A payment detail is a short, already-loaded
+        // page — the RRN block is below the fold, not un-fetched — so it re-lays-out in a
+        // fraction of that. Since EVERY capture scrolls this screen (Paytm always renders RRN
+        // below the fold), the difference is paid on every single payment: at ~5 payments a
+        // minute, the old wait alone spent over a minute an hour doing nothing.
+        private const val COPY_SCROLL_WAIT_MS = 650L
+        // How many times to re-read the detail after a scroll before giving the payment up.
+        //
+        // WHY A RETRY AT ALL. The re-read after a scroll used to be single-shot: if that one look
+        // did not find the "RRN" label, the capture went silent and the payment sat holding the
+        // queue slot until CAPTURE_DEADLINE_MS expired. Live on 2026-08-21 that silence was the
+        // dominant cost — captures themselves take about 2.4s, yet payments were landing 18-22s
+        // apart, the difference being stalls of 9s and 21s spent waiting on a deadline for a
+        // screen that simply had not finished re-laying-out. Looking twice more costs 700ms and
+        // removes an 8-second stall.
+        private const val COPY_REREAD_TRIES = 3
+        private const val COPY_REREAD_MS = 350L
         private const val COPY_SETTLE_MS = 450L
         private const val BUSY_MS = 4500L
         private const val COPY_X_FRAC = 0.855f
@@ -113,6 +209,13 @@ class RrnAccessibilityService : AccessibilityService() {
         // FOLD: payments arriving faster than they can be opened drive the un-captured ones off
         // screen, and a sweep that only ever read the visible rows could never go and get them.
         private const val MAX_SWEEP_SCROLLS = 4
+        // Enough to walk a full trading day of payments when backfilling after an outage.
+        // Paytm's list shows about three payments per screen, so a full trading day of 200+
+        // needs on the order of seventy scrolls; this leaves headroom above that.
+        private const val DEEP_SWEEP_SCROLLS = 120
+        // How many consecutive scrolls may report an unchanged set of rows before the list is
+        // declared stuck. Three tolerates one slow lazy-load; sitting through 120 does not.
+        private const val MAX_STALL_SCROLLS = 3
         // Longer than the sweep's own return: a bridge-opened Paytm detail has to read the masked
         // reference, tap Copy and let the clipboard reader run before it is safe to press BACK.
         private const val BRIDGE_BACK_MS = 5000L
@@ -147,6 +250,26 @@ class RrnAccessibilityService : AccessibilityService() {
         // don't yet have) instead of idling until a new payment arrives. Cleared on use.
         @Volatile private var forceResweep = false
         fun requestResweep() { forceResweep = true }
+
+        /**
+         * A DEEP SWEEP WALKS THE WHOLE LIST, not just the part above the newest capture.
+         *
+         * The ordinary sweep stops after STOP_AFTER_OLD already-captured rows because that is
+         * reliably where "new payments" end — every older row below it was captured on the day it
+         * arrived. That assumption fails after an outage: on 2026-08-21 the Copy tap was landing on
+         * the wrong control, so a whole day of payments went uncaptured and sat BELOW the handful
+         * captured after the fix. The boundary heuristic then stopped the sweep five rows in and
+         * declared the backlog old.
+         *
+         * So an explicitly requested re-sweep ignores the boundary and scrolls far deeper. It is
+         * slower and re-opens rows it already holds (RrnStore dedupes them, costing ~2s each), and
+         * that is the correct trade when the alternative is leaving captured money unreported.
+         */
+        @Volatile private var deepSweep = false
+        @Volatile private var openedFullList = false
+        // True for the lifetime of one sweep that was started as a backfill.
+        @Volatile private var sweepIsDeep = false
+        fun requestDeepSweep() { deepSweep = true; forceResweep = true; openedFullList = false }
 
         const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
         @Volatile private var lastGpayLaunch = 0L
@@ -187,7 +310,11 @@ class RrnAccessibilityService : AccessibilityService() {
         /** The running service, so the queue can drive the screen between payments. */
         @Volatile private var instance: RrnAccessibilityService? = null
         /** Pause between one payment being finished with and the next being opened. */
-        private const val CAPTURE_SETTLE_MS = 900L
+        // Pause after the LAST queued payment, while the screen returns to the list. A backlog
+        // uses 350ms instead (the next payment's own intent navigates, so nothing must settle).
+        // 900ms was chosen before Paytm had a completion signal at all; with onPaytmCaptureDone
+        // leaving the detail the moment the clipboard is read, the screen is already still.
+        private const val CAPTURE_SETTLE_MS = 550L
         /** When a notification intent last opened a payment detail; 0 = never. */
         @Volatile private var bridgeOpenedAt = 0L
         /** A detail opened by us stays "ours" this long — beyond it, assume the merchant drove. */
@@ -454,10 +581,23 @@ class RrnAccessibilityService : AccessibilityService() {
     // Click a node via its nearest clickable ancestor (ACTION_CLICK), falling back to a
     // real tap gesture at its centre. Used to re-run Airtel's "search" for hands-free refresh.
     private fun clickNode(node: AccessibilityNodeInfo): Boolean {
+        if (isMoneyControl(node)) {
+            Log.w(TAG, "REFUSING to click a money control: \"${(node.text ?: node.contentDescription)}\"")
+            return false
+        }
         var n: AccessibilityNodeInfo? = node
         var depth = 0
         while (n != null && depth < 6) {
-            if (n.isClickable) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true }
+            if (n.isClickable) {
+                // The ancestor is what actually receives the click, so it is the thing that has
+                // to be safe — a harmless-looking row inside a "Settle Now" card would otherwise
+                // press the card.
+                if (isMoneyControl(n)) {
+                    Log.w(TAG, "REFUSING to click: the clickable ancestor is a money control")
+                    return false
+                }
+                n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true
+            }
             n = n.parent; depth++
         }
         val r = Rect().also { node.getBoundsInScreen(it) }
@@ -1293,18 +1433,57 @@ class RrnAccessibilityService : AccessibilityService() {
 
         Prefs.bump(this, "capture_try")
 
+        // WHICH "Copy" BELONGS TO THE RRN? Paytm's detail screen carries three of them —
+        // Order ID, Transaction ID and RRN — each on its own row, each labelled exactly "Copy".
+        //
+        // This used to take the first Copy that appeared AFTER the masked reference in flatten
+        // order, i.e. tree order, on the assumption that tree order matches what you see. It does
+        // not reliably: on 2026-08-21 every single clipboard failure came back "clipboard held a
+        // different reference" — 113 of them against 105 successes. The tap was landing on a real
+        // Copy control and faithfully copying the wrong field, most often the Transaction ID,
+        // which is also a long digit run and so passed every check except the mask.
+        //
+        // Rows are a visual fact, so match on geometry instead: the Copy that belongs to the RRN
+        // is the one sitting on the RRN's own row. Tree order is not consulted at all.
         var masked: String? = null
-        var copyNode: AccessibilityNodeInfo? = null
+        var maskedNode: AccessibilityNodeInfo? = null
         for (i in rrnLabelIdx + 1 until ordered.size) {
             val t = ordered[i].first
-            if (masked == null && maskedRrn.containsMatchIn(t)) masked = maskedRrn.find(t)!!.value
-            if (masked != null && t.trim().equals("Copy", true)) { copyNode = ordered[i].second; break }
+            if (maskedRrn.containsMatchIn(t)) {
+                masked = maskedRrn.find(t)!!.value
+                maskedNode = ordered[i].second
+                break
+            }
         }
-        if (masked == null || copyNode == null) {
+        val copyNode: AccessibilityNodeInfo? = maskedNode?.let { mn ->
+            val mRect = Rect().also { mn.getBoundsInScreen(it) }
+            if (mRect.height() <= 0) {
+                // The RRN row is not laid out yet — below the fold. Nothing can be matched against
+                // a row that has no position, so fall through with a null Copy and let the
+                // scroll-to-it branch below bring the whole row on screen first.
+                null
+            } else {
+                ordered.asSequence()
+                    .filter { it.first.trim().equals("Copy", true) }
+                    .mapNotNull { (_, node) ->
+                        val r = Rect().also { node.getBoundsInScreen(it) }
+                        if (r.height() > 0) node to r else null
+                    }
+                    // Same row = vertical centres within roughly one row height of each other.
+                    // A Copy two rows up is a different field and must never be accepted.
+                    .filter { (_, r) -> kotlin.math.abs(r.exactCenterY() - mRect.exactCenterY()) <= mRect.height() * 1.5f }
+                    .minByOrNull { (_, r) -> kotlin.math.abs(r.exactCenterY() - mRect.exactCenterY()) }
+                    ?.first
+            }
+        }
+        // A missing Copy is no longer a dead end: it means the RRN row is not on screen yet, and
+        // the scroll branch below exists precisely to bring it there. Only a missing masked
+        // reference is a genuine layout change worth reporting.
+        if (masked == null) {
             // The screen has an RRN label but not the shape we expect — usually a Paytm
             // layout change. Previously this returned silently and the capture request just
             // expired, telling nobody anything.
-            noteCaptureFail(if (masked == null) "no masked RRN after label" else "no Copy node after RRN")
+            noteCaptureFail("no masked RRN after the RRN label")
             return
         }
         // Tell the auto-sweep whether this row is new or an already-captured
@@ -1315,6 +1494,28 @@ class RrnAccessibilityService : AccessibilityService() {
         // let a re-opened payment cost as much queue time as a real capture.
         val n = attempts.getOrDefault(masked, 0)
         if (RrnStore.isMaskedCaptured(masked) || n >= MAX_ATTEMPTS) {
+            // TWO VERY DIFFERENT THINGS USED TO SHARE THIS SILENT RETURN, and the counters could
+            // not tell them apart. "Already captured" is the sweep working correctly — it is how
+            // it finds where new payments end. "Attempts exhausted" is a payment this phone saw,
+            // tried four times, and has now abandoned FOREVER (`attempts` only clears when the
+            // service restarts). The second is lost money and was reported nowhere: on 2026-08-21
+            // eighteen Paytm payments were taken and one was captured, while the only counter that
+            // moved was capture_try — 277 of them in eighteen minutes, all landing here.
+            if (!RrnStore.isMaskedCaptured(masked)) {
+                Prefs.bump(this, "capture_giveup")
+                AlertStore.log(applicationContext, "${nowTag()} ⛔ gave up on a payment after $MAX_ATTEMPTS attempts")
+                if (!AlertStore.seenRecently(applicationContext, "giveup|$masked")) {
+                    AlertUploader.sendAgentDebug(
+                        applicationContext, "capture-giveup",
+                        "abandoned after $MAX_ATTEMPTS attempts; the RRN was never read off the screen",
+                    )
+                }
+            }
+            // AND STOP RE-READING THIS SCREEN. This return skipped the detailBusyUntil stamp set
+            // by a real attempt below, so every accessibility event on the same detail re-entered
+            // and re-counted — which is what inflated capture_try into the hundreds while nothing
+            // was actually being captured. A decided screen is decided; leave it alone.
+            detailBusyUntil = now + BUSY_MS
             if (!autoNavigating) onPaytmCaptureDone(applicationContext)
             return
         }
@@ -1330,20 +1531,54 @@ class RrnAccessibilityService : AccessibilityService() {
         detailBusyUntil = now + BUSY_MS
 
         val sw = resources.displayMetrics.widthPixels
-        val cRect = Rect().also { copyNode.getBoundsInScreen(it) }
-        val copyX: Float
-        val bandX0: Int
-        val bandX1: Int
-        if (cRect.width() > 0) {
-            copyX = cRect.exactCenterX()
-            val margin = (sw * 0.02f).toInt()
-            bandX0 = cRect.left - margin
-            bandX1 = cRect.right + margin
-        } else {
-            copyX = sw * COPY_X_FRAC
-            bandX0 = (sw * (COPY_X_FRAC - COPY_BAND_FRAC)).toInt()
-            bandX1 = (sw * (COPY_X_FRAC + COPY_BAND_FRAC)).toInt()
+        val cRect = Rect().also { copyNode?.getBoundsInScreen(it) }
+
+        // NEVER GUESS WHERE "Copy" IS. A node with zero bounds is not laid out — the RRN block
+        // sits below the fold of Paytm's detail screen and only materialises once scrolled to.
+        // This used to fall through to a guessed column (COPY_X_FRAC) and then hunt that strip
+        // for blue pixels, taking the LAST cluster found. On this screen the blue things in that
+        // strip are the payer's avatar circle and the "Settle Now" button, so the engine tapped
+        // those instead. Live proof, 2026-08-21 13:40–13:43 on a OnePlus IN2011: every capture
+        // logged `found Copy at (919.5,1843.5)`, and "Settle Now" occupies [717,1796][993,1892] —
+        // its exact centre. Eighteen payments produced no RRN and eighteen presses of a button
+        // that moves money.
+        //
+        // So: if the Copy link is not on screen, scroll until it is and let the next scan handle
+        // it. An off-screen node is a reason to scroll, never a reason to tap a coordinate that
+        // no node claimed.
+        if (copyNode == null || cRect.width() <= 0 || cRect.height() <= 0) {
+            Log.d(TAG, "RRN Copy is below the fold (no bounds) -> scrolling to it")
+            if (scrollsForCopy.getOrDefault(masked, 0) >= MAX_COPY_SCROLLS) {
+                noteCaptureFail("RRN Copy never came on screen after $MAX_COPY_SCROLLS scrolls")
+                attempts[masked] = MAX_ATTEMPTS
+                onPaytmCaptureDone(applicationContext)
+                return
+            }
+            scrollsForCopy[masked] = scrollsForCopy.getOrDefault(masked, 0) + 1
+            // This visit did not consume a capture attempt — nothing was tapped.
+            attempts[masked] = n
+            // HOLD THE SCREEN WHILE THE SCROLL IS IN FLIGHT. A single detail screen fires five or
+            // six content events inside 100ms; without this gate every one of them re-entered and
+            // spent another scroll from the budget, so all four were gone before the first gesture
+            // had even been dispatched — the scroll never got the chance to work.
+            detailBusyUntil = now + COPY_SCROLL_WAIT_MS
+            // AND LOOK AGAIN OURSELVES. Accessibility events describe CHANGE, so they stop once the
+            // scrolled screen settles — waiting for one after the gesture meant the capture was
+            // never retried and the sweep simply moved to the next row. Live proof, 2026-08-21:
+            // rows 1-3 of a 205-payment backfill each logged "scrolling to it" and were then
+            // abandoned without a single tap. The scroll now re-reads the screen it just moved.
+            swipeUp {
+                detailBusyUntil = 0L
+                rereadAfterCopyScroll(autoMode, 0)
+            }
+            return
         }
+        scrollsForCopy.remove(masked)
+
+        val copyX = cRect.exactCenterX()
+        val margin = (sw * 0.02f).toInt()
+        val bandX0 = cRect.left - margin
+        val bandX1 = cRect.right + margin
         val amount = texts.firstNotNullOfOrNull { amountRx.find(it)?.value } ?: ""
         val paidAt = texts.firstOrNull { it.startsWith("Paid at", true) } ?: ""
         val payer = valueAfter(texts, "Name:") ?: valueAfter(texts, "From") ?: ""
@@ -1356,7 +1591,6 @@ class RrnAccessibilityService : AccessibilityService() {
             val f = paytmDetailFields(texts)
             if (f.isEmpty()) "" else org.json.JSONObject(f as Map<*, *>).toString()
         }.getOrDefault("")
-        Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer fields=${detailsJson.length}b attempt=${n + 1} -> screenshot")
         // SCREENSHOT FIRST, SCROLL ONLY IF WE HAVE TO.
         //
         // Two swipes always ran before the screenshot, on the assumption that the Copy link is
@@ -1367,7 +1601,101 @@ class RrnAccessibilityService : AccessibilityService() {
         //
         // So the cheap attempt goes first and the scroll becomes the fallback, which also turns
         // "no Copy link on screen" from a dead end into a retry.
-        captureViaScreenshot(masked, amount, payer, upiId, paidAt, detailsJson, copyX, bandX0, bandX1, false)
+        //
+        // THE NODE ALREADY SAID WHERE IT IS. We only reach this line with real bounds now, so the
+        // Copy link's own rectangle is the target — no screenshot, no colour matching, no chance
+        // of landing on a button that merely happens to be blue and in the same column. The pixel
+        // search below survives only as the fallback for a laid-out node whose tap does not take.
+        // TAP A SCREEN THAT HAS STOPPED MOVING.
+        //
+        // A payment detail animates in, and the first accessibility event arrives while it is
+        // still sliding. Bounds read then are correct for that instant and stale a moment later,
+        // so the tap lands where the Copy link WAS and nothing reaches the clipboard. Live proof,
+        // 2026-08-21 17:52: taps at y=1659 and y=1610 — both on a screen still settling — returned
+        // got=null, while the two that followed a scroll (and so hit a settled screen at y=1485)
+        // both captured. Same code, same layout; the only difference was motion.
+        //
+        // So re-read the row after a short delay and only tap once it has held still. Cheap
+        // compared with losing the payment: a settled screen reports the same bounds twice.
+        tapCopyWhenSettled(masked, amount, payer, upiId, paidAt, detailsJson, cRect, 0)
+    }
+
+    /**
+     * Re-read the RRN row until its position stops changing, then tap its Copy link.
+     *
+     * @param last  the bounds seen on the previous pass
+     * @param tries how many times we have already re-read; bounded so a screen that never
+     *              settles fails loudly instead of looping.
+     */
+    private fun tapCopyWhenSettled(
+        masked: String, amount: String, payer: String, upiId: String, paidAt: String,
+        detailsJson: String, last: Rect, tries: Int,
+    ) {
+        main.postDelayed({
+            val root = rootInActiveWindow
+            if (root == null) { noteCaptureFail("screen went away before the Copy tap"); onPaytmCaptureDone(applicationContext); return@postDelayed }
+            val now = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+            flattenAll(root, now)
+            val nowTexts = now.map { it.first }
+
+            val idx = nowTexts.indexOfFirst { it.equals("RRN", true) }
+            val mNode = if (idx < 0) null else now.drop(idx + 1).firstOrNull { maskedRrn.containsMatchIn(it.first) }?.second
+            val mRect = Rect().also { mNode?.getBoundsInScreen(it) }
+            val copy = if (mNode == null || mRect.height() <= 0) null else now.asSequence()
+                .filter { it.first.trim().equals("Copy", true) }
+                .mapNotNull { (_, n) ->
+                    val r = Rect().also { n.getBoundsInScreen(it) }
+                    if (r.height() > 0) n to r else null
+                }
+                .filter { (_, r) -> kotlin.math.abs(r.exactCenterY() - mRect.exactCenterY()) <= mRect.height() * 1.5f }
+                .minByOrNull { (_, r) -> kotlin.math.abs(r.exactCenterY() - mRect.exactCenterY()) }
+
+            if (copy == null) {
+                if (tries < SETTLE_TRIES) tapCopyWhenSettled(masked, amount, payer, upiId, paidAt, detailsJson, last, tries + 1)
+                else { noteCaptureFail("RRN row never settled on screen"); onPaytmCaptureDone(applicationContext) }
+                return@postDelayed
+            }
+            val r = copy.second
+            // Held still since the last look? Then it is safe to tap.
+            if (kotlin.math.abs(r.exactCenterY() - last.exactCenterY()) < 2f && r.exactCenterY() > 0f) {
+                Log.d(TAG, "RRN row: masked=$masked amt=$amount payer=$payer -> tapping Copy at " +
+                    "(${r.exactCenterX().toInt()},${r.exactCenterY().toInt()}) settled after $tries re-read(s)")
+                tapAndRead(r.exactCenterX(), r.exactCenterY(), masked, amount, payer, upiId, paidAt, detailsJson)
+            } else if (tries < SETTLE_TRIES) {
+                tapCopyWhenSettled(masked, amount, payer, upiId, paidAt, detailsJson, r, tries + 1)
+            } else {
+                // Still drifting after the budget — tap the latest position rather than drop the
+                // payment. A late tap sometimes lands; a skipped one never does.
+                Log.w(TAG, "RRN row still moving after $tries re-reads; tapping anyway")
+                tapAndRead(r.exactCenterX(), r.exactCenterY(), masked, amount, payer, upiId, paidAt, detailsJson)
+            }
+        }, SETTLE_MS)
+    }
+
+    /**
+     * Look at the scrolled detail again, and keep looking for a moment before giving up.
+     *
+     * A single look loses the race whenever the re-layout lands after the gesture callback: the
+     * capture then makes no further move and the payment holds the queue slot for the full
+     * CAPTURE_DEADLINE_MS. That silence — not the capture itself — is what put 18-22s between
+     * payments while each successful capture took 2.4s.
+     */
+    private fun rereadAfterCopyScroll(autoMode: Boolean, tries: Int) {
+        val root = rootInActiveWindow
+        if (root != null) {
+            val again = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+            flatten(root, again)
+            val againTexts = again.map { it.first }
+            if (againTexts.any { it.equals("RRN", true) }) { handleDetail(again, againTexts, autoMode); return }
+        }
+        // Not laid out yet. Another look costs 350ms; the alternative costs eight seconds.
+        if (tries + 1 < COPY_REREAD_TRIES) {
+            main.postDelayed({ rereadAfterCopyScroll(autoMode, tries + 1) }, COPY_REREAD_MS)
+        } else {
+            // Out of looks. Say so rather than going quiet — a payment that ends here is one the
+            // deadline would otherwise have swallowed with no counter to show for it.
+            Log.d(TAG, "detail did not re-render after the scroll; leaving it for the sweep")
+        }
     }
 
     // ------------------------------------------------------------------ list
@@ -1380,6 +1708,41 @@ class RrnAccessibilityService : AccessibilityService() {
         // which is both faster and exact. A sweep started now would tap a row out from under it.
         // forceResweep is sticky, so the sweep still runs once the queue is empty.
         if (captureBusy || pendingCaptureCount() > 0) return
+
+        // A BACKFILL BELONGS ON THE FULL LIST, NOT THE HOME SCREEN.
+        //
+        // Paytm's home screen carries a five-row preview of today's payments under a summary
+        // ("₹7,08,620 from 205 Payment, Today"). parseCount matches that summary, so a sweep
+        // started here walks five rows and reports itself complete — which is fine for keeping up
+        // with new payments and useless for recovering 205 of them. The summary is itself the link
+        // to the full list, so a deep sweep taps it and lets the list's own event start the sweep.
+        //
+        // Matched on the trailing ", Today", which only the home summary has; the full list's own
+        // header reads "Total ₹… from 205 Payments" and must not send us round again.
+        if (deepSweep && !openedFullList) {
+            val summary = ordered.firstOrNull { homeSummaryRx.containsMatchIn(it.first) }
+            if (summary != null) {
+                // Once. The home screen fires several events in a row and each one was opening the
+                // list again, stacking duplicate screens under the sweep.
+                openedFullList = true
+                Log.d(TAG, "auto: deep sweep on the home screen -> opening the full payments list")
+                clickNode(summary.second)
+                return
+            }
+        }
+
+        // AND IT MUST NOT START UNTIL THAT LIST IS ACTUALLY ON SCREEN.
+        //
+        // Tapping the summary above only *asks* for the full list; Paytm takes a beat to render
+        // it. The next accessibility event arrives ~600ms later with the home screen still up, and
+        // the baseline sweep below then ran against the home screen's five-row preview — visiting
+        // 5 rows of 268 and reporting itself complete (2026-08-21, twice). `deepSweep` stays armed
+        // until startSweep claims it, so simply waiting here costs nothing and the sweep begins on
+        // the real list. The home summary is the tell: only the home screen carries ", Today".
+        if (deepSweep && ordered.any { homeSummaryRx.containsMatchIn(it.first) }) {
+            Log.d(TAG, "auto: deep sweep armed but the full list has not rendered yet -> waiting")
+            return
+        }
 
         // On-demand "Get RRN": re-sweep the currently-visible rows now (dedupe still skips
         // ones we already captured, so this only retries the still-missing RRNs).
@@ -1402,9 +1765,18 @@ class RrnAccessibilityService : AccessibilityService() {
     private fun startSweep() {
         if (sweeping) return
         sweeping = true
+        // CLAIM THE DEEP-SWEEP REQUEST FOR THIS SWEEP. The request used to be read straight off
+        // `deepSweep` and cleared in endSweep, so a sweep that was ALREADY running when the
+        // backfill was armed consumed the flag on its way out and the real sweep then ran with the
+        // ordinary four-scroll budget — four rows of 205 (2026-08-21). Binding it here means the
+        // depth belongs to the sweep that actually walks the list.
+        sweepIsDeep = deepSweep
+        deepSweep = false
         sweptKeys.clear()
         sweepScrolls = 0
         oldStreak = 0
+        sweepStallScrolls = 0
+        lastRowKeys = emptySet()
         openNext()
     }
 
@@ -1413,22 +1785,81 @@ class RrnAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow
         val ordered = ArrayList<Pair<String, AccessibilityNodeInfo>>()
         if (root != null) flatten(root, ordered)
-        val count = parseCount(ordered.map { it.first })
-        if (count < 0) { // list not settled yet (detail still closing) -> retry
-            if (openRetries++ < 8) main.postDelayed({ openNext() }, 500)
-            else endSweep(handledCount, "list never settled")
-            return
+        var count = parseCount(ordered.map { it.first })
+        if (count < 0) {
+            // A MISSING HEADER AFTER A SCROLL IS NOT A LOST LIST.
+            //
+            // parseCount recognises the payments list by its "… from N Payments" header, which
+            // sits above the rows and leaves the viewport as soon as the sweep scrolls. Reading
+            // that as "we are no longer on the list" ended every deep sweep one scroll in — the
+            // precise moment it began reaching the backlog it exists to rescue. If payment rows
+            // are on screen and this sweep has already scrolled, the list is still there; the
+            // header is simply above us.
+            val rowsNow = findRowNodes(ordered)
+            if (rowsNow.isNotEmpty()) {
+                // Payment rows on screen ARE the list. Requiring a scroll to have happened first
+                // meant the very first return from a detail on the full list still failed the
+                // header test and ended the sweep at four rows of 205 (2026-08-21).
+                count = handledCount
+            } else { // genuinely not settled (a detail is still closing) -> retry
+                // The full payments list is a WebView that loads its rows lazily: scroll it and
+                // the next screenful arrives well after the gesture ends. Four seconds of patience
+                // was enough for the native home-screen list and far too little here — the deep
+                // sweep died two scrolls in, at row 7 of 100 (2026-08-21). A backfill waits.
+                val patience = if (sweepIsDeep) 25 else 8
+                if (openRetries++ < patience) main.postDelayed({ openNext() }, 500)
+                else endSweep(handledCount, "list never settled")
+                return
+            }
         }
         openRetries = 0
         val rows = findRowNodes(ordered)
         val next = rows.firstOrNull { it.first !in sweptKeys }
         if (next == null) {
+            // NEVER SCROLL A SCREEN THIS SWEEP CANNOT IDENTIFY.
+            //
+            // Reaching here with no payment rows at all means the sweep is no longer looking at a
+            // payments list. Scrolling anyway is what put a backfill on the bank-settlement tab
+            // for 58 scrolls, a few hundred pixels from "Settle Now" (2026-08-21). Stop instead.
+            if (rows.isEmpty() && ordered.any { settlementScreenRx.containsMatchIn(it.first) }) {
+                endSweep(count, "left the payments list for the settlement screen")
+                return
+            }
+
+            // A LIST THAT REPORTS THE SAME ROWS AFTER A SCROLL HAS STOPPED ADVANCING.
+            //
+            // The full list is a WebView, and when its own scroll action stops working the swipe
+            // fallback moves pixels without changing what the accessibility tree reports. Spending
+            // the remaining budget on that is pure waste, so a few identical reads end the sweep
+            // with a reason the dashboard can show instead of a silent "complete".
+            val keysNow = rows.map { it.first }.toSet()
+            if (keysNow.isNotEmpty() && keysNow == lastRowKeys) sweepStallScrolls++ else sweepStallScrolls = 0
+            lastRowKeys = keysNow
+            if (sweepStallScrolls >= MAX_STALL_SCROLLS) {
+                endSweep(count, "the list stopped advancing after $sweepScrolls scroll(s)")
+                return
+            }
+
             // Everything on screen has been visited. Scroll and keep going — the payments this
             // sweep exists to rescue are exactly the ones a burst pushed below the fold.
-            if (sweepScrolls < MAX_SWEEP_SCROLLS) {
+            val scrollLimit = if (sweepIsDeep) DEEP_SWEEP_SCROLLS else MAX_SWEEP_SCROLLS
+            if (sweepScrolls < scrollLimit) {
                 sweepScrolls++
-                Log.d(TAG, "auto: visible rows done -> scrolling for more ($sweepScrolls/$MAX_SWEEP_SCROLLS)")
-                swipeUp { openNext() }
+                Log.d(TAG, "auto: visible rows done -> scrolling for more ($sweepScrolls/$scrollLimit)")
+                // SCROLL THE LIST BY ITS OWN ACTION, NOT BY A SWIPE OVER IT.
+                //
+                // The full payments list is a WebView. A swipe gesture lands on it and it does
+                // move, but what the accessibility tree reports afterwards is the same set of
+                // rows — so the sweep re-scrolled against a list that never advanced, spending all
+                // thirty scrolls in ten seconds and visiting eight rows of 205 (2026-08-21).
+                // ACTION_SCROLL_FORWARD is handled by the scrolling container itself and moves it
+                // by exactly one viewport, which is what the row scan needs. The swipe stays as
+                // the fallback for the native list, which has no scrollable node to find.
+                if (scrollListForward()) {
+                    main.postDelayed({ openNext() }, 900)
+                } else {
+                    swipeUp { main.postDelayed({ openNext() }, 700) }
+                }
                 return
             }
             endSweep(count, "reached the sweep depth limit")
@@ -1462,6 +1893,9 @@ class RrnAccessibilityService : AccessibilityService() {
      */
     private fun endSweep(count: Int, why: String) {
         sweeping = false
+        // A deep sweep is a one-shot request, not a mode: the next ordinary sweep must go back to
+        // stopping at the boundary or every new payment would re-walk the entire day.
+        if (sweepIsDeep) { sweepIsDeep = false; openedFullList = false; Log.d(TAG, "auto: deep sweep finished") }
         handledCount = count
         Log.d(TAG, "auto: sweep complete ($why; ${sweptKeys.size} rows visited)")
         scrollBackToTop(sweepScrolls)
@@ -1495,7 +1929,7 @@ class RrnAccessibilityService : AccessibilityService() {
         if (!sweeping) return
         if (lastOpenResult == R_OLD) {
             oldStreak++
-            if (oldStreak >= STOP_AFTER_OLD) {
+            if (!sweepIsDeep && oldStreak >= STOP_AFTER_OLD) {
                 endSweep(handledCount, "$oldStreak already-captured rows in a row")
                 return
             }
@@ -1645,8 +2079,16 @@ class RrnAccessibilityService : AccessibilityService() {
         val ordered = ArrayList<Pair<String, AccessibilityNodeInfo>>()
         if (root != null) flatten(root, ordered)
         val texts = ordered.map { it.first }
-        val onList = parseCount(texts) >= 0
         val onDetail = texts.any { it.equals("RRN", true) }
+        // ROWS PROVE THE LIST, THE HEADER ONLY CONFIRMS IT.
+        //
+        // This asked parseCount alone, so returning from a payment only counted as "back on the
+        // list" while the "… from N Payments" header happened to be in view. On the full payments
+        // screen it is not: the header sits above rows the sweep has already scrolled past, so the
+        // very first return failed and the sweep ended with "could not get back to the list; 1 rows
+        // visited" — on a list of 100 payments (2026-08-21). A screen showing payment rows IS the
+        // list. The detail check goes first so a detail screen can never be mistaken for one.
+        val onList = !onDetail && (parseCount(texts) >= 0 || findRowNodes(ordered).isNotEmpty())
         val pkg = root?.packageName?.toString()
         when {
             onList -> onReturned() // reached a payments list — continue the sweep
@@ -1662,6 +2104,14 @@ class RrnAccessibilityService : AccessibilityService() {
     }
 
     private fun tap(x: Float, y: Float) {
+        // THE LAST LINE OF DEFENCE, and the one that would have prevented 2026-08-21. Every
+        // gesture this service dispatches goes through here, so a single check covers the RRN
+        // Copy tap, the sweep's row taps and any future caller.
+        moneyControlAt(x, y)?.let { label ->
+            Log.w(TAG, "REFUSING to tap (${x.toInt()},${y.toInt()}): \"$label\" is under it")
+            noteCaptureFail("refused to tap a money control (\"$label\")")
+            return
+        }
         val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
@@ -1680,6 +2130,35 @@ class RrnAccessibilityService : AccessibilityService() {
             if (v.isNotBlank() && !v.endsWith(":")) return v
         }
         return null
+    }
+
+    /**
+     * Advance the payments list by one viewport using the scrolling container's own action.
+     *
+     * Picks the LARGEST scrollable on screen: Paytm's home carries small horizontal carousels
+     * (the "Gold Jackpot / Refer & Win" strip) that are scrollable too, and scrolling one of those
+     * moves no payments at all.
+     *
+     * @return true if a container accepted the scroll — false means there is nothing to scroll
+     *         and the caller should fall back to a swipe.
+     */
+    private fun scrollListForward(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val found = ArrayList<AccessibilityNodeInfo>()
+        collectScrollable(root, found)
+        val target = found.maxByOrNull {
+            val r = Rect().also { b -> it.getBoundsInScreen(b) }
+            r.width().toLong() * r.height().toLong()
+        } ?: return false
+        val ok = target.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        Log.d(TAG, "auto: ACTION_SCROLL_FORWARD on the list -> $ok")
+        return ok
+    }
+
+    private fun collectScrollable(n: AccessibilityNodeInfo?, out: MutableList<AccessibilityNodeInfo>) {
+        if (n == null) return
+        if (n.isScrollable) out.add(n)
+        for (i in 0 until n.childCount) collectScrollable(n.getChild(i), out)
     }
 
     private fun swipeUp(onDone: () -> Unit) {
@@ -1788,6 +2267,16 @@ class RrnAccessibilityService : AccessibilityService() {
             }
         }
         if (clusterStart >= 0) { lastStart = clusterStart; lastEnd = h - 1 }
+        // A "Copy" LINK IS A LINE OF TEXT, NOT A BUTTON. Any blue run taller than a line of text
+        // is a filled control — Paytm's "Settle Now" is 96px tall and its avatar circles 66px —
+        // and accepting one is how this returned the centre of a money-moving button as the
+        // place to tap (2026-08-21). Only the primary path's node bounds are trusted now; this
+        // survives as a fallback, and a fallback that can hit "Settle Now" is worse than none.
+        val maxLinkHeight = (resources.displayMetrics.density * 32f).toInt()
+        if (lastStart >= 0 && (lastEnd - lastStart) > maxLinkHeight) {
+            Log.w(TAG, "ignoring a ${lastEnd - lastStart}px blue block — too tall to be a Copy link")
+            return -1f
+        }
         return if (lastStart >= 0) ((lastStart + lastEnd) / 2f) else -1f
     }
 

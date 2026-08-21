@@ -73,13 +73,25 @@ object RrnStore {
         persist()
     }
 
+    // Entries keep the timestamp they were FIRST written with. Stamping `now` on every entry at
+    // every persist — which is what this did — silently defeated RETAIN_MS: each new capture
+    // refreshed the whole set, so nothing ever aged out and the ledger grew without bound for the
+    // life of the install. The 30-day prune in load() was dead code.
     @Synchronized
     private fun persist() {
         val ctx = appCtx ?: return
         val now = System.currentTimeMillis()
+        fun stamped(values: Set<String>, key: String): Set<String> {
+            val old = sp(ctx).getStringSet(key, null).orEmpty()
+                .mapNotNull { e ->
+                    val i = e.lastIndexOf('|')
+                    if (i < 0) null else e.substring(0, i) to e.substring(i + 1)
+                }.toMap()
+            return values.map { "$it|${old[it] ?: now}" }.toSet()
+        }
         sp(ctx).edit()
-            .putStringSet(KEY_RRNS, writtenRrns.map { "$it|$now" }.toSet())
-            .putStringSet(KEY_MASKED, capturedMasked.map { "$it|$now" }.toSet())
+            .putStringSet(KEY_RRNS, stamped(writtenRrns, KEY_RRNS))
+            .putStringSet(KEY_MASKED, stamped(capturedMasked, KEY_MASKED))
             .apply()
     }
 

@@ -195,6 +195,9 @@ object AlertUploader {
             put("device_id", Prefs.deviceId(ctx))
             Prefs.merchantCode(ctx).takeIf { it.isNotBlank() }?.let { put("merchant_id", it) }
             put("label", Prefs.deviceLabel())
+            // Immutable per-install identity. Lets the server distinguish this phone being
+            // renamed from a SECOND phone typing the same device id — see Prefs.installId.
+            put("install_id", Prefs.installId(ctx))
             // The REAL app version. This used to send PARSER_VERSION ("1.0"), so a phone
             // running 2.37 reported itself as 1.0 — which sent us chasing a phantom "old
             // build" for an hour on 2026-08-05. Parser version is reported separately.
@@ -207,6 +210,18 @@ object AlertUploader {
             // Whether hands-free capture is armed. Without it the dashboard cannot tell
             // that a "Get RRN" request can never be answered by this phone.
             put("auto_capture", Prefs.autoCapture(ctx))
+            // CAN THIS PHONE'S SCREEN GO DARK? On-screen capture needs a live display —
+            // takeScreenshot() returns nothing without one, gestures have nothing to tap, and
+            // the clipboard reader can never take focus. A phone that sleeps captures nothing
+            // and, until these two fields existed, still reported itself "online · ready".
+            // Both are needed: the preference is the intent, the permission is whether the
+            // overlay that implements it can actually be shown.
+            put("keep_awake", Prefs.keepAwake(ctx))
+            put("overlay_ok", runCatching { android.provider.Settings.canDrawOverlays(ctx) }.getOrDefault(false))
+            // On a charger? The keep-awake overlay is only held while charging, so an unplugged
+            // phone sleeps even with the preference on — and that is a different thing to tell
+            // the merchant than "switch it on".
+            put("charging", ScreenAwake.isCharging(ctx))
             // Capture counters: how many notifications this phone has seen, parsed, and —
             // the number that matters — DROPPED because they looked like money but could
             // not be parsed. A phone with seen>0 and parsed=0 is deaf, and until now that

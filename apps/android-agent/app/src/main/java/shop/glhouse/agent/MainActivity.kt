@@ -35,6 +35,28 @@ class MainActivity : AppCompatActivity() {
         b.merchantCode.setText(Prefs.merchantCode(this))
         b.enabled.isChecked = Prefs.enabled(this)
 
+        // BACKFILL AFTER AN OUTAGE. `--ez backfill true` on the launch intent arms one deep sweep:
+        // the engine then walks the whole payments list instead of stopping where new payments end.
+        // Needed on 2026-08-21, when a day of payments went uncaptured and therefore sat BELOW the
+        // rows captured after the fix, which the ordinary boundary heuristic reads as "old".
+        // Reachable only by someone who can already launch the app on the phone.
+        if (intent?.getBooleanExtra("backfill", false) == true) {
+            RrnAccessibilityService.requestDeepSweep()
+            AlertStore.log(this, "backfill requested: sweeping the whole payments list")
+        }
+
+        // PAUSE/RESUME THE CAPTURE ENGINE. `--ez autocapture false` stops it driving the screen so
+        // the payments app can be navigated by hand (or over ADB) without the sweep opening a
+        // payment out from under you; `true` puts it back. autoCapture is what autoModeEnabled()
+        // reads, so this gates the sweep without touching Accessibility itself — force-stopping
+        // the app to get the same effect revokes the Accessibility grant on OxygenOS, which cost
+        // us a live capture window on 2026-08-21.
+        if (intent?.hasExtra("autocapture") == true) {
+            val on = intent.getBooleanExtra("autocapture", true)
+            Prefs.setAutoCapture(this, on)
+            AlertStore.log(this, "auto-capture turned ${if (on) "on" else "off"}")
+        }
+
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
             refreshState()
