@@ -214,8 +214,13 @@ class RrnAccessibilityService : AccessibilityService() {
         // needs on the order of seventy scrolls; this leaves headroom above that.
         private const val DEEP_SWEEP_SCROLLS = 120
         // How many consecutive scrolls may report an unchanged set of rows before the list is
-        // declared stuck. Three tolerates one slow lazy-load; sitting through 120 does not.
-        private const val MAX_STALL_SCROLLS = 3
+        // declared stuck. Four tolerates a slow lazy-load or two; sitting through 120 does not.
+        private const val MAX_STALL_SCROLLS = 4
+        // How long the payments-list WebView is given to re-lay-out after a swipe before its
+        // rows are read. Deliberately generous: reading early looks exactly like a stalled list,
+        // and the cost of waiting is a second per screenful while the cost of guessing wrong is
+        // abandoning the backfill (2026-08-22: seven rows of 478).
+        private const val LIST_RERENDER_MS = 1600L
         // Longer than the sweep's own return: a bridge-opened Paytm detail has to read the masked
         // reference, tap Copy and let the clipboard reader run before it is safe to press BACK.
         private const val BRIDGE_BACK_MS = 5000L
@@ -1816,6 +1821,34 @@ class RrnAccessibilityService : AccessibilityService() {
         val rows = findRowNodes(ordered)
         val next = rows.firstOrNull { it.first !in sweptKeys }
         if (next == null) {
+            // THE LIST IS PAGINATED, NOT INFINITE-SCROLL. EXPAND IT BEFORE SCROLLING PAST IT.
+            //
+            // Paytm groups the payments by date and renders only the first handful of each group,
+            // behind a "View More" button. No amount of scrolling reveals the rest — scrolling
+            // simply carries the sweep past the end of the loaded page and into the NEXT date
+            // group, which is why a 478-row backfill kept ending at exactly seven rows visited
+            // with the list "not advancing" (2026-08-22). It was advancing; there was nothing
+            // more of that day loaded to advance to.
+            //
+            // So when the visible rows run out, look for the expander first and press it. Not
+            // counted as a scroll and it clears the stall counter, because loading more rows is
+            // progress — the opposite of the stuck list that counter exists to detect. clickNode
+            // refuses money controls, so this cannot press anything that moves money.
+            val viewMore = ordered.firstOrNull {
+                val t = it.first.trim()
+                t.equals("View More", true) || t.equals("View more", true)
+            }
+            if (viewMore != null) {
+                val vr = Rect().also { viewMore.second.getBoundsInScreen(it) }
+                if (vr.height() > 0 && clickNode(viewMore.second)) {
+                    Log.d(TAG, "auto: list is paginated -> pressing \"View More\" for the rest of the day")
+                    sweepStallScrolls = 0
+                    lastRowKeys = emptySet()
+                    main.postDelayed({ openNext() }, LIST_RERENDER_MS)
+                    return
+                }
+            }
+
             // NEVER SCROLL A SCREEN THIS SWEEP CANNOT IDENTIFY.
             //
             // Reaching here with no payment rows at all means the sweep is no longer looking at a
@@ -1855,11 +1888,33 @@ class RrnAccessibilityService : AccessibilityService() {
                 // ACTION_SCROLL_FORWARD is handled by the scrolling container itself and moves it
                 // by exactly one viewport, which is what the row scan needs. The swipe stays as
                 // the fallback for the native list, which has no scrollable node to find.
-                if (scrollListForward()) {
-                    main.postDelayed({ openNext() }, 900)
-                } else {
-                    swipeUp { main.postDelayed({ openNext() }, 700) }
-                }
+                // SWIPE. NOT ACTION_SCROLL_FORWARD — on this screen that action is a tab change.
+                //
+                // The theory was that the scrolling container's own action moves it by exactly one
+                // viewport. The measurement says otherwise: Paytm's Payments tab exposes NO
+                // scrollable node at all (uiautomator, 2026-08-22), so the "largest scrollable"
+                // this ever found was the ViewPager holding Payments and Bank Settlements — and
+                // scrolling a pager forward means NEXT PAGE. Every observed use flipped the tab:
+                // it returned true once, the sweep landed on the settlement screen, and every
+                // later call returned false because no list remained. Restricting the search to
+                // laid-out, taller-than-wide nodes did not help, because a full-screen pager is
+                // exactly that (2026-08-22, tested on the 478-row list).
+                //
+                // So it has never once advanced this list, and every time it fires it walks the
+                // sweep onto a screen carrying "Settle Now". A swipe cannot change tabs. If the
+                // WebView does not re-render after one, the stall detector above ends the sweep
+                // after three unchanged reads — a sweep that stops is strictly better than a
+                // sweep that drives the settlement screen.
+                // AND GIVE THE LIST TIME TO RE-RENDER BEFORE READING IT.
+                //
+                // 700ms was inherited from the native home-screen list. The full list is a
+                // WebView that re-lays-out well after the gesture ends, so reading this soon
+                // returns the rows that were already there — indistinguishable from a list that
+                // has stopped moving. Measured 2026-08-22: the first swipe genuinely advanced
+                // (rows 5-7 appeared), then three reads at 1.27s intervals all came back
+                // unchanged and the stall detector ended a 478-row sweep at seven rows. The
+                // gesture was working; the clock was wrong.
+                swipeUp { main.postDelayed({ openNext() }, LIST_RERENDER_MS) }
                 return
             }
             endSweep(count, "reached the sweep depth limit")
@@ -2132,65 +2187,10 @@ class RrnAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /**
-     * Advance the payments list by one viewport using the scrolling container's own action.
-     *
-     * Picks the LARGEST scrollable on screen: Paytm's home carries small horizontal carousels
-     * (the "Gold Jackpot / Refer & Win" strip) that are scrollable too, and scrolling one of those
-     * moves no payments at all.
-     *
-     * @return true if a container accepted the scroll — false means there is nothing to scroll
-     *         and the caller should fall back to a swipe.
-     */
-    private fun scrollListForward(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val found = ArrayList<AccessibilityNodeInfo>()
-        collectScrollable(root, found)
-
-        // A SCROLLABLE WITH NO BOUNDS IS NOT THE LIST, AND SCROLLING IT IS NOT A SCROLL.
-        //
-        // "Largest by area" was the right idea for the home screen, where the competition is
-        // small horizontal carousels. On the full payments screen it is actively wrong: the only
-        // node Paytm exposes as scrollable reports [0,0][0,0], and it is the TAB PAGER holding
-        // Payments and Bank Settlements. ACTION_SCROLL_FORWARD on a pager means "next page", so
-        // every backfill scrolled itself onto the settlement tab on its very first move — the
-        // first scroll returned true, and every one after it returned false because there was no
-        // longer a list to scroll (2026-08-21: 58 consecutive failures, and the sweep sat a few
-        // hundred pixels from "Settle Now" the whole time).
-        //
-        // Bounds are the tell. A real, laid-out list occupies a tall rectangle on screen; a node
-        // claiming zero size is a container the tree exposes but the user cannot see, and moving
-        // it does something other than scrolling. Require a genuine, taller-than-wide box and
-        // fall back to the swipe gesture — which the caller already does on false — when none
-        // exists. Refusing to act beats acting on the wrong thing.
-        val dm = resources.displayMetrics
-        val target = found
-            .mapNotNull { n ->
-                val r = Rect().also { b -> n.getBoundsInScreen(b) }
-                if (r.width() <= 0 || r.height() <= 0) return@mapNotNull null
-                // Vertical, and a real portion of the screen — not a banner strip or a chip row.
-                if (r.height() <= r.width()) return@mapNotNull null
-                if (r.height() < dm.heightPixels / 4) return@mapNotNull null
-                n to r.width().toLong() * r.height().toLong()
-            }
-            .maxByOrNull { it.second }?.first
-
-        if (target == null) {
-            // Not an error: on this screen it is the NORMAL case, and it is precisely what keeps
-            // the sweep off the pager. The caller swipes instead.
-            Log.d(TAG, "auto: no laid-out vertical list to scroll -> falling back to a swipe")
-            return false
-        }
-        val ok = target.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-        Log.d(TAG, "auto: ACTION_SCROLL_FORWARD on the list -> $ok")
-        return ok
-    }
-
-    private fun collectScrollable(n: AccessibilityNodeInfo?, out: MutableList<AccessibilityNodeInfo>) {
-        if (n == null) return
-        if (n.isScrollable) out.add(n)
-        for (i in 0 until n.childCount) collectScrollable(n.getChild(i), out)
-    }
+    // scrollListForward() USED TO LIVE HERE and has been deleted rather than left unused.
+    // It performed ACTION_SCROLL_FORWARD on the largest scrollable, which on Paytm's payments
+    // screen is the tab pager — see the note at its former call site. Leaving a working-looking
+    // helper in place invites the next person to call it again.
 
     private fun swipeUp(onDone: () -> Unit) {
         val dm = resources.displayMetrics

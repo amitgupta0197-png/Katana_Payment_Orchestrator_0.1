@@ -35,27 +35,7 @@ class MainActivity : AppCompatActivity() {
         b.merchantCode.setText(Prefs.merchantCode(this))
         b.enabled.isChecked = Prefs.enabled(this)
 
-        // BACKFILL AFTER AN OUTAGE. `--ez backfill true` on the launch intent arms one deep sweep:
-        // the engine then walks the whole payments list instead of stopping where new payments end.
-        // Needed on 2026-08-21, when a day of payments went uncaptured and therefore sat BELOW the
-        // rows captured after the fix, which the ordinary boundary heuristic reads as "old".
-        // Reachable only by someone who can already launch the app on the phone.
-        if (intent?.getBooleanExtra("backfill", false) == true) {
-            RrnAccessibilityService.requestDeepSweep()
-            AlertStore.log(this, "backfill requested: sweeping the whole payments list")
-        }
-
-        // PAUSE/RESUME THE CAPTURE ENGINE. `--ez autocapture false` stops it driving the screen so
-        // the payments app can be navigated by hand (or over ADB) without the sweep opening a
-        // payment out from under you; `true` puts it back. autoCapture is what autoModeEnabled()
-        // reads, so this gates the sweep without touching Accessibility itself — force-stopping
-        // the app to get the same effect revokes the Accessibility grant on OxygenOS, which cost
-        // us a live capture window on 2026-08-21.
-        if (intent?.hasExtra("autocapture") == true) {
-            val on = intent.getBooleanExtra("autocapture", true)
-            Prefs.setAutoCapture(this, on)
-            AlertStore.log(this, "auto-capture turned ${if (on) "on" else "off"}")
-        }
+        handleControlIntent(intent)
 
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
@@ -114,6 +94,50 @@ class MainActivity : AppCompatActivity() {
         b.emailGoogleBtn.setOnClickListener { connectGoogle() }
 
         AgentWorker.schedule(this)
+    }
+
+    /**
+     * A CONTROL INTENT MUST WORK ON THE SECOND CALL TOO.
+     *
+     * These extras used to be read in onCreate only, and MainActivity is declared
+     * android:launchMode="singleInstance" — so once the activity existed, Android delivered
+     * every later `am start … --ez backfill true` to onNewIntent and the extra was silently
+     * dropped. It looked like it worked: the activity came to the front, nothing errored, and
+     * the sweep then ran with the ordinary four-scroll budget instead of the 120 a backfill
+     * asks for (2026-08-22, on a 478-row list — four rows visited). The same silence applied to
+     * `--ez autocapture`, so a request to pause the engine could quietly leave it running while
+     * someone navigated the payments app by hand.
+     *
+     * Handled from both entry points now, and setIntent() keeps getIntent() honest afterwards.
+     */
+    private fun handleControlIntent(i: Intent?) {
+        // BACKFILL AFTER AN OUTAGE. `--ez backfill true` arms one deep sweep: the engine walks
+        // the whole payments list instead of stopping where new payments end. Needed on
+        // 2026-08-21, when a day of payments went uncaptured and therefore sat BELOW the rows
+        // captured after the fix, which the ordinary boundary heuristic reads as "old".
+        // Reachable only by someone who can already launch the app on the phone.
+        if (i?.getBooleanExtra("backfill", false) == true) {
+            RrnAccessibilityService.requestDeepSweep()
+            AlertStore.log(this, "backfill requested: sweeping the whole payments list")
+        }
+
+        // PAUSE/RESUME THE CAPTURE ENGINE. `--ez autocapture false` stops it driving the screen
+        // so the payments app can be navigated by hand (or over ADB) without the sweep opening a
+        // payment out from under you; `true` puts it back. autoCapture is what autoModeEnabled()
+        // reads, so this gates the sweep without touching Accessibility itself — force-stopping
+        // the app to get the same effect revokes the Accessibility grant on OxygenOS, which cost
+        // us a live capture window on 2026-08-21.
+        if (i?.hasExtra("autocapture") == true) {
+            val on = i.getBooleanExtra("autocapture", true)
+            Prefs.setAutoCapture(this, on)
+            AlertStore.log(this, "auto-capture turned ${if (on) "on" else "off"}")
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleControlIntent(intent)
     }
 
     override fun onResume() {
