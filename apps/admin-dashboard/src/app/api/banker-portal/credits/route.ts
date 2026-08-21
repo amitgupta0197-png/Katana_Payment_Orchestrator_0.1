@@ -64,12 +64,36 @@ export async function GET() {
   //                carries nothing unique; showing it makes one payment look like two.
   //   SETTLEMENT = the payment app paying its held balance into the bank account. Same money
   //                as the credits above, one leg later; listed on its own below.
+  // The LIST. Bounded, because it is rendered — the day's TOTALS are no longer taken from it
+  // (see todayRows below), so this cap can never again decide what the day is worth.
   const recent = await rows<CreditRow>(
     "vendorGateway",
     `SELECT ${COLS} FROM vendor_txn_alerts
       WHERE ${OWNED} AND ${IS_COLLECTION}
       ORDER BY created_at DESC
-      LIMIT 50`,
+      LIMIT 500`,
+    [code, vpas],
+  ).catch(() => []);
+
+  // THE DAY'S TOTALS MUST NOT BE A PAGE SIZE.
+  //
+  // Every "today" figure used to be derived from the list above, so the LIMIT silently became
+  // the ceiling on the day. At 50 that broke immediately — AVTS23 read "50 today" while 63
+  // credits were stored (2026-08-21) — and raising it to 500 only moved the cliff: that same
+  // banker closed 2026-08-21 on 479 collections, twenty-one short of reading wrong again. A
+  // number that stops rising while money keeps arriving is indistinguishable from capture
+  // having died, which is the one failure this dashboard exists to make visible.
+  //
+  // So the totals get their own query, scoped by TIME rather than by row count: a day of
+  // collections is bounded by the trading day, not by how many rows a response wants to render.
+  // Two days are fetched because "today" is decided in JS below (server-local, as before) and a
+  // UTC-vs-local boundary must not clip the first hours of the day.
+  const todayRows = await rows<CreditRow>(
+    "vendorGateway",
+    `SELECT ${COLS} FROM vendor_txn_alerts
+      WHERE ${OWNED} AND ${IS_COLLECTION}
+        AND created_at >= date_trunc('day', now()) - interval '1 day'
+      ORDER BY created_at DESC`,
     [code, vpas],
   ).catch(() => []);
 
@@ -113,7 +137,10 @@ export async function GET() {
   const tests = withFlag.filter((r) => r.is_test);
 
   const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
-  const todayReal = real.filter((r) => isToday(r.created_at));
+  // Classified the same way as the list, but over every row the day actually holds.
+  const todayReal = todayRows
+    .filter((r) => r.payer_vpa !== TEST_PAYER_VPA && isToday(r.created_at))
+    .map((r) => ({ ...r, is_test: false, verification: verificationOf(r, vpas) }));
   // Today's money, split by whether the UPI network has corroborated it. A credit with no RRN
   // is a claim the phone reported; it usually firms up within minutes, but until it does it is
   // not banked money and is never added to the day's takings.
