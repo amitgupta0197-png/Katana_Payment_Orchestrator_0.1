@@ -131,6 +131,8 @@ class RrnAccessibilityService : AccessibilityService() {
     private val sweptKeys = HashSet<String>()
     private var sweepScrolls = 0
     private var lastOpenResult = R_UNKNOWN
+    /** The list row the sweep is currently inside, so its outcome can be recorded against it. */
+    private var openingRowKey: String? = null
     private var autoNavigating = false      // we auto-opened the current detail
     private var backScheduled = false
     private var detailReached = false       // the auto-opened detail actually appeared
@@ -1572,7 +1574,18 @@ class RrnAccessibilityService : AccessibilityService() {
             // never retried and the sweep simply moved to the next row. Live proof, 2026-08-21:
             // rows 1-3 of a 205-payment backfill each logged "scrolling to it" and were then
             // abandoned without a single tap. The scroll now re-reads the screen it just moved.
-            swipeUp {
+            // FIRST ATTEMPT: THE THROW THAT IS KNOWN TO WORK. Only reach further once it is
+            // proven insufficient.
+            //
+            // A longer swipe finds the RRN in one move when the block sits far down, but
+            // overshooting is worse than undershooting: scroll past the RRN row and it leaves the
+            // viewport upwards, where every further scroll makes it less reachable and the
+            // capture fails outright. The common case already succeeds on the first standard
+            // swipe, so that case is left exactly as measured; only a screen that has already
+            // failed once — where the extra distance can only help — gets the longer throw.
+            val reach: ((() -> Unit) -> Unit) =
+                if (scrollsForCopy.getOrDefault(masked, 0) <= 1) ::swipeUp else ::swipeUpFar
+            reach {
                 detailBusyUntil = 0L
                 rereadAfterCopyScroll(autoMode, 0)
             }
@@ -1819,7 +1832,25 @@ class RrnAccessibilityService : AccessibilityService() {
         }
         openRetries = 0
         val rows = findRowNodes(ordered)
-        val next = rows.firstOrNull { it.first !in sweptKeys }
+
+        // SKIP WHAT WE ALREADY HOLD WITHOUT OPENING IT.
+        //
+        // Opening a row to discover it is already captured costs about 4.5 seconds of screen
+        // driving and learns nothing. It was the entire cost of a backfill: on a 478-row list
+        // nearly every row is already held, so the sweep spent ~40 minutes re-reading payments
+        // it had (2026-08-22). RrnStore now remembers the row's own text on the way past, so the
+        // second and every later pass recognises it from the list and moves on.
+        var next: Pair<String, AccessibilityNodeInfo>? = null
+        var skippedKnown = 0
+        for (cand in rows) {
+            if (cand.first in sweptKeys) continue
+            if (RrnStore.isRowCaptured(cand.first)) {
+                // Mark it visited so the boundary and scroll logic still see it as dealt with.
+                sweptKeys.add(cand.first); skippedKnown++; continue
+            }
+            next = cand; break
+        }
+        if (skippedKnown > 0) Log.d(TAG, "auto: skipped $skippedKnown already-captured row(s) without opening")
         if (next == null) {
             // THE LIST IS PAGINATED, NOT INFINITE-SCROLL. EXPAND IT BEFORE SCROLLING PAST IT.
             //
@@ -1922,6 +1953,7 @@ class RrnAccessibilityService : AccessibilityService() {
         }
         val (key, node) = next
         sweptKeys.add(key)
+        openingRowKey = key
         autoNavigating = true
         backScheduled = false
         detailReached = false
@@ -1982,6 +2014,11 @@ class RrnAccessibilityService : AccessibilityService() {
      */
     private fun onReturned() {
         if (!sweeping) return
+        // EITHER OUTCOME MEANS THIS ROW IS DEALT WITH — captured just now, or already held. Both
+        // are worth remembering, because both make re-opening it on the next pass pointless.
+        if (lastOpenResult == R_OLD || lastOpenResult == R_NEW) RrnStore.recordRow(openingRowKey)
+        openingRowKey = null
+
         if (lastOpenResult == R_OLD) {
             oldStreak++
             if (!sweepIsDeep && oldStreak >= STOP_AFTER_OLD) {
@@ -2191,6 +2228,32 @@ class RrnAccessibilityService : AccessibilityService() {
     // It performed ACTION_SCROLL_FORWARD on the largest scrollable, which on Paytm's payments
     // screen is the tab pager — see the note at its former call site. Leaving a working-looking
     // helper in place invites the next person to call it again.
+
+    /**
+     * A LONGER SWIPE, FOR THE DETAIL SCREEN ONLY.
+     *
+     * The RRN block always sits below the fold of a Paytm payment detail, and the standard swipe
+     * (45% of the screen, tuned for the list) often needs two passes to bring it up — each pass
+     * costing a gesture plus a re-read, about 1.2s. One 70% swipe usually lands it in a single
+     * move. Kept separate from swipeUp so the payments-list sweep, which was measured and tuned
+     * against the shorter throw, is untouched.
+     */
+    private fun swipeUpFar(onDone: () -> Unit) {
+        val dm = resources.displayMetrics
+        val x = dm.widthPixels / 2f
+        val path = Path().apply {
+            moveTo(x, dm.heightPixels * 0.84f)
+            lineTo(x, dm.heightPixels * 0.14f)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 260))
+            .build()
+        val cb = object : GestureResultCallback() {
+            override fun onCompleted(d: GestureDescription?) { main.postDelayed(onDone, 260) }
+            override fun onCancelled(d: GestureDescription?) { main.postDelayed(onDone, 260) }
+        }
+        if (!dispatchGesture(gesture, cb, null)) main.postDelayed(onDone, 260)
+    }
 
     private fun swipeUp(onDone: () -> Unit) {
         val dm = resources.displayMetrics

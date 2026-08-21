@@ -37,11 +37,15 @@ object RrnStore {
     private const val PREF = "rrn_ledger"
     private const val KEY_RRNS = "seen_rrns"        // set of "rrn|capturedAtMillis"
     private const val KEY_MASKED = "seen_masked"    // set of "masked|capturedAtMillis"
+    // Set of "rowKey|capturedAtMillis". A rowKey is the payments-list row's own text (time,
+    // amount, payer) — the only identity a payment has BEFORE it is opened. See isRowCaptured.
+    private const val KEY_ROWS = "seen_rows"
     private const val RETAIN_MS = 30L * 24 * 60 * 60 * 1000   // keep 30 days
 
     private var appCtx: Context? = null
     private val writtenRrns = HashSet<String>()
     private val capturedMasked = HashSet<String>()
+    private val capturedRows = HashSet<String>()
     private var loaded = false
 
     fun init(context: Context) {
@@ -67,6 +71,7 @@ object RrnStore {
             }.toSet()
         writtenRrns.addAll(fresh(sp(ctx).getStringSet(KEY_RRNS, null)))
         capturedMasked.addAll(fresh(sp(ctx).getStringSet(KEY_MASKED, null)))
+        capturedRows.addAll(fresh(sp(ctx).getStringSet(KEY_ROWS, null)))
         loaded = true
         Log.d(TAG, "ledger loaded: ${writtenRrns.size} rrns, ${capturedMasked.size} masked")
         // Rewrite with fresh timestamps stripped of expired entries.
@@ -92,10 +97,35 @@ object RrnStore {
         sp(ctx).edit()
             .putStringSet(KEY_RRNS, stamped(writtenRrns, KEY_RRNS))
             .putStringSet(KEY_MASKED, stamped(capturedMasked, KEY_MASKED))
+            .putStringSet(KEY_ROWS, stamped(capturedRows, KEY_ROWS))
             .apply()
     }
 
     fun isMaskedCaptured(masked: String): Boolean = capturedMasked.contains(masked)
+
+    /**
+     * HAS THIS LIST ROW ALREADY BEEN DEALT WITH? Answered WITHOUT opening it.
+     *
+     * A payment's masked reference only exists on its detail screen, so the sweep could only ever
+     * discover "already captured" by opening the row — about 4.5 seconds of screen driving to
+     * learn nothing. On a 478-row backfill that is the whole cost: nearly forty minutes, almost
+     * all of it re-reading payments already held (2026-08-22).
+     *
+     * The row's own text — time, amount, payer — is identity enough to recognise it from the
+     * list, and it is already computed as the sweep's dedupe key. Recording it on the way past
+     * turns the second and every later sweep over the same day into a scan rather than a re-read.
+     *
+     * Shares the ledger's retention window, so a row key cannot outlive the RRN it stands for
+     * and start hiding a payment that would otherwise be re-captured.
+     */
+    fun isRowCaptured(rowKey: String): Boolean = capturedRows.contains(rowKey)
+
+    /** Remember that this list row resolved to a payment we hold. No-op for a blank key. */
+    @Synchronized
+    fun recordRow(rowKey: String?) {
+        if (rowKey.isNullOrBlank()) return
+        if (capturedRows.add(rowKey)) persist()
+    }
 
     /** @return true if newly recorded, false if a duplicate RRN. */
     @Synchronized
