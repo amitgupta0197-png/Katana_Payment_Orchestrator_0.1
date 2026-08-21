@@ -2146,10 +2146,41 @@ class RrnAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         val found = ArrayList<AccessibilityNodeInfo>()
         collectScrollable(root, found)
-        val target = found.maxByOrNull {
-            val r = Rect().also { b -> it.getBoundsInScreen(b) }
-            r.width().toLong() * r.height().toLong()
-        } ?: return false
+
+        // A SCROLLABLE WITH NO BOUNDS IS NOT THE LIST, AND SCROLLING IT IS NOT A SCROLL.
+        //
+        // "Largest by area" was the right idea for the home screen, where the competition is
+        // small horizontal carousels. On the full payments screen it is actively wrong: the only
+        // node Paytm exposes as scrollable reports [0,0][0,0], and it is the TAB PAGER holding
+        // Payments and Bank Settlements. ACTION_SCROLL_FORWARD on a pager means "next page", so
+        // every backfill scrolled itself onto the settlement tab on its very first move — the
+        // first scroll returned true, and every one after it returned false because there was no
+        // longer a list to scroll (2026-08-21: 58 consecutive failures, and the sweep sat a few
+        // hundred pixels from "Settle Now" the whole time).
+        //
+        // Bounds are the tell. A real, laid-out list occupies a tall rectangle on screen; a node
+        // claiming zero size is a container the tree exposes but the user cannot see, and moving
+        // it does something other than scrolling. Require a genuine, taller-than-wide box and
+        // fall back to the swipe gesture — which the caller already does on false — when none
+        // exists. Refusing to act beats acting on the wrong thing.
+        val dm = resources.displayMetrics
+        val target = found
+            .mapNotNull { n ->
+                val r = Rect().also { b -> n.getBoundsInScreen(b) }
+                if (r.width() <= 0 || r.height() <= 0) return@mapNotNull null
+                // Vertical, and a real portion of the screen — not a banner strip or a chip row.
+                if (r.height() <= r.width()) return@mapNotNull null
+                if (r.height() < dm.heightPixels / 4) return@mapNotNull null
+                n to r.width().toLong() * r.height().toLong()
+            }
+            .maxByOrNull { it.second }?.first
+
+        if (target == null) {
+            // Not an error: on this screen it is the NORMAL case, and it is precisely what keeps
+            // the sweep off the pager. The caller swipes instead.
+            Log.d(TAG, "auto: no laid-out vertical list to scroll -> falling back to a swipe")
+            return false
+        }
         val ok = target.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
         Log.d(TAG, "auto: ACTION_SCROLL_FORWARD on the list -> $ok")
         return ok
