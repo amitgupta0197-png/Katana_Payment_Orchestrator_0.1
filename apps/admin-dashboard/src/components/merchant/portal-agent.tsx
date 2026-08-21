@@ -23,6 +23,14 @@ interface Device {
   // Device-reported capture counters. `dropped` = notifications that looked like money and
   // could not be parsed, i.e. payments this phone saw and lost.
   counters: Record<string, number> | null;
+  // Another phone is using this same device id. Both write one row, so the banker binding
+  // belongs to whichever heartbeat was last — and this card can read "online · ready" while
+  // the phone is actually working for someone else.
+  id_conflict?: boolean;
+  // Whether this phone's screen stays on by itself. On-screen capture needs a live display,
+  // so a phone that sleeps captures nothing while every other indicator stays green.
+  // "unknown" = an older agent that doesn't report it; say nothing rather than cry wolf.
+  screen_state?: "stays_awake" | "may_sleep" | "overlay_missing" | "unplugged" | "unknown";
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -129,6 +137,32 @@ export function MerchantPortalAgentCard() {
               <div className="mt-1.5 text-xs text-[color:var(--color-danger)]">
                 This phone saw {d.counters!.dropped} payment notification(s) it could not read — those
                 credits were lost. The formats are listed below; they need a parser update.
+              </div>
+            )}
+            {d.screen_state === "unplugged" && (
+              <div className="mt-1.5 text-xs text-[color:var(--color-warning)]">
+                This phone is not on a charger. The screen is kept on only while charging, so it
+                will sleep — and RRN capture stops while it does. Plug it in and capture resumes
+                on its own.
+              </div>
+            )}
+            {(d.screen_state === "may_sleep" || d.screen_state === "overlay_missing") && (
+              <div className="mt-1.5 text-xs text-[color:var(--color-danger)]">
+                {d.screen_state === "may_sleep"
+                  ? <>This phone&rsquo;s screen can switch off, and RRN capture only works while the
+                      screen is on — so payments stop being captured the moment it sleeps. Open the
+                      agent and turn on <strong>Keep screen awake</strong>, and leave the phone on a charger.</>
+                  : <>&ldquo;Keep screen awake&rdquo; is on but the agent cannot hold the screen on:
+                      the <strong>Display over other apps</strong> permission is missing. Grant it in the
+                      agent, or the screen will still sleep and capture will stop with it.</>}
+              </div>
+            )}
+            {d.id_conflict && (
+              <div className="mt-1.5 text-xs text-[color:var(--color-danger)]">
+                Another phone is using the device id &ldquo;{d.device_id}&rdquo;. Both phones share one
+                enrolment, so the one that checked in last holds the banker binding and the other
+                stops receiving capture requests — while still showing as online here. Open the
+                agent on one of them and give it a different device id.
               </div>
             )}
             {!d.rrn_capture_ready && (

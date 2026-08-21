@@ -25,6 +25,16 @@ const schema = z.object({
   capture_apps: z.string().max(200).optional(),
   // Hands-free capture armed. "Get RRN" is a no-op on the device without it.
   auto_capture: z.boolean().optional(),
+  // Whether this phone's screen will stay on by itself. On-screen capture needs a live
+  // display, so a sleeping phone captures nothing at all — and used to report itself
+  // perfectly healthy while doing so. `overlay_ok` is the permission that makes
+  // `keep_awake` real; either one false and capture depends on the phone being plugged in.
+  keep_awake: z.boolean().optional(),
+  overlay_ok: z.boolean().optional(),
+  charging: z.boolean().optional(),
+  // Immutable per-install identity (see migration 0022). Distinguishes a renamed phone from
+  // a second phone that typed the same device id.
+  install_id: z.string().max(64).optional(),
   parser_version: z.string().max(40).optional(),
   agent_enabled: z.boolean().optional(),  // device-reported: forwarding enabled
 }).passthrough();   // ctr_* counters are read off the raw body below
@@ -57,8 +67,12 @@ export async function POST(req: Request) {
     .split(",")[0].trim().split(":")[0].toLowerCase() || null;
 
   try {
-    const prev = (await rows<{ sim_id: string | null }>("vendorGateway",
-      `SELECT sim_id FROM vendor_devices WHERE device_id = $1`, [body.device_id]))[0];
+    const prev = (await rows<{
+      sim_id: string | null; merchant_id: string | null;
+      prev_merchant_id: string | null; merchant_changed_at: string | null; install_id: string | null;
+    }>("vendorGateway",
+      `SELECT sim_id, merchant_id, prev_merchant_id, merchant_changed_at, install_id
+         FROM vendor_devices WHERE device_id = $1`, [body.device_id]))[0];
 
     // SIM-swap forensic signal: a previously-known SIM changed.
     if (body.sim_id && prev?.sim_id && prev.sim_id !== body.sim_id) {
@@ -68,9 +82,67 @@ export async function POST(req: Request) {
       `, [body.device_id, `SIM changed ${prev.sim_id} → ${body.sim_id}`]).catch(() => {});
     }
 
+    // TWO PHONES ON ONE DEVICE ID (see migration 0020).
+    //
+    // device_id is user-editable, so nothing stops two phones being typed the same name — and
+    // when they are, they share one row and the last heartbeat owns the banker binding. The
+    // loser's capture queue is then never polled and its dashboard still reads "online · ready",
+    // which is how AVTS23 sat dark through 2026-08-20 with nobody able to see why.
+    //
+    // A phone that is genuinely re-enrolled changes banker ONCE. Only two phones make the
+    // binding oscillate, so a change BACK to the code this id reported before the last change is
+    // proof of a second device and is raised HIGH. A change that merely lands within a day of the
+    // previous one is suspicious but could be an operator correcting a typo, so it is MEDIUM.
+    // TWO PHONES, PROVEN. Same device_id arriving with a different install_id is not a
+    // heuristic — install_id is generated on the device and never typed, so it can only differ
+    // if a second physical phone is using this name. Reported the moment it happens, rather
+    // than waiting for the binding to oscillate the way 0020 must.
+    const impostor = !!(body.install_id && prev?.install_id && prev.install_id !== body.install_id);
+
+    const rebound = !!(body.merchant_id && prev?.merchant_id && prev.merchant_id !== body.merchant_id);
+    if (impostor) {
+      await rows("vendorGateway", `
+        INSERT INTO vendor_security_alerts (device_id, risk_type, severity, detail)
+        SELECT $1, 'DEVICE_ID_CONFLICT', 'HIGH', $2
+         WHERE NOT EXISTS (
+           SELECT 1 FROM vendor_security_alerts
+            WHERE device_id = $1 AND risk_type = 'DEVICE_ID_CONFLICT'
+              AND created_at > now() - interval '1 hour')
+      `, [
+        body.device_id,
+        `device id "${body.device_id}" is being used by two different phones (install ids differ). ` +
+        `Whichever checks in last owns the banker binding, so the other phone's capture requests ` +
+        `are not delivered. Give one of them a different device id in the agent.`,
+      ]).catch(() => {});
+    }
+    if (rebound) {
+      const flipBack = prev!.prev_merchant_id === body.merchant_id;
+      const changedAt = prev!.merchant_changed_at ? Date.parse(prev!.merchant_changed_at) : NaN;
+      const churned = Number.isFinite(changedAt) && Date.now() - changedAt < 24 * 60 * 60 * 1000;
+      if (flipBack || churned) {
+        // One alert per device per hour. The phones trade the binding on every heartbeat, so an
+        // undeduped insert would bury every other security alert within a day.
+        await rows("vendorGateway", `
+          INSERT INTO vendor_security_alerts (device_id, risk_type, severity, detail)
+          SELECT $1, 'DEVICE_ID_CONFLICT', $2, $3
+           WHERE NOT EXISTS (
+             SELECT 1 FROM vendor_security_alerts
+              WHERE device_id = $1 AND risk_type = 'DEVICE_ID_CONFLICT'
+                AND created_at > now() - interval '1 hour')
+        `, [
+          body.device_id, flipBack ? "HIGH" : "MEDIUM",
+          `device id "${body.device_id}" is in use by more than one phone: banker binding moved ` +
+          `${prev!.merchant_id} → ${body.merchant_id}` +
+          (flipBack ? ` and back (previously ${prev!.prev_merchant_id})` : "") +
+          `. While it points at ${body.merchant_id}, ${prev!.merchant_id}'s capture requests are ` +
+          `not delivered. Give one phone a different device id in the agent.`,
+        ]).catch(() => {});
+      }
+    }
+
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, counters, parser_version, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, counters, parser_version, keep_awake, overlay_ok, charging, install_id, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $15, $16, $17, $18, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -86,11 +158,21 @@ export async function POST(req: Request) {
         auto_capture = $11,
         counters = COALESCE($12::jsonb, vendor_devices.counters),
         parser_version = COALESCE($13, vendor_devices.parser_version),
+        keep_awake = COALESCE($15, vendor_devices.keep_awake),
+        overlay_ok = COALESCE($16, vendor_devices.overlay_ok),
+        charging = COALESCE($17, vendor_devices.charging),
+        install_id = COALESCE($18, vendor_devices.install_id),
+        -- Remember where the binding came from, so a move BACK is recognisable as two phones
+        -- rather than one phone being re-enrolled. Only written when the code actually changes;
+        -- an ordinary heartbeat must not overwrite the history with the current value.
+        prev_merchant_id = CASE WHEN $14::boolean THEN vendor_devices.merchant_id ELSE vendor_devices.prev_merchant_id END,
+        merchant_changed_at = CASE WHEN $14::boolean THEN now() ELSE vendor_devices.merchant_changed_at END,
         last_heartbeat = now(), updated_at = now()
     `, [body.device_id, body.merchant_id ?? null, body.label ?? null, body.sim_id ?? null, body.app_hash ?? null,
         body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host,
         body.capture_apps ?? null, body.auto_capture ?? null,
-        counters ? JSON.stringify(counters) : null, body.parser_version ?? null]);
+        counters ? JSON.stringify(counters) : null, body.parser_version ?? null, rebound,
+        body.keep_awake ?? null, body.overlay_ok ?? null, body.charging ?? null, body.install_id ?? null]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;

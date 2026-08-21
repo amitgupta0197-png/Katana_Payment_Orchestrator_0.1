@@ -21,7 +21,7 @@ export async function GET() {
       SELECT device_id, COALESCE(label,'') AS label, status,
              notif_access, agent_enabled, COALESCE(app_version,'') AS app_version,
              COALESCE(capture_apps,'') AS capture_apps,
-             auto_capture, counters,
+             auto_capture, counters, keep_awake, overlay_ok, charging,
              last_heartbeat,
              (last_heartbeat IS NOT NULL AND last_heartbeat >= now() - ($2 || ' seconds')::interval) AS online,
              created_at
@@ -30,13 +30,36 @@ export async function GET() {
        ORDER BY (status='TRUSTED') DESC, updated_at DESC
     `, [merchantCode, String(ONLINE_WINDOW_SEC)]).catch(() => []);
 
+    // DEVICE ID SHARED WITH ANOTHER PHONE. An id typed the same on two phones means one
+    // vendor_devices row and one banker binding, and the phone that loses it goes dark while
+    // its card still reads "online · ready" — the state AVTS23 was left in for a day on
+    // 2026-08-20. The heartbeat raises DEVICE_ID_CONFLICT when the binding oscillates
+    // (migration 0020); surfacing it here is what makes it visible to the person affected.
+    const conflicts = new Set((await rows<{ device_id: string }>("vendorGateway", `
+      SELECT DISTINCT device_id FROM vendor_security_alerts
+       WHERE risk_type = 'DEVICE_ID_CONFLICT' AND status = 'OPEN'
+         AND created_at > now() - interval '7 days'
+    `).catch(() => [])).map((r) => r.device_id));
+
     const shaped = devices.map((d: any) => ({
       ...d,
+      id_conflict: conflicts.has(d.device_id),
       permitted: d.status === "TRUSTED" && d.notif_access === true && d.agent_enabled !== false && d.online === true,
       // On-screen RRN capture is paused on the device until a payment app is selected, so a
       // phone can be fully "permitted" and still never return an RRN. Surface that
       // separately rather than folding it into `permitted`, which gates alert forwarding.
       rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0 && d.auto_capture === true,
+      // WILL THIS PHONE'S SCREEN STAY ON? On-screen capture needs a live display, so a phone
+      // that sleeps captures nothing — yet heartbeats, notification access and auto-capture all
+      // stay green, which is exactly how a capture phone reads "online · ready" while being
+      // deaf. Reported only once the device is on an agent that sends the fields; older builds
+      // send neither, and a phone we cannot ask about must not be flagged as broken.
+      screen_state: d.keep_awake == null && d.overlay_ok == null
+        ? "unknown"
+        : d.keep_awake !== true ? "may_sleep"
+        : d.overlay_ok !== true ? "overlay_missing"
+        : d.charging === false ? "unplugged"
+        : "stays_awake",
     }));
     // Notification formats this phone saw, recognised as money, and could not parse. These
     // are the payments being lost — each distinct sample is a parser fix.
