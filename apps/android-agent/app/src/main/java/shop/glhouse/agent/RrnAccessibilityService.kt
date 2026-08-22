@@ -66,6 +66,8 @@ class RrnAccessibilityService : AccessibilityService() {
     // geometry, no clipboard to read, and no BACK press to get wrong. The row cannot be tapped
     // into a screen carrying "Settle Now" because the row is never tapped at all.
     private val phonepeUtrRx = Regex("UTR:\\s*(\\d{12})", RegexOption.IGNORE_CASE)
+    // The tail of the same line states how the money came in: "UTR: 660060216086 | QR".
+    private val phonepeModeRx = Regex("UTR:\\s*\\d{12}\\s*\\|\\s*(.+)$", RegexOption.IGNORE_CASE)
     // "₹205", "₹1,400", "₹14,800" — the row's own amount, always immediately above the UTR line.
     private val phonepeAmountRx = Regex("^₹\\s?[0-9][0-9,]*(\\.[0-9]{1,2})?$")
     // "05:03PM" — the row's time marker, and the top of the row when scanning backwards.
@@ -676,12 +678,33 @@ class RrnAccessibilityService : AccessibilityService() {
                 j--
             }
 
+            // PhonePe writes the payer name with a trailing comma on some rows
+            // ("Preetam Kesharwani,"); it is punctuation from the layout, not part of the name.
+            payer = payer.trim().trimEnd(',', '·', '|').trim()
+
+            // WHAT THE ROW STATED, KEPT VERBATIM.
+            //
+            // Without this the dashboard's "Details" button does not render at all — it is gated
+            // on the alert carrying a details payload (banker-portal/transactions), so a PhonePe
+            // credit showed a bare "—" where every Paytm credit offers its breakdown. The list
+            // row is all this engine ever sees, so the row is what gets recorded: no invention,
+            // and no pretending to know things only a detail screen could tell us.
+            val stated = linkedMapOf<String, String>()
+            if (paidAt.isNotBlank()) stated["paid_at"] = paidAt
+            if (payer.isNotBlank()) stated["payer"] = payer
+            if (amount.isNotBlank()) stated["amount"] = amount
+            stated["utr"] = rrn
+            phonepeModeRx.find(ordered[i].first)?.groupValues?.get(1)?.trim()
+                ?.takeIf { it.isNotBlank() }?.let { stated["mode"] = it }   // "QR", "Intent", …
+            stated["captured_from"] = "PhonePe for Business · History list"
+
             // maskedRef = the RRN itself: there is no masked form to expand, and RrnStore uses it
             // as the "seen this payment" key, so the two ledgers stay consistent with Airtel.
             val fresh = RrnStore.record(RrnRecord(
                 rrn = rrn, capturedAt = System.currentTimeMillis(),
                 amount = amount, payer = payer, upiId = "",
                 paidAt = paidAt, maskedRef = rrn, bank = "PHONEPE",
+                details = stated,
             ))
             if (fresh) {
                 captured++
