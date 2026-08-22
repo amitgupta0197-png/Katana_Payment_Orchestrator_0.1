@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Label } from "@/components/ui/label";
 import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detail";
+import { LiveCaptureStrip } from "@/components/credits/live-capture-strip";
 import { paymentAppOf, PAYMENT_APP_DOT } from "@/lib/payment-app";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -38,6 +39,16 @@ interface Credit {
 }
 
 const STATUSES = ["", "PENDING", "SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED", "INITIATED", "CANCELLED", "REFUNDED", "CHARGEBACK"] as const;
+
+/** "· 2m ago" for anything recent enough to be worth relating to now; blank once it is history. */
+function relativeAgo(iso: string): string {
+  const s = Math.round((Date.now() - +new Date(iso)) / 1000);
+  if (!Number.isFinite(s) || s < 0) return "";
+  if (s < 60) return "· just now";
+  if (s < 3600) return `· ${Math.round(s / 60)}m ago`;
+  if (s < 6 * 3600) return `· ${Math.round(s / 3600)}h ago`;
+  return "";
+}
 
 export default function TransactionsPage() {
   const [status, setStatus] = useState<string>("");
@@ -110,7 +121,15 @@ export default function TransactionsPage() {
   const renderCreditDetail = (r: Credit) => <CreditDetail details={r.details} />;
 
   const creditCols: Column<Credit>[] = [
-    { key: "created_at", header: "When", render: (r) => formatDateTime(r.event_time ?? r.created_at) },
+    { key: "created_at", header: "When", render: (r) => {
+      const t = r.event_time ?? r.created_at;
+      return (
+        <span className="whitespace-nowrap">
+          {formatDateTime(t)}
+          <span className="ml-1.5 text-[color:var(--color-text-subtle)]">{relativeAgo(t)}</span>
+        </span>
+      );
+    } },
     { key: "amount", header: "Amount", render: (r) => <span className="font-medium">{formatAmount(r.amount)}</span> },
     // The customer's NAME when the capture gave us one, falling back to their VPA. Showing
     // the payee VPA here would just repeat your own account on every row.
@@ -198,13 +217,18 @@ export default function TransactionsPage() {
                 : "Live feed from your collection phone."}
             </p>
           </div>
-          {creditSummary?.last_at && (
-            <Badge variant="default" className="shrink-0 whitespace-nowrap">
-              last {formatDateTime(creditSummary.last_at)}
-            </Badge>
-          )}
         </CardHeader>
         <CardContent>
+          {/* THE BADGE THAT USED TO SIT HERE READ "last 22 Aug 2026, 18:19" and was taken for the
+              page's own freshness — twice, on 2026-08-22, while capture was working perfectly.
+              It was neither: it was the newest credit's INGEST time. The strip answers the two
+              separate questions plainly instead. */}
+          <div className="mb-3">
+            <LiveCaptureStrip
+              dataUpdatedAt={creditsQ.dataUpdatedAt}
+              lastPaymentAt={credits[0]?.event_time ?? credits[0]?.created_at ?? null}
+            />
+          </div>
           <DataTable
             columns={creditCols}
             rows={credits}
