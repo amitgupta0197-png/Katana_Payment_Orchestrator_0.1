@@ -15,6 +15,11 @@ data class ParsedTxn(
     // hold several — four GPay for Business accounts in one app, each with its own ID — so
     // this is the only thing that can say which one a payment actually landed on.
     val payeeVpa: String? = null,
+    // WHEN THE PAYMENT HAPPENED, as the source screen stated it (ISO-8601 with offset).
+    // Without it the server falls back to now(), so a backfilled payment is stamped with the
+    // moment it was scraped — 182 payments spread across a trading day all landed on the
+    // dashboard at 19:22, above genuinely newer ones (2026-08-22).
+    val eventTime: String? = null,
     // Everything else the source screen said about this payment (payment method, the
     // customer-paid vs amount-you-get pair, the app's own reference, settlement wording).
     // Free-form because a GPay detail screen, a Paytm receipt and a bank SMS do not

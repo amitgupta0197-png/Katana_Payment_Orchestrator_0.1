@@ -687,6 +687,33 @@ class RrnAccessibilityService : AccessibilityService() {
      * 2026-08-21. PhonePe prints the reference on the row. Nothing is driven, so nothing can be
      * driven wrong, and capture no longer depends on the phone winning a race against a burst.
      */
+    /**
+     * "05:03PM" -> "2026-08-22T17:03:00+05:30", using the phone's own clock for the date.
+     *
+     * The list states a time and nothing else, so the date has to come from context: these rows
+     * are today's. The guard matters — a sweep deep enough to reach yesterday would otherwise
+     * stamp yesterday's evening payments as today's future. Anything landing more than ten
+     * minutes ahead of now is therefore read as the previous day.
+     */
+    private fun phonepeEventTime(paidAt: String): String? {
+        val m = Regex("^([0-9]{1,2}):([0-9]{2})\\s?([AP]M)$", RegexOption.IGNORE_CASE)
+            .find(paidAt.trim()) ?: return null
+        var hour = m.groupValues[1].toIntOrNull()?.rem(12) ?: return null
+        if (m.groupValues[3].uppercase(java.util.Locale.US) == "PM") hour += 12
+        val minute = m.groupValues[2].toIntOrNull() ?: return null
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hour)
+            set(java.util.Calendar.MINUTE, minute)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        if (cal.timeInMillis > System.currentTimeMillis() + 10 * 60_000L)
+            cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+        return runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).format(cal.time)
+        }.getOrNull()
+    }
+
     private fun handlePhonePe(root: AccessibilityNodeInfo) {
         if (!Prefs.enabled(this)) return
         val ordered = ArrayList<Pair<String, AccessibilityNodeInfo>>()
@@ -740,6 +767,7 @@ class RrnAccessibilityService : AccessibilityService() {
                 amount = amount, payer = payer, upiId = "",
                 paidAt = paidAt, maskedRef = rrn, bank = "PHONEPE",
                 details = stated,
+                eventTime = phonepeEventTime(paidAt),
             ))
             if (fresh) {
                 captured++

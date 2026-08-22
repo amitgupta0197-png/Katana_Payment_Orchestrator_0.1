@@ -17,6 +17,8 @@ data class RrnRecord(
     val details: Map<String, String>? = null,
     /** UPI ID the money was credited TO, when the app showed it — see RrnAccessibilityService. */
     val payeeVpa: String? = null,
+    /** When the payment happened, as the screen stated it (ISO-8601 with offset). */
+    val eventTime: String? = null,
 )
 
 /**

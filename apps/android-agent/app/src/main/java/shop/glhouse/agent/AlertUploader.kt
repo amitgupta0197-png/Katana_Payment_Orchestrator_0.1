@@ -43,6 +43,7 @@ object AlertUploader {
             sender?.let { put("sender", it) }
             txn.bank?.let { put("bank", it) }
             txn.utr?.let { put("utr", it) }
+            txn.eventTime?.let { put("event_time", it) }
             txn.orderRef?.let { put("order_ref", it) }
             txn.payerVpa?.let { put("payer_vpa", it) }
             // The UPI ID credited, read off the payment app. The server verifies it against the
@@ -99,6 +100,7 @@ object AlertUploader {
             bank = rec.bank,
             raw = raw.ifBlank { rec.rrn },
             details = rec.details,
+            eventTime = rec.eventTime,
         )
         send(ctx, txn, "ACCESSIBILITY", rec.bank)
     }

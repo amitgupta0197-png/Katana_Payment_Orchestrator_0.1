@@ -66,11 +66,18 @@ export async function GET() {
   //                as the credits above, one leg later; listed on its own below.
   // The LIST. Bounded, because it is rendered — the day's TOTALS are no longer taken from it
   // (see todayRows below), so this cap can never again decide what the day is worth.
+  // ORDERED BY WHEN THE MONEY ARRIVED, NOT WHEN WE HEARD ABOUT IT.
+  //
+  // created_at is the moment the alert was ingested, which for a live capture is seconds after
+  // the payment and for a BACKFILLED one is whenever the sweep happened to reach it. Sorting by
+  // it put 182 payments spread across a whole trading day at the top of the feed in scrape
+  // order, above genuinely newer ones (2026-08-22). event_time is what the payment screen
+  // stated; it falls back to created_at for sources that never report one.
   const recent = await rows<CreditRow>(
     "vendorGateway",
     `SELECT ${COLS} FROM vendor_txn_alerts
       WHERE ${OWNED} AND ${IS_COLLECTION}
-      ORDER BY created_at DESC
+      ORDER BY COALESCE(event_time, created_at) DESC
       LIMIT 500`,
     [code, vpas],
   ).catch(() => []);
@@ -93,7 +100,7 @@ export async function GET() {
     `SELECT ${COLS} FROM vendor_txn_alerts
       WHERE ${OWNED} AND ${IS_COLLECTION}
         AND created_at >= date_trunc('day', now()) - interval '1 day'
-      ORDER BY created_at DESC`,
+      ORDER BY COALESCE(event_time, created_at) DESC`,
     [code, vpas],
   ).catch(() => []);
 
