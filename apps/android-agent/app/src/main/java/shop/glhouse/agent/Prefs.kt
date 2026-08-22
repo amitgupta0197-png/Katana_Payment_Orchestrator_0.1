@@ -127,8 +127,10 @@ object Prefs {
     const val APP_PAYTM = "PAYTM"
     const val APP_AIRTEL = "AIRTEL"
     const val APP_GPAY = "GPAY"
+    const val APP_PHONEPE = "PHONEPE"
     fun captureApps(ctx: Context): Set<String> =
-        sp(ctx).getStringSet("capture_apps", null)?.toSet() ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY)
+        sp(ctx).getStringSet("capture_apps", null)?.toSet()
+            ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY, APP_PHONEPE)
     fun captureAppOn(ctx: Context, app: String): Boolean = captureApps(ctx).contains(app)
     fun setCaptureApp(ctx: Context, app: String, on: Boolean) {
         val next = captureApps(ctx).toMutableSet().also { if (on) it.add(app) else it.remove(app) }

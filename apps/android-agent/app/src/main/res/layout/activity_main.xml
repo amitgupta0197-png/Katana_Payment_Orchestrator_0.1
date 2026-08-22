@@ -282,15 +282,14 @@
                         android:layout_height="wrap_content" />
                 </LinearLayout>
 
-                <!-- PhonePe Business (coming soon) -->
+                <!-- PhonePe Business -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center_vertical"
                     android:paddingHorizontal="6dp"
-                    android:paddingVertical="8dp"
-                    android:alpha="0.45">
+                    android:paddingVertical="8dp">
                     <FrameLayout
                         android:layout_width="42dp"
                         android:layout_height="42dp"
@@ -312,19 +311,12 @@
                         android:layout_weight="1"
                         android:orientation="vertical">
                         <TextView style="@style/PermTitle" android:text="PhonePe Business" />
-                        <TextView style="@style/PermSub" android:text="Capture engine in development" />
+                        <TextView style="@style/PermSub" android:text="UTR read straight off the History list — nothing is opened" />
                     </LinearLayout>
-                    <TextView
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/appPhonepeSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_soon_pill"
-                        android:paddingHorizontal="10dp"
-                        android:paddingVertical="4dp"
-                        android:text="SOON"
-                        android:textColor="@color/on_surface_variant"
-                        android:textSize="10sp"
-                        android:textStyle="bold"
-                        android:letterSpacing="0.1" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

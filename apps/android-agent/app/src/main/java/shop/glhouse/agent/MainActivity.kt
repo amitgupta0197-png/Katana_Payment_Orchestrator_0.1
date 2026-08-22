@@ -78,6 +78,8 @@ class MainActivity : AppCompatActivity() {
         b.appAirtelSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_AIRTEL, v) }
         b.appGpaySwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_GPAY)
         b.appGpaySwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_GPAY, v) }
+        b.appPhonepeSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_PHONEPE)
+        b.appPhonepeSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PHONEPE, v) }
         b.autoCaptureSwitch.isChecked = Prefs.autoCapture(this)
         b.autoCaptureSwitch.setOnCheckedChangeListener { _, v -> Prefs.setAutoCapture(this, v) }
         b.keepAwakeSwitch.isChecked = Prefs.keepAwake(this)

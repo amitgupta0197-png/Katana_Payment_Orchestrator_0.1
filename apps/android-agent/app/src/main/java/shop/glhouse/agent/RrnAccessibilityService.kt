@@ -58,6 +58,19 @@ class RrnAccessibilityService : AccessibilityService() {
     // label of the tab NEXT to Payments — so it is on screen while the payments list is showing.
     // Matching either ended healthy sweeps instantly. These two strings appear on the settlement
     // tab and nowhere else.
+    // PHONEPE FOR BUSINESS — the whole engine, essentially.
+    //
+    // Its History list prints the reference on every row: "UTR: 660060216086 | QR". That is the
+    // same 12-digit UPI RRN Katana stores everywhere else, and it is on the LIST — so unlike
+    // Paytm there is nothing to open, no masked reference to expand, no "Copy" link to find by
+    // geometry, no clipboard to read, and no BACK press to get wrong. The row cannot be tapped
+    // into a screen carrying "Settle Now" because the row is never tapped at all.
+    private val phonepeUtrRx = Regex("UTR:\\s*(\\d{12})", RegexOption.IGNORE_CASE)
+    // "₹205", "₹1,400", "₹14,800" — the row's own amount, always immediately above the UTR line.
+    private val phonepeAmountRx = Regex("^₹\\s?[0-9][0-9,]*(\\.[0-9]{1,2})?$")
+    // "05:03PM" — the row's time marker, and the top of the row when scanning backwards.
+    private val phonepeTimeRx = Regex("^[0-9]{1,2}:[0-9]{2}\\s?[AP]M$", RegexOption.IGNORE_CASE)
+
     private val settlementScreenRx =
         Regex("Previous Settlements|Available for settlement", RegexOption.IGNORE_CASE)
 
@@ -503,6 +516,12 @@ class RrnAccessibilityService : AccessibilityService() {
                 packageNames = arrayOf(
                     "net.one97.paytm.merchant", "com.paytm.business", "com.apbl.merchant",
                     "com.google.android.apps.nbu.paisa.merchant",
+                    // PhonePe for Business. Adding it to accessibility_config.xml alone changed
+                    // nothing — exactly the trap this block exists for: the XML list is cached at
+                    // first bind, so on an already-installed agent PhonePe's screens delivered no
+                    // events at all and the engine looked broken when it had simply never been
+                    // called (2026-08-22).
+                    "com.phonepe.app.business",
                 )
             }
         } catch (e: Exception) { Log.w(TAG, "setServiceInfo failed: ${e.message}") }
@@ -523,6 +542,7 @@ class RrnAccessibilityService : AccessibilityService() {
                 if (Prefs.captureAppOn(this, Prefs.APP_PAYTM)) handlePaytm(root)
             "com.apbl.merchant"  -> if (Prefs.captureAppOn(this, Prefs.APP_AIRTEL)) handleAirtel(root)   // Airtel Payments Bank Merchant
             "com.google.android.apps.nbu.paisa.merchant" -> if (Prefs.captureAppOn(this, Prefs.APP_GPAY)) handleGpay(root)  // Google Pay for Business
+            "com.phonepe.app.business" -> if (Prefs.captureAppOn(this, Prefs.APP_PHONEPE)) handlePhonePe(root)  // PhonePe for Business
             else -> return
         }
     }
@@ -610,6 +630,66 @@ class RrnAccessibilityService : AccessibilityService() {
         val r = Rect().also { node.getBoundsInScreen(it) }
         if (r.width() > 0 && r.height() > 0) { tap(r.exactCenterX(), r.exactCenterY()); return true }
         return false
+    }
+
+    /**
+     * PhonePe for Business — a PASSIVE read of the History list. No gestures, ever.
+     *
+     * Every row is five consecutive nodes in traversal order:
+     *
+     *     "05:03PM"  "•"  "Arvind Das"  "₹205"  "UTR: 660060216086 | QR"
+     *
+     * so the UTR line anchors the row and everything else is found by walking backwards to the
+     * time marker. Rows already held are skipped by RrnStore, which is what keeps this cheap
+     * enough to run on every content event: a screenful re-read costs nothing but a flatten.
+     *
+     * WHY THIS ENGINE IS THE ONE TO TRUST. Paytm hides the RRN behind a detail screen, so its
+     * engine must open each payment, scroll to a block below the fold, identify the right "Copy"
+     * among three, tap a coordinate, read the clipboard and navigate back — six chances to fail
+     * per payment, one of which (a mis-aimed tap) pressed "Settle Now" eighteen times on
+     * 2026-08-21. PhonePe prints the reference on the row. Nothing is driven, so nothing can be
+     * driven wrong, and capture no longer depends on the phone winning a race against a burst.
+     */
+    private fun handlePhonePe(root: AccessibilityNodeInfo) {
+        if (!Prefs.enabled(this)) return
+        val ordered = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flatten(root, ordered)
+
+        var captured = 0
+        for (i in ordered.indices) {
+            val rrn = phonepeUtrRx.find(ordered[i].first)?.groupValues?.get(1) ?: continue
+            if (RrnStore.isMaskedCaptured(rrn)) continue   // already held — do not re-upload
+
+            // Walk back to this row's time marker, collecting what the row states. Bounded so a
+            // row that is partly scrolled off cannot borrow the row above it.
+            var amount = ""
+            var payer = ""
+            var paidAt = ""
+            var j = i - 1
+            while (j >= 0 && i - j <= 5) {
+                val t = ordered[j].first.trim()
+                if (phonepeTimeRx.matches(t)) { paidAt = t; break }          // top of the row
+                if (amount.isEmpty() && phonepeAmountRx.matches(t)) { j--; amount = t; continue }
+                // The payer is the only free text on the row; "•" is the separator between the
+                // time and the name and must never be mistaken for one.
+                if (payer.isEmpty() && t.isNotBlank() && t != "•" && !phonepeAmountRx.matches(t)) payer = t
+                j--
+            }
+
+            // maskedRef = the RRN itself: there is no masked form to expand, and RrnStore uses it
+            // as the "seen this payment" key, so the two ledgers stay consistent with Airtel.
+            val fresh = RrnStore.record(RrnRecord(
+                rrn = rrn, capturedAt = System.currentTimeMillis(),
+                amount = amount, payer = payer, upiId = "",
+                paidAt = paidAt, maskedRef = rrn, bank = "PHONEPE",
+            ))
+            if (fresh) {
+                captured++
+                Prefs.bump(this, "capture_ok")
+                Log.d(TAG, "phonepe: RRN $rrn amount=$amount payer=$payer at=$paidAt")
+            }
+        }
+        if (captured > 0) AlertStore.log(applicationContext, "${nowTag()} 📗 phonepe: captured $captured payment(s) from the list")
     }
 
     private fun handleAirtel(root: AccessibilityNodeInfo) {
