@@ -124,6 +124,15 @@ class RrnAccessibilityService : AccessibilityService() {
     private var lastRowKeys: Set<String> = emptySet()
     private var sweepStallScrolls = 0
 
+    // ---- PhonePe list sweep ----
+    private var ppSweeping = false
+    private var ppScrolls = 0
+    private var ppDryScreens = 0
+    private var ppRewinding = 0
+    private var ppLastSweep = 0L
+    /** This sweep was asked for as a backfill: walk the whole list, not just the fresh top. */
+    private var ppDeep = false
+
     // ---- detail-capture state ----
     private val attempts = HashMap<String, Int>()
     // How many times we have scrolled a payment's detail screen looking for its RRN Copy link.
@@ -233,6 +242,28 @@ class RrnAccessibilityService : AccessibilityService() {
         // How many consecutive scrolls may report an unchanged set of rows before the list is
         // declared stuck. Four tolerates a slow lazy-load or two; sitting through 120 does not.
         private const val MAX_STALL_SCROLLS = 4
+        // PHONEPE LIST SWEEP. A passive read only ever sees the rows currently rendered — about
+        // six. Payments arriving in a burst are pushed below the fold before the next
+        // accessibility event and are then never read again: on 2026-08-22 PhonePe held 392
+        // payments and Katana held 202, and scrolling the list by hand recovered ten in twenty
+        // seconds. So the engine walks the list itself. It is cheap — a flatten and a regex per
+        // screen, no row is ever opened — which is why it can afford to run often.
+        private const val PP_SWEEP_INTERVAL_MS = 25_000L
+        // The ROUTINE sweep only has to reach rows a burst pushed below the fold seconds ago, so
+        // it stays shallow and cheap — it runs every 25 seconds all day.
+        private const val PP_MAX_SCROLLS = 12
+        // A BACKFILL HAS TO REACH THIS MORNING, AND THE LIST IS LAZY-LOADED. Measured
+        // 2026-08-22: thirty swipes walked back only about eighty-five minutes of payments,
+        // because each swipe advances less than a screen while PhonePe fetches the next chunk.
+        // A full trading day therefore needs scrolls in the hundreds, which at ~0.9s each is a
+        // few minutes — the right trade for a recovery pass that runs on request, and the reason
+        // it is NOT the budget the routine sweep uses.
+        private const val PP_DEEP_SCROLLS = 400
+        // Consecutive screens yielding nothing new before the sweep is considered caught up.
+        // Two, because one screen can legitimately repeat while the WebView re-lays-out.
+        private const val PP_DRY_SCREENS = 2
+        // How long the list is given to render after a swipe before its rows are read.
+        private const val PP_SCROLL_WAIT_MS = 700L
         // How long the payments-list WebView is given to re-lay-out after a swipe before its
         // rows are read. Deliberately generous: reading early looks exactly like a stalled list,
         // and the cost of waiting is a second per screenful while the cost of guessing wrong is
@@ -291,7 +322,11 @@ class RrnAccessibilityService : AccessibilityService() {
         @Volatile private var openedFullList = false
         // True for the lifetime of one sweep that was started as a backfill.
         @Volatile private var sweepIsDeep = false
-        fun requestDeepSweep() { deepSweep = true; forceResweep = true; openedFullList = false }
+        fun requestDeepSweep() {
+            deepSweep = true; forceResweep = true; openedFullList = false
+            // The same request arms PhonePe, whose list has its own below-the-fold backlog.
+            instance?.let { it.ppDeep = true; it.ppLastSweep = 0L; it.ppSweeping = false }
+        }
 
         const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
         @Volatile private var lastGpayLaunch = 0L
@@ -713,6 +748,70 @@ class RrnAccessibilityService : AccessibilityService() {
             }
         }
         if (captured > 0) AlertStore.log(applicationContext, "${nowTag()} 📗 phonepe: captured $captured payment(s) from the list")
+
+        // WALK THE LIST, DO NOT JUST WATCH IT. See PP_SWEEP_INTERVAL_MS.
+        if (!Prefs.autoCapture(this)) return
+        val onList = ordered.any { phonepeUtrRx.containsMatchIn(it.first) }
+        if (!onList) return
+
+        if (ppSweeping) { ppStep(captured); return }
+        // Log progress on a long backfill so it is visibly working rather than apparently hung.
+        if (ppDeep && ppScrolls > 0 && ppScrolls % 50 == 0) Log.d(TAG, "phonepe: deep pass at $ppScrolls scrolls")
+
+        val now = System.currentTimeMillis()
+        if (now - ppLastSweep < PP_SWEEP_INTERVAL_MS) return
+        ppLastSweep = now
+        ppSweeping = true; ppScrolls = 0; ppDryScreens = 0; ppRewinding = 0
+        Log.d(TAG, "phonepe: sweeping the list for payments pushed below the fold")
+        ppStep(captured)
+    }
+
+    /**
+     * One step of the PhonePe list sweep: scroll, let it render, and let the next read happen.
+     *
+     * Stops as soon as [PP_DRY_SCREENS] screens in a row yield nothing new — normally within a
+     * screen or two, because the top of the list is already held — then REWINDS TO THE TOP. That
+     * last part matters: new payments appear at the top, and a sweep that finished deep in
+     * yesterday's history would leave the engine watching a screen where nothing new ever
+     * arrives, quietly stopping live capture in the name of backfilling it.
+     */
+    private fun ppStep(capturedThisScreen: Int) {
+        if (ppRewinding > 0) {
+            ppRewinding--
+            swipeDown { }
+            if (ppRewinding == 0) { ppSweeping = false; Log.d(TAG, "phonepe: sweep done, back at the top of the list") }
+            return
+        }
+        if (capturedThisScreen > 0) ppDryScreens = 0 else ppDryScreens++
+        // A BACKFILL DOES NOT STOP AT THE FIRST QUIET SCREEN. The ordinary sweep exists to catch
+        // rows a burst pushed below the fold moments ago, so two dry screens means caught up. The
+        // day's real gap is scattered far deeper — 392 payments against 202 captured
+        // (2026-08-22) — and every screenful of it is already-held rows until it is not. A deep
+        // pass therefore walks to the scroll limit regardless.
+        val scrollLimit = if (ppDeep) PP_DEEP_SCROLLS else PP_MAX_SCROLLS
+        if ((!ppDeep && ppDryScreens >= PP_DRY_SCREENS) || ppScrolls >= scrollLimit) {
+            // Rewind by as many swipes as we scrolled down, plus a margin for a short list.
+            ppRewinding = minOf(ppScrolls, scrollLimit) + 2
+            Log.d(TAG, "phonepe: ${if (ppDeep) "deep pass" else "caught up"} after $ppScrolls scroll(s) -> returning to the top")
+            ppDeep = false
+            main.postDelayed({ ppStep(0) }, PP_SCROLL_WAIT_MS)
+            return
+        }
+        ppScrolls++
+        swipeUp { main.postDelayed({ ppNudge() }, PP_SCROLL_WAIT_MS) }
+    }
+
+    /**
+     * Re-read the scrolled list ourselves rather than waiting for an event.
+     *
+     * Accessibility events describe CHANGE, and a list that has finished settling stops emitting
+     * them — the same trap that stalled the Paytm sweep. Reading directly keeps the sweep moving.
+     */
+    private fun ppNudge() {
+        if (!ppSweeping) return
+        val root = rootInActiveWindow ?: run { ppSweeping = false; return }
+        if (root.packageName?.toString() != "com.phonepe.app.business") { ppSweeping = false; return }
+        handlePhonePe(root)
     }
 
     private fun handleAirtel(root: AccessibilityNodeInfo) {
