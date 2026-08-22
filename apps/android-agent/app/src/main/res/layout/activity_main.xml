@@ -188,6 +188,26 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- ONE TAP BACK TO THE PAYMENT APP.
+                     The engines read the payment app's screen, not this one, so every minute the
+                     merchant spends in the agent is a minute not capturing — this phone idled an
+                     hour that way on 2026-08-22. Telling them to go back was not enough; a button
+                     that takes them there is. Doubles as the fix for the commonest support call:
+                     "it stopped working" is usually "the payment app is not on screen". -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/openAppBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Open payment app"
+                    android:textAllCaps="false"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    app:cornerRadius="14dp"
+                    android:backgroundTint="@color/brand"
+                    android:textColor="@color/brand_on" />
+
                 <!-- The one instruction that matters, shown only when it applies. -->
                 <TextView
                     android:id="@+id/heroDesc"

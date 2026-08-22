@@ -172,6 +172,29 @@ class MainActivity : AppCompatActivity() {
         if (Prefs.enabled(this)) AlertUploader.heartbeat(this, notifAccessGranted())
     }
 
+    /** The installed package each switch stands for, so the hero can open it. */
+    private fun packageFor(app: String): String? = when (app) {
+        Prefs.APP_PAYTM -> listOf("com.paytm.business", "net.one97.paytm.merchant")
+            .firstOrNull { runCatching { packageManager.getLaunchIntentForPackage(it) }.getOrNull() != null }
+        Prefs.APP_AIRTEL -> "com.apbl.merchant"
+        Prefs.APP_GPAY -> RrnAccessibilityService.GPAY_PKG
+        Prefs.APP_PHONEPE -> "com.phonepe.app.business"
+        else -> null
+    }
+
+    /**
+     * The tile is one line wide, so it needs the brand alone — but chopping suffixes off the full
+     * name is guesswork: "Paytm for Business".removeSuffix(" Business") leaves "Paytm for", which
+     * is what the phone displayed. Named explicitly instead.
+     */
+    private fun shortLabelFor(app: String) = when (app) {
+        Prefs.APP_PAYTM -> "Paytm"
+        Prefs.APP_AIRTEL -> "Airtel"
+        Prefs.APP_GPAY -> "Google Pay"
+        Prefs.APP_PHONEPE -> "PhonePe"
+        else -> app
+    }
+
     private fun labelFor(app: String) = when (app) {
         Prefs.APP_PAYTM -> "Paytm for Business"
         Prefs.APP_AIRTEL -> "Airtel Merchant"
@@ -265,10 +288,23 @@ class MainActivity : AppCompatActivity() {
         // now names itself, and says what to do about it.
         val app = Prefs.captureApps(this).firstOrNull()
         val permissionsOk = Prefs.enabled(this) && (sms || notif)
-        val armed = permissionsOk && app != null && Prefs.autoCapture(this)
+        val armed = permissionsOk && app != null && Prefs.autoCapture(this) && Prefs.merchantState(this) == 1
+
+        // A CODE THE SERVER HAS NOT CONFIRMED IS NOT A DESTINATION.
+        //
+        // Captures are stamped with whatever string is in this box, so a wrong one sends real
+        // money to the wrong banker — or to nobody. "GUFFI-01 hu" sat saved for hours on
+        // 2026-08-22 while the card cheerfully read active, because a typo with an internal
+        // space survives trim() and nothing else looked. The phone now refuses to claim it is
+        // capturing until the server has recognised the code.
+        val codeVerified = Prefs.merchantState(this) == 1
+        val hasCode = Prefs.merchantCode(this).isNotBlank()
 
         val (title, colorRes) = when {
             !permissionsOk -> "Setup needed" to R.color.warning
+            !hasCode -> "No merchant code" to R.color.danger
+            Prefs.merchantState(this) == -1 -> "Merchant code not recognised" to R.color.danger
+            !codeVerified -> "Merchant code unverified" to R.color.warning
             app == null -> "No payment app selected" to R.color.warning
             !Prefs.autoCapture(this) -> "Auto-capture is off" to R.color.warning
             else -> "Capturing" to R.color.success
@@ -287,6 +323,11 @@ class MainActivity : AppCompatActivity() {
         val who = Prefs.merchantName(this).ifBlank { Prefs.merchantCode(this) }.ifBlank { "no merchant code" }
         b.heroDesc.text = when {
             !permissionsOk -> "Grant the permissions below to start."
+            !hasCode -> "Enter the merchant code for this shop under CONNECTION, then Save."
+            Prefs.merchantState(this) == -1 ->
+                "The server does not know \"${Prefs.merchantCode(this)}\". Check it under CONNECTION — " +
+                    "captures are stamped with this code, so a wrong one sends money to the wrong banker."
+            !codeVerified -> "Tap Save under CONNECTION to verify this code with the server."
             app == null -> "Turn on the payment app you receive money on, below."
             !Prefs.autoCapture(this) -> "Turn Auto-capture back on to resume reading RRNs."
             // The engines read the PAYMENT APP, not this screen — so while the merchant is
@@ -329,8 +370,23 @@ class MainActivity : AppCompatActivity() {
         b.heroLast.text = if (last <= 0L) "no captures yet on this phone" else "last $lastLabel"
         b.heroLast.setTextColor(ContextCompat.getColor(this, if (last <= 0L) R.color.on_surface_variant else R.color.brand))
 
+        // The button only appears once there is somewhere useful to send them.
+        val pkg = app?.let { packageFor(it) }
+        if (armed && app != null && pkg != null) {
+            b.openAppBtn.visibility = android.view.View.VISIBLE
+            b.openAppBtn.text = "Open ${labelFor(app)}"
+            b.openAppBtn.setOnClickListener {
+                runCatching { packageManager.getLaunchIntentForPackage(pkg) }.getOrNull()
+                    ?.let { startActivity(it) }
+                    ?: toast("${labelFor(app)} is not installed on this phone")
+            }
+        } else {
+            b.openAppBtn.visibility = android.view.View.GONE
+            android.util.Log.d("KATANA_UI", "open-app button hidden: armed=$armed app=$app pkg=$pkg")
+        }
+
         b.statMerchant.text = who
-        b.statVia.text = app?.let { labelFor(it).removeSuffix(" Business").removeSuffix(" for Business") } ?: "none selected"
+        b.statVia.text = app?.let { shortLabelFor(it) } ?: "none selected"
         b.statPower.text = if (charging) "Plugged in" else "On battery"
         b.statPower.setTextColor(ContextCompat.getColor(this, if (charging) R.color.on_surface else R.color.warning))
         b.statQueue.text = if (queued == 0) "Clear" else "$queued pending"

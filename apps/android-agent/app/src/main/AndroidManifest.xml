@@ -17,6 +17,25 @@
          invisible clipboard reader that captures the full RRN off Paytm's "Copy" button. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- PACKAGE VISIBILITY (Android 11+).
+         Without this, getLaunchIntentForPackage() returns null for every app outside our own —
+         even ones plainly installed. That is not a permission error, it is silent: the call
+         simply answers "not installed". It hid the hero's "Open payment app" button on a phone
+         with Paytm installed (2026-08-22, diagnosed as pkg=null while app=PAYTM), and it is the
+         same call RrnAccessibilityService.requestAppCapture uses to bring the payment app
+         forward after a push — so that path was quietly degraded too.
+
+         Declared package-by-package rather than with QUERY_ALL_PACKAGES: these five are the only
+         apps this agent ever needs to see, and the broad permission is both unnecessary here and
+         a Play policy question we have no reason to invite. -->
+    <queries>
+        <package android:name="com.paytm.business" />
+        <package android:name="net.one97.paytm.merchant" />
+        <package android:name="com.apbl.merchant" />
+        <package android:name="com.google.android.apps.nbu.paisa.merchant" />
+        <package android:name="com.phonepe.app.business" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
