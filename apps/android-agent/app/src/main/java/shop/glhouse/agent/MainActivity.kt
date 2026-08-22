@@ -146,6 +146,10 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         refreshState()
         refreshLog()
+        // Keep the hero honest while it is being looked at — a static count is indistinguishable
+        // from a stalled one.
+        b.root.removeCallbacks(heroTicker)
+        b.root.postDelayed(heroTicker, 5_000L)
         if (Prefs.enabled(this)) {
             AlertUploader.heartbeat(this, notifAccessGranted())
             thread { AlertUploader.flushOutbox(this) }
@@ -252,12 +256,38 @@ class MainActivity : AppCompatActivity() {
         setRow(accessGranted(), b.accessCheck, b.accessBtn)
         setRow(overlayGranted(), b.overlayCheck, b.overlayBtn)
 
-        val ready = Prefs.enabled(this) && (sms || notif)
-        val stateColor = ContextCompat.getColor(this, if (ready) R.color.success else R.color.warning)
-        b.heroTitle.text = if (ready) "Agent active" else "Setup needed"
+        // WHAT THIS PHONE IS ACTUALLY DOING, IN THE FIRST LINE.
+        //
+        // "Agent active" was true whenever the permissions were granted — which is not the same
+        // as capturing, and the difference is the whole ballgame. A phone can be "active" with no
+        // payment app selected, with auto-capture off, or parked on this very screen instead of
+        // the payment app, and it looks identical while capturing nothing. Each of those states
+        // now names itself, and says what to do about it.
+        val app = Prefs.captureApps(this).firstOrNull()
+        val permissionsOk = Prefs.enabled(this) && (sms || notif)
+        val armed = permissionsOk && app != null && Prefs.autoCapture(this)
+
+        val (title, colorRes) = when {
+            !permissionsOk -> "Setup needed" to R.color.warning
+            app == null -> "No payment app selected" to R.color.warning
+            !Prefs.autoCapture(this) -> "Auto-capture is off" to R.color.warning
+            else -> "Capturing" to R.color.success
+        }
+        val stateColor = ContextCompat.getColor(this, colorRes)
+        b.heroTitle.text = title
         b.heroTitle.setTextColor(stateColor)
         b.heroDot.setColorFilter(stateColor)
-        b.heroDesc.text = if (ready) "Forwarding bank credits to Katana." else "Grant the permissions below to start."
+
+        // WHO this phone collects for, and THROUGH WHICH APP — the two facts that were nowhere on
+        // screen while a merchant code typo ("GUFFI-01 hu") and a Paytm/PhonePe merchant mix-up
+        // both went unnoticed for hours.
+        val who = Prefs.merchantName(this).ifBlank { Prefs.merchantCode(this) }.ifBlank { "no merchant code" }
+        b.heroDesc.text = when {
+            !permissionsOk -> "Grant the permissions below to start."
+            app == null -> "Turn on the payment app you receive money on, below."
+            !Prefs.autoCapture(this) -> "Turn Auto-capture back on to resume reading RRNs."
+            else -> "$who · via ${labelFor(app)}"
+        }
 
         val merchant = Prefs.merchantCode(this).ifBlank { "—" }
         val hasMerchant = Prefs.merchantCode(this).isNotBlank()
@@ -269,13 +299,50 @@ class MainActivity : AppCompatActivity() {
             Prefs.merchantState(this) == -1 -> "$merchant ✗ not recognized"
             else -> "$merchant (save to verify)"
         }
+        // THE PROOF LINE. A count that goes up is the only thing on this phone that says capture
+        // is really happening; "last" is what turns a quiet stretch into either "fine" or "look
+        // at me". Charging is here because the screen is only held on while plugged in, so an
+        // unplugged phone stops capturing without anything else changing.
+        val today = Prefs.capturesToday(this)
+        val last = Prefs.lastCaptureAt(this)
+        val lastLabel = if (last <= 0L) "none yet" else {
+            val mins = (System.currentTimeMillis() - last) / 60000L
+            val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(last))
+            when {
+                mins < 1 -> "$clock (just now)"
+                mins < 60 -> "$clock ($mins min ago)"
+                else -> "$clock (${mins / 60} h ago)"
+            }
+        }
+        val charging = ScreenAwake.isCharging(this)
         b.details.text = buildString {
-            append("Version    ").append(BuildConfig.VERSION_NAME).append('\n')
-            append("Endpoint   ").append(Prefs.baseUrl(this@MainActivity)).append("/api/v1/txn-alert").append('\n')
-            append("Device     ").append(Prefs.deviceId(this@MainActivity)).append('\n')
+            append("Captured   ").append(today).append(" today · last ").append(lastLabel).append('\n')
+            append("Power      ").append(if (charging) "plugged in" else "ON BATTERY — screen will sleep").append('\n')
             append("Merchant   ").append(mLabel).append('\n')
+            append("Device     ").append(Prefs.deviceId(this@MainActivity)).append('\n')
+            append("Version    ").append(BuildConfig.VERSION_NAME).append('\n')
             append("Queued     ").append(OutboxStore.size(this@MainActivity)).append(" pending retry")
         }
+
+        // A REMINDER THIS SCREEN IS NOT THE ONE THAT CAPTURES. The engines read the payment app,
+        // so while the merchant is looking at the agent nothing is being captured — which is
+        // exactly how this phone idled for an hour on 2026-08-22.
+        if (armed && app != null) {
+            b.heroDesc.text = "${b.heroDesc.text}\nOpen ${labelFor(app)} and leave it on screen — capture reads it there."
+        }
+    }
+
+    /** Re-render while the screen is open so the count and "last" actually move. */
+    private val heroTicker = object : Runnable {
+        override fun run() {
+            refreshState(); refreshLog()
+            b.root.postDelayed(this, 5_000L)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        b.root.removeCallbacks(heroTicker)
     }
 
     private fun refreshLog() {

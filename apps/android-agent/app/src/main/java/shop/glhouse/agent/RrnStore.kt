@@ -140,7 +140,7 @@ object RrnStore {
         }
         persist()
         Log.d(TAG, "captured RRN ${rec.rrn} amount=${rec.amount} payer=${rec.payer}")
-        appCtx?.let { AlertUploader.sendCapture(it, rec) }
+        appCtx?.let { Prefs.noteCapture(it); AlertUploader.sendCapture(it, rec) }
         return true
     }
 }

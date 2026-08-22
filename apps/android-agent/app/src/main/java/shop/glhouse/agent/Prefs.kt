@@ -147,6 +147,34 @@ object Prefs {
      * on therefore turns the others off, so the wrong-merchant state cannot be reached from the
      * UI at all.
      */
+    /**
+     * A CAPTURE JUST LANDED — the only number on this phone that answers "is it working?".
+     *
+     * The app could show permissions, a merchant code and a version, and still not tell anyone
+     * whether money was being captured. On 2026-08-22 the phone sat on the agent's own screen
+     * for an hour capturing nothing, looking exactly as healthy as it does when it works.
+     * Counted per calendar day so the figure means "today", and reset by the date changing
+     * rather than by any job that could fail to run.
+     */
+    fun noteCapture(ctx: Context) {
+        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+            .format(java.util.Date())
+        val p = sp(ctx)
+        val n = if (p.getString("cap_day", "") == today) p.getInt("cap_today", 0) else 0
+        p.edit().putString("cap_day", today).putInt("cap_today", n + 1)
+            .putLong("cap_last", System.currentTimeMillis()).apply()
+    }
+
+    fun capturesToday(ctx: Context): Int {
+        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+            .format(java.util.Date())
+        val p = sp(ctx)
+        return if (p.getString("cap_day", "") == today) p.getInt("cap_today", 0) else 0
+    }
+
+    /** Epoch millis of the last capture, or 0 if this phone has never captured one. */
+    fun lastCaptureAt(ctx: Context): Long = sp(ctx).getLong("cap_last", 0L)
+
     fun setCaptureAppExclusive(ctx: Context, app: String) {
         sp(ctx).edit().putStringSet("capture_apps", setOf(app)).apply()
     }
