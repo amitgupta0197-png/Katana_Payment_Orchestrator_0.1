@@ -47,13 +47,18 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Status hero -->
+        <!-- Status hero.
+             THE ONE SCREEN A MERCHANT LOOKS AT, so it answers the only question they have:
+             is my money being captured? The old card led with "Agent active", which meant the
+             permissions were granted and nothing more — true while a phone sat capturing nothing.
+             The count leads now because it is the only figure that cannot be green while broken,
+             and everything else is demoted to supporting it. -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             app:cardBackgroundColor="@color/surface_variant"
-            app:cardCornerRadius="20dp"
+            app:cardCornerRadius="22dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/outline"
             app:strokeWidth="1dp">
@@ -62,17 +67,23 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/bg_hero"
-                android:padding="18dp">
+                android:padding="20dp">
+
+                <!-- State pill: colour carries the state, so it reads before the words do. -->
                 <LinearLayout
+                    android:id="@+id/heroPill"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_status_pill"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="6dp">
                     <ImageView
                         android:id="@+id/heroDot"
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
-                        android:layout_marginEnd="9dp"
+                        android:layout_width="9dp"
+                        android:layout_height="9dp"
+                        android:layout_marginEnd="8dp"
                         android:src="@drawable/dot_status"
                         android:contentDescription="status" />
                     <TextView
@@ -81,30 +92,124 @@
                         android:layout_height="wrap_content"
                         android:text="Setup needed"
                         android:textColor="@color/warning"
-                        android:textSize="18sp"
-                        android:textStyle="bold" />
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.10"
+                        android:fontFamily="sans-serif-medium" />
                 </LinearLayout>
+
+                <!-- THE NUMBER. Big on purpose: a figure that climbs is the proof, and it has to
+                     be readable from arm's length on a counter. -->
+                <TextView
+                    android:id="@+id/heroCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="0"
+                    android:textColor="@color/on_surface"
+                    android:textSize="52sp"
+                    android:textStyle="bold"
+                    android:includeFontPadding="false"
+                    android:fontFamily="sans-serif-medium" />
+                <TextView
+                    android:id="@+id/heroCountLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="payments captured today"
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="13sp" />
+                <TextView
+                    android:id="@+id/heroLast"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="last — none yet"
+                    android:textColor="@color/brand"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <!-- WHO / WHICH APP / POWER / QUEUE — the four facts whose absence let a typo'd
+                     merchant code and a wrong-app binding run unnoticed for hours. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="5dp"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_stat_tile"
+                        android:padding="11dp">
+                        <TextView style="@style/StatKey" android:text="COLLECTING FOR" />
+                        <TextView android:id="@+id/statMerchant" style="@style/StatVal" android:text="—" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="5dp"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_stat_tile"
+                        android:padding="11dp">
+                        <TextView style="@style/StatKey" android:text="READING" />
+                        <TextView android:id="@+id/statVia" style="@style/StatVal" android:text="—" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="5dp"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_stat_tile"
+                        android:padding="11dp">
+                        <TextView style="@style/StatKey" android:text="POWER" />
+                        <TextView android:id="@+id/statPower" style="@style/StatVal" android:text="—" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="5dp"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_stat_tile"
+                        android:padding="11dp">
+                        <TextView style="@style/StatKey" android:text="QUEUE" />
+                        <TextView android:id="@+id/statQueue" style="@style/StatVal" android:text="—" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- The one instruction that matters, shown only when it applies. -->
                 <TextView
                     android:id="@+id/heroDesc"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Grant the permissions below to start forwarding."
+                    android:layout_marginTop="14dp"
+                    android:text="Grant the permissions below to start."
                     android:textColor="@color/on_surface_variant"
-                    android:textSize="13sp" />
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginVertical="14dp"
-                    android:background="@color/outline" />
+                    android:textSize="13sp"
+                    android:lineSpacingExtra="2dp" />
+
+                <!-- Diagnostics, demoted: needed when something is wrong, noise when it is not. -->
                 <TextView
                     android:id="@+id/details"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
                     android:fontFamily="monospace"
                     android:textColor="@color/on_surface_variant"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="3dp" />
+                    android:textSize="11sp"
+                    android:alpha="0.75"
+                    android:lineSpacingExtra="2dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

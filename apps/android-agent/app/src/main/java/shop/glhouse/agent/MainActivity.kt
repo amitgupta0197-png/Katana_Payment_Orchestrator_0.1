@@ -274,9 +274,12 @@ class MainActivity : AppCompatActivity() {
             else -> "Capturing" to R.color.success
         }
         val stateColor = ContextCompat.getColor(this, colorRes)
-        b.heroTitle.text = title
+        b.heroTitle.text = title.uppercase()
         b.heroTitle.setTextColor(stateColor)
         b.heroDot.setColorFilter(stateColor)
+        // The pill is tinted from the same colour at low alpha, so state reads before the words.
+        b.heroPill.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            (stateColor and 0x00FFFFFF) or 0x24000000)
 
         // WHO this phone collects for, and THROUGH WHICH APP — the two facts that were nowhere on
         // screen while a merchant code typo ("GUFFI-01 hu") and a Paytm/PhonePe merchant mix-up
@@ -286,7 +289,10 @@ class MainActivity : AppCompatActivity() {
             !permissionsOk -> "Grant the permissions below to start."
             app == null -> "Turn on the payment app you receive money on, below."
             !Prefs.autoCapture(this) -> "Turn Auto-capture back on to resume reading RRNs."
-            else -> "$who · via ${labelFor(app)}"
+            // The engines read the PAYMENT APP, not this screen — so while the merchant is
+            // looking at the agent, nothing is being captured. This phone idled for an hour that
+            // way on 2026-08-22 with every indicator green.
+            else -> "Leave ${labelFor(app)} open on screen — capture reads it there."
         }
 
         val merchant = Prefs.merchantCode(this).ifBlank { "—" }
@@ -315,20 +321,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val charging = ScreenAwake.isCharging(this)
-        b.details.text = buildString {
-            append("Captured   ").append(today).append(" today · last ").append(lastLabel).append('\n')
-            append("Power      ").append(if (charging) "plugged in" else "ON BATTERY — screen will sleep").append('\n')
-            append("Merchant   ").append(mLabel).append('\n')
-            append("Device     ").append(Prefs.deviceId(this@MainActivity)).append('\n')
-            append("Version    ").append(BuildConfig.VERSION_NAME).append('\n')
-            append("Queued     ").append(OutboxStore.size(this@MainActivity)).append(" pending retry")
-        }
+        val queued = OutboxStore.size(this)
 
-        // A REMINDER THIS SCREEN IS NOT THE ONE THAT CAPTURES. The engines read the payment app,
-        // so while the merchant is looking at the agent nothing is being captured — which is
-        // exactly how this phone idled for an hour on 2026-08-22.
-        if (armed && app != null) {
-            b.heroDesc.text = "${b.heroDesc.text}\nOpen ${labelFor(app)} and leave it on screen — capture reads it there."
+        b.heroCount.text = today.toString()
+        b.heroCount.setTextColor(ContextCompat.getColor(this, if (today > 0) R.color.on_surface else R.color.on_surface_variant))
+        b.heroCountLabel.text = if (today == 1) "payment captured today" else "payments captured today"
+        b.heroLast.text = if (last <= 0L) "no captures yet on this phone" else "last $lastLabel"
+        b.heroLast.setTextColor(ContextCompat.getColor(this, if (last <= 0L) R.color.on_surface_variant else R.color.brand))
+
+        b.statMerchant.text = who
+        b.statVia.text = app?.let { labelFor(it).removeSuffix(" Business").removeSuffix(" for Business") } ?: "none selected"
+        b.statPower.text = if (charging) "Plugged in" else "On battery"
+        b.statPower.setTextColor(ContextCompat.getColor(this, if (charging) R.color.on_surface else R.color.warning))
+        b.statQueue.text = if (queued == 0) "Clear" else "$queued pending"
+        b.statQueue.setTextColor(ContextCompat.getColor(this, if (queued == 0) R.color.on_surface else R.color.warning))
+
+        // Diagnostics, demoted: needed when something is wrong, noise when it is not.
+        b.details.text = buildString {
+            append("Merchant  ").append(mLabel).append('\n')
+            append("Device    ").append(Prefs.deviceId(this@MainActivity)).append('\n')
+            append("Endpoint  ").append(Prefs.baseUrl(this@MainActivity)).append('\n')
+            append("Version   ").append(BuildConfig.VERSION_NAME)
+            if (!charging) append('\n').append("⚠ Not charging — the screen will sleep and capture stops with it.")
         }
     }
 
