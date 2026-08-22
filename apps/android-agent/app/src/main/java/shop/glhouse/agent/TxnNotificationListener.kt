@@ -89,6 +89,24 @@ class TxnNotificationListener : NotificationListenerService() {
         // What that push DOES carry is an intent to the payment that just arrived, which is all
         // the capture engine needs. The amount, payer and RRN then come off the detail screen —
         // richer than any notification would have been.
+        // A PAYMENT APP THE MERCHANT SWITCHED OFF MUST BE OFF EVERYWHERE.
+        //
+        // The PAYMENT APPS toggles used to gate only the on-screen capture engines, while this
+        // listener forwarded any credit push it could parse. So a phone with Paytm and GPay
+        // switched off still ingested their notifications — as UTR-less "awaiting RRN" rows,
+        // stamped with whatever banker code the phone carried. On 2026-08-22 that put Google Pay
+        // credits on a banker who only runs PhonePe, money that belongs to a different merchant
+        // entirely and can never be reconciled because a push carries no RRN.
+        //
+        // Only apps we recognise are gated. A bank SMS or an unknown sender is not a "payment
+        // app" the UI offers a switch for, so it keeps working exactly as before — the toggles
+        // must not quietly become a filter on everything.
+        val fromApp = appForPackage(sbn.packageName)
+        if (fromApp != null && !Prefs.captureAppOn(applicationContext, fromApp)) {
+            AlertStore.log(applicationContext, "${nowTag()} ⏭️ ${fromApp.lowercase()} is switched off — ignoring its notification")
+            return
+        }
+
         maybeTriggerCapture(sbn, content)
 
         val txn = TxnParser.parse(content, sbn.packageName)
@@ -124,6 +142,18 @@ class TxnNotificationListener : NotificationListenerService() {
             Prefs.bump(applicationContext, "uploaded")
             AlertUploader.send(applicationContext, txn, "NOTIFICATION", sbn.packageName)
         }
+    }
+
+    /**
+     * The PAYMENT APPS switch this notification belongs to, or null when the sender is not one
+     * of them (a bank SMS app, a wallet, anything the UI offers no switch for).
+     */
+    private fun appForPackage(pkg: String?): String? = when (pkg) {
+        RrnAccessibilityService.GPAY_PKG -> Prefs.APP_GPAY
+        "com.paytm.business", "net.one97.paytm.merchant" -> Prefs.APP_PAYTM
+        "com.phonepe.app.business" -> Prefs.APP_PHONEPE
+        "com.apbl.merchant" -> Prefs.APP_AIRTEL
+        else -> null
     }
 
     /**

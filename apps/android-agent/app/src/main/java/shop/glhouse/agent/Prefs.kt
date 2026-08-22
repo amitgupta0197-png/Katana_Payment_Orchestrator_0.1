@@ -137,6 +137,20 @@ object Prefs {
         sp(ctx).edit().putStringSet("capture_apps", next).apply()
     }
 
+    /**
+     * ONE PHONE, ONE PAYMENT APP.
+     *
+     * Attribution is a single merchant code per phone, so a phone watching two payment apps can
+     * only be right about one of them. That is not hypothetical: on 2026-08-22 one device ran
+     * Paytm for A V TEXTILEHUB and PhonePe for Bharat Roots, and every capture was stamped with
+     * whichever code was set — 51 payments had to be re-pointed by hand, twice. Turning one app
+     * on therefore turns the others off, so the wrong-merchant state cannot be reached from the
+     * UI at all.
+     */
+    fun setCaptureAppExclusive(ctx: Context, app: String) {
+        sp(ctx).edit().putStringSet("capture_apps", setOf(app)).apply()
+    }
+
     // Keep the screen awake so the accessibility engine can keep reading the Paytm screen
     // on a dedicated capture phone (the screen must be on for on-device RRN capture).
     // Implemented via an invisible FLAG_KEEP_SCREEN_ON overlay ([ScreenAwake]); needs the

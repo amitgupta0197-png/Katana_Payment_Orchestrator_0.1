@@ -159,10 +159,37 @@ class MainActivity : AppCompatActivity() {
     // Toggle a payment app's capture engine; warn when the merchant turns everything
     // off (screen capture then sits idle) and re-report the selection to the server.
     private fun setCaptureApp(app: String, on: Boolean) {
-        Prefs.setCaptureApp(this, app, on)
+        // Exactly one app may be on — see Prefs.setCaptureAppExclusive for why.
+        if (on) Prefs.setCaptureAppExclusive(this, app) else Prefs.setCaptureApp(this, app, false)
+        syncAppSwitches()
         if (Prefs.captureApps(this).isEmpty())
-            toast("No payment app selected — on-screen RRN capture is paused")
+            toast("No payment app selected — capture is paused")
+        else if (on) toast("Capturing ${labelFor(app)} only")
         if (Prefs.enabled(this)) AlertUploader.heartbeat(this, notifAccessGranted())
+    }
+
+    private fun labelFor(app: String) = when (app) {
+        Prefs.APP_PAYTM -> "Paytm for Business"
+        Prefs.APP_AIRTEL -> "Airtel Merchant"
+        Prefs.APP_GPAY -> "Google Pay Business"
+        Prefs.APP_PHONEPE -> "PhonePe Business"
+        else -> app
+    }
+
+    /**
+     * Redraw the switches from the stored set WITHOUT re-entering setCaptureApp — assigning
+     * isChecked fires the listener, which would write again and recurse.
+     */
+    private fun syncAppSwitches() {
+        val pairs = listOf(
+            b.appPaytmSwitch to Prefs.APP_PAYTM,
+            b.appAirtelSwitch to Prefs.APP_AIRTEL,
+            b.appGpaySwitch to Prefs.APP_GPAY,
+            b.appPhonepeSwitch to Prefs.APP_PHONEPE,
+        )
+        pairs.forEach { (sw, _) -> sw.setOnCheckedChangeListener(null) }
+        pairs.forEach { (sw, app) -> sw.isChecked = Prefs.captureAppOn(this, app) }
+        pairs.forEach { (sw, app) -> sw.setOnCheckedChangeListener { _, v -> setCaptureApp(app, v) } }
     }
 
     private fun requestRuntimePerms() {
