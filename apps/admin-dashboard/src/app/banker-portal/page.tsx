@@ -18,6 +18,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { MerchantPortalAgentCard } from "@/components/merchant/portal-agent";
+import { CollectionsHero } from "@/components/credits/collections-hero";
 import { MerchantCharts } from "@/components/merchant/portal-charts";
 import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
@@ -127,7 +128,14 @@ export default function MerchantDashboard() {
         </div>
       )}
 
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Today</h2>
+      {/* COLLECTIONS FIRST. The tiles below measure gateway rails; a banker collecting on a UPI
+          QR has none, so they read zero all day while real money arrives — 535 payments and
+          Rs9,71,707 against a dashboard of zeros (GUFFI-01, 2026-08-22). */}
+      <CollectionsHero />
+
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
+        Gateway &amp; checkout
+      </h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Pay-ins" value={formatAmount(todayPayin)} sublabel={`${todayOrders.length} txns`} icon={CreditCard} loading={txnsLoading} href="/banker-portal/transactions" />
         <KpiTile label="Success rate" value={successRate === null ? "—" : `${successRate}%`} sublabel={`${todayFailed} failed`} variant={successRate === null ? "default" : successRate >= 99 ? "success" : successRate >= 95 ? "default" : successRate >= 90 ? "warning" : "danger"} loading={txnsLoading} href="/banker-portal/transactions?f=failed" />
