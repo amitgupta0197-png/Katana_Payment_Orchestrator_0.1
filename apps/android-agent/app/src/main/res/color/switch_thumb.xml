@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Off reads as a solid, deliberate grey knob rather than the default's murky blob. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/brand_on" android:state_checked="true" />
+    <item android:color="@color/thumb_off" />
+</selector>

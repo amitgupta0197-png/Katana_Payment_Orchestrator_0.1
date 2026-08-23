@@ -1,5 +1,8 @@
 <resources>
-    <!-- Neon accent (used sparingly) -->
+    <!-- Neon accent. Spent deliberately: live status, the ONE primary action, and an active
+         toggle. Everything that merely labels or supports is grey — an accent on every element
+         is an accent on nothing, which is what made six teal section headers compete with the
+         one teal button that mattered. -->
     <color name="brand">#35E9D8</color>
     <color name="brand_on">#04211E</color>
     <color name="brand_container">#0C2A2A</color>
@@ -14,6 +17,17 @@
     <color name="outline">#1E2C44</color>
     <color name="on_surface">#E7F0FF</color>
     <color name="on_surface_variant">#8595B4</color>
+
+    <!-- Hairline between rows INSIDE a card: quieter than the card's own outline so a row
+         boundary never reads as loud as the card boundary that contains it. -->
+    <color name="divider">#172438</color>
+    <!-- Inset well (stat tiles, the activity console): darker than the card it sits in, so a
+         recessed surface reads as recessed instead of as another card. -->
+    <color name="inset">#0B1424</color>
+
+    <!-- Switch: the off state has to look deliberately off, not dead. -->
+    <color name="track_off">#18243A</color>
+    <color name="thumb_off">#5A6C8C</color>
 
     <color name="success">#3FE0A0</color>
     <color name="warning">#FBBF24</color>

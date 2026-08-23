@@ -1,14 +1,29 @@
 <resources>
+
+    <!-- ============================================================================
+         SPACING SCALE. Everything below snaps to 4dp steps (4/8/12/16/20/24) and
+         corners to three tiers: card 20dp, inset well 14dp, control 12dp. The screen
+         previously mixed 2/3/5/6/10/11/12/14/16/18/20/22dp margins and four corner
+         radii, which is the kind of drift no single element looks wrong for and the
+         whole screen looks unresolved because of.
+         ============================================================================ -->
+
+    <!-- Section header. Grey text with a teal tick: the mark keeps the neon identity,
+         the grey stops six headers competing with the one accent-coloured control that
+         actually wants the eye. -->
     <style name="SectionLabel">
-        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">20dp</item>
+        <item name="android:layout_marginTop">24dp</item>
         <item name="android:layout_marginStart">4dp</item>
-        <item name="android:layout_marginBottom">8dp</item>
-        <item name="android:textColor">@color/brand</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:drawableStart">@drawable/bg_label_tick</item>
+        <item name="android:drawablePadding">10dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:textColor">@color/on_surface_variant</item>
         <item name="android:textSize">11sp</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:letterSpacing">0.18</item>
+        <item name="android:letterSpacing">0.16</item>
         <item name="android:textAllCaps">true</item>
     </style>
 
@@ -19,7 +34,17 @@
         <item name="strokeColor">@color/outline</item>
         <item name="strokeWidth">1dp</item>
         <item name="cardElevation">0dp</item>
-        <item name="cardCornerRadius">18dp</item>
+        <item name="cardCornerRadius">20dp</item>
+    </style>
+
+    <!-- Hairline between rows within a card. Inset from the card edge so it separates the
+         rows without cutting the card in half. -->
+    <style name="RowDivider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:layout_marginEnd">16dp</item>
+        <item name="android:background">@color/divider</item>
     </style>
 
     <style name="PermRow">
@@ -27,12 +52,13 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">horizontal</item>
         <item name="android:gravity">center_vertical</item>
-        <item name="android:padding">10dp</item>
+        <item name="android:paddingHorizontal">12dp</item>
+        <item name="android:paddingVertical">14dp</item>
     </style>
     <style name="PermIcon">
-        <item name="android:layout_width">38dp</item>
-        <item name="android:layout_height">38dp</item>
-        <item name="android:padding">9dp</item>
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:padding">10dp</item>
         <item name="android:background">@drawable/bg_icon_circle</item>
     </style>
     <style name="PermText">
@@ -40,8 +66,10 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
         <item name="android:layout_marginStart">14dp</item>
+        <item name="android:layout_marginEnd">12dp</item>
         <item name="android:orientation">vertical</item>
     </style>
+
     <!-- One cell of the hero's at-a-glance grid: a quiet key over a legible value. -->
     <style name="StatKey">
         <item name="android:layout_width">wrap_content</item>
@@ -49,34 +77,40 @@
         <item name="android:textColor">@color/on_surface_variant</item>
         <item name="android:textSize">10sp</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:letterSpacing">0.10</item>
+        <item name="android:letterSpacing">0.12</item>
     </style>
     <style name="StatVal">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:layout_marginTop">4dp</item>
         <item name="android:textColor">@color/on_surface</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:maxLines">1</item>
         <item name="android:ellipsize">end</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
+    <!-- Row title carries medium weight so the title/sub pair separates by WEIGHT rather than
+         only by colour — the previous pair was regular-on-regular and leaned entirely on a
+         grey that dark-mode dimming already eats into. -->
     <style name="PermTitle">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/on_surface</item>
         <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
     <style name="PermSub">
-        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
         <item name="android:textColor">@color/on_surface_variant</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
     </style>
     <style name="PermCheck">
-        <item name="android:layout_width">24dp</item>
-        <item name="android:layout_height">24dp</item>
+        <item name="android:layout_width">22dp</item>
+        <item name="android:layout_height">22dp</item>
         <item name="android:visibility">gone</item>
     </style>
     <style name="PermBtn" parent="Widget.Material3.Button.TonalButton">
@@ -84,13 +118,51 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
+        <item name="android:paddingHorizontal">16dp</item>
         <item name="android:textSize">13sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="cornerRadius">12dp</item>
+    </style>
+
+    <!-- Switch. The stock dark off-state is a grey blob against a grey card; an explicit track,
+         thumb and decoration make OFF look chosen rather than broken. -->
+    <style name="SwitchKatana" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="thumbTint">@color/switch_thumb</item>
+        <item name="trackTint">@color/switch_track</item>
+        <item name="trackDecorationTint">@color/switch_track_decoration</item>
+    </style>
+
+    <!-- BUTTON HIERARCHY. Exactly one filled-brand button is allowed on screen (the hero's
+         "open the payment app", the only action that fixes the only failure that matters).
+         Every other action is tonal. Four identical neon pills gave the merchant no way to
+         tell the urgent action from the housekeeping one. -->
+    <style name="BtnPrimary" parent="Widget.Material3.Button">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">52dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:backgroundTint">@color/brand</item>
+        <item name="android:textColor">@color/brand_on</item>
+        <item name="cornerRadius">14dp</item>
+    </style>
+    <style name="BtnSecondary" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:backgroundTint">@color/brand_container</item>
+        <item name="android:textColor">@color/brand_on_container</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="iconTint">@color/brand_on_container</item>
     </style>
 
     <style name="Field" parent="Widget.Material3.TextInputLayout.OutlinedBox">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
         <item name="boxCornerRadiusTopStart">12dp</item>
         <item name="boxCornerRadiusTopEnd">12dp</item>
         <item name="boxCornerRadiusBottomStart">12dp</item>

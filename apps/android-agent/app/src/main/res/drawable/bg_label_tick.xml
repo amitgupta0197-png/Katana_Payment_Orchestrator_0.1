@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Teal tick set before each section label. Keeps the neon identity present as a MARK while
+     freeing the label text to be grey — so the accent stops competing with the accent-coloured
+     button underneath it. Sized here because drawableStart needs an intrinsic size. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <size android:width="3dp" android:height="12dp" />
+    <solid android:color="@color/brand" />
+    <corners android:radius="2dp" />
+</shape>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One cell of the at-a-glance grid (merchant / via / power / queue). Deliberately quieter than
-     the hero card it sits inside: these are supporting facts, not the headline. -->
+<!-- Recessed well for the activity log: darker than its card so the log reads as a console
+     pane, not as body copy that happens to be monospace. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
     <corners android:radius="14dp" />
     <solid android:color="@color/inset" />

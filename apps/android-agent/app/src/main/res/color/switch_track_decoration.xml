@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The track's outline: visible when off (gives the empty track an edge to read against the
+     card), suppressed when on (the brand fill is its own edge). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@android:color/transparent" android:state_checked="true" />
+    <item android:color="@color/outline" />
+</selector>
