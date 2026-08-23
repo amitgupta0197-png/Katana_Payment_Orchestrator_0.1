@@ -31,6 +31,7 @@ import {
   FileSearch,
   Briefcase,
   FileSpreadsheet,
+  QrCode,
   type LucideIcon,
 } from "lucide-react";
 
@@ -96,6 +97,7 @@ export const navItems: NavItem[] = [
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
   { href: "/merchants",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
   { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
+  { href: "/qr-switch",        label: "QR Operations",   icon: QrCode,   status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR"] },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   // Personas match the /api/statements gate — a link to an endpoint the viewer is refused by
   // is worse than no link.
