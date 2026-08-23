@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Katana — Static QR Switch — User Guide</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 14mm; }
+
+  :root{
+    --ink:#12181f;        /* body text */
+    --ink-2:#4a5765;      /* secondary */
+    --ink-3:#77879a;      /* tertiary */
+    --rule:#dfe5ec;
+    --rule-2:#eef2f6;
+    --accent:#0d7d72;     /* teal, print-safe. Used ONLY for role marks + the one CTA note */
+    --accent-bg:#e8f5f3;
+    --warn-bg:#fdf5e3;
+    --warn-rule:#e8c97a;
+    --stop-bg:#fdeeee;
+    --stop-rule:#e9b4b4;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; color:var(--ink); background:#fff;
+    font:10.5pt/1.55 -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1,h2,h3{ margin:0; font-weight:700; letter-spacing:-0.01em; }
+  p{ margin:0 0 .7em; }
+  code{ font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.88em;
+        background:var(--rule-2); padding:.1em .35em; border-radius:3px; }
+  strong{ font-weight:650; }
+
+  /* ── cover ─────────────────────────────────────────────── */
+  .cover{ page-break-after:always; padding-top:38mm; }
+  .eyebrow{ font-size:8.5pt; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+            color:var(--accent); margin-bottom:10mm; }
+  .cover h1{ font-size:30pt; line-height:1.1; margin-bottom:6mm; }
+  .cover .sub{ font-size:12pt; color:var(--ink-2); max-width:120mm; line-height:1.5; }
+  .cover .meta{ margin-top:24mm; border-top:1px solid var(--rule); padding-top:5mm;
+                display:flex; gap:14mm; font-size:9pt; }
+  .cover .meta div span{ display:block; color:var(--ink-3); font-size:7.5pt;
+                         text-transform:uppercase; letter-spacing:.1em; margin-bottom:1.5mm; }
+
+  /* ── sections ──────────────────────────────────────────── */
+  section{ page-break-inside:auto; }
+  h2{ font-size:15pt; margin:9mm 0 3mm; padding-bottom:2mm; border-bottom:2px solid var(--ink);
+      page-break-after:avoid; }
+  h2 .n{ color:var(--accent); margin-right:2.5mm; }
+  h3{ font-size:11pt; margin:6mm 0 2mm; page-break-after:avoid; }
+  .lede{ color:var(--ink-2); margin-bottom:4mm; }
+
+  /* ── tables ────────────────────────────────────────────── */
+  table{ width:100%; border-collapse:collapse; margin:3mm 0 5mm; font-size:9.5pt;
+         page-break-inside:avoid; }
+  th{ text-align:left; font-size:7.5pt; text-transform:uppercase; letter-spacing:.09em;
+      color:var(--ink-3); border-bottom:1.5px solid var(--rule); padding:0 3mm 1.5mm 0;
+      font-weight:700; }
+  td{ padding:2.2mm 3mm 2.2mm 0; border-bottom:1px solid var(--rule-2); vertical-align:top; }
+  td:last-child, th:last-child{ padding-right:0; }
+  tr{ page-break-inside:avoid; }
+
+  /* ── numbered steps ────────────────────────────────────── */
+  .steps{ counter-reset:s; margin:3mm 0 5mm; padding:0; list-style:none; }
+  .steps li{ counter-increment:s; position:relative; padding:0 0 4mm 11mm;
+             page-break-inside:avoid; }
+  .steps li::before{
+    content:counter(s); position:absolute; left:0; top:-0.4mm;
+    width:7mm; height:7mm; border-radius:50%; background:var(--accent); color:#fff;
+    font-size:9pt; font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  .steps li > b:first-child{ display:block; margin-bottom:.6mm; }
+  .steps .where{ font-size:8.5pt; color:var(--ink-3); }
+
+  /* ── callouts ──────────────────────────────────────────── */
+  .note, .warn, .stop{ padding:3.5mm 4mm; margin:4mm 0; border-left:3px solid;
+                       page-break-inside:avoid; font-size:9.5pt; }
+  .note{ background:var(--accent-bg); border-color:var(--accent); }
+  .warn{ background:var(--warn-bg); border-color:var(--warn-rule); }
+  .stop{ background:var(--stop-bg); border-color:var(--stop-rule); }
+  .note p:last-child, .warn p:last-child, .stop p:last-child{ margin-bottom:0; }
+  .label{ font-size:7.5pt; font-weight:700; letter-spacing:.11em; text-transform:uppercase;
+          display:block; margin-bottom:1.5mm; }
+  .note .label{ color:var(--accent); }
+  .warn .label{ color:#8a6a12; }
+  .stop .label{ color:#a33; }
+
+  /* ── role band ─────────────────────────────────────────── */
+  .roles{ display:flex; gap:4mm; margin:4mm 0 6mm; page-break-inside:avoid; }
+  .role{ flex:1; border:1px solid var(--rule); border-radius:3mm; padding:4mm; }
+  .role h4{ margin:0 0 1.5mm; font-size:10.5pt; }
+  .role .who{ font-size:7.5pt; text-transform:uppercase; letter-spacing:.1em;
+              color:var(--accent); font-weight:700; margin-bottom:2mm; }
+  .role p{ font-size:9pt; color:var(--ink-2); margin:0; }
+
+  .path{ font-family:"SF Mono",Menlo,Consolas,monospace; font-size:9pt;
+         background:#12181f; color:#e8eef5; padding:2.5mm 3.5mm; border-radius:2mm;
+         display:inline-block; margin:1mm 0 3mm; }
+  .footer{ margin-top:6mm; padding-top:3mm; border-top:1px solid var(--rule);
+           font-size:8pt; color:var(--ink-3); }
+  .pb{ page-break-before:always; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="eyebrow">Katana Payment Orchestrator</div>
+  <h1>Static QR Switch</h1>
+  <p class="sub">How a banker moves a merchant store from one QR endpoint to another —
+  immediately, once, and with a record that cannot be edited afterwards.</p>
+  <div class="meta">
+    <div><span>Audience</span>Katana Admin · Banker</div>
+    <div><span>Applies to</span>katanapay.co</div>
+    <div><span>Version</span>Phase 1 · Aug 2026</div>
+  </div>
+</div>
+
+<section>
+<h2><span class="n">1</span>What this solves</h2>
+<p class="lede">Until now, the QR a store collects on existed only inside the banker's payment
+app. Changing it meant someone quietly swapping a printed code — no record of who changed what,
+when, or why, and no way to see which endpoint a store is actually live on.</p>
+<p>The QR Switch module makes that one action a first-class operation in Katana. A banker keeps a
+pool of its own QR endpoints, each store is allocated exactly one of them, and moving a store
+between them is a single click that is recorded, auditable and safe to retry.</p>
+
+<div class="roles">
+  <div class="role">
+    <div class="who">Katana Admin</div>
+    <h4>Sets it up</h4>
+    <p>Creates merchant stores, approves the QRs bankers submit, and allocates each store its
+    first endpoint.</p>
+  </div>
+  <div class="role">
+    <div class="who">Banker</div>
+    <h4>Runs it day to day</h4>
+    <p>Adds its own QRs, and switches any store it serves onto a different one of its QRs when
+    something goes wrong.</p>
+  </div>
+</div>
+</section>
+
+<section>
+<h2><span class="n">2</span>Before you start</h2>
+<table>
+  <tr><th style="width:38%">You need</th><th>Where it comes from</th></tr>
+  <tr><td><b>A Merchant</b></td><td>An existing record under <b>Merchants</b> in the admin sidebar.
+    Stores are created underneath one.</td></tr>
+  <tr><td><b>A banker code</b></td><td>The code of the banker that will collect the money —
+    e.g. <code>PRIMESX</code>. Visible under <b>Banker</b> in the admin sidebar.</td></tr>
+  <tr><td><b>At least two UPI IDs</b></td><td>For that same banker. One goes live on the store;
+    the second is what the banker switches to. See section 4.</td></tr>
+</table>
+</section>
+
+<section>
+<h2><span class="n">3</span>Admin — one-time setup</h2>
+<p class="lede">Everything in this section happens on one screen: <b>QR Operations</b>, in the
+admin sidebar under <i>Payment Management</i>.</p>
+<div class="path">katanapay.co/qr-switch</div>
+
+<ol class="steps">
+  <li>
+    <b>Create the store</b>
+    <div class="where">Stores tab → <b>New store</b></div>
+    Choose the Merchant it belongs to, then give it a store code (for example <code>S001</code>)
+    and a name such as “Mumbai Store 01”. City is optional. Store codes only need to be unique
+    within that merchant.
+  </li>
+  <li>
+    <b>Add the banker's first QR</b>
+    <div class="where">QR inventory tab → <b>Add QR</b></div>
+    Enter the banker code, the UPI ID the QR resolves to, and which payment app it belongs to
+    (Google Pay, PhonePe, Paytm, MobiKwik or Other). Settlement type, daily limit and a QR image
+    are optional. A QR you add as admin is <b>approved immediately</b>.
+  </li>
+  <li>
+    <b>Add a second QR for the same banker</b>
+    <div class="where">QR inventory tab → <b>Add QR</b></div>
+    This is the step most people skip. Without a spare, the banker will have nothing to switch to.
+  </li>
+  <li>
+    <b>Allocate the first endpoint</b>
+    <div class="where">Stores tab → <b>Allocate QR</b></div>
+    Pick one of the approved, free QRs. Whoever owns that QR becomes this store's banker, and the
+    store starts collecting on it.
+  </li>
+</ol>
+
+<div class="note">
+  <span class="label">Approving what bankers submit</span>
+  <p>Bankers can add their own QRs from their portal. Those arrive as <b>PENDING</b> and appear at
+  the top of your QR inventory list with <b>Approve</b> and <b>Reject</b> buttons. A QR cannot be
+  switched to until it is approved.</p>
+</div>
+</section>
+
+<section class="pb">
+<h2><span class="n">4</span>Banker — switching a store's QR</h2>
+<p class="lede">The banker signs in to its own portal and uses <b>QR switch</b>, the second item
+in the sidebar.</p>
+<div class="path">katanapay.co/banker-portal/qr-switch</div>
+
+<ol class="steps">
+  <li>
+    <b>Check the three counters at the top</b>
+    “Stores you collect for”, “QRs free to switch to”, and “Awaiting approval”. If the middle one
+    reads <b>0</b>, no switch is possible yet — add a QR and have it approved first.
+  </li>
+  <li>
+    <b>Find the store</b>
+    The table lists only stores your QRs are currently live on, with the merchant name, store
+    code, and the exact UPI ID that store is collecting on right now.
+  </li>
+  <li>
+    <b>Click Switch QR</b>
+    A confirmation opens showing the endpoint the store is leaving, spelled out in full.
+  </li>
+  <li>
+    <b>Pick the replacement and confirm</b>
+    Choose from your free approved QRs, optionally record a reason (“not scanning”, “limit
+    reached”, “settlement delayed”), then press <b>Switch now</b>.
+  </li>
+  <li>
+    <b>Confirm it took</b>
+    The row updates immediately to the new UPI ID. The QR you left returns to your pool, so you
+    can switch back to it at any time.
+  </li>
+</ol>
+
+<div class="warn">
+  <span class="label">The rule that trips everyone up</span>
+  <p><b>Switch QR</b> stays greyed out until that banker has a second approved, unallocated QR.
+  One QR means there is nothing to switch to. Hover the disabled button and it tells you exactly
+  that. Adding a QR is not enough on its own — an admin still has to approve it.</p>
+</div>
+
+<div class="note">
+  <span class="label">Adding your own QRs</span>
+  <p>On the same screen, <b>Add QR</b> puts a new UPI ID into your pool. It sits as <b>PENDING</b>
+  until a Katana admin approves it, then becomes available to switch to.</p>
+</div>
+</section>
+
+<section>
+<h2><span class="n">5</span>What the system will not let you do</h2>
+<p class="lede">Each of these refusals exists because the alternative silently misroutes real
+money. They fail loudly, with the reason on screen.</p>
+<table>
+  <tr><th style="width:42%">If you try to…</th><th>You will see</th></tr>
+  <tr><td>Switch onto <b>another banker's</b> QR</td>
+      <td>“Target QR belongs to another banker.” Cross-banker failover is a later phase; it is
+      blocked for admins too, not just bankers.</td></tr>
+  <tr><td>Switch a store you <b>don't serve</b></td>
+      <td>“This store is currently served by another banker.”</td></tr>
+  <tr><td>Switch to a <b>pending or rejected</b> QR</td>
+      <td>“Target QR is pending, not approved.”</td></tr>
+  <tr><td>Switch to a QR <b>already live</b> on another store</td>
+      <td>It will not appear in the list at all. One QR serves one store at a time.</td></tr>
+  <tr><td>Switch to the QR the store is <b>already on</b></td>
+      <td>“Store is already on this QR.”</td></tr>
+  <tr><td>Register a <b>UPI ID that already exists</b></td>
+      <td>“That UPI ID is already registered on another QR” — including under a different banker.</td></tr>
+  <tr><td><b>Reject or pause</b> a QR that is live</td>
+      <td>“Switch the store away before rejecting it.”</td></tr>
+</table>
+
+<div class="note">
+  <span class="label">Double-clicking is safe</span>
+  <p>Every switch carries an idempotency key. A double-click, a retried request or a refreshed
+  page returns the original switch rather than performing a second one — you will see
+  “Already switched — nothing changed”. If two people switch two different stores onto the same
+  free QR at the same instant, exactly one succeeds and the other is told the QR was just taken.</p>
+</div>
+</section>
+
+<section class="pb">
+<h2><span class="n">6</span>Status reference</h2>
+<p class="lede">A QR carries two independent statuses. They answer different questions, and one
+does not imply the other.</p>
+
+<h3>Approval status — may this QR be used at all?</h3>
+<table>
+  <tr><th style="width:26%">Status</th><th>Meaning</th></tr>
+  <tr><td><b>PENDING</b></td><td>A banker submitted it. Not usable until an admin approves it.</td></tr>
+  <tr><td><b>APPROVED</b></td><td>Cleared for use. Eligible to be switched to, if it is also free.</td></tr>
+  <tr><td><b>REJECTED</b></td><td>Refused by an admin, with a reason. Its UPI ID can be submitted again later.</td></tr>
+</table>
+
+<h3>Routing status — what is this QR doing right now?</h3>
+<table>
+  <tr><th style="width:26%">Status</th><th>Meaning</th></tr>
+  <tr><td><b>AVAILABLE</b></td><td>Free. This is what a switch candidate looks like.</td></tr>
+  <tr><td><b>ALLOCATED</b></td><td>Live on a store and collecting.</td></tr>
+  <tr><td><b>PAUSED</b></td><td>Taken out of the switch pool by an admin without withdrawing approval.</td></tr>
+</table>
+
+<div class="note">
+  <span class="label">Why two statuses</span>
+  <p>Approval is about eligibility; routing is about operation. Pausing an approved QR removes it
+  from switch candidates without re-opening the approval question, and un-pausing does not require
+  re-approval.</p>
+</div>
+</section>
+
+<section>
+<h2><span class="n">7</span>Troubleshooting</h2>
+<table>
+  <tr><th style="width:32%">Symptom</th><th style="width:34%">Cause</th><th>Fix</th></tr>
+  <tr><td>Switch QR button is greyed out</td>
+      <td>No second approved, free QR for this banker</td>
+      <td>Add a QR, then have an admin approve it</td></tr>
+  <tr><td>Banker's store list is empty</td>
+      <td>No store has been allocated to this banker yet</td>
+      <td>Admin allocates the first QR (section 3, step 4)</td></tr>
+  <tr><td>New QR does not appear as a choice</td>
+      <td>Still PENDING, or paused, or live on another store</td>
+      <td>Check its two statuses in QR inventory</td></tr>
+  <tr><td>“UPI ID is already registered”</td>
+      <td>That VPA exists on a non-rejected QR</td>
+      <td>Search QR inventory for it; reject the stale one first</td></tr>
+  <tr><td>Cannot reject or pause a QR</td>
+      <td>It is currently live on a store</td>
+      <td>Switch that store elsewhere, then retry</td></tr>
+  <tr><td>QR image will not upload</td>
+      <td>Wrong file type or over 8&nbsp;MB</td>
+      <td>PNG, JPEG or WEBP only. The image is optional — the QR record works without it</td></tr>
+</table>
+</section>
+
+<section>
+<h2><span class="n">8</span>Not in this phase</h2>
+<p class="lede">Stated plainly so nobody plans around something that is not there yet.</p>
+<table>
+  <tr><th style="width:38%">Capability</th><th>Status</th></tr>
+  <tr><td><b>Cross-banker failover</b></td>
+      <td>Not built. A store can only move between QRs of the banker already serving it.</td></tr>
+  <tr><td><b>Approval workflow for switches</b></td>
+      <td>Not built by design — a banker's click executes immediately. Every switch is fully
+      audited, but no admin gate stands in front of it.</td></tr>
+  <tr><td><b>Multiple live QRs per store</b></td>
+      <td>Not honoured. Exactly one endpoint per store is enforced.</td></tr>
+  <tr><td><b>Automatic switching on incidents</b></td>
+      <td>Not built. Incident capture, health scoring and automatic replacement selection are
+      later phases of the BRD.</td></tr>
+  <tr><td><b>Merchant-facing notification</b></td>
+      <td>Not built. The merchant is not told when its store's endpoint changes.</td></tr>
+</table>
+
+<div class="stop">
+  <span class="label">Important</span>
+  <p>A switch changes where money lands. It takes effect the moment it is confirmed, with no
+  approval step and no undo prompt — switching back is itself another switch. Record a reason:
+  it is the only context anyone reviewing the history will have.</p>
+</div>
+</section>
+
+<p class="footer">Katana Payment Orchestrator · Static QR Switch, Phase 1 · Modules 01, 02, 05 and 08
+of the Static QR Operations &amp; Switch Model BRD. Every switch is recorded in an immutable
+history with the actor, both endpoints, the reason and the timestamp.</p>
+
+</body>
+</html>
