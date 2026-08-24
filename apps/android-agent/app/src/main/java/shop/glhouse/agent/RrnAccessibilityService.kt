@@ -249,6 +249,10 @@ class RrnAccessibilityService : AccessibilityService() {
         // seconds. So the engine walks the list itself. It is cheap — a flatten and a regex per
         // screen, no row is ever opened — which is why it can afford to run often.
         private const val PP_SWEEP_INTERVAL_MS = 25_000L
+        // HOW LONG TO WAIT FOR A REFRESH TO COME BACK. The pull fires a network fetch, so the
+        // new rows are not on screen when the gesture completes — reading immediately re-reads
+        // the same stale list and concludes, wrongly, that nothing arrived.
+        private const val PP_REFRESH_WAIT_MS = 2_500L
         // The ROUTINE sweep only has to reach rows a burst pushed below the fold seconds ago, so
         // it stays shallow and cheap — it runs every 25 seconds all day.
         private const val PP_MAX_SCROLLS = 12
@@ -807,7 +811,11 @@ class RrnAccessibilityService : AccessibilityService() {
         if (ppRewinding > 0) {
             ppRewinding--
             swipeDown { }
-            if (ppRewinding == 0) { ppSweeping = false; Log.d(TAG, "phonepe: sweep done, back at the top of the list") }
+            // BACK AT THE TOP IS NOT THE SAME AS UP TO DATE. See ppPullToRefresh.
+            if (ppRewinding == 0) {
+                Log.d(TAG, "phonepe: sweep done, back at the top of the list")
+                ppPullToRefresh()
+            }
             return
         }
         if (capturedThisScreen > 0) ppDryScreens = 0 else ppDryScreens++
@@ -840,6 +848,47 @@ class RrnAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: run { ppSweeping = false; return }
         if (root.packageName?.toString() != "com.phonepe.app.business") { ppSweeping = false; return }
         handlePhonePe(root)
+    }
+
+    /**
+     * PULL THE LIST DOWN. Without this the engine walks a snapshot.
+     *
+     * PhonePe fetches the History list once, when the screen is opened, and then leaves it
+     * alone: scrolling only pages BACKWARDS through rows it already holds, so a payment that
+     * arrives while the screen is up never appears at all. The merchant testing the app on
+     * 2026-08-24 found the same thing from the other side — nothing reached the dashboard
+     * unless he pulled the list down by hand first.
+     *
+     * The rewind swipe does not do it. That one is a 250ms fling starting mid-screen, which
+     * scrolls the list back to the top but never arms the refresh; a pull-to-refresh needs the
+     * list already at rest and then a slow, sustained drag. Hence a separate, deliberately slow
+     * gesture (700ms over half the screen) issued only once the rewind has finished.
+     *
+     * Kept clear of both ends of the screen: it starts below the Date Range / Filters chips so
+     * it cannot drag one of those, and stops short of the bottom navigation bar.
+     */
+    private fun ppPullToRefresh() {
+        val dm = resources.displayMetrics
+        val x = dm.widthPixels / 2f
+        val path = Path().apply {
+            moveTo(x, dm.heightPixels * 0.32f)
+            lineTo(x, dm.heightPixels * 0.78f)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 700))
+            .build()
+        val after = Runnable {
+            ppSweeping = false
+            val root = rootInActiveWindow ?: return@Runnable
+            if (root.packageName?.toString() != "com.phonepe.app.business") return@Runnable
+            Log.d(TAG, "phonepe: refreshed, re-reading the top of the list")
+            handlePhonePe(root)
+        }
+        val cb = object : GestureResultCallback() {
+            override fun onCompleted(d: GestureDescription?) { main.postDelayed(after, PP_REFRESH_WAIT_MS) }
+            override fun onCancelled(d: GestureDescription?) { main.postDelayed(after, PP_REFRESH_WAIT_MS) }
+        }
+        if (!dispatchGesture(gesture, cb, null)) main.postDelayed(after, PP_REFRESH_WAIT_MS)
     }
 
     private fun handleAirtel(root: AccessibilityNodeInfo) {
