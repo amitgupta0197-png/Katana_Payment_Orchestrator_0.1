@@ -99,18 +99,33 @@ const LEGACY_SETTLEMENT_RAW =
   `(COALESCE(raw,'') ILIKE '%settled to your bank%' OR COALESCE(raw,'') ILIKE '%transactions settled%' OR COALESCE(raw,'') ILIKE '%airtel-settlement%')`;
 
 /**
- * Rows that are real collected money: not a second sighting of one payment (DUPLICATE) and
- * not a settlement leg. Use in every credit feed, KPI, and statement query.
+ * Rows that are real collected money: not a second sighting of one payment (DUPLICATE), not
+ * a payment that never completed (NOT_COMPLETED), and not a settlement leg. Use in every
+ * credit feed, KPI, and statement query.
+ *
+ * NOT_COMPLETED exists because a screen-read cannot see what the screen does not print.
+ * PhonePe's History row states time, payer, amount and UTR — but NOT status, so Pending,
+ * Failed and Cancelled payments are indistinguishable from successful ones to the agent and
+ * were all recorded as collected money. On 2026-08-24 one branch showed Rs39,966 against a
+ * true Completed total of Rs16,241: a 2.4x over-report of money that never arrived.
+ *
+ * Marking such a row NOT_COMPLETED keeps the evidence (amount, UTR, payer all intact) while
+ * removing it from every money total at once. Like DUPLICATE, such a row appears in neither
+ * this list nor IS_SETTLEMENT — it is deliberately out of both, because it is not money.
  */
 export const IS_COLLECTION =
-  `COALESCE(outcome,'') <> 'DUPLICATE'
+  `COALESCE(outcome,'') NOT IN ('DUPLICATE','NOT_COMPLETED')
    AND COALESCE(txn_type,'CREDIT') <> '${SETTLEMENT_TXN_TYPE}'
    AND NOT ${LEGACY_SETTLEMENT_RAW}`;
 
 /**
  * The settlement legs themselves — what the "Settled to bank" list shows. Mirrors
- * IS_COLLECTION exactly, so every stored credit appears in one list or the other and none
- * can fall between them.
+ * IS_COLLECTION on txn_type, so every stored credit that IS money appears in one list or
+ * the other and none can fall between them.
+ *
+ * The two deliberate exceptions are the rows IS_COLLECTION rejects on `outcome`: a
+ * DUPLICATE and a NOT_COMPLETED row belong to neither list, because neither is money that
+ * arrived once. They remain queryable by id and outcome for audit.
  */
 export const IS_SETTLEMENT =
   `(COALESCE(txn_type,'') = '${SETTLEMENT_TXN_TYPE}' OR ${LEGACY_SETTLEMENT_RAW})`;
