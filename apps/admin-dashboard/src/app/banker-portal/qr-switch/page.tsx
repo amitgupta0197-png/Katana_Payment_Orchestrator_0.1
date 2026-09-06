@@ -23,9 +23,9 @@ import {
 } from "@/components/ui/dialog";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
-const PROVIDERS = ["GOOGLE_PAY", "PHONEPE", "PAYTM", "MOBIKWIK", "OTHER"] as const;
+const PROVIDERS = ["GOOGLE_PAY", "PHONEPE", "PAYTM", "MOBIKWIK", "BHARATPE", "OTHER"] as const;
 const PROVIDER_LABEL: Record<string, string> = {
-  GOOGLE_PAY: "Google Pay", PHONEPE: "PhonePe", PAYTM: "Paytm", MOBIKWIK: "MobiKwik", OTHER: "Other",
+  GOOGLE_PAY: "Google Pay", PHONEPE: "PhonePe", PAYTM: "Paytm", MOBIKWIK: "MobiKwik", BHARATPE: "BharatPe", OTHER: "Other",
 };
 
 interface StoreRow {

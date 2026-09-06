@@ -30,7 +30,7 @@ import {
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 const PROVIDER_LABEL: Record<string, string> = {
-  GOOGLE_PAY: "Google Pay", PHONEPE: "PhonePe", PAYTM: "Paytm", MOBIKWIK: "MobiKwik", OTHER: "Other",
+  GOOGLE_PAY: "Google Pay", PHONEPE: "PhonePe", PAYTM: "Paytm", MOBIKWIK: "MobiKwik", BHARATPE: "BharatPe", OTHER: "Other",
 };
 
 interface AdminQr {

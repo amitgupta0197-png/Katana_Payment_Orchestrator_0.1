@@ -21,7 +21,7 @@
 
 import { db, rows } from "@/lib/pg";
 
-export const QR_PROVIDERS = ["GOOGLE_PAY", "PHONEPE", "PAYTM", "MOBIKWIK", "OTHER"] as const;
+export const QR_PROVIDERS = ["GOOGLE_PAY", "PHONEPE", "PAYTM", "MOBIKWIK", "BHARATPE", "OTHER"] as const;
 export type QrProvider = (typeof QR_PROVIDERS)[number];
 
 export const SETTLEMENT_TYPES = ["INSTANT", "T1", "MANUAL"] as const;
@@ -36,6 +36,7 @@ export const PROVIDER_LABEL: Record<QrProvider, string> = {
   PHONEPE: "PhonePe",
   PAYTM: "Paytm",
   MOBIKWIK: "MobiKwik",
+  BHARATPE: "BharatPe",
   OTHER: "Other",
 };
 
