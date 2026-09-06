@@ -273,10 +273,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshState() {
         val sms = smsGranted(); val notif = notifAccessGranted(); val batt = batteryExempt()
+        val access = accessGranted()
         setRow(sms, b.smsCheck, b.smsBtn)
         setRow(notif, b.notifCheck, b.notifBtn)
         setRow(batt, b.batteryCheck, b.batteryBtn)
-        setRow(accessGranted(), b.accessCheck, b.accessBtn)
+        setRow(access, b.accessCheck, b.accessBtn)
         setRow(overlayGranted(), b.overlayCheck, b.overlayBtn)
 
         // WHAT THIS PHONE IS ACTUALLY DOING, IN THE FIRST LINE.
@@ -288,7 +289,12 @@ class MainActivity : AppCompatActivity() {
         // now names itself, and says what to do about it.
         val app = Prefs.captureApps(this).firstOrNull()
         val permissionsOk = Prefs.enabled(this) && (sms || notif)
-        val armed = permissionsOk && app != null && Prefs.autoCapture(this) && Prefs.merchantState(this) == 1
+        // `access` is in here because the RRN engines ARE the accessibility service. Without it
+        // the phone can still forward notification credits, but it can never read an RRN off a
+        // screen — so it is not armed, and the "open the payment app" shortcut below would be
+        // inviting the merchant to watch a screen nothing is reading.
+        val armed = permissionsOk && app != null && access &&
+            Prefs.autoCapture(this) && Prefs.merchantState(this) == 1
 
         // A CODE THE SERVER HAS NOT CONFIRMED IS NOT A DESTINATION.
         //
@@ -306,6 +312,19 @@ class MainActivity : AppCompatActivity() {
             Prefs.merchantState(this) == -1 -> "Merchant code not recognised" to R.color.danger
             !codeVerified -> "Merchant code unverified" to R.color.warning
             app == null -> "No payment app selected" to R.color.warning
+            // THE ENGINES ARE THE ACCESSIBILITY SERVICE, AND AN UPDATE SWITCHES IT OFF.
+            //
+            // OxygenOS/ColorOS revokes the Accessibility grant when the app's versionCode
+            // changes — the same behaviour already noted at the auto-capture toggle for
+            // force-stop. Nothing up here knew that: `permissionsOk` is SMS-or-notification
+            // only, so on 2026-09-06 this phone read CAPTURING in green immediately after the
+            // v3.06 install had silently switched the screen reader off, in the one state where
+            // no RRN can ever be read. The merchant's only clue was an Enable button two cards
+            // further down, which is not a clue.
+            //
+            // Ranked above auto-capture because turning auto-capture off is something a person
+            // chose; this is something the phone did to them without asking.
+            !access -> "Screen reader off" to R.color.danger
             !Prefs.autoCapture(this) -> "Auto-capture is off" to R.color.warning
             else -> "Capturing" to R.color.success
         }
@@ -329,6 +348,8 @@ class MainActivity : AppCompatActivity() {
                     "captures are stamped with this code, so a wrong one sends money to the wrong banker."
             !codeVerified -> "Tap Save under CONNECTION to verify this code with the server."
             app == null -> "Turn on the payment app you receive money on, below."
+            !access -> "Updating the app switches this off. Tap Enable under RRN CAPTURE → " +
+                "Screen reader and turn Katana Agent on — no RRN can be read until you do."
             !Prefs.autoCapture(this) -> "Turn Auto-capture back on to resume reading RRNs."
             // The engines read the PAYMENT APP, not this screen — so while the merchant is
             // looking at the agent, nothing is being captured. This phone idled for an hour that
