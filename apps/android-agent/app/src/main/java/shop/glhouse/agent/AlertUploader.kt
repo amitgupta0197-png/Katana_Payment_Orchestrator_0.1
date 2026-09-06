@@ -224,6 +224,16 @@ object AlertUploader {
             // phone sleeps even with the preference on — and that is a different thing to tell
             // the merchant than "switch it on".
             put("charging", ScreenAwake.isCharging(ctx))
+            // IS THE SCREEN READER STILL ON? The RRN engines ARE the accessibility service, so
+            // without this grant the phone keeps forwarding notification credits — keeps
+            // heartbeating, keeps looking healthy — and can never read an RRN again.
+            //
+            // It is revoked without anyone choosing it: OxygenOS/ColorOS clear the grant on
+            // every versionCode change, so each release switches capture off on every phone
+            // that takes it until a person re-enables it by hand. Every other permission was
+            // already reported EXCEPT the one the engines depend on, which is how a
+            // post-update phone read "online · ready" while capturing nothing.
+            put("access_ok", RrnAccessibilityService.isEnabled(ctx))
             // Capture counters: how many notifications this phone has seen, parsed, and —
             // the number that matters — DROPPED because they looked like money but could
             // not be parsed. A phone with seen>0 and parsed=0 is deaf, and until now that

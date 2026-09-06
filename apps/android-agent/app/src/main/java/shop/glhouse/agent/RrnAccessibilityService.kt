@@ -332,6 +332,35 @@ class RrnAccessibilityService : AccessibilityService() {
             instance?.let { it.ppDeep = true; it.ppLastSweep = 0L; it.ppSweeping = false }
         }
 
+        /**
+         * Is this service actually switched on in Android Settings?
+         *
+         * Lives here rather than in MainActivity because the HEARTBEAT has to answer it too,
+         * from a background context with no Activity — and two copies of this check would
+         * drift, which matters: the screen and the server must never disagree about whether
+         * this phone can read an RRN.
+         *
+         * Not `instance != null`. A revoked service leaves its object alive for a while, so
+         * that would report healthy exactly when it is not; the system's own list is the
+         * only truthful source. The component is stored in either fully-qualified
+         * ("pkg/pkg.RrnAccessibilityService") or short ("pkg/.RrnAccessibilityService") form,
+         * so match on the parsed package + class rather than a raw string.
+         */
+        fun isEnabled(ctx: Context): Boolean {
+            val want = android.content.ComponentName(ctx, RrnAccessibilityService::class.java)
+            val enabled = try {
+                android.provider.Settings.Secure.getString(
+                    ctx.contentResolver,
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                )
+            } catch (e: Exception) { null } ?: ""
+            return enabled.split(':').any {
+                val cn = android.content.ComponentName.unflattenFromString(it) ?: return@any false
+                cn.packageName == want.packageName &&
+                    cn.className.trimStart('.').let { c -> c == want.className || want.className.endsWith(".$c") }
+            }
+        }
+
         const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
         @Volatile private var lastGpayLaunch = 0L
         // The list is stale at the moment the push arrives, so a notification-armed sweep

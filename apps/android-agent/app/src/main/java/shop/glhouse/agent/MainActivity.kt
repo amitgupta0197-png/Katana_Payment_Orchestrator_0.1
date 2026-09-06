@@ -251,20 +251,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun overlayGranted(): Boolean = Settings.canDrawOverlays(this)
 
-    private fun accessGranted(): Boolean {
-        // The system stores the component in either fully-qualified
-        // ("pkg/pkg.RrnAccessibilityService") or short ("pkg/.RrnAccessibilityService") form,
-        // so match on the parsed package + class rather than a raw string.
-        val want = ComponentName(this, RrnAccessibilityService::class.java)
-        val enabled = try {
-            Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-        } catch (e: Exception) { null } ?: ""
-        return enabled.split(':').any {
-            val cn = ComponentName.unflattenFromString(it) ?: return@any false
-            cn.packageName == want.packageName &&
-                cn.className.trimStart('.').let { c -> c == want.className || want.className.endsWith(".$c") }
-        }
-    }
+    // One implementation, in RrnAccessibilityService, because the heartbeat reports this to the
+    // server too — and a second copy here could drift, leaving the phone's own screen and the
+    // banker's dashboard disagreeing about whether this phone can read an RRN.
+    private fun accessGranted(): Boolean = RrnAccessibilityService.isEnabled(this)
 
     private fun setRow(granted: Boolean, check: View, btn: View) {
         check.visibility = if (granted) View.VISIBLE else View.GONE

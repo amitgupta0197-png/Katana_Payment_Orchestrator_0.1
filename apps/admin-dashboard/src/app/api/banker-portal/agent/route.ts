@@ -21,7 +21,7 @@ export async function GET() {
       SELECT device_id, COALESCE(label,'') AS label, status,
              notif_access, agent_enabled, COALESCE(app_version,'') AS app_version,
              COALESCE(capture_apps,'') AS capture_apps,
-             auto_capture, counters, keep_awake, overlay_ok, charging,
+             auto_capture, counters, keep_awake, overlay_ok, charging, access_ok,
              last_heartbeat,
              (last_heartbeat IS NOT NULL AND last_heartbeat >= now() - ($2 || ' seconds')::interval) AS online,
              created_at
@@ -48,7 +48,21 @@ export async function GET() {
       // On-screen RRN capture is paused on the device until a payment app is selected, so a
       // phone can be fully "permitted" and still never return an RRN. Surface that
       // separately rather than folding it into `permitted`, which gates alert forwarding.
-      rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0 && d.auto_capture === true,
+      // `access_ok !== false` rather than `=== true`: a phone on an agent older than v3.08 does
+      // not send the field, and a phone we cannot ask about must not be drawn as broken — the
+      // same rule screen_state follows below. Only a phone that actively reports the grant
+      // GONE is failed here.
+      rrn_capture_ready: (d.capture_apps ?? "").trim().length > 0 && d.auto_capture === true
+        && d.access_ok !== false,
+      // THE GRANT THE RRN ENGINES RUN ON, REPORTED SEPARATELY FROM WHY.
+      //
+      // Folded into rrn_capture_ready above so no screen can call a phone ready while it is
+      // deaf, but also surfaced on its own, because the fix is not the same: "select a payment
+      // app" is a tap in this portal, whereas this one can only be repaired by a person
+      // holding the phone, in Android Settings. It goes false on its own after every release
+      // (OxygenOS/ColorOS revoke it on a versionCode change — migration 0023), so on rollout
+      // day this is the worklist.
+      access_state: d.access_ok == null ? "unknown" : d.access_ok ? "granted" : "revoked",
       // WILL THIS PHONE'S SCREEN STAY ON? On-screen capture needs a live display, so a phone
       // that sleeps captures nothing — yet heartbeats, notification access and auto-capture all
       // stay green, which is exactly how a capture phone reads "online · ready" while being

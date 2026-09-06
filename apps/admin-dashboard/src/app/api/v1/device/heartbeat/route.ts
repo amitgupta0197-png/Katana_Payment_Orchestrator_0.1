@@ -32,6 +32,11 @@ const schema = z.object({
   keep_awake: z.boolean().optional(),
   overlay_ok: z.boolean().optional(),
   charging: z.boolean().optional(),
+  // Accessibility grant — the RRN engines ARE that service, so without it this phone can
+  // forward notification credits but can never read an RRN again. OxygenOS/ColorOS revoke it
+  // on every versionCode change, so it goes false on its own after each release and nobody
+  // chose it (see migration 0023). Absent from agents older than v3.08: null ≠ false.
+  access_ok: z.boolean().optional(),
   // Immutable per-install identity (see migration 0022). Distinguishes a renamed phone from
   // a second phone that typed the same device id.
   install_id: z.string().max(64).optional(),
@@ -141,8 +146,8 @@ export async function POST(req: Request) {
     }
 
     await rows("vendorGateway", `
-      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, counters, parser_version, keep_awake, overlay_ok, charging, install_id, last_heartbeat, updated_at)
-      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $15, $16, $17, $18, now(), now())
+      INSERT INTO vendor_devices (device_id, status, merchant_id, label, sim_id, app_hash, app_version, notif_access, agent_enabled, last_host, capture_apps, auto_capture, counters, parser_version, keep_awake, overlay_ok, charging, install_id, access_ok, last_heartbeat, updated_at)
+      VALUES ($1, 'UNKNOWN', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $15, $16, $17, $18, $19, now(), now())
       ON CONFLICT (device_id) DO UPDATE SET
         merchant_id = COALESCE($2, vendor_devices.merchant_id),
         label = COALESCE($3, vendor_devices.label),
@@ -162,6 +167,10 @@ export async function POST(req: Request) {
         overlay_ok = COALESCE($16, vendor_devices.overlay_ok),
         charging = COALESCE($17, vendor_devices.charging),
         install_id = COALESCE($18, vendor_devices.install_id),
+        -- COALESCEd like the other permissions: an old agent that omits the field must leave
+        -- the last known answer standing rather than blanking it. A NEW agent always sends a
+        -- real boolean, so a genuine revocation still writes false.
+        access_ok = COALESCE($19, vendor_devices.access_ok),
         -- Remember where the binding came from, so a move BACK is recognisable as two phones
         -- rather than one phone being re-enrolled. Only written when the code actually changes;
         -- an ordinary heartbeat must not overwrite the history with the current value.
@@ -172,7 +181,8 @@ export async function POST(req: Request) {
         body.app_version ?? null, body.notif_access ?? null, body.agent_enabled ?? null, host,
         body.capture_apps ?? null, body.auto_capture ?? null,
         counters ? JSON.stringify(counters) : null, body.parser_version ?? null, rebound,
-        body.keep_awake ?? null, body.overlay_ok ?? null, body.charging ?? null, body.install_id ?? null]);
+        body.keep_awake ?? null, body.overlay_ok ?? null, body.charging ?? null, body.install_id ?? null,
+        body.access_ok ?? null]);
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;

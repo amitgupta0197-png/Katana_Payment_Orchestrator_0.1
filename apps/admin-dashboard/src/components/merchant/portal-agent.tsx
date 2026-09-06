@@ -31,6 +31,8 @@ interface Device {
   // so a phone that sleeps captures nothing while every other indicator stays green.
   // "unknown" = an older agent that doesn't report it; say nothing rather than cry wolf.
   screen_state?: "stays_awake" | "may_sleep" | "overlay_missing" | "unplugged" | "unknown";
+  /** Accessibility grant. "unknown" = agent older than v3.08, which does not report it. */
+  access_state?: "granted" | "revoked" | "unknown";
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -165,7 +167,19 @@ export function MerchantPortalAgentCard() {
                 agent on one of them and give it a different device id.
               </div>
             )}
-            {!d.rrn_capture_ready && (
+            {d.access_state === "revoked" && (
+              <div className="mt-1.5 text-xs text-[color:var(--color-danger)]">
+                The screen reader is switched off on this phone, so no RRN can be captured — the
+                capture engine <em>is</em> that service. Updating the agent switches it off by
+                itself, so this is expected right after a new version and it will not come back
+                on its own. Open the agent on the phone, tap <strong>Enable</strong> under RRN
+                CAPTURE &rarr; Screen reader, and turn Katana Agent on. Payments still arrive and
+                are still forwarded meanwhile; only their RRN is missing.
+              </div>
+            )}
+            {/* Suppressed when the grant is the cause — the block above already says it, and
+                more precisely than this one's "turn on Accessibility for the agent". */}
+            {!d.rrn_capture_ready && d.access_state !== "revoked" && (
               <div className={`mt-1.5 text-xs ${MUTED}`}>
                 {d.auto_capture === false
                   ? <>Auto-capture is off on this phone, so &ldquo;Get RRN&rdquo; requests are received and then
