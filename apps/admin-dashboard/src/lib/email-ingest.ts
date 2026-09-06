@@ -147,10 +147,22 @@ const PAYMENT_SENDER_RE = /paytm|phonepe|razorpay|bharatpe|gpay|google\s*pay|npc
 // action), so "paid" counts as a credit here — safe because we only parse payment-
 // provider senders. Also covers "received/credited/added".
 const CREDIT_RE = /\b(received|credited|payment\s+received|you(?:'ve| have)?\s+received|added\s+to|\bpaid\b)\b/i;
-const AMOUNT_RE = /(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
+// BharatPe writes the amount as "Rs: 1.00", so the colon is allowed. The word boundary
+// in front of rs/inr comes with it: without one, "rs" matches inside a word and the colon
+// then completes it, so "hours: 24" would have read as ₹24.
+const AMOUNT_RE = /(?:₹|\brs\.?|\binr)\s*:?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
 const BALANCE_RE = /(?:avl\.?\s*bal|available\s*balance|balance)[:\s]*(?:₹|rs\.?|inr)?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i;
 const PAYER_NAME_RE = /\bfrom\s+((?:mr|mrs|ms|dr|m\/s)\.?\s+)?([a-z][a-z .&'-]{1,59}?)(?=\s*(?:$|[,.\n·—|(]|\bvia\b|\bon\b|\bupi\b|\bref\b|@))/i;
-const VPA_RE = /([a-z0-9._-]{2,}@[a-z]{2,})/i;
+// A payer VPA is a UPI handle (anil@okhdfcbank), not an email address — but the two are
+// the same shape to a regex, so the provider's OWN support address in the footer was being
+// recorded as the payer's VPA (observed on BharatPe: "care@bharatpe.com" → care@bharatpe).
+// What separates them is the dotted TLD after the @, which a UPI handle never has.
+//
+// Both lookaheads are load-bearing. `(?!\.[a-z]{2,})` alone is defeated by backtracking:
+// the engine gives back the "e" of "bharatpe", finds "e.com" doesn't start with a dot, and
+// happily returns "care@bharatp". `(?![a-z])` forces the handle to be matched whole first,
+// so the TLD test is applied to the real domain instead of a truncation of it.
+const VPA_RE = /\b([a-z0-9._-]{2,}@[a-z]{2,})(?![a-z])(?!\.[a-z]{2,})/i;
 // Our order id, echoed by Paytm/PhonePe as "Order ID: KP-…" (it's the UPI note we
 // attach). Exact match → no same-amount ambiguity.
 const ORDER_REF_RE = /order\s*(?:id|no|ref(?:erence)?)?[:\s#]+([A-Za-z][A-Za-z0-9-]{4,40})/i;
@@ -165,7 +177,88 @@ function toAmount(s: string | undefined | null): number | null {
   return Number.isFinite(v) && v > 0 ? v : null;
 }
 
-interface ParsedEmail { amount: number; payerName: string | null; payerVpa: string | null; orderRef: string | null; utr: string | null }
+interface ParsedEmail {
+  amount: number; payerName: string | null; payerVpa: string | null; orderRef: string | null; utr: string | null;
+  /** Acquirer that sent the mail, when the body identifies it — becomes the alert's `bank`. */
+  provider?: string | null;
+  /** The app the CUSTOMER paid with ("GooglePay"), which is not the acquirer. */
+  paymentApp?: string | null;
+  /** Receiving account as the acquirer names it ("BUYVORA PRIVATE LIMITED"). */
+  accountName?: string | null;
+  /** Payment time as the acquirer states it, kept verbatim for the detail panel. */
+  paidAt?: string | null;
+}
+
+// ── BharatPe ──────────────────────────────────────────────────────────────────────
+//
+// BharatPe mails the merchant on every UPI credit, and states the whole payment: payer,
+// the app they paid with, time, UTR, amount, and the receiving account. It is the only
+// rail we have that hands over a complete, already-settled-on set of facts without a
+// screen-read — so it is worth parsing precisely rather than leaving to the generic path.
+//
+// The catch is the layout. It is an HTML table with each label in its own cell, so once
+// the tags are stripped the mail is one run of words:
+//
+//   Payment Received ₹1.00 From Anil Pal By GooglePay Time Sep 05, 2026 01:10PM
+//   UTR 624825713281 Amount Rs: 1.00 In the Account of BUYVORA PRIVATE LIMITED
+//
+// Every value is bracketed by two labels and nothing else says where it ends. The generic
+// PAYER_NAME_RE ends a name at punctuation or a newline, and there is neither after "Anil
+// Pal" — it reads on through "By GooglePay Time Sep" and then dies on the digits of the
+// date, yielding NO payer at all. It only appeared to work in testing because the template
+// happened to carry source newlines; minified (which is how transactional templates
+// normally ship) it returns null. Verified both ways, 2026-09-06.
+//
+// So BharatPe is read by its own labels: each field runs from its label to the next label,
+// which is exactly how the table reads and needs no whitespace to survive the flattening.
+const BPE_RE = /bharatpe/i;
+// The label set is also the terminator set — a value ends where the next label begins.
+// "Note"/"Need help" close the last field against the footer.
+const BPE_LABELS = ["From", "By", "Time", "UTR", "Amount", "In\\s+the\\s+Account\\s+of", "Note", "Need\\s+help"];
+const BPE_STOP = `(?=\\s+(?:${BPE_LABELS.join("|")})\\b|\\s*$)`;
+
+function bpeField(text: string, label: string): string | null {
+  const v = new RegExp(`\\b${label}\\s*:?\\s+([\\s\\S]*?)${BPE_STOP}`, "i").exec(text)?.[1]?.trim();
+  return v || null;
+}
+
+/**
+ * Parse a BharatPe "Payment Received" mail. Returns null when the mail is not BharatPe's
+ * or states no amount, so the caller can fall through to the generic parser — a layout
+ * change on their side degrades to the old behaviour instead of dropping the payment.
+ */
+export function parseBharatPeEmail(text: string): ParsedEmail | null {
+  if (!BPE_RE.test(text)) return null;
+
+  // The label's own value first; the header "₹1.00" is the fallback if the row is absent.
+  const amount =
+    toAmount(/([0-9][0-9,]*(?:\.[0-9]{1,2})?)/.exec(bpeField(text, "Amount") ?? "")?.[1]) ??
+    toAmount([...text.matchAll(AMOUNT_RE)][0]?.[1]);
+  if (!amount) return null;
+
+  // A name, not the next cell: reject anything carrying digits or an @, which is what a
+  // mis-terminated capture looks like ("Anil Pal By GooglePay Time Sep 05").
+  const rawName = bpeField(text, "From");
+  const payerName =
+    rawName && rawName.length >= 3 && rawName.length <= 120 && !/[\d@]/.test(rawName)
+      ? rawName.replace(/\s+/g, " ")
+      : null;
+
+  const utrField = bpeField(text, "UTR");
+  const utr = utrField && /^\d{11,22}$/.test(utrField) ? utrField : UTR_RE.exec(text)?.[1] ?? null;
+
+  return {
+    amount,
+    payerName,
+    payerVpa: VPA_RE.exec(text)?.[1] ?? null,
+    orderRef: ORDER_REF_RE.exec(text)?.[1]?.trim() ?? null,
+    utr,
+    provider: "BHARATPE",
+    paymentApp: bpeField(text, "By"),
+    accountName: bpeField(text, "In\\s+the\\s+Account\\s+of"),
+    paidAt: bpeField(text, "Time"),
+  };
+}
 
 // Extract the credited amount + payer from a payment-received email. Returns null if
 // it isn't a credit (or is an OTP/auth mail, which is never acted on).
@@ -177,6 +270,12 @@ export function parsePaymentEmail(subject: string, body: string): ParsedEmail | 
   // password" security footer that would otherwise reject every real credit.
   if (isAuthMessage(subject)) return null;
   if (!CREDIT_RE.test(text)) return null;          // must read like a credit
+
+  // BharatPe's label-per-cell layout defeats the punctuation-terminated generic path, so
+  // it gets its own parser. Null (not BharatPe, or no amount) falls through to the generic
+  // one below rather than dropping the mail.
+  const bpe = parseBharatPeEmail(text);
+  if (bpe) return bpe;
 
   const balance = toAmount(BALANCE_RE.exec(text)?.[1]);
   let amount: number | null = null;
@@ -200,6 +299,34 @@ export function parsePaymentEmail(subject: string, body: string): ParsedEmail | 
   const orderRef = ORDER_REF_RE.exec(text)?.[1]?.trim() ?? null;
   const utr = UTR_RE.exec(text)?.[1] ?? null;
   return { amount, payerName, payerVpa, orderRef, utr };
+}
+
+/**
+ * Which acquirer the mail came from. The parser's own finding wins, because the body
+ * names the brand more reliably than the envelope does (mail is often relayed by a
+ * delivery service whose address mentions nobody).
+ */
+function bankFromEmail(hit: ParsedEmail, from: string): string | undefined {
+  if (hit.provider) return hit.provider;
+  if (/bharatpe/i.test(from)) return "BHARATPE";
+  if (/phonepe/i.test(from)) return "PHONEPE";
+  if (/paytm/i.test(from)) return "PAYTM";
+  return undefined;
+}
+
+/**
+ * What the acquirer stated about the payment, for the detail panel — the same role the
+ * on-device screen-read's `details` plays. Only what the mail actually said; an absent
+ * field is left out rather than stored empty.
+ */
+function emailDetails(hit: ParsedEmail): Record<string, string> | undefined {
+  const d: Record<string, string> = {};
+  if (hit.payerName) d["Paid by"] = hit.payerName;
+  if (hit.paymentApp) d["Paid via"] = hit.paymentApp;
+  if (hit.paidAt) d["Payment time"] = hit.paidAt;
+  if (hit.utr) d["UTR"] = hit.utr;
+  if (hit.accountName) d["In the account of"] = hit.accountName;
+  return Object.keys(d).length ? d : undefined;
 }
 
 // Decode a Gmail API message payload into plain text (walks MIME parts).
@@ -232,7 +359,7 @@ async function pollOneInboxOAuth(cfg: InboxConfig): Promise<EmailIngestResult> {
   try {
     const access = await getAccessToken(cfg.refreshToken);
     const auth = { authorization: `Bearer ${access}` };
-    const q = encodeURIComponent('newer_than:2d (from:paytm OR from:phonepe OR subject:received OR subject:"payment received")');
+    const q = encodeURIComponent('newer_than:2d (from:paytm OR from:phonepe OR from:bharatpe OR subject:received OR subject:"payment received")');
     const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=25`, { headers: auth });
     if (!listRes.ok) throw new Error(`gmail list HTTP ${listRes.status}`);
     const list: any = await listRes.json();
@@ -253,10 +380,11 @@ async function pollOneInboxOAuth(cfg: InboxConfig): Promise<EmailIngestResult> {
       const eventTime = msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : new Date().toISOString();
       const r = await ingestTxnAlert({
         source: "EMAIL", merchant_id: cfg.merchantId || undefined,
-        bank: /phonepe/i.test(from) ? "PHONEPE" : /paytm/i.test(from) ? "PAYTM" : undefined,
+        bank: bankFromEmail(hit, from),
         amount: hit.amount, order_ref: hit.orderRef ?? undefined, payer_name: hit.payerName ?? undefined, payer_vpa: hit.payerVpa ?? undefined, utr: hit.utr ?? undefined,
+        details: emailDetails(hit),
         sender: from || "email", raw: `${subject} — ${gmailBody(msg.payload)}`.slice(0, 2000),
-        event_time: eventTime, parser_version: "email-oauth-1.0",
+        event_time: eventTime, parser_version: "email-oauth-1.1",
       }, { channelTrusted: true });
       out.ingested++;
       out.results.push({ amount: hit.amount, payer: hit.payerName, outcome: r.outcome, confidence: r.confidence, matched: r.matched_order_ref });
@@ -329,16 +457,17 @@ export async function pollOneInbox(cfg: InboxConfig): Promise<EmailIngestResult>
         const r = await ingestTxnAlert({
           source: "EMAIL",
           merchant_id: merchantId,
-          bank: /phonepe/i.test(from) ? "PHONEPE" : /paytm/i.test(from) ? "PAYTM" : undefined,
+          bank: bankFromEmail(hit, `${from} ${fromName}`),
           amount: hit.amount,
           order_ref: hit.orderRef ?? undefined,
           payer_name: hit.payerName ?? undefined,
           payer_vpa: hit.payerVpa ?? undefined,
           utr: hit.utr ?? undefined,
+          details: emailDetails(hit),
           sender: from || "email",
           raw: `${subject} — ${body}`.slice(0, 2000),
           event_time: eventTime,
-          parser_version: "email-1.0",
+          parser_version: "email-1.1",
         }, { channelTrusted: true });
         out.ingested++;
         out.results.push({ amount: hit.amount, payer: hit.payerName, outcome: r.outcome, confidence: r.confidence, matched: r.matched_order_ref });

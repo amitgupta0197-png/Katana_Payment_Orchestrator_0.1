@@ -21,7 +21,7 @@ export interface PaymentAppInput {
 
 export interface PaymentApp {
   /** Stable key for styling: GPAY | PAYTM | PHONEPE | AIRTEL | EMAIL | BANK | UNKNOWN */
-  key: "GPAY" | "PAYTM" | "PHONEPE" | "AIRTEL" | "EMAIL" | "BANK" | "UNKNOWN";
+  key: "GPAY" | "PAYTM" | "PHONEPE" | "BHARATPE" | "AIRTEL" | "EMAIL" | "BANK" | "UNKNOWN";
   /** What a human reads on the row. */
   label: string;
 }
@@ -33,6 +33,7 @@ const BY_PACKAGE: [RegExp, PaymentApp][] = [
   [/paisa\.merchant|paisa\.user|nbu\.paisa/i, { key: "GPAY", label: "Google Pay" }],
   [/paytm/i,                                  { key: "PAYTM", label: "Paytm" }],
   [/phonepe/i,                                { key: "PHONEPE", label: "PhonePe" }],
+  [/bharatpe/i,                               { key: "BHARATPE", label: "BharatPe" }],
   [/apbl|airtel/i,                            { key: "AIRTEL", label: "Airtel" }],
 ];
 
@@ -40,6 +41,7 @@ const BY_BANK: Record<string, PaymentApp> = {
   GPAY: { key: "GPAY", label: "Google Pay" },
   PAYTM: { key: "PAYTM", label: "Paytm" },
   PHONEPE: { key: "PHONEPE", label: "PhonePe" },
+  BHARATPE: { key: "BHARATPE", label: "BharatPe" },
   AIRTEL: { key: "AIRTEL", label: "Airtel" },
 };
 
@@ -68,6 +70,7 @@ export const PAYMENT_APP_DOT: Record<PaymentApp["key"], string> = {
   GPAY: "#4285f4",
   PAYTM: "#00b9f5",
   PHONEPE: "#5f259f",
+  BHARATPE: "#00bab3",
   AIRTEL: "#e40000",
   EMAIL: "#8b8b8b",
   BANK: "#8b8b8b",
