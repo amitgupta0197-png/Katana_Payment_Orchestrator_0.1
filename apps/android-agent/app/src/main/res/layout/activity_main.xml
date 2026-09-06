@@ -456,6 +456,60 @@
                         android:id="@+id/appPhonepeSwitch"
                         style="@style/SwitchKatana" />
                 </LinearLayout>
+
+                <View style="@style/RowDivider" />
+
+                <!-- BharatPe. Deliberately NOT a switch.
+                     Every other row here selects which app the on-screen reader drives, and
+                     selection is EXCLUSIVE (Prefs.setCaptureAppExclusive) — turning one on turns
+                     the others off. There is no BharatPe screen-reading engine, so a BharatPe
+                     switch would silently stop the merchant's working Paytm/PhonePe capture and
+                     give nothing back. It is also unnecessary: BharatPe emails the whole payment
+                     (payer, UTR, amount, time, account), which the server parses directly, so the
+                     phone has no part to play. The row exists so a BharatPe merchant can see they
+                     are covered instead of assuming the agent does not support them. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="14dp">
+                    <FrameLayout
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="14dp"
+                        android:background="@drawable/bg_app_icon"
+                        android:backgroundTint="#00BAB3">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:text="B"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+                    </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="12dp"
+                        android:orientation="vertical">
+                        <TextView style="@style/PermTitle" android:text="BharatPe" />
+                        <TextView style="@style/PermSub" android:text="Captured from the payment email — this phone does nothing" />
+                    </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_soon_pill"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:text="EMAIL"
+                        android:textColor="@color/on_surface_variant"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -600,7 +654,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Connect the Gmail that receives Paytm/PhonePe payment emails — the easiest way is one tap below."
+                    android:text="Connect the Gmail that receives BharatPe / Paytm / PhonePe payment emails — the easiest way is one tap below. For BharatPe this is the only step: the email carries the whole payment."
                     android:textColor="@color/on_surface_variant"
                     android:textSize="12sp"
                     android:lineSpacingExtra="2dp"
