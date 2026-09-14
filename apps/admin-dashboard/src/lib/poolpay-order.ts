@@ -146,25 +146,42 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta)
     VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb)
-    ON CONFLICT (vendor, order_id) DO NOTHING
+    ON CONFLICT (vendor, COALESCE(merchant_id, ''), order_id) DO NOTHING
     RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at
   `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta)]);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false };
 
-  // Idempotent replay: the (vendor, order_id) already exists — return it with its
-  // stored deeplinks so repeated calls with the same reference are safe.
+  // IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT.
+  //
+  // The conflict above is on (vendor, merchant, order_id), so re-read on the SAME key.
+  // Re-reading by (vendor, order_id) alone is what made a colliding txnid hand one
+  // merchant another merchant's order — its UUID, its amount and its deeplinks, so the
+  // payer was sent to the wrong collection VPA (migration 0024). The merchant predicate
+  // mirrors the index expression exactly, NULL included.
   const existing = await rows<any>("vendorGateway", `
-    SELECT id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel, status, created_at, meta
-      FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1
-  `, [orderId]);
+    SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
+           channel, status, created_at, meta
+      FROM vendor_payin_orders
+     WHERE vendor = 'POOLPAY'
+       AND order_id = $1
+       AND COALESCE(merchant_id, '') = COALESCE($2, '')
+  `, [orderId, input.merchantId ?? null]);
   const ex = existing[0];
-  const exMeta = ex?.meta ?? {};
+  // A conflict guarantees a row on this key, so an empty result means the row was
+  // deleted between the two statements. Say so rather than returning `order: undefined`,
+  // which surfaces to the caller as an opaque "order create failed".
+  if (!ex) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
+  // `meta` carries the receiver VPA, the VPA pool, the sub-MID and confirmation detail.
+  // It is needed here for the stored deeplinks, but it is not part of the caller's
+  // order shape — strip it so it cannot reach an API response.
+  const { meta: exMeta, ...exOrder } = ex as Record<string, unknown> & { meta?: Record<string, unknown> };
+  const storedMeta = exMeta ?? {};
   return {
-    order: ex,
-    deeplinks: exMeta.deeplinks ?? deeplinks,
-    upiIntent: exMeta.upi_intent ?? upiIntent,
+    order: exOrder,
+    deeplinks: (storedMeta.deeplinks as typeof deeplinks) ?? deeplinks,
+    upiIntent: (storedMeta.upi_intent as string) ?? upiIntent,
     reused: true,
   };
 }

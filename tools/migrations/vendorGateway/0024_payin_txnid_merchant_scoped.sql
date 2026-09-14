@@ -1,0 +1,44 @@
+-- vendorgatewayservice_db: SCOPE PAY-IN IDEMPOTENCY TO THE MERCHANT.
+--
+-- THE BUG THIS FIXES.
+--   Idempotency was keyed on UNIQUE (vendor, order_id) — a PLATFORM-WIDE namespace.
+--   `order_id` is the merchant's own `txnid`, and merchants pick obvious references
+--   (ORDER-1001, invoice numbers, sequences). When merchant B sent a txnid merchant A
+--   had already used, the INSERT hit ON CONFLICT DO NOTHING, and the replay branch in
+--   createPoolPayOrder() re-read the row by (vendor, order_id) with NO merchant filter.
+--   B received HTTP 200, verified:true, and A's order UUID, A's amount and A's stored
+--   deeplinks — so B's customer paid into A's collection VPA. Silent: no error at any
+--   layer, plus cross-tenant disclosure of A's order meta.
+--
+-- WHY THIS IS SAFE TO APPLY.
+--   The new key is strictly MORE PERMISSIVE than the old one: any data satisfying
+--   UNIQUE (vendor, order_id) trivially satisfies UNIQUE (vendor, merchant, order_id).
+--   No existing row can violate it, so the index build cannot fail on live data.
+--
+-- WHY COALESCE.
+--   merchant_id is nullable (createPoolPayOrder takes `input.merchantId ?? null`, and
+--   the vendor-cockpit route creates orders without one). In Postgres NULLs compare as
+--   DISTINCT, so a plain UNIQUE (vendor, merchant_id, order_id) would let two rows with
+--   a NULL merchant share an order_id — silently dropping idempotency for exactly the
+--   orders that have no merchant to scope to. COALESCE to '' keeps those rows unique
+--   among themselves while still separating them from any real merchant.
+--
+--   The application's ON CONFLICT clause must name this expression EXACTLY
+--   — `ON CONFLICT (vendor, COALESCE(merchant_id, ''), order_id)` — or Postgres cannot
+--   infer the index and the insert fails at runtime.
+
+-- ROLLOUT ORDER MATTERS — THIS FILE IS PHASE 1 OF 2.
+--
+--   Phase 1 (here)   add the new index, LEAVE the old constraint in place.
+--   Phase 2 (0025)   drop the old constraint, AFTER the new code is running.
+--
+-- Splitting it removes the window that would otherwise break order creation outright:
+-- the currently-deployed code says `ON CONFLICT (vendor, order_id)`, and the moment that
+-- constraint disappears Postgres raises "no unique or exclusion constraint matching the
+-- ON CONFLICT specification" on EVERY insert until the new build is live. With both
+-- present, the old code and the new code each find the target they name.
+--
+-- While both exist, a genuine cross-merchant collision raises a unique violation instead
+-- of silently misdirecting the payer — noisy, but the safe direction to fail.
+CREATE UNIQUE INDEX IF NOT EXISTS vendor_payin_orders_merchant_order_uk
+  ON vendor_payin_orders (vendor, COALESCE(merchant_id, ''), order_id);
