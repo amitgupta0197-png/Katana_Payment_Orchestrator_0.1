@@ -5,7 +5,7 @@
 // self-scoped /api/banker-portal/agent (merchant sees only their own devices).
 
 import { useQuery } from "@tanstack/react-query";
-import { Smartphone, Download, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Copy } from "lucide-react";
+import { Smartphone, Download, BookOpen, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +74,11 @@ export function MerchantPortalAgentCard() {
       <CardContent className="space-y-3">
         <Button asChild className="w-full">
           <a href="/katana-agent.apk" download><Download className="h-4 w-4" /> Download Android app (.apk)</a>
+        </Button>
+        {/* The install/use guide belongs next to the download — a merchant who has just taken
+            the APK is exactly the person who needs it. */}
+        <Button asChild variant="secondary" className="w-full">
+          <a href="/Katana-Agent-Guide.pdf" target="_blank" rel="noopener"><BookOpen className="h-4 w-4" /> Install &amp; user guide (PDF)</a>
         </Button>
 
         <div className="rounded-md border p-3 text-sm">

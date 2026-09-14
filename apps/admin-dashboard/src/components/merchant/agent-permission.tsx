@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Smartphone, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Copy, Download, Trash2, Mail, Plus } from "lucide-react";
+import { Smartphone, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Copy, Download, BookOpen, Trash2, Mail, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -292,6 +292,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
             </div>
             <div className="mt-3">
               <Button asChild size="sm"><a href="/katana-agent.apk" download><Download className="h-4 w-4" /> Download agent APK</a></Button>
+              <Button asChild size="sm" variant="secondary" className="ml-2"><a href="/Katana-Agent-Guide.pdf" target="_blank" rel="noopener"><BookOpen className="h-4 w-4" /> Setup guide</a></Button>
             </div>
             <div className={`mt-2 text-xs ${MUTED}`}>The device appears here once it sends its first heartbeat. A Super-Admin then trusts it under Transaction Intel → Devices.</div>
           </div>
