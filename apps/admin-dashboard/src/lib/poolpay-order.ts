@@ -80,14 +80,18 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // a receiver would point the QR at the sandbox payee instead of the merchant's bank.
   let receivers = (input.receiverVpas?.length ? input.receiverVpas : (input.receiverVpa ? [input.receiverVpa] : []))
     .map((v) => v.trim()).filter(Boolean);
-  if (!receivers.length && input.merchantId) {
-    const cfg = await rows<{ v: string | null }>(
-      "merchant", `SELECT poolpay->>'settlement_vpa' AS v FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
-    ).catch(() => []);
-    const v = cfg[0]?.v?.trim();
-    if (v) receivers = [v];
-  }
+  const saved = input.merchantId
+    ? (await rows<{ v: string | null; name: string | null }>(
+        "merchant", `SELECT poolpay->>'settlement_vpa' AS v, poolpay->>'payee_name' AS name FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
+      ).catch(() => []))[0]
+    : undefined;
+  const savedVpa = saved?.v?.trim() || null;
+  if (!receivers.length && savedVpa) receivers = [savedVpa];
   const { pool, active } = buildVpaPool({ ...input, receiverVpas: receivers, receiverVpa: null });
+  // The saved payee name belongs to the saved settlement VPA only. A receiver passed on the
+  // request is some other account, whose registered name we do not know — so it gets none.
+  const payeeName = active && savedVpa && active.toLowerCase() === savedVpa.toLowerCase()
+    ? saved?.name?.trim() || null : null;
   const mode = input.mode === "INTENT" ? "INTENT" : "QR";
 
   // Cascade: resolve the effective PoolPay config for this branch — merchant
@@ -114,7 +118,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
     vendorTxnId = `${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("ppx")}`;
-    const query = buildUpiQuery({ payeeVpa: active || undefined, orderId, amount: input.amount, note });
+    const query = buildUpiQuery({ payeeVpa: active || undefined, payeeName, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
   }

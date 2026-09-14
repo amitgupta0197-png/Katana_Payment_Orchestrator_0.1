@@ -24,6 +24,9 @@ const patchSchema = z.object({
     pay_id: z.string().max(120).optional(),
     // The single payee a Katana Pay order is paid TO.
     settlement_vpa: z.string().max(120).optional(),
+    // The settlement VPA's name EXACTLY as registered with the bank (what a UPI app shows as
+    // "Banking name"). Sent as the payee name in payment links; blank leaves it out.
+    payee_name: z.string().trim().max(99).optional(),
     // Additional UPI IDs this banker also receives on. Recognised when attributing and
     // reporting captured credits; never used as a payee. Trimmed, lowercased and deduped
     // here so every reader can compare them directly against a captured payee_vpa.

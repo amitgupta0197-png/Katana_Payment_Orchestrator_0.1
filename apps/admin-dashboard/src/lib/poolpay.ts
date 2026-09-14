@@ -22,16 +22,33 @@ export interface DeepLinks {
 }
 
 // Build the UPI parameter string shared by every app deeplink and the QR.
-export function buildUpiQuery(opts: { payeeVpa?: string; orderId: string; amount: number; note?: string }): string {
-  const params = new URLSearchParams({
-    pa: opts.payeeVpa ?? PAYEE_VPA,
-    pn: PAYEE_NAME,
-    tr: opts.orderId,
-    am: opts.amount.toFixed(2),
-    cu: "INR",
-    tn: opts.note ?? `Order ${opts.orderId}`,
-  });
-  return params.toString();
+//
+// A MERCHANT'S OWN UPI ID IS NOT OUR COLLECT VPA, AND THE LINK MUST NOT PRETEND IT IS.
+// UPI apps (Google Pay first) risk-score a payment link against the payee's registered
+// account and decline the ones that look forged: "Payment to this receiver was declined".
+// For a merchant-supplied payee (typically a static BharatPe / Paytm QR ID) that means:
+//   pn  only the name registered with the bank (poolpay.payee_name), else left out — never
+//       our brand, which the app sees as a mismatch against the verified banking name.
+//   tr  left out — a transaction reference on a static-QR payee is the acquirer's to issue,
+//       and an outsider's value is a forgery signal. Nothing reads it back: the reconciler
+//       matches on the order id in the note, the bank UTR, or amount + payee VPA.
+// The sandbox collect VPA keeps pn + tr as before. Values are percent-encoded (%20, not +):
+// Google Pay prints a '+' in the note literally.
+export function buildUpiQuery(opts: { payeeVpa?: string; payeeName?: string | null; orderId: string; amount: number; note?: string }): string {
+  const merchantPayee = !!opts.payeeVpa && opts.payeeVpa !== PAYEE_VPA;
+  const name = merchantPayee ? opts.payeeName?.trim() || null : PAYEE_NAME;
+  const params: [string, string | null][] = [
+    ["pa", opts.payeeVpa ?? PAYEE_VPA],
+    ["pn", name],
+    ["tr", merchantPayee ? null : opts.orderId],
+    ["am", opts.amount.toFixed(2)],
+    ["cu", "INR"],
+    ["tn", opts.note ?? `Order ${opts.orderId}`],
+  ];
+  return params
+    .filter((p): p is [string, string] => !!p[1])
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&");
 }
 
 export function buildDeeplinks(query: string): DeepLinks {

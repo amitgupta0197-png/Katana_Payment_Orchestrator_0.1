@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-interface PoolPay { enabled?: boolean; pay_id?: string; settlement_vpa?: string; env?: string; notes?: string }
+interface PoolPay { enabled?: boolean; pay_id?: string; settlement_vpa?: string; payee_name?: string; env?: string; notes?: string }
 interface Config { methods: string[]; enabled_methods: string[]; poolpay: PoolPay; blocked?: boolean }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -124,13 +124,13 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
   const qc = useQueryClient();
   const q = useConfig(merchantId);
-  const [form, setForm] = useState({ enabled: false, pay_id: "", settlement_vpa: "", env: "SANDBOX", notes: "" });
+  const [form, setForm] = useState({ enabled: false, pay_id: "", settlement_vpa: "", payee_name: "", env: "SANDBOX", notes: "" });
 
   // Hydrate the form once config loads.
   useEffect(() => {
     const pp = q.data?.poolpay;
     if (pp) setForm({
-      enabled: !!pp.enabled, pay_id: pp.pay_id ?? "", settlement_vpa: pp.settlement_vpa ?? "",
+      enabled: !!pp.enabled, pay_id: pp.pay_id ?? "", settlement_vpa: pp.settlement_vpa ?? "", payee_name: pp.payee_name ?? "",
       env: pp.env ?? "SANDBOX", notes: pp.notes ?? "",
     });
   }, [q.data]);
@@ -170,6 +170,12 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
           <div className="space-y-1.5">
             <Label>Settlement VPA</Label>
             <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="banker@upi" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Payee name</Label>
+            {/* UPI apps compare this to the account's registered name and decline links that
+                don't match, so it must be the bank's name for the Settlement VPA — not a brand. */}
+            <Input value={form.payee_name} onChange={(e) => setForm({ ...form, payee_name: e.target.value })} placeholder="exactly as your UPI app shows it" />
           </div>
           <div className="space-y-1.5">
             <Label>Environment</Label>
