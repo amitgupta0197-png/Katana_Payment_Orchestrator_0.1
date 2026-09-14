@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
-import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS, SANDBOX_PAYEE_VPA } from "@/lib/poolpay";
+import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/poolpay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ interface StatusPayload {
   order_id: string; amount: number; currency_code: string; status: string;
   terminal: boolean; proof_submitted: boolean; rrn: string | null;
   mode: string; deeplinks: unknown; upi_intent: unknown; return_url: string | null;
-  merchant_name: string | null; payee_vpa: string | null; scan_only: boolean;
+  merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
 }
 
@@ -71,16 +71,9 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   const terminal = POOLPAY_TERMINAL.has(order.status);
   const held = autoResolvePaused(meta);
   const createdAt = order.created_at ? new Date(order.created_at) : null;
-  const payeeVpa = upiParam(meta.upi_intent, "pa");
   return {
     merchant_name: upiParam(meta.upi_intent, "pn"),
-    payee_vpa: payeeVpa,
-    // SCAN-ONLY: a link we built ourselves to a merchant's own UPI ID (a static BharatPe /
-    // Paytm QR ID, not one issued by a live gateway). UPI apps decline an unsigned app-link
-    // payment to such a payee ("Payment to this receiver was declined") but accept a scan of
-    // the same QR — so the page offers the QR and the UPI ID instead of app buttons that fail.
-    scan_only: meta.integration?.live !== true && !!payeeVpa
-      && payeeVpa.toLowerCase() !== SANDBOX_PAYEE_VPA,
+    payee_vpa: upiParam(meta.upi_intent, "pa"),
     held,
     // Held orders wait for an operator and never expire, so they get no countdown.
     expires_at: !terminal && !held && createdAt

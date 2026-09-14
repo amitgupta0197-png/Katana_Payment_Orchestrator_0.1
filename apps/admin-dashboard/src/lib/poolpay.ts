@@ -13,7 +13,6 @@
 import { signPoolPay } from "@/lib/provider-integration";
 
 const PAYEE_VPA = "poolpay.sandbox@upi"; // gateway collect VPA (payee)
-export const SANDBOX_PAYEE_VPA = PAYEE_VPA;
 const PAYEE_NAME = "Katana Pay";
 
 export interface DeepLinks {

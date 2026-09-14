@@ -22,8 +22,6 @@ interface PayStatus {
   return_url?: string | null;
   merchant_name?: string | null;
   payee_vpa?: string | null;
-  // The payee accepts a QR scan but declines app-link payments — see /api/pay-status.
-  scan_only?: boolean;
   held?: boolean;
   expires_at?: string | null;
   completed_at?: string | null;
@@ -171,10 +169,7 @@ function LoadingBody() {
 function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant: string | null; orderId: string; onProof: () => void }) {
   const upi = d.upi_intent ?? "";
   const { copied, copy } = useCopy();
-  // A scan-only payee always gets the QR, even on a Non-QR (INTENT) order: the app buttons
-  // are the path its UPI apps decline, so they are not offered at all.
-  const scanOnly = d.scan_only === true;
-  const showQr = upi && (d.mode !== "INTENT" || scanOnly);
+  const showQr = upi && d.mode !== "INTENT";
 
   // The QR (and the other ways to start a payment) is shown for QR_VALID_SECONDS at a
   // time. The order itself stays payable for its full window and this screen keeps
@@ -254,7 +249,7 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
         </div>
       )}
 
-      {upi && qrLive && !scanOnly && (
+      {upi && qrLive && (
         <div className="kp-rise mt-4 grid grid-cols-3 gap-2.5" style={{ animationDelay: "140ms" }}>
           <AppTile label="Paytm" onClick={() => openUpiApp("paytm", upi)}><PaytmLogo /></AppTile>
           <AppTile label="PhonePe" onClick={() => openUpiApp("phonepe", upi)}><PhonePeLogo /></AppTile>
@@ -276,17 +271,10 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
         </button>
       )}
 
-      {scanOnly && qrLive && (
-        <p className="kp-dim kp-rise mt-2.5 px-1 text-center text-[11px] leading-relaxed" style={{ animationDelay: "220ms" }}>
-          Paying on this phone? Copy the UPI ID and pay it in your UPI app, or take a screenshot of the QR
-          and open it from your app&apos;s scanner (Scan → Gallery).
-        </p>
-      )}
-
       <ProofUpload orderId={orderId} onSubmitted={onProof} />
 
       <div className="mt-auto pt-6">
-        {upi && qrLive && !scanOnly && (
+        {upi && qrLive && (
           <button type="button" onClick={() => openUpiApp("any", upi)} className="kp-pill kp-pill-solid">
             <Smartphone className="h-4 w-4" /> Pay with any UPI app
           </button>
