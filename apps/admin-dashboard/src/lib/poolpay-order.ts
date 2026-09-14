@@ -81,16 +81,20 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   let receivers = (input.receiverVpas?.length ? input.receiverVpas : (input.receiverVpa ? [input.receiverVpa] : []))
     .map((v) => v.trim()).filter(Boolean);
   const saved = input.merchantId
-    ? (await rows<{ v: string | null; name: string | null }>(
-        "merchant", `SELECT poolpay->>'settlement_vpa' AS v, poolpay->>'payee_name' AS name FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
+    ? (await rows<{ v: string | null; name: string | null; name_vpa: string | null }>(
+        "merchant", `SELECT poolpay->>'settlement_vpa' AS v, poolpay->>'payee_name' AS name, poolpay->>'payee_name_vpa' AS name_vpa
+                       FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
       ).catch(() => []))[0]
     : undefined;
   const savedVpa = saved?.v?.trim() || null;
   if (!receivers.length && savedVpa) receivers = [savedVpa];
   const { pool, active } = buildVpaPool({ ...input, receiverVpas: receivers, receiverVpa: null });
-  // The saved payee name belongs to the saved settlement VPA only. A receiver passed on the
-  // request is some other account, whose registered name we do not know — so it gets none.
-  const payeeName = active && savedVpa && active.toLowerCase() === savedVpa.toLowerCase()
+  // The saved payee name belongs to the one UPI ID it was entered for (payee_name_vpa, bound by
+  // the payment-config API). It is sent only when the order pays exactly that account: a
+  // receiver passed on the request, or a settlement VPA changed since, is an account whose
+  // registered name we do not know — and a wrong name is itself a decline signal.
+  const nameVpa = saved?.name_vpa?.trim().toLowerCase() || null;
+  const payeeName = active && nameVpa && active.toLowerCase() === nameVpa
     ? saved?.name?.trim() || null : null;
   const mode = input.mode === "INTENT" ? "INTENT" : "QR";
 

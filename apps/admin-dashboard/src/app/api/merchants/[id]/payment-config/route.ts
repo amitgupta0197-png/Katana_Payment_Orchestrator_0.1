@@ -37,6 +37,34 @@ const patchSchema = z.object({
   }).strict().optional(),
 });
 
+const normVpa = (v: unknown) => (typeof v === "string" ? v.trim().toLowerCase() : "");
+
+/**
+ * A PAYEE NAME BELONGS TO ONE UPI ID. Merge the patch, then keep the saved name bound to the
+ * settlement VPA it was entered for (`payee_name_vpa`), so a name can never outlive its account:
+ *   - name + VPA saved together, or a new name       → bound to the current VPA
+ *   - VPA changed but the name was not re-entered    → name cleared (it described the old account)
+ *   - blank name or no VPA                           → name cleared
+ * The config card re-sends the unchanged name on every save and the agent card sends only the
+ * VPA, so "changed" is judged against the stored value, not merely present in the patch.
+ */
+function bindPayeeName(cur: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...cur, ...patch };
+  const vpa = normVpa(next.settlement_vpa);
+  const vpaChanged = normVpa(cur.settlement_vpa) !== vpa;
+  const name = typeof next.payee_name === "string" ? next.payee_name.trim() : "";
+  const curName = typeof cur.payee_name === "string" ? cur.payee_name.trim() : "";
+  const nameChanged = "payee_name" in patch && name !== curName;
+  if (!name || !vpa || (vpaChanged && !nameChanged)) {
+    delete next.payee_name;
+    delete next.payee_name_vpa;
+  } else if (nameChanged || vpaChanged || normVpa(cur.payee_name_vpa) !== vpa) {
+    next.payee_name = name;
+    next.payee_name_vpa = vpa;
+  }
+  return next;
+}
+
 async function readConfig(code: string) {
   const r = await rows<any>("merchant",
     `SELECT enabled_methods, poolpay, COALESCE(blocked,false) AS blocked FROM merchant_payment_config WHERE merchant_code = $1`, [code]);
@@ -69,7 +97,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const cur = await readConfig(scope.code);
     const enabled_methods = body.enabled_methods ?? cur.enabled_methods;
-    const poolpay = body.poolpay ? { ...cur.poolpay, ...body.poolpay } : cur.poolpay;
+    const poolpay = body.poolpay ? bindPayeeName(cur.poolpay, body.poolpay) : cur.poolpay;
     const blocked = body.blocked ?? cur.blocked;
     await rows("merchant", `
       INSERT INTO merchant_payment_config (merchant_code, enabled_methods, poolpay, blocked, updated_by, updated_at)

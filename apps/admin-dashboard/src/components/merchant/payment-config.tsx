@@ -176,6 +176,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
             {/* UPI apps compare this to the account's registered name and decline links that
                 don't match, so it must be the bank's name for the Settlement VPA — not a brand. */}
             <Input value={form.payee_name} onChange={(e) => setForm({ ...form, payee_name: e.target.value })} placeholder="exactly as your UPI app shows it" />
+            <p className="text-xs text-[color:var(--color-text-muted)]">Cleared automatically if the Settlement VPA changes.</p>
           </div>
           <div className="space-y-1.5">
             <Label>Environment</Label>
