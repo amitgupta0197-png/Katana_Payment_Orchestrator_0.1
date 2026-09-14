@@ -26,6 +26,9 @@ interface CreatedOrder {
   deeplinks: DeepLinks;
   upi_intent: string;
   qr_payload: string;
+  // Not in the API response — recorded from the form when the order is created, so the
+  // panel presents the order the way it was asked for.
+  mode?: "QR" | "INTENT";
 }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -60,7 +63,7 @@ export function PoolPayCreateOrder({
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return (await r.json()) as CreatedOrder;
+      return { ...((await r.json()) as CreatedOrder), mode: form.mode as "QR" | "INTENT" };
     },
     onSuccess: (data) => {
       toast.success("Katana Pay order created — deeplinks ready");
@@ -214,12 +217,16 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
 
         {!terminal ? (
           <div className="space-y-2 min-w-0">
-            <div className="flex flex-col items-center pb-1">
-              <div className="rounded-2xl bg-white p-2.5 shadow-inner">
-                <QRCodeSVG value={created.upi_intent} size={150} level="M" />
+            {/* Non-QR (INTENT) orders are paid through the app buttons only — the same rule the
+                customer pay page applies — so no QR is drawn for them here either. */}
+            {created.mode !== "INTENT" && (
+              <div className="flex flex-col items-center pb-1">
+                <div className="rounded-2xl bg-white p-2.5 shadow-inner">
+                  <QRCodeSVG value={created.upi_intent} size={150} level="M" />
+                </div>
+                <div className={`mt-2 text-xs ${MUTED}`}>Scan with any UPI app</div>
               </div>
-              <div className={`mt-2 text-xs ${MUTED}`}>Scan with any UPI app</div>
-            </div>
+            )}
             <Button variant="secondary" className="w-full justify-start gap-2" onClick={() => openUpiApp("paytm", created.upi_intent)}>
               <PaytmLogo /> Pay with Paytm
             </Button>
@@ -230,7 +237,7 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
               <GooglePayLogo /> Pay with Google Pay
             </Button>
             <Button variant="secondary" className="w-full justify-start" onClick={() => openUpiApp("any", created.upi_intent)}>
-              <QrCode /> QR / Generic UPI
+              <QrCode /> {created.mode === "INTENT" ? "Other UPI app" : "QR / Generic UPI"}
             </Button>
             <div className="min-w-0 overflow-hidden rounded-md border bg-[color:var(--color-surface-muted)] p-2">
               <div className={`mb-1 text-xs ${MUTED}`}>Customer payment link (share with the payer):</div>
