@@ -11,7 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
-import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused } from "@/lib/poolpay";
+import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/poolpay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,16 @@ interface StatusPayload {
   order_id: string; amount: number; currency_code: string; status: string;
   terminal: boolean; proof_submitted: boolean; rrn: string | null;
   mode: string; deeplinks: unknown; upi_intent: unknown; return_url: string | null;
+  merchant_name: string | null; payee_vpa: string | null;
+  held: boolean; expires_at: string | null; completed_at: string | null;
+}
+
+// The payee name (pn) and VPA (pa) are already public inside the UPI intent the
+// customer is shown; surface them as fields so the page can say who is being paid.
+function upiParam(intent: unknown, key: string): string | null {
+  if (typeof intent !== "string" || !intent.includes("?")) return null;
+  try { return new URLSearchParams(intent.split("?").slice(1).join("?")).get(key) || null; }
+  catch { return null; }
 }
 
 // Read the order's current public status, running the same age-based auto-resolution
@@ -31,7 +41,8 @@ interface StatusPayload {
 async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   const found = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn,
-           status, meta, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
+           status, meta, created_at, updated_at,
+           EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
       FROM vendor_payin_orders
      WHERE id = $1::uuid AND vendor = 'POOLPAY'
   `, [id]);
@@ -47,7 +58,7 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
         UPDATE vendor_payin_orders
            SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
          WHERE id = $1::uuid
-        RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta
+        RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta, created_at, updated_at
       `, [order.id, decision.status, decision.response_code, rrn]);
       order = upd[0];
       // Auto-resolution just flipped this order terminal — fire the merchant
@@ -57,7 +68,17 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   }
 
   const meta = order.meta ?? {};
+  const terminal = POOLPAY_TERMINAL.has(order.status);
+  const held = autoResolvePaused(meta);
+  const createdAt = order.created_at ? new Date(order.created_at) : null;
   return {
+    merchant_name: upiParam(meta.upi_intent, "pn"),
+    payee_vpa: upiParam(meta.upi_intent, "pa"),
+    held,
+    // Held orders wait for an operator and never expire, so they get no countdown.
+    expires_at: !terminal && !held && createdAt
+      ? new Date(createdAt.getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null,
+    completed_at: terminal && order.updated_at ? new Date(order.updated_at).toISOString() : null,
     order_id: order.order_id,
     amount: Number(order.amount),
     currency_code: order.currency_code,
