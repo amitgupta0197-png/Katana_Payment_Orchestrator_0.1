@@ -2,11 +2,17 @@
 // assigned merchants (for reimbursement). Unions checkout_orders (PayU / Cashfree
 // / Razorpay / … via selected_rail) and vendor_payin_orders (Katana Pay / vendor PG).
 //
+// Optional ?from=&to=&status= narrow it, on IST calendar days — the same window the CSV
+// export takes, built by the same helper so the two can never disagree. The window is
+// applied in SQL rather than after the fetch, so narrowing to a day reaches PAST the
+// per-source row cap instead of filtering whatever the cap happened to return.
+//
 // PROVIDER only (middleware restricts /api/merchant-portal/* to PROVIDER persona).
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +21,7 @@ const FAILED = new Set(["FAILED", "EXPIRED"]);
 
 interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string }
 
-export async function GET() {
+export async function GET(req: Request) {
   const g = await gateOrResponse(["PROVIDER", "SUPER_ADMIN"]);
   if ("response" in g) return g.response;
   const s = g.session;
@@ -29,24 +35,28 @@ export async function GET() {
       return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], recent: [], series: [] });
     }
 
-    const coFilter = scoped ? "WHERE merchant_id = ANY($1::text[])" : "";
+    const window = txnWindowFromUrl(new URL(req.url), scoped ? codes : null);
+    const co = txnConditions("", window);
+    // Unscoped (SUPER_ADMIN) pay-ins still exclude rows with no merchant at all, exactly as
+    // before the filter existed — as an `extra` so a date can never displace it.
+    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"]);
+
     const checkout = await rows<Txn>("checkout", `
       SELECT 'CHECKOUT' AS source, merchant_id,
              COALESCE(NULLIF(selected_rail,''),'DIRECT') AS channel,
              COALESCE(method,'') AS method, status, amount::float AS amount,
              id::text AS ref, created_at
-        FROM checkout_orders ${coFilter}
+        FROM checkout_orders ${co.where}
        ORDER BY created_at DESC LIMIT 500
-    `, scoped ? [codes] : []).catch(() => []);
+    `, co.args).catch(() => []);
 
-    const vpFilter = scoped ? "WHERE merchant_id = ANY($1::text[])" : "WHERE merchant_id IS NOT NULL";
     const payin = await rows<Txn>("vendorGateway", `
       SELECT 'PAYIN' AS source, merchant_id, vendor AS channel,
              COALESCE(channel,'') AS method, status, amount::float AS amount,
              order_id AS ref, created_at
-        FROM vendor_payin_orders ${vpFilter}
+        FROM vendor_payin_orders ${vp.where}
        ORDER BY created_at DESC LIMIT 500
-    `, scoped ? [codes] : []).catch(() => []);
+    `, vp.args).catch(() => []);
 
     const all = [...checkout, ...payin];
 

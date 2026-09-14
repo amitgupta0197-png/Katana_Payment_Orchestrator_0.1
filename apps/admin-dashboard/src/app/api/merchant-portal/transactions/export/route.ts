@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { toCsv, csvResponse, datedFilename, type CsvColumn } from "@/lib/csv";
+import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 
 export const dynamic = "force-dynamic";
 
@@ -36,23 +37,6 @@ const COLUMNS: CsvColumn<Row>[] = [
   { header: "Order ID", value: (r) => r.ref },
 ];
 
-/**
- * The two sources live in different databases and different column names, so each
- * gets its own WHERE built against its own aliases. Same filter values, same $n
- * order — the parameter array is shared.
- */
-function conditions(prefix: string, opts: {
-  codes: string[] | null; from: string | null; to: string | null; status: string | null;
-}) {
-  const args: unknown[] = [];
-  const cond: string[] = [];
-  if (opts.codes) { args.push(opts.codes); cond.push(`${prefix}merchant_id = ANY($${args.length}::text[])`); }
-  if (opts.from) { args.push(opts.from); cond.push(`${prefix}created_at >= $${args.length}::timestamptz`); }
-  if (opts.to) { args.push(opts.to); cond.push(`${prefix}created_at < ($${args.length}::timestamptz + interval '1 day')`); }
-  if (opts.status) { args.push(opts.status.toUpperCase()); cond.push(`${prefix}status = $${args.length}`); }
-  return { where: cond.length ? "WHERE " + cond.join(" AND ") : "", args };
-}
-
 export async function GET(req: Request) {
   const g = await gateOrResponse(["PROVIDER", "SUPER_ADMIN"]);
   if ("response" in g) return g.response;
@@ -64,14 +48,9 @@ export async function GET(req: Request) {
     const scoped = s.persona === "PROVIDER";
     if (scoped && !codes.length) return csvResponse(datedFilename("transactions"), toCsv(COLUMNS, []));
 
-    const opts = {
-      codes: scoped ? codes : null,
-      from: url.searchParams.get("from"),
-      to: url.searchParams.get("to"),
-      status: url.searchParams.get("status"),
-    };
-    const co = conditions("o.", opts);
-    const vp = conditions("", opts);
+    const window = txnWindowFromUrl(url, scoped ? codes : null);
+    const co = txnConditions("o.", window);
+    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"]);
 
     const checkout = await rows<Row>("checkout", `
       SELECT 'CHECKOUT' AS source, o.merchant_id,
@@ -93,7 +72,7 @@ export async function GET(req: Request) {
              rrn AS bank_ref_num, customer_vpa AS vpa,
              NULL::text AS payment_type, NULL::text AS bank_name
         FROM vendor_payin_orders
-       ${vp.where || "WHERE merchant_id IS NOT NULL"}
+       ${vp.where}
        ORDER BY created_at DESC LIMIT 10000
     `, vp.args).catch(() => []);
 

@@ -4,16 +4,27 @@
 // (Katana Pay / vendor PG / PayU / Cashfree / Razorpay …) for the provider's
 // assigned merchants. Backed by /api/merchant-portal/transactions.
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Receipt, TrendingUp, Store, Network, Download } from "lucide-react";
+import { Receipt, TrendingUp, Store, Network, Download, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
+
+// The server reads a date as an IST calendar day, so the presets have to be built in IST
+// too — on a phone set to another zone, `new Date()` would otherwise offer "today" as a
+// day the server does not agree is today. en-CA formats as YYYY-MM-DD, which is exactly
+// what both <input type="date"> and the API expect.
+const istDay = (offsetDays = 0) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" })
+    .format(new Date(Date.now() - offsetDays * 86_400_000));
 
 interface Totals { gross: number; success_count: number; failed_count: number; pending_count: number; total_count: number }
 interface ByMerchant { merchant_id: string; gross: number; count: number; success: number }
@@ -23,15 +34,35 @@ interface Data { merchants: string[]; totals: Totals; by_merchant: ByMerchant[];
 
 export default function ProviderTransactionsPage() {
   const router = useRouter();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  // One query string drives the table, the tiles and the CSV, so the file a merchant
+  // downloads always covers the window they were looking at.
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  const filtered = !!(from || to);
+
   const q = useQuery({
-    queryKey: ["pp:transactions"],
-    queryFn: async () => (await fetch("/api/merchant-portal/transactions").then(async (r) => {
+    queryKey: ["pp:transactions", from, to],
+    queryFn: async () => (await fetch(`/api/merchant-portal/transactions${qs ? `?${qs}` : ""}`).then(async (r) => {
       const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
     })) as Data,
     refetchInterval: 30_000,
   });
   const d = q.data;
   const t = d?.totals;
+
+  const setRange = (f: string, tt: string) => { setFrom(f); setTo(tt); };
+
+  // Either end can be left open, so spell the window out rather than always printing a
+  // range: "from 26 Aug onwards" and "up to 26 Aug" are both things a merchant will set.
+  const windowLabel =
+    from && to ? (from === to ? from : `${from} → ${to}`)
+    : from ? `${from} → now`
+    : `up to ${to}`;
 
   const merCols: Column<ByMerchant>[] = [
     { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
@@ -56,10 +87,33 @@ export default function ProviderTransactionsPage() {
         icon={Receipt}
         actions={
           <Button variant="secondary" size="sm" asChild>
-            <a href="/api/merchant-portal/transactions/export"><Download className="h-4 w-4" /> Download CSV</a>
+            <a href={`/api/merchant-portal/transactions/export${qs ? `?${qs}` : ""}`}><Download className="h-4 w-4" /> Download CSV</a>
           </Button>
         }
       />
+
+      <Card className="mb-6">
+        <CardContent className="flex flex-wrap items-end gap-3 pt-6">
+          <div className="min-w-[9rem] flex-1">
+            <Label className="text-xs">From</Label>
+            <Input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="min-w-[9rem] flex-1">
+            <Label className="text-xs">To</Label>
+            <Input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          {/* Typing two dates on a phone is the slow path, and most of these lookups are
+              "what came in today / this week" — so the common windows are one tap. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setRange(istDay(), istDay())}>Today</Button>
+            <Button variant="secondary" size="sm" onClick={() => setRange(istDay(1), istDay(1))}>Yesterday</Button>
+            <Button variant="secondary" size="sm" onClick={() => setRange(istDay(6), istDay())}>Last 7 days</Button>
+            {filtered && (
+              <Button variant="ghost" size="sm" onClick={() => setRange("", "")}><X className="h-4 w-4" /> Clear</Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Gross (reimbursable)" value={formatAmount(t?.gross ?? 0)} sublabel={`${t?.success_count ?? 0} successful`} icon={TrendingUp} variant="success" loading={q.isLoading} />
@@ -112,14 +166,18 @@ export default function ProviderTransactionsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Recent transactions</CardTitle>
-          <CardDescription>Across all channels, newest first.</CardDescription>
+          {/* Say which window is on screen — every figure above is scoped to it too, so a
+              filtered page that still claimed "across all channels" would misread. */}
+          <CardDescription>
+            {filtered ? `Across all channels · ${windowLabel}` : "Across all channels, newest first."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {/* Only CHECKOUT rows have a detail view — their ref is the order id. PoolPay /
               vendor pay-ins live in another service and have no page to open. */}
           <DataTable columns={recentCols} rows={d?.recent ?? []} rowKey={(r) => `${r.source}:${r.ref}`} loading={q.isLoading}
             onRowClick={(r) => { if (r.source === "CHECKOUT") router.push(`/merchant-portal/transactions/${r.ref}`); }}
-            emptyState="No transactions yet." />
+            emptyState={filtered ? "No transactions in this date range." : "No transactions yet."} />
         </CardContent>
       </Card>
     </>
