@@ -1,5 +1,15 @@
 # Katana Agent — Merchant Setup Guide
 
+> **The current, maintained guide is `apps/admin-dashboard/public/katana-agent-guide.html`**
+> (published at `https://katanapay.co/katana-agent-guide.html`, PDF at
+> `https://katanapay.co/Katana-Agent-Guide.pdf`). It covers every capture rail — Paytm, Airtel,
+> Google Pay, PhonePe and BharatPe-over-email — and the v3.x home screen.
+>
+> Regenerate the PDF after editing the HTML:
+> `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=apps/admin-dashboard/public/Katana-Agent-Guide.pdf apps/admin-dashboard/public/katana-agent-guide.html`
+>
+> The notes below are the older Paytm-only version, kept for reference.
+
 The Katana Agent runs on an Android phone and automatically reads the **RRN** (12‑digit
 UPI reference) off each Paytm Business payment, then sends it to Katana. On the dashboard
 those payments stop showing **"no RRN"** and get their reference filled in — with no manual

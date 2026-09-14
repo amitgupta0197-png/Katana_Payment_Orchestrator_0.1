@@ -5,7 +5,7 @@
 // a server component.
 
 import { useState } from "react";
-import { Plug, Copy, Check, ExternalLink, Webhook, KeyRound, ShieldCheck } from "lucide-react";
+import { Plug, Copy, Check, ExternalLink, Download, KeyRound, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,7 +47,6 @@ export function IntegrationGuide({ base }: { base: string }) {
   const createOrder = `${base}/api/v1/katana-pay/order`;
   const payPage = `${base}/pay/{order_id}`;
   const statusEnquiry = `${base}/api/pay-status/{order_id}`;
-  const payuWebhook = `${base}/api/gateway/payu/webhook`;
 
   const curl = `curl -X POST ${createOrder} \\
   -H "Content-Type: application/json" \\
@@ -71,7 +70,7 @@ export function IntegrationGuide({ base }: { base: string }) {
 message = txnid + "|" + amount + "|" + productinfo + "|" + email
 hash    = HMAC_SHA256( key = KEY + SALT, message )        // lowercase hex
 
-// PAYU_SHA512
+// Legacy SHA-512 format
 seq  = KEY + "|" + txnid + "|" + amount + "|" + productinfo + "|" +
        firstname + "|" + email + "|||||||||||" + SALT     // 5 udf + 5 reserved blanks
 hash = SHA512(seq)                                        // lowercase hex`;
@@ -91,8 +90,14 @@ hash = SHA512(seq)                                        // lowercase hex`;
 
   return (
     <>
-      <PageHeader title="Integration" description="Connect any website to Katana Pay — endpoints, signing, PayU webhook, and status callbacks." icon={Plug}
-        actions={<Button asChild size="sm" variant="secondary"><a href="/katana-pay-integration.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> Open full guide</a></Button>} />
+      <PageHeader title="Integration" description="Connect any website to Katana Pay — endpoints, signing, status callbacks, and traceability." icon={Plug}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="secondary"><a href="/katana-pay-integration.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> Open full guide</a></Button>
+            {/* The PDF is the same guide, printed — it is what merchants forward to their own developers. */}
+            <Button asChild size="sm" variant="secondary"><a href="/Katana-Pay-Integration-Guide.pdf" target="_blank" rel="noopener"><Download className="h-4 w-4" /> Download PDF</a></Button>
+          </div>
+        } />
 
       {/* How it works */}
       <Card className="mb-4">
@@ -124,7 +129,7 @@ hash = SHA512(seq)                                        // lowercase hex`;
       {/* Endpoints */}
       <Card className="mb-4">
         <CardHeader><CardTitle className="text-base">Endpoints</CardTitle>
-          <CardDescription>Same for every language. Production server-to-server calls require IP whitelisting.</CardDescription></CardHeader>
+          <CardDescription>Same for every language. The Key + Salt is the only credential — keep the Salt server-side.</CardDescription></CardHeader>
         <CardContent className="space-y-2 text-sm">
           {[["Create order (POST)", createOrder], ["Hosted payment page", payPage], ["Status enquiry (GET)", statusEnquiry]].map(([label, url]) => (
             <div key={label} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -153,31 +158,20 @@ hash = SHA512(seq)                                        // lowercase hex`;
         <CardContent><CodeBlock>{callbackVerify}</CodeBlock></CardContent>
       </Card>
 
-      {/* PayU webhook */}
+      {/* How a payment is confirmed. The acquirer that settles it is deliberately not named —
+          this page is merchant-facing and Katana Pay is the brand they integrate against. */}
       <Card className="mt-4">
-        <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><Webhook className="h-4 w-4" />Connect your PayU account</CardTitle>
-          <CardDescription>Only if payments route through your own PayU MID. One URL serves every account — do not create one per merchant.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><ShieldCheck className="h-4 w-4" />How a payment is confirmed</CardTitle>
+          <CardDescription>Three independent layers, so a payment is never lost to a dropped callback.</CardDescription></CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="space-y-1">
-            <div className="text-xs text-[color:var(--color-text-muted)]">Webhook URL — paste into PayU Dashboard → Webhooks</div>
-            <Copyable value={payuWebhook} />
-          </div>
-          <ol className="space-y-2">
-            <Step n={1}>Make sure your PayU <b>Key + Salt</b> are stored in Katana first — we verify PayU&apos;s reply hash with them. Without them a payment can never be marked successful.</Step>
-            <Step n={2}>In PayU Dashboard → <b>Webhooks</b> → Add webhook, paste the URL above. <b>Type:</b> Payments · <b>Event:</b> Successful (add Failed too if you want failures recorded) · <b>Method:</b> POST.</Step>
-            <Step n={3}>Hit <b>Test</b> — we answer 200 on the dashboard&apos;s GET, so the check passes.</Step>
-          </ol>
+          <ul className="ml-1 space-y-1 text-[color:var(--color-text-muted)]">
+            <li>· <b>Status callback</b> — POSTed to your notify_url on every terminal status, retried until you reply 200. Most reliable.</li>
+            <li>· <b>Browser return</b> — only if the customer comes back from their UPI app. Informational; never fulfil on it alone.</li>
+            <li>· <b>Reconciler</b> — sweeps anything still pending every 15s, so a lost callback self-heals.</li>
+          </ul>
           <p className="text-[color:var(--color-text-muted)]">
-            You never configure surl/furl — Katana sets those per transaction automatically.
+            Whatever happens, <b>GET /api/pay-status/&#123;order_id&#125;</b> is the authoritative answer at any moment.
           </p>
-          <div className="rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] p-3">
-            <div className="mb-1 inline-flex items-center gap-2 font-medium"><ShieldCheck className="h-4 w-4 text-[color:var(--color-success)]" />Three layers confirm every payment</div>
-            <ul className="ml-1 space-y-1 text-[color:var(--color-text-muted)]">
-              <li>· <b>Webhook</b> — fires even if the customer closes the tab. Most reliable.</li>
-              <li>· <b>Browser return</b> — only if the customer comes back from their UPI app.</li>
-              <li>· <b>Reconciler</b> — sweeps every 15s and asks PayU directly about anything still pending, so a lost callback self-heals.</li>
-            </ul>
-          </div>
         </CardContent>
       </Card>
 
@@ -187,8 +181,6 @@ hash = SHA512(seq)                                        // lowercase hex`;
           <ul className="space-y-1.5 text-sm">
             <li>· Key + Salt issued, Salt stored server-side only.</li>
             <li>· Default <b>return_url</b> and <b>webhook URL</b> saved (or passed per order).</li>
-            <li>· Server&apos;s public IP sent to Katana for whitelisting.</li>
-            <li>· PayU webhook URL pasted into the PayU dashboard, if you use your own MID.</li>
             <li>· Test payment made — callback received and <b>HASH verified</b>.</li>
             <li>· Callbacks handled <b>idempotently</b> — the same ORDER_ID may arrive more than once.</li>
           </ul>
@@ -196,6 +188,10 @@ hash = SHA512(seq)                                        // lowercase hex`;
             <Badge variant="brand">Full reference</Badge>
             <a className="text-sm underline" href="/katana-pay-integration.html" target="_blank" rel="noopener">
               katana-pay-integration.html — request fields, error codes, PHP / Node / Python samples
+            </a>
+            <span className="text-sm opacity-50">·</span>
+            <a className="inline-flex items-center gap-1.5 text-sm underline" href="/Katana-Pay-Integration-Guide.pdf" target="_blank" rel="noopener">
+              <Download className="h-3.5 w-3.5" /> Download as PDF
             </a>
           </div>
         </CardContent>

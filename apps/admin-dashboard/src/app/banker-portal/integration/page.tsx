@@ -9,7 +9,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { PinelabsConfigCard } from "@/components/pinelabs-config-card";
-import { Plug, Copy, KeyRound, RefreshCw, Check, ExternalLink, Webhook } from "lucide-react";
+import { Plug, Copy, KeyRound, RefreshCw, Check, ExternalLink, Download, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,13 @@ function CodeBlock({ children }: { children: string }) {
     </div>
   );
 }
+
+/**
+ * What the merchant SEES for a signing scheme. The stored value is unchanged: the kit is
+ * white-labelled, so the acquirer whose legacy hash format we reuse must not be named on a
+ * merchant-facing screen. Never send this string anywhere — send the raw scheme.
+ */
+const schemeLabel = (s: string) => (s === "PAYU_SHA512" ? "SHA-512 (legacy)" : s);
 
 export default function IntegrationPage() {
   const qc = useQueryClient();
@@ -87,7 +94,7 @@ export default function IntegrationPage() {
 # Redirect the customer's browser to pay_url.`;
 
   const signing = scheme === "PAYU_SHA512"
-    ? `// PAYU_SHA512
+    ? `// Legacy SHA-512 format  (your scheme)
 hash = SHA512( key + "|" + txnid + "|" + amount + "|" + productinfo + "|" +
                firstname + "|" + email + "|||||||||||" + salt )   // lowercase hex`
     : `// HMAC_SHA256  (your scheme)
@@ -109,7 +116,13 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
   return (
     <>
       <PageHeader title="Integration" description="Connect any website to Katana Pay — endpoints, signing, and status callbacks." icon={Plug}
-        actions={<Button asChild size="sm" variant="secondary"><a href="/katana-pay-integration.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> Open setup guide</a></Button>} />
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm" variant="secondary"><a href="/katana-pay-integration.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> Open setup guide</a></Button>
+            {/* The PDF is the same guide, printed — it is what merchants forward to their own developers. */}
+            <Button asChild size="sm" variant="secondary"><a href="/Katana-Pay-Integration-Guide.pdf" target="_blank" rel="noopener"><Download className="h-4 w-4" /> Download PDF</a></Button>
+          </div>
+        } />
 
       {/* Pine Labs — pull transactions + RRN from your Pine Labs account */}
       <div className="mb-4"><PinelabsConfigCard endpoint="/api/me/pinelabs" canEdit /></div>
@@ -125,7 +138,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
           {q.isLoading ? "Loading…" : d?.credentials?.configured ? (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
               <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Key</div><Copyable value={d.credentials.key!} /></div>
-              <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{d.credentials.scheme}</Badge></div>
+              <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{schemeLabel(d.credentials.scheme!)}</Badge></div>
               <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><span className="font-mono text-xs">{d.credentials.salt_hint}</span></div>
             </div>
           ) : <p className="text-[color:var(--color-text-muted)]">No credentials yet — click <b>Generate Key + Salt</b>.</p>}
@@ -134,7 +147,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
 
       {/* Endpoints */}
       <Card className="mb-4">
-        <CardHeader><CardTitle className="text-base">Endpoints</CardTitle><CardDescription>Same for every language. IP-whitelisting required for production server-to-server calls.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">Endpoints</CardTitle><CardDescription>Same for every language. The Key + Salt is the only credential — keep the Salt server-side.</CardDescription></CardHeader>
         <CardContent className="space-y-2 text-sm">
           {ep && [
             ["Create order (POST)", ep.create_order],
@@ -182,7 +195,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
           <DialogHeader><DialogTitle>Generate Key + Salt</DialogTitle><DialogDescription>This replaces any existing credentials. The Salt is shown only once — copy it now.</DialogDescription></DialogHeader>
           <div className="flex gap-2">
             {(d?.schemes ?? ["HMAC_SHA256", "PAYU_SHA512"]).map((s) => (
-              <Button key={s} variant="secondary" disabled={regen.isPending} onClick={() => regen.mutate(s)}>{s}</Button>
+              <Button key={s} variant="secondary" disabled={regen.isPending} onClick={() => regen.mutate(s)}>{schemeLabel(s)}</Button>
             ))}
           </div>
         </DialogContent>
@@ -195,7 +208,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
             <div className="space-y-2 text-sm">
               <div><div className="text-xs text-[color:var(--color-text-muted)]">Key</div><Copyable value={newCreds.key} /></div>
               <div><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><Copyable value={newCreds.salt} /></div>
-              <div><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{newCreds.scheme}</Badge></div>
+              <div><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{schemeLabel(newCreds.scheme)}</Badge></div>
             </div>
           )}
           <DialogFooter><Button onClick={() => setNewCreds(null)}>I’ve saved them</Button></DialogFooter>

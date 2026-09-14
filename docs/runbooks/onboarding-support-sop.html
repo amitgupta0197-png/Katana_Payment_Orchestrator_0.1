@@ -1,0 +1,823 @@
+<title>Katana Onboarding &amp; Support SOP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F4F6F5; --paper:#FFFFFF; --ink:#16212A; --ink-2:#4A5862; --ink-3:#6F7C84;
+  --rule:#D9DFDD; --rule-2:#E8ECEA; --accent:#0B6A62; --accent-soft:#E0EFEC;
+  --p1:#B3261E; --p1-soft:#FBE9E7; --p2:#A15C00; --p2-soft:#FDF0DC; --p3:#2E5E99; --p3-soft:#E6EEF8;
+  --r-p2p:#6B4FA0; --r-p2p-soft:#EFEAF7; --r-int:#0B6A62; --r-int-soft:#E0EFEC; --r-pay:#9A4A1B; --r-pay-soft:#F8EAE0;
+  --code-bg:#EEF2F0;
+  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1518; --paper:#161E22; --ink:#E4EAE8; --ink-2:#A9B5B3; --ink-3:#86928F;
+    --rule:#2A3438; --rule-2:#222B2F; --accent:#4FC1B3; --accent-soft:#16302D;
+    --p1:#F28B82; --p1-soft:#3A1C1A; --p2:#F2B45A; --p2-soft:#3A2A12; --p3:#8AB4F0; --p3-soft:#18263A;
+    --r-p2p:#B9A2E6; --r-p2p-soft:#2A2340; --r-int:#4FC1B3; --r-int-soft:#16302D; --r-pay:#EBA27A; --r-pay-soft:#3A2518;
+    --code-bg:#1C2529;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1518; --paper:#161E22; --ink:#E4EAE8; --ink-2:#A9B5B3; --ink-3:#86928F;
+  --rule:#2A3438; --rule-2:#222B2F; --accent:#4FC1B3; --accent-soft:#16302D;
+  --p1:#F28B82; --p1-soft:#3A1C1A; --p2:#F2B45A; --p2-soft:#3A2A12; --p3:#8AB4F0; --p3-soft:#18263A;
+  --r-p2p:#B9A2E6; --r-p2p-soft:#2A2340; --r-int:#4FC1B3; --r-int-soft:#16302D; --r-pay:#EBA27A; --r-pay-soft:#3A2518;
+  --code-bg:#1C2529;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15.5px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px}
+@media (max-width:960px){.shell{grid-template-columns:minmax(0,1fr);gap:0}}
+
+/* TOC */
+nav.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow:auto;padding-block:40px 24px;font-size:13.5px}
+nav.toc .brand{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.01em;margin-bottom:4px}
+nav.toc .docno{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-bottom:22px}
+nav.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;counter-reset:t}
+nav.toc li{counter-increment:t}
+nav.toc a{display:grid;grid-template-columns:26px 1fr;color:var(--ink-2);text-decoration:none;padding:5px 8px;border-radius:5px}
+nav.toc a::before{content:counter(t);font-family:var(--mono);font-size:11.5px;color:var(--ink-3);padding-top:1px}
+nav.toc a:hover{background:var(--rule-2);color:var(--ink)}
+nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (max-width:960px){nav.toc{position:static;max-height:none;padding-block:28px 8px;border-bottom:1px solid var(--rule)}
+  nav.toc ol{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+
+main{min-width:0;padding-block:40px 0}
+.doc-head{border-bottom:2px solid var(--ink);padding-bottom:26px;margin-bottom:8px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.6vw,46px);line-height:1.05;letter-spacing:-.02em;margin:10px 0 14px;text-wrap:balance}
+.lede{font-size:17px;color:var(--ink-2);max-width:66ch;margin:0}
+.control{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border:1px solid var(--rule);background:var(--paper)}
+.control div{padding:10px 14px;border-right:1px solid var(--rule-2);border-bottom:1px solid var(--rule-2)}
+.control dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.control dd{margin:2px 0 0;font-weight:500;font-size:14px}
+
+section{padding-top:44px}
+h2{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:-.015em;line-height:1.15;margin:0 0 6px;display:flex;gap:14px;align-items:baseline;text-wrap:balance}
+h2 .n{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--accent);min-width:28px}
+h3{font-family:var(--display);font-weight:500;font-size:19px;letter-spacing:-.01em;margin:30px 0 8px;text-wrap:balance}
+h4{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:22px 0 6px}
+p,li{max-width:72ch}
+p{margin:8px 0}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:3px 0}
+a{color:var(--accent)}
+strong{font-weight:600}
+code{font-family:var(--mono);font-size:.86em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+pre{font-family:var(--mono);font-size:12.8px;line-height:1.55;background:var(--code-bg);border:1px solid var(--rule-2);padding:14px 16px;overflow-x:auto;margin:10px 0;border-radius:4px}
+pre code{background:none;padding:0;font-size:inherit}
+.sub{color:var(--ink-2);margin-top:0}
+
+.tbl{overflow-x:auto;margin:12px 0;border:1px solid var(--rule);background:var(--paper)}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule-2)}
+th{font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);background:var(--ground);border-bottom:1px solid var(--rule);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.k{font-weight:600;white-space:nowrap}
+td.num{font-family:var(--mono);font-size:13px;white-space:nowrap}
+.wide table{min-width:760px}
+
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:500;padding:1px 8px;border-radius:999px;white-space:nowrap;letter-spacing:.02em}
+.c-p2p{color:var(--r-p2p);background:var(--r-p2p-soft)}
+.c-int{color:var(--r-int);background:var(--r-int-soft)}
+.c-pay{color:var(--r-pay);background:var(--r-pay-soft)}
+.c-p1{color:var(--p1);background:var(--p1-soft)}
+.c-p2{color:var(--p2);background:var(--p2-soft)}
+.c-p3{color:var(--p3);background:var(--p3-soft)}
+
+/* Rail bifurcation */
+.rails{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0}
+@media (max-width:760px){.rails{grid-template-columns:minmax(0,1fr)}}
+.rail{background:var(--paper);border:1px solid var(--rule);border-top:3px solid var(--rc);padding:16px 16px 14px;display:flex;flex-direction:column;gap:6px}
+.rail h3{margin:0;font-size:20px;color:var(--rc)}
+.rail .what{font-size:14px;color:var(--ink-2);margin:0}
+.rail dl{margin:6px 0 0;display:grid;gap:6px;font-size:13.5px}
+.rail dt{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}
+.rail dd{margin:0}
+.rail.p2p{--rc:var(--r-p2p)} .rail.int{--rc:var(--r-int)} .rail.pay{--rc:var(--r-pay)}
+
+.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:10px 14px;margin:14px 0;font-size:14.5px}
+.note.warn{border-color:var(--p2);background:var(--p2-soft)}
+.note.risk{border-color:var(--p1);background:var(--p1-soft)}
+.note p{margin:4px 0}
+
+/* Stage flow */
+ol.stages{list-style:none;padding:0;margin:14px 0;counter-reset:s;display:grid;gap:0;border-left:2px solid var(--rule)}
+ol.stages>li{counter-increment:s;position:relative;padding:4px 0 16px 30px;max-width:none}
+ol.stages>li::before{content:counter(s);position:absolute;left:-12px;top:3px;width:22px;height:22px;border-radius:50%;background:var(--paper);border:2px solid var(--accent);color:var(--accent);font-family:var(--mono);font-size:11px;font-weight:500;display:grid;place-items:center}
+ol.stages .t{font-weight:600}
+ol.stages .tat{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-left:8px}
+ol.stages p{margin:2px 0;color:var(--ink-2);font-size:14.5px}
+
+ul.check{list-style:none;padding:0}
+ul.check li{padding-left:26px;position:relative}
+ul.check li::before{content:"";position:absolute;left:2px;top:6px;width:12px;height:12px;border:1.5px solid var(--ink-3);border-radius:2px}
+
+/* Telegram groups */
+.groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}
+@media (max-width:760px){.groups{grid-template-columns:minmax(0,1fr)}}
+.group{background:var(--paper);border:1px solid var(--rule);padding:16px}
+.group .gname{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent)}
+.group h3{margin:4px 0 6px;font-size:19px}
+.group p{font-size:14px;color:var(--ink-2);margin:4px 0}
+.group dl{display:grid;grid-template-columns:92px 1fr;gap:4px 10px;font-size:13.5px;margin:10px 0 0}
+.group dt{color:var(--ink-3);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding-top:2px}
+.group dd{margin:0}
+
+/* Severity */
+.sev{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0}
+@media (max-width:860px){.sev{grid-template-columns:minmax(0,1fr)}}
+.sev article{background:var(--paper);border:1px solid var(--rule);padding:16px}
+.sev .lvl{display:flex;align-items:baseline;gap:10px}
+.sev .lvl b{font-family:var(--display);font-size:34px;line-height:1;color:var(--sc)}
+.sev .lvl span{font-weight:600}
+.sev article.s1{--sc:var(--p1)} .sev article.s2{--sc:var(--p2)} .sev article.s3{--sc:var(--p3)}
+.sev p{font-size:14px;color:var(--ink-2)}
+.sev ul{font-size:13.5px;padding-left:18px}
+.clock{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:13.5px;border-top:1px solid var(--rule-2);margin-top:10px;padding-top:10px}
+.clock span:nth-child(even){font-family:var(--mono);font-weight:500;color:var(--sc);text-align:right}
+
+/* Shift bar */
+.shiftbar{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));margin:14px 0 4px;border:1px solid var(--rule);background:var(--paper)}
+.shiftbar div{height:34px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11.5px;overflow:hidden;white-space:nowrap}
+.sh-a{grid-column:span 8;background:var(--accent-soft);color:var(--accent)}
+.sh-b{grid-column:span 8;background:var(--p3-soft);color:var(--p3);border-left:1px solid var(--rule)}
+.sh-c{grid-column:span 8;background:var(--r-p2p-soft);color:var(--r-p2p);border-left:1px solid var(--rule)}
+.hours{display:grid;grid-template-columns:repeat(4,1fr);font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.hours span:last-child{text-align:right}
+
+.tpl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.tpl{grid-template-columns:minmax(0,1fr)}}
+.tpl pre{margin:0;height:100%;white-space:pre-wrap}
+.tpl h4{margin-top:0}
+
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--rule);font-size:13px;color:var(--ink-3)}
+</style>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <div class="brand">Katana SOP</div>
+  <div class="docno">KTN-SOP-OPS-001 · v1.0</div>
+  <ol>
+    <li><a href="#scope">Purpose &amp; scope</a></li>
+    <li><a href="#rails">The three rails</a></li>
+    <li><a href="#roles">Roles &amp; ownership</a></li>
+    <li><a href="#merchant">Merchant onboarding</a></li>
+    <li><a href="#p2p">P2P setup</a></li>
+    <li><a href="#intent">UPI Intent setup</a></li>
+    <li><a href="#payout">Payout setup</a></li>
+    <li><a href="#partner">Katana → Bank / TSP</a></li>
+    <li><a href="#api">API reference</a></li>
+    <li><a href="#telegram">Telegram support groups</a></li>
+    <li><a href="#roster">24/7 coverage</a></li>
+    <li><a href="#severity">P1 · P2 · P3</a></li>
+    <li><a href="#sla">SLA commitments</a></li>
+    <li><a href="#templates">Message templates</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="doc-head">
+  <div class="eyebrow">Standard Operating Procedure · Internal</div>
+  <h1>Onboarding, Integration &amp; 24/7 Support</h1>
+  <p class="lede">How Katana onboards a merchant onto its rails, how Katana itself gets onboarded by a bank or TSP, and how every query after go-live is triaged, escalated and closed — split cleanly across P2P, UPI Intent and Payout.</p>
+  <dl class="control">
+    <div><dt>Document no.</dt><dd>KTN-SOP-OPS-001</dd></div>
+    <div><dt>Version</dt><dd>1.0 · draft for approval</dd></div>
+    <div><dt>Effective</dt><dd>15 Sep 2026</dd></div>
+    <div><dt>Owner</dt><dd>Head of Operations</dd></div>
+    <div><dt>Approver</dt><dd>Management</dd></div>
+    <div><dt>Review</dt><dd>Quarterly</dd></div>
+  </dl>
+</header>
+
+<section id="scope">
+  <h2><span class="n">1</span>Purpose &amp; scope</h2>
+  <p>This SOP covers two directions of onboarding and the support model that runs underneath both:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Direction</th><th>Who is onboarded</th><th>Who onboards them</th><th>Covered in</th></tr></thead>
+    <tbody>
+      <tr><td class="k">A · Inbound</td><td>A merchant (or branch / banker) using Katana to collect or pay out</td><td>Katana (Sales → Compliance → Tech → Ops)</td><td>§4–§7</td></tr>
+      <tr><td class="k">B · Outbound</td><td>Katana, as a platform / TSP</td><td>A sponsor bank, payment aggregator or TSP</td><td>§8</td></tr>
+      <tr><td class="k">Run</td><td>Everyone live on Katana</td><td>Four Telegram support groups, 24/7</td><td>§10–§14</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>TAT</strong> in this document means <strong>business days (BD)</strong> counted from the day a complete document set is received, unless stated in hours. Incomplete submissions pause the clock. Figures marked <em>target</em> are internal commitments; partner-side TATs depend on the bank or TSP and are tracked, not promised.</p>
+</section>
+
+<section id="rails">
+  <h2><span class="n">2</span>The three rails</h2>
+  <p class="sub">Every onboarding request is tagged with one or more rails at intake. The rail decides the document set, the integration path, the TAT and who supports it.</p>
+  <div class="rails">
+    <div class="rail p2p">
+      <span class="chip c-p2p">RAIL · P2P</span>
+      <h3>P2P collection</h3>
+      <p class="what">Customer pays a UPI VPA directly. Katana captures the credit on the receiving device and matches it to the order.</p>
+      <dl>
+        <dt>Money lands in</dt><dd>The merchant's own business VPA / bank account</dd>
+        <dt>Confirmation</dt><dd>On-device capture (SMS, app notification, email) → match ladder: UTR → amount + VPA + recency → amount + recency</dd>
+        <dt>Integration</dt><dd>Katana Agent app on the receiving phone + trusted device; optional order API</dd>
+        <dt>Merchant TAT</dt><dd>2–3 BD</dd>
+      </dl>
+    </div>
+    <div class="rail int">
+      <span class="chip c-int">RAIL · INTENT</span>
+      <h3>UPI Intent</h3>
+      <p class="what">Merchant's server creates a signed order; customer pays from a UPI app via intent deeplink, QR or the hosted page.</p>
+      <dl>
+        <dt>Money lands in</dt><dd>Settlement VPA pool / acquirer MID per merchant config</dd>
+        <dt>Confirmation</dt><dd>Signed S2S status callback + status enquiry fallback</dd>
+        <dt>Integration</dt><dd>Key + Salt, <code>POST /api/v1/katana-pay/order</code>, hosted <code>/pay/{id}</code></dd>
+        <dt>Merchant TAT</dt><dd>3–5 BD</dd>
+      </dl>
+    </div>
+    <div class="rail pay">
+      <span class="chip c-pay">RAIL · PAYOUT</span>
+      <h3>Payout &amp; settlement</h3>
+      <p class="what">Funds move out to whitelisted beneficiaries — bank, UPI, wallet or USDT — under maker-checker control.</p>
+      <dl>
+        <dt>Money leaves from</dt><dd>Merchant payable balance (collected − settled − in-flight)</dd>
+        <dt>Confirmation</dt><dd>UTR / tx hash recorded, receipt uploaded, counter-party verifies</dd>
+        <dt>Integration</dt><dd>Beneficiary whitelist → payout order → approval queue</dd>
+        <dt>Merchant TAT</dt><dd>5–7 BD</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="note risk">
+    <p><strong>P2P compliance gate.</strong> NPCI rules do not allow personal (P2P) VPAs to be used for commercial collection. Every P2P-rail merchant must collect on a <strong>business / merchant VPA</strong> (P2M or small-merchant category) issued in the merchant's own legal name. Compliance rejects any application that routes business collections through a personal VPA. Confirm per-transaction and monthly caps for the VPA category with the issuing bank at onboarding; do not quote limits from memory.</p>
+  </div>
+</section>
+
+<section id="roles">
+  <h2><span class="n">3</span>Roles &amp; ownership</h2>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Stage</th><th>Account Mgr</th><th>Compliance / Risk</th><th>Tech Integration</th><th>Operations</th><th>Finance</th><th>Management</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Lead &amp; commercials</td><td>R</td><td>C</td><td>—</td><td>—</td><td>C</td><td>A</td></tr>
+      <tr><td class="k">KYC / KYB review</td><td>C</td><td>R/A</td><td>—</td><td>—</td><td>—</td><td>I</td></tr>
+      <tr><td class="k">Account provisioning</td><td>I</td><td>C</td><td>C</td><td>R/A</td><td>—</td><td>—</td></tr>
+      <tr><td class="k">Integration &amp; UAT</td><td>I</td><td>—</td><td>R/A</td><td>C</td><td>—</td><td>—</td></tr>
+      <tr><td class="k">Payout limits &amp; beneficiaries</td><td>—</td><td>R (checker)</td><td>—</td><td>C</td><td>A</td><td>I</td></tr>
+      <tr><td class="k">Go-live sign-off</td><td>C</td><td>C</td><td>C</td><td>R</td><td>C</td><td>A</td></tr>
+      <tr><td class="k">Partner (bank / TSP) onboarding</td><td>R</td><td>R</td><td>R</td><td>C</td><td>C</td><td>A</td></tr>
+    </tbody>
+  </table></div>
+  <p style="font-size:13.5px;color:var(--ink-3)">R responsible · A accountable · C consulted · I informed. One named person per role per merchant is recorded on the onboarding tracker.</p>
+</section>
+
+<section id="merchant">
+  <h2><span class="n">4</span>Merchant onboarding — common path</h2>
+  <p class="sub">All three rails pass through the same eight stages. Rail-specific work happens in stages 5–6 (see §5–§7).</p>
+  <ol class="stages">
+    <li><span class="t">Intake &amp; rail tagging</span><span class="tat">Day 0</span>
+      <p>AM logs the lead, business model, expected monthly volume, average ticket size, and tags rails <span class="chip c-p2p">P2P</span> <span class="chip c-int">INTENT</span> <span class="chip c-pay">PAYOUT</span>. Merchant code reserved (e.g. <code>UK-108</code>).</p></li>
+    <li><span class="t">Document collection</span><span class="tat">merchant-dependent</span>
+      <p>Checklist below sent from the Ops group. Clock starts only when the set is complete.</p></li>
+    <li><span class="t">KYC / KYB &amp; risk review</span><span class="tat">target 1 BD</span>
+      <p>Compliance verifies entity, directors, UBO, bank account ownership, website / app, prohibited-category screen, sanctions &amp; PEP screen. Risk assigns a tier (Low / Medium / High) that sets limits.</p></li>
+    <li><span class="t">Commercial approval</span><span class="tat">target 0.5 BD</span>
+      <p>MDR / fees, settlement cycle, reserve %, payout limits. Management approves anything outside the standard rate card.</p></li>
+    <li><span class="t">Account provisioning</span><span class="tat">target 0.5 BD</span>
+      <p>Ops creates the merchant, auto-provisions the login (one-time password, forced change), maps to provider / branch, sets limits and rails.</p></li>
+    <li><span class="t">Integration &amp; UAT</span><span class="tat">1–4 BD by rail</span>
+      <p>Tech Integration runs the rail checklist (§5–§7) and a witnessed test transaction for every enabled rail.</p></li>
+    <li><span class="t">Go-live sign-off</span><span class="tat">same day</span>
+      <p>Ops confirms all checklist items green; Management approves High-tier merchants. Merchant is added to the relevant Telegram groups (§10).</p></li>
+    <li><span class="t">Hypercare</span><span class="tat">7 calendar days</span>
+      <p>Daily reconciliation check by Ops, first settlement reviewed by Finance, all incidents auto-raised one severity level.</p></li>
+  </ol>
+
+  <h3>Document checklist</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Document</th><th>Proprietor</th><th>Partnership / LLP</th><th>Pvt Ltd / Ltd</th><th>Rails</th></tr></thead>
+    <tbody>
+      <tr><td>PAN (entity)</td><td>Individual PAN</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>Certificate of Incorporation / Partnership deed / LLP agreement</td><td>—</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>MOA &amp; AOA</td><td>—</td><td>—</td><td>✓</td><td>All</td></tr>
+      <tr><td>GST certificate <em>or</em> Udyam / Shop &amp; Establishment</td><td>✓</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>Board resolution / authority letter for signatory</td><td>—</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>KYC of directors / partners / UBO ≥10% (PAN + Aadhaar, masked)</td><td>✓</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>Cancelled cheque or bank letter (account in entity name)</td><td>✓</td><td>✓</td><td>✓</td><td>All</td></tr>
+      <tr><td>Business VPA proof (screenshot of merchant app profile)</td><td colspan="3">✓ for every VPA that receives funds</td><td><span class="chip c-p2p">P2P</span></td></tr>
+      <tr><td>Website / app URL, T&amp;C, refund &amp; privacy policy pages</td><td colspan="3">✓</td><td><span class="chip c-int">INTENT</span></td></tr>
+      <tr><td>Server IPs, callback URL (HTTPS), return URL</td><td colspan="3">✓</td><td><span class="chip c-int">INTENT</span></td></tr>
+      <tr><td>Beneficiary list with account / IFSC / VPA / wallet + network</td><td colspan="3">✓</td><td><span class="chip c-pay">PAYOUT</span></td></tr>
+      <tr><td>Purpose of payouts &amp; source-of-funds declaration</td><td colspan="3">✓</td><td><span class="chip c-pay">PAYOUT</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Merchant TAT by rail</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Stage</th><th><span class="chip c-p2p">P2P</span></th><th><span class="chip c-int">INTENT</span></th><th><span class="chip c-pay">PAYOUT</span></th></tr></thead>
+    <tbody>
+      <tr><td class="k">KYC / KYB &amp; risk</td><td class="num">1 BD</td><td class="num">1 BD</td><td class="num">2 BD (enhanced due diligence)</td></tr>
+      <tr><td class="k">Commercials + provisioning</td><td class="num">0.5 BD</td><td class="num">0.5 BD</td><td class="num">1 BD</td></tr>
+      <tr><td class="k">Integration &amp; UAT</td><td class="num">0.5–1 BD</td><td class="num">1–3 BD</td><td class="num">2–3 BD</td></tr>
+      <tr><td class="k">Go-live sign-off</td><td class="num">same day</td><td class="num">same day</td><td class="num">same day + Finance</td></tr>
+      <tr><td class="k">End-to-end target</td><td class="num"><strong>2–3 BD</strong></td><td class="num"><strong>3–5 BD</strong></td><td class="num"><strong>5–7 BD</strong></td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn"><p>If a stage runs past its target by more than 1 BD, the AM posts a status in the Ops group tagging the stage owner. Past 3 BD, it is raised in the Management group.</p></div>
+</section>
+
+<section id="p2p">
+  <h2><span class="n">5</span><span>P2P setup <span class="chip c-p2p">P2P</span></span></h2>
+  <p>Payment confirmation comes from the phone (or inbox) that receives the money — there is no acquirer API on this rail. Setup quality decides whether payments auto-close.</p>
+  <h4>Integration steps</h4>
+  <ol>
+    <li>Register every receiving business VPA against the merchant (primary + extras). Where two bankers share a VPA, the agent's merchant code is the only attribution key — record it.</li>
+    <li>Install <strong>Katana Agent</strong> from <code>https://katanapay.co/katana-agent.apk</code> on the <strong>same phone</strong> logged into the business app (Paytm / PhonePe for Business, BharatPe).</li>
+    <li>In the agent: leave base URL as <code>https://katanapay.co</code>; set a <strong>unique Device ID</strong> (never reuse across phones); enter the merchant code and confirm the ✓ verification — a mistyped code orphans every capture.</li>
+    <li>Grant SMS, notification access, and battery <strong>Unrestricted</strong>. Enable auto-capture only if RRN capture is in scope.</li>
+    <li>Ops <strong>trusts the device</strong> (Merchant → Transaction agent card, or Transaction Intel → Devices). Untrusted devices can never auto-confirm.</li>
+    <li>Optional fallback: configure the email capture channel for inboxes that receive payment emails (mandatory for BharatPe, which is email-only today).</li>
+    <li>Witnessed test: create an order, pay a clean whole-rupee amount, confirm the order moves to SUCCESS and the pay page shows “Payment received”.</li>
+  </ol>
+  <h4>Go-live checklist</h4>
+  <ul class="check">
+    <li>Device card shows all four green: Trusted · Notification access · Forwarding · Online</li>
+    <li>Agent “Recent activity” shows a server outcome for the test (not “queued — failed to connect”)</li>
+    <li>Merchant code on device matches the dashboard exactly</li>
+    <li>Real test payment auto-confirmed inside 2 minutes</li>
+    <li>Merchant told: orders expire in 15 min; late credits auto-revive to SUCCESS; unmatched credits go to the manual reconciliation queue</li>
+  </ul>
+</section>
+
+<section id="intent">
+  <h2><span class="n">6</span><span>UPI Intent setup <span class="chip c-int">INTENT</span></span></h2>
+  <p>Server-to-server integration for any language. The merchant-facing public kit is white-labelled as <strong>Katana Pay</strong> — never name the settling acquirer in merchant material.</p>
+
+  <h4>Integration steps</h4>
+  <ol>
+    <li><strong>Issue credentials.</strong> Merchant portal → Integration → Generate Key + Salt. Salt is shown once; regenerating invalidates the old pair. Scheme: <code>HMAC_SHA256</code> (recommended) or <code>PAYU_SHA512</code>.</li>
+    <li><strong>Share the kit</strong>: <code>https://katanapay.co/katana-pay-integration.html</code> (PDF alongside). Send the Salt through a separate channel from the Key — never in Telegram.</li>
+    <li><strong>Merchant signs and creates orders</strong> (below), passing <code>mode: "INTENT"</code> for app deeplinks or <code>"QR"</code> for desktop.</li>
+    <li><strong>Merchant sets callback + return URLs</strong> (HTTPS) in the portal or per order.</li>
+    <li><strong>UAT:</strong> small live amount; Tech confirms the callback arrived and the merchant's <code>HASH</code> verification passes; test a duplicate <code>txnid</code> returns the same order (idempotent).</li>
+  </ol>
+
+  <h4>Create an order</h4>
+<pre><code>POST https://katanapay.co/api/v1/katana-pay/order
+Content-Type: application/json
+
+{ "key": "mk_xxx", "txnid": "ORDER-1001", "amount": "100.00",
+  "productinfo": "Order 1001", "email": "buyer@example.com", "phone": "9999999999",
+  "mode": "INTENT", "return_url": "https://merchant.com/return",
+  "notify_url": "https://merchant.com/callback", "hash": "&lt;signature&gt;" }
+
+→ 201 { "verified": true, "order": { "id": "…", "order_id": "ORDER-1001", "status": "PENDING" },
+        "pay_url": "https://katanapay.co/pay/…", "upi_intent": "upi://pay?…",
+        "deeplinks": { "upi": "…", "paytm": "…", "phonepe": "…" }, "qr_payload": "upi://pay?…" }</code></pre>
+
+  <h4>Signing</h4>
+<pre><code>HMAC_SHA256   message = txnid|amount|productinfo|email
+              hash    = HMAC_SHA256(key = KEY + SALT, message)          → lowercase hex
+PAYU_SHA512   hash    = SHA512(KEY|txnid|amount|productinfo|firstname|email|||||||||||SALT)</code></pre>
+
+  <h4>Status callback &amp; verification</h4>
+<pre><code>{ "ORDER_ID":"ORDER-1001", "AMOUNT":"100", "STATUS":"Captured", "RESPONSE_CODE":"000",
+  "RRN":"123456789012", "RESPONSE_DATE_TIME":"2026-09-15T…Z", "HASH":"716346F5…" }
+
+1. drop HASH   2. sort keys ascending, join KEY=value with "~"   3. append SALT
+4. SHA256 → hex → UPPERCASE  must equal HASH      Paid = Captured + 000</code></pre>
+
+  <div class="tbl"><table>
+    <thead><tr><th>STATUS</th><th>RESPONSE_CODE</th><th>Merchant action</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Captured</td><td class="num">000</td><td>Fulfil</td></tr>
+      <tr><td class="k">Pending</td><td class="num">005</td><td>Wait; poll <code>GET /api/pay-status/{order_id}</code></td></tr>
+      <tr><td class="k">Failed</td><td class="num">004</td><td>Do not fulfil</td></tr>
+      <tr><td class="k">Expired</td><td class="num">003</td><td>Create a new order</td></tr>
+    </tbody>
+  </table></div>
+  <p>Errors: <code>400</code> bad request / invalid amount · <code>401</code> invalid key or signature mismatch · <code>403</code> merchant blocked. Webhook retries back off 1m → 5m → 15m → 1h → 6h → 24h, then dead-letter; the merchant handler must reply 2xx within 5s and be idempotent.</p>
+  <div class="note"><p><strong>Merchant brings its own acquirer MID?</strong> Use the internal own-acquirer webhook guide (store their Key + Salt vaulted, add the shared webhook URL in their gateway dashboard). Send it to that merchant directly; it is never linked publicly.</p></div>
+
+  <h4>Go-live checklist</h4>
+  <ul class="check">
+    <li>Salt stored server-side only; not in app bundle, browser JS or Git</li>
+    <li>Callback URL is HTTPS and returns 2xx; <code>HASH</code> verifies on a live payment</li>
+    <li>Merchant fulfils only on server-side confirmation, never on the browser return alone</li>
+    <li>Duplicate callbacks for the same <code>ORDER_ID</code> handled idempotently</li>
+    <li>Status-enquiry fallback wired for missed callbacks</li>
+  </ul>
+</section>
+
+<section id="payout">
+  <h2><span class="n">7</span><span>Payout setup <span class="chip c-pay">PAYOUT</span></span></h2>
+  <p>Payouts never leave without an approved beneficiary, sufficient payable balance and, above the high-value threshold, a second approver who is not the maker.</p>
+  <h4>Integration steps</h4>
+  <ol>
+    <li><strong>Finance sets limits</strong>: per-payout, daily cap, high-value threshold that forces maker-checker, allowed modes (BANK / UPI / WALLET / USDT) and allowed USDT networks.</li>
+    <li><strong>Register beneficiaries</strong> — each is created <code>PENDING</code>.</li>
+    <li><strong>Compliance / Risk approves</strong> each beneficiary (maker cannot be checker). Only <code>APPROVED</code> beneficiaries are payable.</li>
+    <li><strong>Create payout orders</strong>. Below threshold → <code>QUEUED</code> to the operator queue; above → <code>HOLD</code> pending approval.</li>
+    <li><strong>Operator processes</strong> the queue item (accept → process → complete with UTR / tx hash, or reject / hold with reason) and uploads proof.</li>
+    <li><strong>UAT:</strong> one ₹1 payout per enabled mode to an internal beneficiary; Finance verifies ledger and balance movement.</li>
+  </ol>
+
+<pre><code>POST /api/v1/beneficiaries
+{ "beneficiary_name":"Asha Traders", "bank_name":"HDFC", "account_number":"50100…",
+  "ifsc":"HDFC0000123" }                     // or "upi_id", or "wallet_address" + "network"
+→ 201 { "id":"…", "status":"PENDING" }
+
+POST /api/v1/beneficiaries/{id}/approve     { "decision":"approve", "reason":"KYC matched" }
+
+POST /api/v1/payouts
+{ "beneficiary_id":"…", "amount":"25000.00", "currency":"INR",
+  "settlement_mode":"BANK", "purpose":"vendor settlement" }
+→ 201 { "order": { "order_ref":"…", "status":"QUEUED" | "HOLD", "approval_required": false } }</code></pre>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Error</th><th>Meaning</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td class="num">404</td><td>Beneficiary not found for merchant</td><td>Check the beneficiary belongs to this merchant</td></tr>
+      <tr><td class="num">409</td><td>Beneficiary not whitelisted</td><td>Get it approved by a checker</td></tr>
+      <tr><td class="num">409</td><td>Insufficient payable balance</td><td>Wait for settlement of collections or reduce amount</td></tr>
+      <tr><td class="num">409</td><td>USDT wallet missing / network not allowed</td><td>Update beneficiary wallet or allowed networks</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Provider ↔ branch settlement lifecycle</h4>
+  <p>Settlements are recorded and verified by Katana; funds are moved by the paying party and evidenced with a UTR or tx hash. References are issued as <code>KTN-SET-000001</code>.</p>
+<pre><code>REQUESTED → ACCEPTED → PROCESSING → PAID | USDT_TRANSFERRED → UTR_SUBMITTED → VERIFIED → RECONCILED
+exceptions: ON_HOLD · CORRECTION_REQUIRED · INVALID_BENEFICIARY · INSUFFICIENT_BALANCE · ESCALATED · FAILED · REVERSED</code></pre>
+  <div class="note"><p>Available to settle = <strong>collected − settled − in-flight</strong>. A raise above available is refused. USDT rates lock at request creation. Every transition is written to an immutable timeline — use it as the audit trail in any dispute.</p></div>
+  <p style="font-size:14px;color:var(--ink-2)">These payout endpoints authenticate with a Katana portal session today. A key-signed server-to-server payout API for merchants is not yet available; do not promise one in onboarding calls.</p>
+</section>
+
+<section id="partner">
+  <h2><span class="n">8</span>Katana onboarding to a bank or TSP</h2>
+  <p class="sub">When Katana is the applicant — to a sponsor bank, payment aggregator, acquirer or payout TSP.</p>
+
+  <ol class="stages">
+    <li><span class="t">Partner qualification</span><span class="tat">1 week</span>
+      <p>Management shortlists partners per rail; AM collects the partner's onboarding form, rate card, NDA and API docs. Log in the partner tracker.</p></li>
+    <li><span class="t">Corporate &amp; compliance pack</span><span class="tat">3–5 BD to assemble</span>
+      <p>Compliance submits the Katana pack (below). Most partner delays originate here — submit complete, in the partner's format.</p></li>
+    <li><span class="t">Partner due diligence</span><span class="tat">partner-dependent · 1–3 weeks</span>
+      <p>Expect a video KYC of signatories, site / infra questionnaire, InfoSec review and business-model call. Tech attends the InfoSec call.</p></li>
+    <li><span class="t">Commercial agreement</span><span class="tat">1–2 weeks</span>
+      <p>MDR / per-txn pricing, settlement cycle, reserve / security deposit, chargeback liability, termination clauses. Legal + Finance review; Management signs.</p></li>
+    <li><span class="t">UAT integration</span><span class="tat">1–2 weeks</span>
+      <p>Sandbox credentials, IP whitelisting both ways, signature scheme, callback wiring, recon file format. Tech runs the partner's UAT test cases and shares evidence.</p></li>
+    <li><span class="t">Production go-live</span><span class="tat">3–5 BD after UAT sign-off</span>
+      <p>Production keys (vaulted, never in <code>.env</code> committed files), live low-value transactions per rail, first settlement verified by Finance, support contacts exchanged and added to the escalation matrix.</p></li>
+  </ol>
+
+  <h3>What Katana submits</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Group</th><th>Items</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Corporate</td><td>COI, MOA/AOA, PAN, GST, board resolution naming signatories, director &amp; UBO KYC, registered-office proof, latest audited financials / CA-certified net worth, bank statements (6 months)</td></tr>
+      <tr><td class="k">Regulatory</td><td>RBI PA / PA-CB licence or in-principle status (or partner-sponsored model declaration), AML / KYC policy, grievance redressal policy with nodal officer, data-localisation declaration, DPDP privacy notice</td></tr>
+      <tr><td class="k">Security</td><td>CERT-In empanelled VAPT report with closure evidence for every finding, network architecture diagram, data-flow diagram, encryption &amp; key-management note, access-control policy, incident response plan, BCP / DR plan, PCI DSS AoC where card data is in scope</td></tr>
+      <tr><td class="k">Business</td><td>Business model note per rail, merchant category list and prohibited-category policy, projected volumes (monthly TPV, txn count, avg ticket), merchant onboarding &amp; risk policy (this SOP)</td></tr>
+      <tr><td class="k">Technical</td><td>Static egress IPs, callback URLs, SPOC list (Tech / Ops / Finance / escalation), UAT test-case results</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>What to obtain from the partner, by rail</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Item</th><th><span class="chip c-p2p">P2P</span></th><th><span class="chip c-int">INTENT</span></th><th><span class="chip c-pay">PAYOUT</span></th></tr></thead>
+    <tbody>
+      <tr><td class="k">Product</td><td>Business / merchant VPAs on sponsor bank handle; credit alerts (SMS / email)</td><td>MID + collect / intent API, dynamic QR, S2S status webhook</td><td>Current / escrow account, IMPS / NEFT / RTGS / UPI payout API, balance API</td></tr>
+      <tr><td class="k">API docs needed</td><td>VPA creation, credit alert format, statement / MIS download</td><td>Create order, status enquiry, refund, webhook payload + hash, settlement report</td><td>Beneficiary validation (penny drop), transfer, status, bounce-back webhook, statement</td></tr>
+      <tr><td class="k">Signature / auth</td><td>Portal credentials, alert sender IDs</td><td>Key + Salt / HMAC, IP whitelist</td><td>HMAC / mTLS, IP whitelist, maker-checker on partner portal</td></tr>
+      <tr><td class="k">Recon</td><td>Daily statement</td><td>Daily settlement file (T+1)</td><td>Daily transfer report incl. returns</td></tr>
+      <tr><td class="k">Callback into Katana</td><td>—</td><td colspan="2"><code>POST /api/v1/webhooks/payment-status</code>, header <code>x-signature</code> = HMAC-SHA256 over raw body</td></tr>
+      <tr><td class="k">Target end-to-end</td><td class="num">2–4 weeks</td><td class="num">3–6 weeks</td><td class="num">4–8 weeks</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn"><p>A partner is not “live” in Katana until: production keys are vaulted, the partner's escalation contacts are in the §13 matrix, a live transaction on every rail has reconciled against the partner's own report, and Finance has verified the first settlement credit.</p></div>
+</section>
+
+<section id="api">
+  <h2><span class="n">9</span>API reference</h2>
+  <p class="sub">Base URL <code>https://katanapay.co</code>. Share only the rows relevant to the recipient.</p>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Rail</th><th>Method</th><th>Path</th><th>Auth</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip c-int">INTENT</span></td><td class="num">POST</td><td class="num">/api/v1/katana-pay/order</td><td>Key + Salt hash</td><td>Create order (idempotent on txnid)</td></tr>
+      <tr><td><span class="chip c-int">INTENT</span></td><td class="num">GET</td><td class="num">/pay/{order_id}</td><td>Public</td><td>Hosted payment page</td></tr>
+      <tr><td><span class="chip c-int">INTENT</span> <span class="chip c-p2p">P2P</span></td><td class="num">GET</td><td class="num">/api/pay-status/{order_id}</td><td>Public</td><td>Status enquiry</td></tr>
+      <tr><td><span class="chip c-int">INTENT</span></td><td class="num">POST</td><td class="num">merchant notify_url</td><td>HASH (SHA256 + Salt)</td><td>Status callback to merchant</td></tr>
+      <tr><td><span class="chip c-p2p">P2P</span></td><td class="num">APK</td><td class="num">/katana-agent.apk</td><td>Signed device</td><td>Capture agent</td></tr>
+      <tr><td><span class="chip c-pay">PAYOUT</span></td><td class="num">POST · GET</td><td class="num">/api/v1/beneficiaries</td><td>Portal session</td><td>Register / list (account masked)</td></tr>
+      <tr><td><span class="chip c-pay">PAYOUT</span></td><td class="num">POST</td><td class="num">/api/v1/beneficiaries/{id}/approve</td><td>Checker session</td><td>Whitelist or reject</td></tr>
+      <tr><td><span class="chip c-pay">PAYOUT</span></td><td class="num">POST</td><td class="num">/api/v1/payouts</td><td>Portal session</td><td>Create payout order</td></tr>
+      <tr><td><span class="chip c-pay">PAYOUT</span></td><td class="num">POST · GET</td><td class="num">/api/v1/settlements</td><td>Admin / Finance</td><td>Settlement batches</td></tr>
+      <tr><td>Partner</td><td class="num">POST</td><td class="num">/api/v1/webhooks/payment-status</td><td>x-signature HMAC</td><td>Inbound partner status callback</td></tr>
+    </tbody>
+  </table></div>
+  <p>Merchant-facing documents: Integration guide (HTML + PDF), API kit PDF, Agent guide PDF — all under <code>katanapay.co</code>. Internal-only: own-acquirer webhook guide, partner credentials, this SOP.</p>
+</section>
+
+<section id="telegram">
+  <h2><span class="n">10</span>Telegram support groups</h2>
+  <p class="sub">Four standing groups carry every post-onboarding query. Each has a single purpose; posting in the wrong group is redirected, not answered.</p>
+  <div class="groups">
+    <div class="group">
+      <div class="gname">KTN · Tech Support</div>
+      <h3>Tech Support</h3>
+      <p>Integration errors, API failures, callbacks not arriving, signature mismatch, agent not capturing, device offline, downtime.</p>
+      <dl>
+        <dt>Members</dt><dd>Tech L1 (shift), Tech L2 on-call, merchant tech SPOCs, partner tech SPOCs</dd>
+        <dt>Owns</dt><dd>Tech Lead</dd>
+        <dt>Bot</dt><dd>Posts health alerts: callback failure spikes, devices offline, capture drops</dd>
+        <dt>Hours</dt><dd>24/7</dd>
+      </dl>
+    </div>
+    <div class="group">
+      <div class="gname">KTN · Operations Support</div>
+      <h3>Operations Support</h3>
+      <p>Transaction status, unmatched credits, RRN / UTR lookups, manual confirmation, onboarding progress, device trust, merchant limits.</p>
+      <dl>
+        <dt>Members</dt><dd>Ops L1 (shift), Ops Lead, AMs, merchant ops SPOCs</dd>
+        <dt>Owns</dt><dd>Head of Operations</dd>
+        <dt>Bot</dt><dd>Hourly capture &amp; collection summary, recon queue count</dd>
+        <dt>Hours</dt><dd>24/7</dd>
+      </dl>
+    </div>
+    <div class="group">
+      <div class="gname">KTN · Finance</div>
+      <h3>Finance</h3>
+      <p>Settlements, payout approvals and failures, balance mismatches, MDR / invoice queries, refunds, chargebacks, USDT rates.</p>
+      <dl>
+        <dt>Members</dt><dd>Finance on-duty, Finance Controller, merchant finance SPOCs, partner settlement desks</dd>
+        <dt>Owns</dt><dd>Finance Controller</dd>
+        <dt>Bot</dt><dd>Settlement events (KTN-SET-… raised / paid / verified), payout holds</dd>
+        <dt>Hours</dt><dd>Payout desk 24/7 · recon 09:00–21:00 IST</dd>
+      </dl>
+    </div>
+    <div class="group">
+      <div class="gname">KTN · Management</div>
+      <h3>Management</h3>
+      <p>P1 declarations and updates, SLA breaches, partner escalations, commercial exceptions, onboarding stuck &gt; 3 BD. Internal only — no merchants.</p>
+      <dl>
+        <dt>Members</dt><dd>Founders / directors, Heads of Tech, Ops, Finance, Compliance</dd>
+        <dt>Owns</dt><dd>CEO / COO</dd>
+        <dt>Bot</dt><dd>Daily report: collections, captures, settlements, leads, open P1/P2</dd>
+        <dt>Hours</dt><dd>P1 24/7; otherwise business hours</dd>
+      </dl>
+    </div>
+  </div>
+
+  <h3>Group rules</h3>
+  <ul>
+    <li><strong>Naming:</strong> <code>KTN · &lt;Function&gt;</code> for internal groups; merchant-shared groups add the merchant code: <code>KTN · Tech Support · UK-108</code>.</li>
+    <li><strong>Every query is a ticket.</strong> Post using the intake template (§14). The shift L1 replies with a ticket ID <code>KTN-INC-YYYYMMDD-NNN</code> and a severity; all updates reply in-thread to that message.</li>
+    <li><strong>Never post secrets:</strong> Salt, API keys, passwords, OTPs, full account numbers, full Aadhaar / PAN, customer phone numbers. Mask to last 4. A leaked Salt is treated as a P1 and regenerated.</li>
+    <li><strong>Security settings:</strong> admin approval for joins, 2-step verification mandatory for all internal members, “Restrict saving content” on, invite links revoked after each onboarding, quarterly membership review, remove leavers same day.</li>
+    <li><strong>Cross-posting:</strong> an issue that moves group (e.g. capture failure turns into a settlement mismatch) is re-posted with the same ticket ID, not re-opened.</li>
+    <li><strong>Record of truth:</strong> Telegram is the conversation; the ticket tracker is the record. L1 logs open / severity / ack / resolve timestamps there — SLA is measured from the tracker.</li>
+  </ul>
+</section>
+
+<section id="roster">
+  <h2><span class="n">11</span>24/7 coverage</h2>
+  <p class="sub">Three overlapping-handover shifts in IST. Every shift has one named L1 for Tech and one for Ops; L2 and Management are on call.</p>
+  <div class="shiftbar" role="img" aria-label="Shift A 06:00 to 14:00, Shift B 14:00 to 22:00, Shift C 22:00 to 06:00 IST">
+    <div class="sh-a">Shift A · 06–14</div><div class="sh-b">Shift B · 14–22</div><div class="sh-c">Shift C · 22–06</div>
+  </div>
+  <div class="hours"><span>06:00</span><span>14:00</span><span>22:00</span><span>06:00 IST</span></div>
+
+  <div class="tbl wide" style="margin-top:18px"><table>
+    <thead><tr><th>Tier</th><th>Who</th><th>Coverage</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td class="k">L1</td><td>Tech &amp; Ops shift executives</td><td>In group, every shift</td><td>Acknowledge, classify severity, ticket, first-line fixes from runbooks (device trust, resend callback, status lookup, manual confirm with UTR)</td></tr>
+      <tr><td class="k">L2</td><td>Engineer on-call · Ops Lead · Finance on-duty</td><td>On call, 15-min pickup</td><td>Log / DB investigation, deploy fixes, recon corrections, payout re-processing, partner escalation</td></tr>
+      <tr><td class="k">L3</td><td>Tech Lead · Head of Ops · Finance Controller</td><td>On call for P1</td><td>Incident command, rollback decisions, partner leadership calls, merchant communication sign-off</td></tr>
+      <tr><td class="k">Mgmt</td><td>CEO / COO</td><td>P1 &gt; 1h, financial exposure, regulatory</td><td>External communication, commercial / legal decisions</td></tr>
+    </tbody>
+  </table></div>
+  <h4>Shift handover (last 15 minutes of every shift)</h4>
+  <ul class="check">
+    <li>Post handover note in Tech and Ops groups: open tickets by severity, owner, next update due</li>
+    <li>Device health: offline devices, capture-drop counters, untrusted new devices</li>
+    <li>Recon queue count and oldest unmatched credit</li>
+    <li>Payouts on HOLD and approvals awaiting a checker</li>
+    <li>Incoming shift replies “Accepted” — until then the outgoing shift owns everything</li>
+  </ul>
+</section>
+
+<section id="severity">
+  <h2><span class="n">12</span>Severity: P1 · P2 · P3</h2>
+  <p class="sub">Severity is set by business impact, not by how loudly it is reported. When in doubt, classify higher and downgrade later — never the reverse.</p>
+  <div class="sev">
+    <article class="s1">
+      <div class="lvl"><b>P1</b><span>Critical</span></div>
+      <p>Money cannot move, or money is moving wrongly, for many merchants — or any security / data breach.</p>
+      <ul>
+        <li>Katana platform or order API down / 5xx for all</li>
+        <li>Callbacks failing platform-wide; orders not confirming</li>
+        <li>Capture pipeline down — no P2P credits confirming across merchants</li>
+        <li>Wrong credits: payment confirmed to the wrong merchant / duplicate settlement</li>
+        <li>Payout desk halted or funds sent to a wrong beneficiary</li>
+        <li>Salt / key / credential leak, unauthorised access</li>
+        <li>Partner bank / TSP outage on a live rail</li>
+      </ul>
+      <div class="clock">
+        <span>Acknowledge</span><span>5 min</span>
+        <span>L2 engaged</span><span>15 min</span>
+        <span>Mgmt group notified</span><span>15 min</span>
+        <span>Updates</span><span>every 30 min</span>
+        <span>Workaround</span><span>1 h</span>
+        <span>Resolution target</span><span>4 h</span>
+        <span>RCA shared</span><span>48 h</span>
+      </div>
+    </article>
+    <article class="s2">
+      <div class="lvl"><b>P2</b><span>High</span></div>
+      <p>One merchant or one rail is significantly degraded, or a financial error is contained to a known set of transactions.</p>
+      <ul>
+        <li>Single merchant's agent / device not capturing; payments stuck PENDING</li>
+        <li>One merchant's callbacks failing or HASH not verifying after go-live</li>
+        <li>Payout batch failing or on HOLD beyond cut-off</li>
+        <li>Settlement not received within cycle (&gt; 24h past due)</li>
+        <li>Recon mismatch on a known merchant / date range</li>
+        <li>Success rate on a rail down &gt; 20% vs trailing 7-day</li>
+      </ul>
+      <div class="clock">
+        <span>Acknowledge</span><span>15 min</span>
+        <span>L2 engaged</span><span>1 h</span>
+        <span>Mgmt group notified</span><span>if &gt; 8 h</span>
+        <span>Updates</span><span>every 2 h</span>
+        <span>Workaround</span><span>4 h</span>
+        <span>Resolution target</span><span>12 h</span>
+        <span>RCA shared</span><span>5 BD</span>
+      </div>
+    </article>
+    <article class="s3">
+      <div class="lvl"><b>P3</b><span>Normal</span></div>
+      <p>Limited or no transaction impact: single transactions, information requests, cosmetic or configuration changes.</p>
+      <ul>
+        <li>Single transaction status / RRN / UTR lookup</li>
+        <li>One unmatched credit awaiting manual confirmation</li>
+        <li>Report / export discrepancy, dashboard display issue</li>
+        <li>New VPA, beneficiary, device or user request</li>
+        <li>Documentation or integration how-to question</li>
+        <li>MDR / invoice clarification</li>
+      </ul>
+      <div class="clock">
+        <span>Acknowledge</span><span>1 h</span>
+        <span>L2 engaged</span><span>as needed</span>
+        <span>Mgmt group notified</span><span>—</span>
+        <span>Updates</span><span>daily</span>
+        <span>Workaround</span><span>—</span>
+        <span>Resolution target</span><span>2 BD</span>
+        <span>RCA shared</span><span>on request</span>
+      </div>
+    </article>
+  </div>
+
+  <h3>Escalation clock</h3>
+  <p>If a ticket has no acknowledgement or misses its update, it escalates automatically along this path.</p>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Elapsed without resolution</th><th><span class="chip c-p1">P1</span></th><th><span class="chip c-p2">P2</span></th><th><span class="chip c-p3">P3</span></th></tr></thead>
+    <tbody>
+      <tr><td class="k">Level 1 — shift L1</td><td class="num">0–15 min</td><td class="num">0–1 h</td><td class="num">0–1 BD</td></tr>
+      <tr><td class="k">Level 2 — on-call / lead</td><td class="num">15 min</td><td class="num">1 h</td><td class="num">1 BD</td></tr>
+      <tr><td class="k">Level 3 — Head of function</td><td class="num">1 h</td><td class="num">6 h</td><td class="num">2 BD</td></tr>
+      <tr><td class="k">Management</td><td class="num">1 h (informed at 15 min)</td><td class="num">12 h</td><td class="num">5 BD</td></tr>
+      <tr><td class="k">Partner escalation (bank / TSP)</td><td class="num">at 30 min if partner-side</td><td class="num">at 4 h</td><td class="num">weekly review</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Incident lifecycle</h3>
+  <ol class="stages">
+    <li><span class="t">Detect</span><p>Bot alert, merchant post, partner notice or internal monitor.</p></li>
+    <li><span class="t">Triage</span><p>L1 posts ticket ID + severity in the group; opens tracker entry.</p></li>
+    <li><span class="t">Declare</span><p>P1: L3 becomes incident commander; post declaration in Management and all affected merchant groups.</p></li>
+    <li><span class="t">Contain</span><p>Workaround first — pause a rail, switch to email capture, hold payouts, route manual confirmations with UTR.</p></li>
+    <li><span class="t">Resolve</span><p>Fix confirmed by a live transaction, not by the absence of new complaints.</p></li>
+    <li><span class="t">Reconcile</span><p>Ops + Finance sweep every transaction in the impact window; nothing stays PENDING or unmatched.</p></li>
+    <li><span class="t">Close &amp; RCA</span><p>Timeline, root cause, impact (count, ₹ value, merchants), corrective and preventive actions with owners and dates.</p></li>
+  </ol>
+</section>
+
+<section id="sla">
+  <h2><span class="n">13</span>SLA commitments</h2>
+  <p class="sub">What Katana measures and reports to merchants and Management. Internal operating targets are tighter than external commitments.</p>
+
+  <h3>Service levels</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Measure</th><th>Rail</th><th>External SLA</th><th>Internal target</th><th>Measured by</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Platform availability</td><td>All</td><td class="num">99.9% / month (≤ 43 min down)</td><td class="num">99.95%</td><td>External uptime probe on order API + pay page</td></tr>
+      <tr><td class="k">Order API latency</td><td><span class="chip c-int">INTENT</span></td><td class="num">p95 &lt; 800 ms</td><td class="num">p95 &lt; 400 ms</td><td>Server request logs</td></tr>
+      <tr><td class="k">Callback first attempt</td><td><span class="chip c-int">INTENT</span></td><td class="num">≤ 10 s after terminal status</td><td class="num">≤ 3 s</td><td>Webhook delivery log</td></tr>
+      <tr><td class="k">Callback eventual delivery</td><td><span class="chip c-int">INTENT</span></td><td class="num">retries over 24 h</td><td class="num">99.5% within 15 min</td><td>Webhook delivery log</td></tr>
+      <tr><td class="k">Capture-to-confirm</td><td><span class="chip c-p2p">P2P</span></td><td class="num">≤ 2 min (push / SMS)<br>≤ 5 min (email)</td><td class="num">≤ 30 s push / SMS</td><td>Order confirmed_at − credit received_at</td></tr>
+      <tr><td class="k">Auto-match rate</td><td><span class="chip c-p2p">P2P</span></td><td class="num">≥ 95% of credits</td><td class="num">≥ 98%</td><td>Recon queue vs total captures</td></tr>
+      <tr><td class="k">Manual pay-in verification</td><td><span class="chip c-p2p">P2P</span> <span class="chip c-int">INTENT</span></td><td class="num">≤ 30 min</td><td class="num">≤ 10 min</td><td>Queue timestamps</td></tr>
+      <tr><td class="k">Operator queue pickup</td><td><span class="chip c-pay">PAYOUT</span></td><td class="num">—</td><td class="num">assign ≤ 2 min · accept ≤ 3 min</td><td>FIFO queue (auto-reassign on breach)</td></tr>
+      <tr><td class="k">Payout processing (approved)</td><td><span class="chip c-pay">PAYOUT</span></td><td class="num">IMPS / UPI ≤ 30 min<br>NEFT / RTGS same banking day</td><td class="num">≤ 15 min</td><td>Payout created → UTR recorded</td></tr>
+      <tr><td class="k">Maker-checker approval</td><td><span class="chip c-pay">PAYOUT</span></td><td class="num">≤ 2 h (09:00–21:00)</td><td class="num">≤ 30 min</td><td>Approval queue</td></tr>
+      <tr><td class="k">Settlement to merchant</td><td>All</td><td class="num">T+1 banking day</td><td class="num">flagged if &gt; 24 h</td><td>Recon “delayed settlement” bucket</td></tr>
+      <tr><td class="k">Query acknowledgement</td><td>All</td><td class="num">P1 5 min · P2 15 min · P3 1 h</td><td class="num">same</td><td>Ticket tracker</td></tr>
+      <tr><td class="k">Onboarding TAT</td><td>All</td><td class="num">P2P 3 · Intent 5 · Payout 7 BD</td><td class="num">P2P 2 · Intent 3 · Payout 5 BD</td><td>Onboarding tracker</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Exclusions</h3>
+  <ul>
+    <li>Announced maintenance (≥ 48 h notice in all groups, 00:30–04:30 IST, ≤ 4 h / month)</li>
+    <li>NPCI, issuer bank, UPI app or partner bank outages — tracked and communicated, not counted against Katana, but Katana still owns communication and reconciliation</li>
+    <li>Merchant-side faults: callback endpoint down, wrong Salt, device switched off, permissions revoked, merchant code mistyped</li>
+    <li>Force majeure and regulatory directions</li>
+  </ul>
+
+  <h3>Reporting &amp; breach handling</h3>
+  <div class="tbl wide"><table>
+    <thead><tr><th>Cadence</th><th>Report</th><th>Audience</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Daily 09:00 IST</td><td>Collections, captures, settlements, open P1/P2, recon queue age</td><td>Management group (bot)</td><td>Ops</td></tr>
+      <tr><td class="k">Weekly (Mon)</td><td>SLA scorecard per measure, tickets by severity &amp; group, breaches with reason</td><td>Management, Heads</td><td>Head of Ops</td></tr>
+      <tr><td class="k">Monthly</td><td>Merchant SLA statement: availability, callback delivery, settlement timeliness</td><td>Each merchant</td><td>AM</td></tr>
+      <tr><td class="k">Per P1</td><td>RCA within 48 h</td><td>Management + affected merchants / partners</td><td>Incident commander</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><p><strong>On breach:</strong> the owner posts the reason and recovery plan in the Management group the same day. Two breaches of the same measure in a month trigger a corrective action plan with a named owner and date. Service credits for merchants, if any, are defined only in the signed merchant agreement — this SOP does not create them.</p></div>
+</section>
+
+<section id="templates">
+  <h2><span class="n">14</span>Message templates</h2>
+  <p class="sub">Copy, fill, post. Consistent format lets the next shift pick up any thread cold.</p>
+  <div class="tpl">
+    <div>
+      <h4>Query intake (anyone)</h4>
+<pre>#QUERY
+Merchant code: UK-108
+Rail: P2P | INTENT | PAYOUT
+Issue: payments stuck PENDING
+Since (IST): 15 Sep 14:20
+Impact: ~12 orders · ₹38,400
+Order / txn IDs: ORDER-1001, …
+RRN / UTR (if any): 1234…9012
+Screenshot: attached (masked)</pre>
+    </div>
+    <div>
+      <h4>Acknowledgement (L1)</h4>
+<pre>#ACK KTN-INC-20260915-014
+Severity: P2
+Group: Tech Support
+Owner: &lt;L1 name&gt;
+Next update: 16:30 IST
+Status: investigating device
+  capture for UK-108</pre>
+    </div>
+    <div>
+      <h4>P1 declaration (L3)</h4>
+<pre>#P1 KTN-INC-20260915-015
+What: order confirmations delayed
+  across P2P merchants
+Started: 15 Sep 14:05 IST
+Impact: ~180 orders · 23 merchants
+Workaround: manual confirm with UTR
+  in Ops group
+Commander: &lt;name&gt;
+Next update: 15:00 IST</pre>
+    </div>
+    <div>
+      <h4>Update</h4>
+<pre>#UPDATE KTN-INC-20260915-015
+Status: fix deployed, verifying
+  with live transactions
+Backlog: 142 of 180 confirmed
+Next update: 15:30 IST</pre>
+    </div>
+    <div>
+      <h4>Resolution</h4>
+<pre>#RESOLVED KTN-INC-20260915-015
+Resolved: 15:22 IST (1 h 17 min)
+Cause: &lt;one line&gt;
+Recon: all 180 orders reconciled,
+  0 pending, 0 unmatched
+RCA: by 17 Sep 15:22 IST</pre>
+    </div>
+    <div>
+      <h4>Onboarding status (AM)</h4>
+<pre>#ONBOARD UK-108
+Rails: P2P + PAYOUT
+Stage: 6 · Integration &amp; UAT
+Day: 4 of 7 BD target
+Blocker: beneficiary approval
+Owner: Compliance
+ETA: 17 Sep</pre>
+    </div>
+  </div>
+</section>
+
+<footer>
+  KTN-SOP-OPS-001 · v1.0 draft · Revision history: v1.0 (13 Sep 2026) initial issue for Management approval. Items to confirm before approval: named owners per role, Telegram group invite links, partner-specific TATs, standard rate card, and external SLA figures against signed merchant agreements.
+</footer>
+</main>
+</div>

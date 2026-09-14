@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Agent — Install &amp; User Guide</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  h2 { font-size:21px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--bd); }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .brand { color:var(--brand); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .badbox { border-left-color:var(--bad); }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ol { padding-left:22px; } ol li { margin:6px 0; }
+  .state { font-weight:600; white-space:nowrap; }
+  @media print {
+    body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8}
+    /* On paper there is nothing to scroll, so a long line must wrap or it is silently
+       cut off — and these samples exist to be copied. */
+    pre{white-space:pre-wrap;word-break:break-word;overflow:visible}
+    /* Keep a code block or callout whole, but let a long table flow across pages —
+       holding one back leaves half a page blank. Rows still stay intact. */
+    pre,.note{break-inside:avoid} tr{break-inside:avoid} h2,h3{break-after:avoid}
+    thead{display:table-header-group}
+    .wrap{max-width:none;padding:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Katana Agent — Install &amp; User Guide</h1>
+  <div class="sub">Android capture app for UPI payments · download <code>https://katanapay.co/katana-agent.apk</code> · v3.08</div>
+</header>
+
+<div class="note">
+  <b>What this app is for:</b> money paid into your payment app (Paytm, Airtel, Google Pay, PhonePe, BharatPe)
+  reaches your Katana dashboard on its own — but the <b>RRN / UTR</b>, the 12-digit reference that proves
+  <i>which</i> payment it was, is only ever shown <b>on the payment app's own screen</b>. The Katana Agent runs on
+  the phone, reads that reference off the screen, and sends it to your dashboard. No typing.
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <a href="#need">1. What you need</a>
+  <a href="#install">2. Install the app</a>
+  <a href="#setup">3. First-time setup (~5 minutes)</a>
+  <a href="#home">4. Reading the home screen</a>
+  <a href="#daily">5. Daily use</a>
+  <a href="#apps">6. Your payment app — what each one does</a>
+  <a href="#email">7. Email channel (BharatPe and emailed receipts)</a>
+  <a href="#getrrn">8. Filling one payment on demand ("Get RRN")</a>
+  <a href="#trouble">9. Troubleshooting</a>
+  <a href="#limits">10. Limits worth knowing</a>
+</div>
+
+<h2 id="need">1. What you need</h2>
+<ul>
+  <li>An <b>Android phone, version 11 or newer</b>. Use a <b>dedicated phone</b> that stays on and on charge — this is
+    the single biggest factor in how much gets captured.</li>
+  <li>Your <b>payment app</b> installed and <b>logged in</b> to the business account that receives the money.</li>
+  <li>Your <b>merchant code</b> (e.g. <code>MTCI-01</code>) — ask your Katana admin. Captures are stamped with this
+    code, so it decides which account the money is credited to.</li>
+</ul>
+
+<h2 id="install">2. Install the app</h2>
+<ol>
+  <li>On the phone, open <code>https://katanapay.co/katana-agent.apk</code> in the browser and download it.</li>
+  <li>Open the downloaded file → allow <b>"Install unknown apps"</b> if prompted → <b>Install</b>.</li>
+  <li>Android will show a <b>Play Protect</b> warning. Tap <b>More details → Install anyway</b>
+    (or <b>Install without scanning</b>).</li>
+</ol>
+<div class="note"><b>The Play Protect warning is expected.</b> It appears for any sideloaded app that reads SMS,
+which this one does so bank credit alerts are forwarded. It is not a sign that anything is wrong.</div>
+<div class="note warnbox"><b>Updates install over the top</b> — same signing key, so there is no need to uninstall
+first, and your settings survive. But see the warning in §3 about what an update does to the screen reader.</div>
+
+<h2 id="setup">3. First-time setup (~5 minutes)</h2>
+<p>Open <b>Katana Agent</b> and work down the screen.</p>
+
+<h3>Step 1 — CONNECTION (do this first)</h3>
+<p>Scroll to <b>CONNECTION</b>, enter your <b>merchant code</b>, leave <b>Forward alerts</b> on, and tap
+<b>Save settings</b>. The line must read <b class="ok">✓ verified</b>.</p>
+<table>
+  <tr><th>What it says</th><th>What it means</th></tr>
+  <tr><td class="ok">✓ verified</td><td>The server recognised the code. This is the only state that captures.</td></tr>
+  <tr><td class="bad">✗ not recognized</td><td>The server does not know this code. Re-check it — a typo sends money to the wrong account, or to nobody.</td></tr>
+  <tr><td class="warn">⚠ can't reach server</td><td>The code may be fine; the phone has no working internet. Check the connection.</td></tr>
+  <tr><td class="sub">(save to verify)</td><td>Not checked yet. Tap <b>Save settings</b>.</td></tr>
+</table>
+<div class="note badbox"><b>Check the code character by character.</b> A code with a stray space
+(<code>GUFFI-01 hu</code>) once sat saved for hours looking healthy. The app now refuses to claim it is capturing
+until the server has confirmed the code — but only you can confirm it is the <i>right</i> one.</div>
+
+<h3>Step 2 — PERMISSIONS</h3>
+<p>Three rows, each with its own button. Each turns into a green tick when granted.</p>
+<table>
+  <tr><th>Row</th><th>Button</th><th>Why it is needed</th></tr>
+  <tr><td><b>Bank SMS</b></td><td>Grant</td><td>Reads incoming credit SMS.</td></tr>
+  <tr><td><b>Notification access</b></td><td>Enable</td><td>Reads bank / UPI-app alerts. Turn <b>Katana Agent</b> on in the system list.</td></tr>
+  <tr><td><b>Background activity</b></td><td>Allow</td><td>Set to <b>Unrestricted</b> so Android does not kill the app.</td></tr>
+</table>
+
+<h3>Step 3 — PAYMENT APPS</h3>
+<p>Turn on the <b>one</b> app you receive money on. Only one can be on at a time — switching one on switches the
+others off, and the app confirms with "Capturing <i>&lt;app&gt;</i> only".</p>
+<div class="note warnbox">If you turn everything off, capture pauses and the app says so. Pick the app that
+actually receives the money — a Paytm/PhonePe mix-up means nothing is ever captured.</div>
+
+<h3>Step 4 — RRN CAPTURE</h3>
+<table>
+  <tr><th>Row</th><th>Set to</th><th>Why</th></tr>
+  <tr><td><b>Screen reader</b> (Accessibility)</td><td>Enable → turn <b>Katana Agent</b> on</td><td><b>This is the capture engine.</b> Without it no RRN can ever be read.</td></tr>
+  <tr><td><b>Display over other apps</b></td><td>Allow</td><td>Needed to read the copied RRN off the clipboard.</td></tr>
+  <tr><td><b>Auto-capture</b></td><td>On <span class="sub">(default)</span></td><td>New payments are found and read automatically — nothing to tap.</td></tr>
+  <tr><td><b>Keep screen awake</b></td><td>On <span class="sub">(default)</span></td><td>Stops the screen sleeping. Only works while the phone is <b>plugged in</b>.</td></tr>
+</table>
+<div class="note badbox"><b>Re-check the screen reader after every app update.</b> Some phones
+(OnePlus / OxygenOS, Oppo / ColorOS) silently switch Accessibility off when the app version changes — leaving the
+phone in the one state where no RRN can be read. The home screen now calls this out as
+<b class="bad">SCREEN READER OFF</b>. After updating, open the app and confirm it says <b class="ok">CAPTURING</b>.</div>
+
+<h2 id="home">4. Reading the home screen</h2>
+<p>The big line at the top says what the phone is <i>actually doing</i> — not merely that the app is installed.
+Only one of these means money is being captured.</p>
+<table>
+  <tr><th>Top line</th><th>What it means / what to do</th></tr>
+  <tr><td class="state ok">CAPTURING</td><td>Working. Leave the payment app open on screen.</td></tr>
+  <tr><td class="state warn">SETUP NEEDED</td><td>Grant the permissions in §3.</td></tr>
+  <tr><td class="state bad">NO MERCHANT CODE</td><td>Enter the code under CONNECTION and Save.</td></tr>
+  <tr><td class="state bad">MERCHANT CODE NOT RECOGNISED</td><td>The server does not know that code. Fix it under CONNECTION.</td></tr>
+  <tr><td class="state warn">MERCHANT CODE UNVERIFIED</td><td>Tap <b>Save settings</b> under CONNECTION to verify it.</td></tr>
+  <tr><td class="state warn">NO PAYMENT APP SELECTED</td><td>Turn on the app you receive money on.</td></tr>
+  <tr><td class="state bad">SCREEN READER OFF</td><td>Usually caused by an update. Re-enable it under RRN CAPTURE.</td></tr>
+  <tr><td class="state warn">AUTO-CAPTURE IS OFF</td><td>Turn Auto-capture back on.</td></tr>
+</table>
+
+<h3>The number, and the four tiles</h3>
+<p>The large number is <b>payments captured today on this phone</b>, with the time of the last one under it. A count
+that goes up is the only real proof capture is working. Below it:</p>
+<table>
+  <tr><th>Tile</th><th>Shows</th></tr>
+  <tr><td><b>COLLECTING FOR</b></td><td>Which shop this phone credits — the verified merchant name.</td></tr>
+  <tr><td><b>READING</b></td><td>Which payment app is being read.</td></tr>
+  <tr><td><b>POWER</b></td><td><b>Plugged in</b> or <b class="warn">On battery</b>. On battery the screen sleeps and capture stops with it.</td></tr>
+  <tr><td><b>QUEUE</b></td><td><b>Clear</b>, or how many captures are waiting to upload. A number here means the internet dropped — they send themselves when it returns.</td></tr>
+</table>
+
+<h2 id="daily">5. Daily use</h2>
+<ul>
+  <li>Keep the phone <b>on and plugged in</b>.</li>
+  <li>Leave the <b>payment app open on screen</b> — the <b>Open payment app</b> button on the home screen takes you
+    straight there.</li>
+  <li>That is all. New payments are found, opened, read, and sent automatically.</li>
+</ul>
+<div class="note badbox"><b>Leaving the Katana Agent screen showing captures nothing.</b> The engine reads the
+<i>payment app</i>, so while you are looking at the agent, nothing is being read — every indicator stays green.
+A phone once idled an hour this way. Park it on the payment app.</div>
+
+<h2 id="apps">6. Your payment app — what each one does</h2>
+<table>
+  <tr><th>App</th><th>How the reference is captured</th></tr>
+  <tr><td><b>Paytm for Business</b></td><td>The RRN is masked on the payment detail screen; the agent opens each payment and taps <b>Copy</b> to read it.</td></tr>
+  <tr><td><b>Airtel Merchant</b></td><td>Full RRN read straight off the reports list.</td></tr>
+  <tr><td><b>Google Pay Business</b></td><td>Full RRN read off the payment detail screen.</td></tr>
+  <tr><td><b>PhonePe Business</b></td><td>UTR read straight off the History list — nothing is opened. <b>Pull the list down to refresh</b>; it is a snapshot until you do.</td></tr>
+  <tr><td><b>BharatPe</b></td><td>Captured from the <b>payment email</b> — this phone does nothing. See §7.</td></tr>
+</table>
+
+<h2 id="email">7. Email channel (BharatPe and emailed receipts)</h2>
+<p>Under <b>EMAIL CHANNEL (OPTIONAL)</b>, connect the Gmail that receives payment emails. <b>For BharatPe this is
+the only step</b> — the email carries the whole payment, so no screen reading is involved and the phone does not
+need to sit on the payment app.</p>
+<ol>
+  <li>Set and save your <b>merchant code</b> first (§3) — the connect button needs it.</li>
+  <li>Tap <b>Connect Google</b>. Sign in, tap <b>Allow</b>, then come back to the app. The status reads
+    <b class="ok">✓ Connected</b>.</li>
+  <li>Alternatively, enter the Gmail address and a <b>16-character app password</b> and tap save (needs IMAP on).</li>
+</ol>
+
+<h2 id="getrrn">8. Filling one payment on demand ("Get RRN")</h2>
+<p>On the dashboard, a payment still missing its reference has a <b>Get RRN</b> button. Press it and this phone —
+as long as it is on, connected, and the payment app is open — re-reads the list and fills that one in. The button
+clears itself once the reference lands. <b>Nothing to do on the phone.</b></p>
+
+<h2 id="trouble">9. Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Top line is not <b>CAPTURING</b></td><td>It names the reason and what to do — work through §4.</td></tr>
+  <tr><td>Everything looks green but nothing is captured</td><td>The phone is almost certainly parked on the agent screen, or on the wrong app. Leave the <b>payment app</b> open.</td></tr>
+  <tr><td>Stopped right after an update</td><td>The screen reader was switched off by the phone. Re-enable it (§3, step 4).</td></tr>
+  <tr><td>Count stopped going up overnight</td><td>Check <b>POWER</b>. On battery the screen sleeps and capture stops — plug it in.</td></tr>
+  <tr><td><b>QUEUE</b> shows a number</td><td>No internet. Captures are held safely and upload themselves when it returns.</td></tr>
+  <tr><td>Merchant shows <b>✗ not recognized</b></td><td>Re-enter the exact code (watch for stray spaces) and <b>Save settings</b>.</td></tr>
+  <tr><td>PhonePe: recent payments missing</td><td>Pull the History list down to refresh it.</td></tr>
+  <tr><td>Stops after a while</td><td>Grant <b>Background activity</b> (Unrestricted) so Android does not kill the app, and keep it charging.</td></tr>
+</table>
+<p>Under the tiles, the <b>details</b> block shows merchant, device, endpoint and app version — read those out when
+you report a problem to your Katana admin.</p>
+
+<h2 id="limits">10. Limits worth knowing</h2>
+<ul>
+  <li><b>The payment app must be open on screen</b> for RRN capture. This is how Android accessibility works, and it
+    is why a dedicated always-on phone is recommended. (BharatPe over email is the exception — §7.)</li>
+  <li>Only payments <b>visible on the list</b> can be read. Recent ones are captured automatically; a much older
+    payment needs the list scrolled back to it — ask your Katana admin to run a deep sweep.</li>
+  <li><b>One phone collects for one merchant code.</b> Two shops need two phones, or the payments land on the wrong
+    account.</li>
+  <li>OTP, PIN and password messages are <b>never</b> forwarded.</li>
+  <li>The payment itself (amount, payer, time) reaches the dashboard on its own — the agent only adds the
+    <b>reference</b>.</li>
+</ul>
+
+<p class="sub" style="margin-top:40px;border-top:1px solid var(--bd);padding-top:16px">Katana Agent v3.08 · support: contact your Katana account manager.</p>
+</div>
+</body>
+</html>

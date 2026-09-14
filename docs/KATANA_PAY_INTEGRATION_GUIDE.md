@@ -2,7 +2,10 @@
 
 Hosted-checkout pay-ins for any platform. Base URL: `https://katanapay.co` · v1
 
-> Shareable HTML version (printable to PDF, no login): `https://katanapay.co/katana-pay-integration.html`
+> Shareable versions, no login — HTML: `https://katanapay.co/katana-pay-integration.html` · PDF: `https://katanapay.co/Katana-Pay-Integration-Guide.pdf`
+>
+> The PDF is generated from the HTML, which is the source of truth. To regenerate after editing it:
+> `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=apps/admin-dashboard/public/Katana-Pay-Integration-Guide.pdf apps/admin-dashboard/public/katana-pay-integration.html`
 
 **Flow:** your server creates a **signed order** → you redirect the customer to our **hosted payment page** → the customer pays by UPI → we **POST a signed status callback** to your server *and* redirect the customer back to your `return_url`. You verify every signature with the **Key + Salt** we issue you.
 
@@ -28,7 +31,7 @@ Issued from the Katana dashboard (**Branch portal → Integration → Generate K
 | Hosted payment page | GET | `https://katanapay.co/pay/{order_id}` |
 | Status enquiry | GET | `https://katanapay.co/api/pay-status/{order_id}` |
 
-> **Production:** your server's outbound IP must be **IP-whitelisted** by Katana first.
+> **Your Key + Salt is the only credential on these endpoints.** Treat Salt disclosure as a full compromise: regenerate immediately and reconcile every order created in the interim.
 
 ## 3. Create an order
 
@@ -156,7 +159,6 @@ function verify(body, salt){
 
 - Generate your **Key + Salt**; store the Salt server-side only.
 - Set default **return_url** + **webhook URL** in the dashboard (or pass per order).
-- Send your server's **public IP** to Katana for whitelisting.
 - Test a small amount; confirm the callback arrives and the **HASH verifies**.
 - Treat callbacks as **idempotent** (same `ORDER_ID` may repeat).
 - Always confirm **server-side** before fulfilling.

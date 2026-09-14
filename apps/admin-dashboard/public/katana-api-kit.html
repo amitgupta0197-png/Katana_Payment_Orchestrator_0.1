@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Payment Gateway — Integration Guide</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:940px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:29px; margin:0 0 6px; }
+  h2 { font-size:20px; margin:36px 0 12px; padding-top:10px; border-top:1px solid var(--bd); text-transform:uppercase; letter-spacing:.02em; }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  h4 { font-size:13.5px; margin:16px 0 6px; color:var(--txt); text-transform:uppercase; letter-spacing:.04em; }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; word-break:break-word; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13px; }
+  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .brand { color:var(--brand); }
+  .tag { display:inline-block; padding:1px 7px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.03em; border:1px solid var(--bd); white-space:nowrap; }
+  .live { background:rgba(34,197,94,.14); color:var(--ok); border-color:rgba(34,197,94,.4); }
+  .build { background:rgba(245,158,11,.14); color:var(--warn); border-color:rgba(245,158,11,.4); }
+  .dec { background:rgba(79,124,255,.14); color:var(--brand); border-color:rgba(79,124,255,.45); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .badbox { border-left-color:var(--bad); }
+  .toc { font-size:14px; }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  .toc .l2 { padding-left:20px; font-size:13px; }
+  .toc .l2 a { color:var(--mut); }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ol { padding-left:22px; } ol li { margin:6px 0; }
+  .req { font-weight:700; color:var(--ok); }
+  @media print {
+    body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8}
+    .live{background:#e8f7ee;color:#137a3a;border-color:#9ad9b4}
+    .build{background:#fdf3e2;color:#8a5a06;border-color:#f0cf95}
+    .dec{background:#eaf0ff;color:#1746c8;border-color:#a9bef5}
+    pre{white-space:pre-wrap;word-break:break-word;overflow:visible}
+    pre,.note{break-inside:avoid} tr{break-inside:avoid} h2,h3,h4{break-after:avoid}
+    thead{display:table-header-group}
+    .wrap{max-width:none;padding:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Katana Payment Gateway — Integration Guide</h1>
+  <div class="sub">UPI Intent · P2P · Payout · Version 1.1 · 8 September 2026</div>
+</header>
+
+<h2>Copyright</h2>
+<p>©2026 Katana. All rights reserved.</p>
+<p>The material contained in this guide is copyrighted and owned by Katana together with any other intellectual
+property in such material. No part of this guide may be copied, republished, performed in public, broadcast,
+uploaded, transmitted, distributed, modified, or dealt with in any manner at all, without the prior written permission
+of Katana, and only in such a way that the source and intellectual property rights are acknowledged.</p>
+<p>To the maximum extent permitted by law, Katana shall not be liable to any person or organization, in any manner
+whatsoever, from the use, construction or interpretation of, or the reliance upon, all or any of the information or
+materials contained in this guide.</p>
+<p>The information in this material is subject to change without any prior notice. Katana assumes no responsibility
+for any errors.</p>
+
+<h2>Version Control Table</h2>
+<table>
+  <tr><th>Date Updated</th><th>Version</th><th>Description of Changes</th><th>Author</th><th>Approved By</th></tr>
+  <tr><td>8 Sep 2026</td><td>1.0</td><td>Initial version — UPI Intent, P2P and Payout</td><td>Katana Team</td><td>Katana Team</td></tr>
+  <tr><td>8 Sep 2026</td><td>1.1</td><td>Corrected status vocabulary, callback delivery policy and signing schemes; added order lifetime, held orders, reconciliation and go-live sections</td><td>Katana Team</td><td>Katana Team</td></tr>
+</table>
+
+<div class="note badbox">
+  <b>Three things that will cost you money if you skip them.</b>
+  <ol style="margin:8px 0 0">
+    <li>Your <code>txnid</code> must be <b>globally unique across the Katana platform</b>, not just unique to you. Prefix it with your merchant code (§5.1).</li>
+    <li><code>Expired</code> is <b>not final</b>. A late payment can still succeed, and you will <b>not</b> get a second callback. Re-check before you cancel an order (§7.3).</li>
+    <li>Katana sends <b>one</b> callback per order and gives up after 6 failed attempts. The status enquiry is the authoritative record, and a daily reconciliation sweep is mandatory (§10.2).</li>
+  </ol>
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <a href="#s1">1. ABOUT THIS GUIDE</a>
+  <div class="l2"><a href="#s1-1">1.1. Objectives and target audience</a></div>
+  <div class="l2"><a href="#s1-2">1.2. Integration directions</a></div>
+  <div class="l2"><a href="#s1-3">1.3. Status at a glance</a></div>
+  <a href="#s2">2. INTRODUCTION</a>
+  <div class="l2"><a href="#s2-1">2.1. Pre-Requisite</a></div>
+  <div class="l2"><a href="#s2-2">2.2. Connecting to the Payment Gateway</a></div>
+  <div class="l2"><a href="#s2-3">2.3. Business lines covered</a></div>
+  <div class="l2"><a href="#s2-4">2.4. Test environment</a></div>
+  <a href="#s3">3. INCEPTIVE FRAUD PREVENTION</a>
+  <div class="l2"><a href="#s3-1">3.1. Fraud analysts</a></div>
+  <a href="#s4">4. PAYMENT PROCESS</a>
+  <div class="l2"><a href="#s4-1">4.1. Redirecting customers to the Katana Gateway (step 1)</a></div>
+  <div class="l2"><a href="#s4-2">4.2. UPI Intent deeplink flow</a></div>
+  <div class="l2"><a href="#s4-3">4.3. Order lifetime</a></div>
+  <div class="l2"><a href="#s4-4">4.4. Orders held for review</a></div>
+  <div class="l2"><a href="#s4-5">4.5. The browser return</a></div>
+  <a href="#s5">5. INTEGRATION APPROACH</a>
+  <div class="l2"><a href="#s5-1">5.1. Request Format</a></div>
+  <div class="l2"><a href="#s5-2">5.2. Amount format</a></div>
+  <div class="l2"><a href="#s5-3">5.3. Validating the response</a></div>
+  <div class="l2"><a href="#s5-4">5.4. P2P collection</a></div>
+  <div class="l2"><a href="#s5-5">5.5. Payout</a></div>
+  <div class="l2"><a href="#s5-6">5.6. Limits</a></div>
+  <a href="#s6">6. GENERATING A SECURE HASH</a>
+  <div class="l2"><a href="#s6-1">6.1. SHA256 signature</a></div>
+  <div class="l2"><a href="#s6-2">6.2. Secret key</a></div>
+  <div class="l2"><a href="#s6-3">6.3. Code integration examples</a></div>
+  <a href="#s7">7. STATUS ENQUIRY</a>
+  <div class="l2"><a href="#s7-1">7.1. Status Enquiry Request</a></div>
+  <div class="l2"><a href="#s7-2">7.2. Status Enquiry Response</a></div>
+  <div class="l2"><a href="#s7-3">7.3. Expiry and late credits</a></div>
+  <a href="#s8">8. MERCHANT CALLBACKS</a>
+  <div class="l2"><a href="#s8-1">8.1. Call-back Response</a></div>
+  <div class="l2"><a href="#s8-2">8.2. Merchant-Response</a></div>
+  <div class="l2"><a href="#s8-3">8.3. Delivery and retries</a></div>
+  <a href="#s9">9. GATEWAY OPTIONS AND RESPONSE</a>
+  <div class="l2"><a href="#s9-1">9.1. Response Code for Valid Transaction</a></div>
+  <div class="l2"><a href="#s9-2">9.2. Response Code for Invalid Transaction</a></div>
+  <div class="l2"><a href="#s9-3">9.3. Payment method codes</a></div>
+  <div class="l2"><a href="#s9-4">9.4. Supported Currency and Currency Code</a></div>
+  <a href="#s10">10. GOING LIVE AND DAY-2 OPERATIONS</a>
+  <div class="l2"><a href="#s10-1">10.1. Go-live checklist</a></div>
+  <div class="l2"><a href="#s10-2">10.2. Daily reconciliation</a></div>
+  <div class="l2"><a href="#s10-3">10.3. Settlement</a></div>
+  <div class="l2"><a href="#s10-4">10.4. Refunds and disputes</a></div>
+  <a href="#s11">11. SUPPORT AND ESCALATION</a>
+</div>
+
+<h2 id="s1">1. About this guide</h2>
+<h3 id="s1-1">1.1. Objectives and target audience</h3>
+<p>This guide provides detailed information on how to connect to and use the Katana Payment Gateway by integrating
+it into a merchant website or application. It covers the steps in the payment process and the information that must
+be passed from merchant web servers to Katana, to enable Katana to process payments.</p>
+<p>It is written for the merchant's technical team. Additional gateway integration options are also described.</p>
+<p class="sub">Items marked <span class="tag dec">DECISION</span> are commercial or operational values Katana has not
+yet fixed. They are shown as open rather than filled with a plausible number — ask your account manager for the
+current value before relying on one.</p>
+
+<h3 id="s1-2">1.2. Integration directions</h3>
+<p>Katana onboards a counterparty in one of two directions. Which applies is agreed at onboarding, and a single
+counterparty may use both.</p>
+<table>
+  <tr><th>&nbsp;</th><th>Direction A — Katana consumes</th><th>Direction B — Katana provides</th></tr>
+  <tr><td><b>Who issues credentials</b></td><td>The merchant / TSP issues to Katana</td><td>Katana issues to the merchant</td></tr>
+  <tr><td><b>Who calls whom</b></td><td>Katana calls their API</td><td>They call Katana's API</td></tr>
+  <tr><td><b>Who receives callbacks</b></td><td>Katana receives theirs</td><td>They receive Katana's (§8)</td></tr>
+  <tr><td><b>Typical case</b></td><td>Merchant already holds a Bank API through a TSP</td><td>Merchant wants a gateway and has nothing of their own</td></tr>
+</table>
+<p><b>Sections 2–11 document Direction B</b>, where Katana issues the credentials. Direction A uses the same field
+vocabulary and hashing rules in reverse: the counterparty supplies the base URL, Pay ID / MID, client ID, secret,
+signing scheme <b>with a worked example</b>, endpoint paths and their callback specification; Katana signs outbound
+calls with their secret and receives their notifications on a callback URL issued at onboarding.</p>
+
+<h3 id="s1-3">1.3. Status at a glance</h3>
+<table>
+  <tr><th>Business line</th><th>Merchant-callable API</th><th>What you can do today</th></tr>
+  <tr><td><b>UPI Intent</b> (pay-in)</td><td><span class="tag live">LIVE</span></td><td>Full self-service integration — §4 to §9.</td></tr>
+  <tr><td><b>P2P</b></td><td><span class="tag build">TO BUILD</span></td><td>Collections are recorded and matched by Katana operators; outcomes reach you through account-manager reporting, not an API.</td></tr>
+  <tr><td><b>Payout</b></td><td><span class="tag build">TO BUILD</span></td><td>Payouts are raised and approved inside Katana by your account team.</td></tr>
+</table>
+<div class="note"><b>What <span class="tag build">TO BUILD</span> means.</b> The engine, its controls and its data
+model are live and in daily operational use inside Katana. What does not yet exist is the signed, merchant-callable
+endpoint. The contracts in §5.4 and §5.5 are the specification that endpoint will be built to — stable enough to
+design against, and Katana will tell you before they change. The lead time is integration and testing, not building
+the engine.</div>
+
+<h2 id="s2">2. Introduction</h2>
+<p>The Katana Payment Gateway is a secured payment orchestrator. You redirect customers from your website,
+e-commerce or m-commerce platform to make a payment using UPI, or you take the UPI Intent deeplink and present it
+inside your own payment page. Katana collects the payment in a secured manner and processes the transaction.</p>
+<p>After the payment is complete, the customer is returned to your website and you receive a real-time notification
+of the payment, including the details of the transaction.</p>
+
+<h3 id="s2-1">2.1. Pre-Requisite</h3>
+<ul>
+  <li>Read this guide in full before starting. The integration is straightforward for anyone with a technical
+    background.</li>
+  <li>A Katana merchant account, with a <b>Key</b> and <b>Salt</b> issued to it (§6.2).</li>
+  <li>Confirmation of <b>which signing scheme</b> your Key was issued with (§6.1). Signing with the wrong one fails
+    every request.</li>
+  <li>A server able to POST JSON and compute an HMAC/SHA-256 or SHA-512 hash. No SDK is required and any language
+    works.</li>
+  <li>A <b>collection UPI ID</b> configured on your Katana account, so payments reach you and not a default
+    (§5.1).</li>
+  <li>An <b>https</b> callback endpoint that is publicly resolvable (§8).</li>
+</ul>
+
+<h3 id="s2-2">2.2. Connecting to the Payment Gateway</h3>
+<p>Connecting to the Katana Payment Gateway requires adding Katana as a payment method on your checkout or payment
+page. When your customer selects it, your <b>server</b> creates a signed order with Katana and receives back a
+payment URL and a set of UPI deeplinks. You then either redirect the customer to the Katana hosted payment page, or
+present the deeplink or QR inside your own page.</p>
+<div class="note"><b>Order creation is server-to-server.</b> The endpoint returns a JSON body, not a browser
+redirect — a form posted directly from the customer's browser would land them on raw JSON. Create the order from your
+server, then send the customer to the <code>pay_url</code> you get back.
+<br><br>
+The Salt is used <b>only</b> on your server, to compute the <code>hash</code> you send and to verify the
+<code>HASH</code> on callbacks. It must never appear in browser code, a mobile application binary, or a
+repository.</div>
+<p>A simplified explanation of the transaction flow:</p>
+<ol>
+  <li>The customer is ready to pay on your website and selects the Katana payment option.</li>
+  <li>Your server calls the Katana order API with the transaction details and a hash, and receives a
+    <code>pay_url</code>, a UPI Intent deeplink and a QR payload.</li>
+  <li>The customer either lands on the Katana payment page, or taps the deeplink in your own page and is taken into
+    their UPI application.</li>
+  <li>The customer authorises the payment in their UPI app.</li>
+  <li>Katana receives confirmation of the credit and marks the order.</li>
+  <li>Katana POSTs a signed callback to your server, and the customer is redirected back to your return URL.</li>
+</ol>
+
+<h3 id="s2-3">2.3. Business lines covered</h3>
+<table>
+  <tr><th>Line</th><th>What it does</th><th>Status</th></tr>
+  <tr><td><b>UPI Intent</b> (pay-in)</td><td>Collection by UPI deeplink or QR, hosted or embedded.</td><td><span class="tag live">LIVE</span></td></tr>
+  <tr><td><b>P2P</b></td><td>Collection recorded against a trader and matched on UTR, with limit and duplicate controls.</td><td><span class="tag build">TO BUILD</span></td></tr>
+  <tr><td><b>Payout</b></td><td>Disbursement to a whitelisted beneficiary by bank, UPI, wallet or USDT.</td><td><span class="tag build">TO BUILD</span></td></tr>
+</table>
+<div class="note badbox"><b>Status tags are load-bearing.</b> Only UPI Intent is callable by a merchant server today.
+See §1.3 for what is available on the other two lines in the meantime.</div>
+
+<h3 id="s2-4">2.4. Test environment <span class="tag dec">DECISION</span></h3>
+<p>Katana runs a sandbox mode internally, in which an order never reaches a bank and no money moves. Whether a
+sandbox <b>host</b> is exposed to merchants, and on what URL, is not yet settled.</p>
+<table>
+  <tr><th>Item</th><th>Status</th></tr>
+  <tr><td>Sandbox base URL</td><td><span class="tag dec">DECISION</span> — ask your account manager</td></tr>
+  <tr><td>Sandbox Key + Salt</td><td>Issued as a separate pair from production, when a sandbox is provided</td></tr>
+  <tr><td>Forced-outcome test amounts</td><td>Supported by the platform but disabled by default; must be enabled on the sandbox host before the matrix below applies</td></tr>
+</table>
+<p>Where forced outcomes are enabled, the paise value of the amount selects the result, so every branch can be tested
+without a real payer:</p>
+<table>
+  <tr><th>Send amount</th><th>Order becomes</th><th>Use it to test</th></tr>
+  <tr><td><code>100.99</code></td><td><code>SUCCESS</code> after ~8 s</td><td>Happy path, callback verification, fulfilment</td></tr>
+  <tr><td><code>100.13</code></td><td><code>FAILED</code></td><td>Decline handling</td></tr>
+  <tr><td><code>100.11</code></td><td><code>EXPIRED</code></td><td>Expiry and re-check handling (§7.3)</td></tr>
+  <tr><td><code>100.00</code></td><td>stays <code>PENDING</code></td><td>Reconciliation sweep and long-poll</td></tr>
+</table>
+<div class="note badbox">These hooks exist <b>only</b> in sandbox. In production an order changes state only on a real
+confirmed credit, and an amount ending in <code>.99</code> behaves exactly like any other. Never rely on them
+against production credentials.</div>
+
+<h2 id="s3">3. Inceptive fraud prevention</h2>
+<p>No one knows your business and your customers better than you do, and the same applies to your fraud screening.</p>
+<p>Anti-fraud measures combine several tests to work out the likelihood of a transaction being fraudulent:</p>
+<ul>
+  <li>IP geographical location</li>
+  <li>Buying pattern</li>
+  <li>Purchase history</li>
+  <li>Black / whitelists</li>
+  <li>SQL injection checks</li>
+  <li>Proper integration review</li>
+  <li>Manual review</li>
+</ul>
+<p>Katana offers all of these tests, but some will have more relevance to your business than others. The way you
+would manually score the likelihood of fraud may be more than the cumulative effect of a few tests added together.</p>
+<h4>Controls Katana enforces on every transaction</h4>
+<table>
+  <tr><th>Control</th><th>Effect</th></tr>
+  <tr><td>Signature verification</td><td>An order whose hash does not verify is rejected <code>401</code> and never created.</td></tr>
+  <tr><td>Blocked-account check</td><td>A suspended merchant is refused <code>403</code>.</td></tr>
+  <tr><td>Amount validation</td><td>A missing, zero or negative amount is refused <code>400</code>.</td></tr>
+  <tr><td>Final-status lock</td><td>An order that reached <code>SUCCESS</code> or <code>FAILED</code> cannot be changed by a later message; a conflicting update is rejected <code>409</code>.</td></tr>
+  <tr><td>Duplicate-UTR blocking</td><td>A bank reference settles exactly one pay-in.</td></tr>
+  <tr><td>High-value hold</td><td>Large amounts are held for operator review rather than resolved automatically (§4.4).</td></tr>
+  <tr><td>Callback egress guard</td><td>Katana refuses to POST a callback to a private, loopback or link-local address.</td></tr>
+</table>
+<p>Each control above is enforced server-side on every request; none can be disabled per merchant.</p>
+
+<h3 id="s3-1">3.1. Fraud analysts</h3>
+<p>Katana fraud analysts work with you to define the most appropriate screening techniques for your business. This
+may be a combination of standard tests, custom tests specific to your business, and can also include additional data
+integration, which could take the form of historical fraud or suspicious transaction data.</p>
+<h2 id="s4">4. Payment process</h2>
+<h3 id="s4-1">4.1. Redirecting customers to the Katana Gateway (step 1)</h3>
+<p>When a customer is on the online checkout or payment page on your website, they should be presented with a
+<b>Pay</b> button.</p>
+<h4>How to redirect the customer</h4>
+<ul>
+  <li>When the customer selects the Katana option, your <b>server</b> posts the transaction details in
+    Table&nbsp;2 to the Katana order endpoint.</li>
+  <li>Katana returns a <code>pay_url</code>. Send the customer's browser to it.</li>
+  <li>Obtain a secure session identifier on your side before redirecting, so you can tie the returning customer back
+    to the pending order.</li>
+</ul>
+<h4>Tips for improving the customer experience</h4>
+<ul>
+  <li>Any customer parameters you pass — name, email, phone — pre-populate the relevant fields on the Katana payment
+    page, making it easier for the customer to complete.</li>
+  <li>Redirect the customer in the <b>same browser</b> to maximise conversion.</li>
+  <li>On a mobile device, prefer the UPI Intent deeplink (§4.2) — it removes a page load and drops the customer
+    straight into their UPI application.</li>
+</ul>
+
+<h3 id="s4-2">4.2. UPI Intent deeplink flow</h3>
+<p>Where you would rather keep the customer inside your own page, use the deeplink and QR payload returned with the
+order instead of redirecting.</p>
+<table>
+  <tr><th>Field in the response</th><th>Use</th></tr>
+  <tr><td><code>upi_intent</code></td><td>A <code>upi://pay?…</code> deeplink. Bind it to your Pay button on mobile.</td></tr>
+  <tr><td><code>deeplinks</code></td><td>Per-application variants, for showing named app buttons.</td></tr>
+  <tr><td><code>qr_payload</code></td><td>Render as a QR code for desktop checkout or a counter display.</td></tr>
+  <tr><td><code>pay_url</code></td><td>The Katana hosted page, if you prefer not to build a payment screen at all.</td></tr>
+</table>
+<div class="note warnbox"><b>The customer usually does not come back.</b> On UPI the customer approves inside their
+banking application and frequently never returns to the browser, so the redirect alone must never be treated as
+confirmation. Rely on the callback (§8) and the status enquiry (§7).</div>
+
+<h3 id="s4-3">4.3. Order lifetime</h3>
+<table>
+  <tr><th>&nbsp;</th><th>&nbsp;</th></tr>
+  <tr><td>Validity window</td><td><b>15 minutes</b> from order creation</td></tr>
+  <tr><td>At the end of it</td><td>An order still <code>PENDING</code> becomes <code>EXPIRED</code> (<code>003</code>) and the callback fires</td></tr>
+  <tr><td>Exception</td><td>Orders held for review (§4.4) do <b>not</b> expire — they wait for a Katana operator</td></tr>
+  <tr><td>Late payment</td><td>A credit that lands after expiry still counts — see §7.3</td></tr>
+</table>
+<div class="note warnbox"><b>Do not display a <code>pay_url</code>, deeplink or QR for longer than the validity
+window, and never email one</b> — it will usually have expired before it is opened. If the customer has not paid,
+create a <b>new order with a new <code>txnid</code></b> rather than re-showing the old one.
+<br><br>
+Expiry is evaluated when the order is next read or swept, not by a precise timer, so an order may report
+<code>PENDING</code> slightly past the 15-minute mark.</div>
+
+<h3 id="s4-4">4.4. Orders held for review</h3>
+<p>Some orders are parked for a Katana operator instead of resolving automatically:</p>
+<table>
+  <tr><th>Trigger</th><th>Effect on your order</th></tr>
+  <tr><td>Amount at or above <b>₹50,000</b></td><td>Stays <code>PENDING</code>. <b>Does not expire at 15 minutes.</b> Resolves only when an operator confirms or rejects it.</td></tr>
+  <tr><td>The payer uploaded a payment proof on the Katana page</td><td>Same. The status enquiry returns <code>proof_submitted: true</code>.</td></tr>
+</table>
+<p>When the operator decides, the normal terminal callback fires.</p>
+<div class="note badbox"><b>A held order has no documented upper bound on how long it stays <code>PENDING</code>.</b>
+Your reconciliation sweep must be able to carry an order across days, and your checkout must not assume every order
+reaches a terminal state inside the validity window. If you cancel a customer's order after 30 minutes of
+<code>PENDING</code>, you will cancel legitimate high-value payments that are merely awaiting review.
+<br><br>
+<span class="tag dec">DECISION</span> The ₹50,000 threshold is deployment-wide, not per merchant, and there is no
+published review SLA. Confirm both with your account manager before designing a timeout.</div>
+
+<h3 id="s4-5">4.5. The browser return</h3>
+<p>When an order reaches a terminal state on the hosted page, the customer's browser is redirected to your
+<code>return_url</code> with three query parameters appended:</p>
+<pre>https://yoursite.com/return?order_id=ESN78452&amp;status=SUCCESS&amp;rrn=123456789101</pre>
+<div class="note badbox"><b>These parameters are unsigned and attacker-controlled. Treat them as display only.</b>
+Anyone can type that URL into a browser. Use them to decide which "thank you" screen to render, and nothing else.
+Never create, complete, or fulfil an order on the strength of the browser return — confirm server-side with the
+callback (§8) or the status enquiry (§7) first.</div>
+
+<h2 id="s5">5. Integration approach</h2>
+<h3 id="s5-1">5.1. Request Format</h3>
+<h4>Request URLs</h4>
+<table>
+  <tr><th>Purpose</th><th>Environment</th><th>URL</th><th>Method</th></tr>
+  <tr><td>Create order</td><td>Production</td><td><code>https://katanapay.co/api/v1/katana-pay/order</code></td><td>POST</td></tr>
+  <tr><td>Hosted payment page</td><td>Production</td><td><code>https://katanapay.co/pay/{katana_order_id}</code></td><td>GET</td></tr>
+  <tr><td>Status enquiry</td><td>Production</td><td><code>https://katanapay.co/api/pay-status/{katana_order_id}</code></td><td>GET</td></tr>
+</table>
+<p class="sub">See §2.4 for the sandbox equivalents. <code>{katana_order_id}</code> is the <code>order.id</code> UUID
+returned on order creation — <b>not</b> your <code>txnid</code>. Sending your own reference here returns
+<code>404</code>.</p>
+
+<h4>Table 2 — Katana payment request parameters</h4>
+<table>
+  <tr><th>Field name</th><th>Description</th><th>Required</th><th>Type</th><th>Len min</th><th>Len max</th><th>Example</th></tr>
+  <tr><td colspan="7"><b>Merchant details</b></td></tr>
+  <tr><td><code>key</code></td><td>Merchant Key issued by Katana</td><td class="req">YES</td><td>AN</td><td>8</td><td>64</td><td>mk_9f2c…</td></tr>
+  <tr><td><code>txnid</code></td><td>Your reference. <b>Must be unique across the whole Katana platform</b>, not just your account. Idempotency key.</td><td class="req">YES</td><td>AN</td><td>1</td><td>60</td><td>UK108-ESN78452</td></tr>
+  <tr><td><code>hash</code></td><td>Value generated by your signing scheme (§6)</td><td class="req">YES</td><td>AN</td><td>64</td><td>128</td><td>7995156ce4c4…</td></tr>
+  <tr><td><code>return_url</code></td><td>URL on your site the customer returns to. http(s) only.</td><td>NO</td><td>CH</td><td>5</td><td>1024</td><td>https://yoursite.com/return</td></tr>
+  <tr><td><code>notify_url</code></td><td>URL Katana POSTs the status callback to. http(s) only, publicly resolvable.</td><td>NO</td><td>CH</td><td>5</td><td>1024</td><td>https://yoursite.com/callback</td></tr>
+  <tr><td colspan="7"><b>Customer details</b></td></tr>
+  <tr><td><code>firstname</code></td><td>Customer name. <b>Part of the signature under the SHA-512 scheme.</b></td><td>NO</td><td>CH</td><td>1</td><td>150</td><td>David</td></tr>
+  <tr><td><code>email</code></td><td>Customer email. Part of the signature under both schemes.</td><td>NO</td><td>CH</td><td>6</td><td>120</td><td>david@example.com</td></tr>
+  <tr><td><code>phone</code></td><td>Customer phone, without country code</td><td>NO</td><td>NU</td><td>10</td><td>10</td><td>7417456565</td></tr>
+  <tr><td><code>customer_vpa</code></td><td>Payer UPI ID, where known</td><td>NO</td><td>AN</td><td>3</td><td>120</td><td>david@bank</td></tr>
+  <tr><td colspan="7"><b>Payment details</b></td></tr>
+  <tr><td><code>amount</code></td><td>Total sale amount in rupees (§5.2)</td><td class="req">YES</td><td>NU</td><td>1</td><td>12</td><td>100</td></tr>
+  <tr><td><code>currency</code></td><td>Currency. Defaults to <code>INR</code>. Only <code>INR</code> is supported (§9.4).</td><td>NO</td><td>CH</td><td>3</td><td>3</td><td>INR</td></tr>
+  <tr><td><code>mode</code></td><td><code>INTENT</code> or <code>QR</code>. Defaults to <code>QR</code>.</td><td>NO</td><td>CH</td><td>2</td><td>6</td><td>INTENT</td></tr>
+  <tr><td><code>receiver_vpa</code></td><td>Collect into a specific UPI ID instead of your account default.</td><td>NO</td><td>AN</td><td>3</td><td>120</td><td>you@bank</td></tr>
+  <tr><td><code>receiver_vpas</code></td><td>Up to 30 collection UPI IDs; the first is used, the rest are backups.</td><td>NO</td><td>array</td><td>1</td><td>30</td><td>["a@bank","b@bank"]</td></tr>
+  <tr><td colspan="7"><b>Order level details</b></td></tr>
+  <tr><td><code>productinfo</code></td><td>Description of the order. Part of the signature under both schemes.</td><td>NO</td><td>CH</td><td>1</td><td>1024</td><td>Order 1001</td></tr>
+</table>
+<p class="sub">* Abbreviations: NU – numeric, CH – character, AN – alphanumeric. The Len columns are
+<b>string lengths</b>, not value limits — see §5.6 for transaction limits.</p>
+
+<div class="note badbox"><b><code>txnid</code> must be globally unique — prefix it.</b> Katana's idempotency is keyed
+on <code>txnid</code> alone, not on <code>txnid</code> per merchant. If you send one that already exists on the
+platform, you receive <b>that</b> order back with <code>reused: true</code> and HTTP 200 — not a new one. Prefix every
+reference with your merchant code (<code>UK108-…</code>) or use a UUID. A bare sequence such as
+<code>ORDER-1001</code> will eventually collide.
+<br><br>
+<b>Always check <code>reused</code> and <code>order.amount</code> on the response.</b> If <code>reused</code> is
+<code>true</code> and <code>order.amount</code> is not the amount you sent, you have collided with an existing order:
+abandon that reference, do <b>not</b> send the customer to that <code>pay_url</code>, and alert your team.</div>
+
+<div class="note warnbox"><b>If you send no receiver, Katana uses the collection UPI ID configured on your
+account.</b> Confirm with your account manager that it is set <b>before</b> your first live order. An order created
+with no receiver on either side still returns a valid-looking QR and deeplink — pointing at a default payee. On your
+first test payment, verify that the payee shown in the customer's UPI app is yours.</div>
+
+<h4>Table 3 — parameters returned on the order response</h4>
+<table>
+  <tr><th>Field name</th><th>Description</th><th>Example value</th></tr>
+  <tr><td><code>verified</code></td><td>Signature verification result</td><td>true</td></tr>
+  <tr><td><code>merchant</code></td><td>Merchant code the order was booked to</td><td>UK-108</td></tr>
+  <tr><td><code>reused</code></td><td><b>Check this.</b> <code>true</code> means the <code>txnid</code> already existed and this is the pre-existing order.</td><td>false</td></tr>
+  <tr><td><code>order.id</code></td><td>Katana order identifier (UUID). Addresses the payment page and status enquiry.</td><td>8d20c0b6-…</td></tr>
+  <tr><td><code>order.order_id</code></td><td>Your reference, echoed back</td><td>UK108-ESN78452</td></tr>
+  <tr><td><code>order.amount</code></td><td>Amount booked. Compare with what you sent when <code>reused</code> is true.</td><td>100</td></tr>
+  <tr><td><code>order.status</code></td><td>Initial status</td><td>PENDING</td></tr>
+  <tr><td><code>pay_url</code></td><td>Hosted payment page to redirect the customer to</td><td>https://katanapay.co/pay/8d20c0b6-…</td></tr>
+  <tr><td><code>upi_intent</code></td><td>UPI Intent deeplink</td><td>upi://pay?pa=…&amp;am=100.00</td></tr>
+  <tr><td><code>deeplinks</code></td><td>Per-application deeplink variants</td><td>{ "upi": "…", … }</td></tr>
+  <tr><td><code>qr_payload</code></td><td>Payload to render as a QR code</td><td>upi://pay?…</td></tr>
+</table>
+<p class="sub">Additional fields may appear on the response. Ignore any you do not recognise.</p>
+<pre>POST https://katanapay.co/api/v1/katana-pay/order
+Content-Type: application/json
+
+{ "key": "mk_9f2c…",
+  "txnid": "UK108-ESN78452",
+  "amount": "100",
+  "productinfo": "Order 1001",
+  "firstname": "David",
+  "email": "david@example.com",
+  "phone": "7417456565",
+  "currency": "INR",
+  "mode": "INTENT",
+  "hash": "&lt;see section 6&gt;",
+  "return_url": "https://yoursite.com/return",
+  "notify_url": "https://yoursite.com/callback" }
+
+HTTP 201 Created        (HTTP 200 with "reused": true if the txnid already existed)
+{ "verified": true,
+  "merchant": "UK-108",
+  "reused": false,
+  "order": { "id": "8d20c0b6-…", "order_id": "UK108-ESN78452", "amount": 100, "status": "PENDING" },
+  "pay_url": "https://katanapay.co/pay/8d20c0b6-…",
+  "upi_intent": "upi://pay?pa=…&amp;am=100.00&amp;tr=UK108-ESN78452",
+  "deeplinks": { "upi": "upi://pay?…" },
+  "qr_payload": "upi://pay?…" }</pre>
+
+<h3 id="s5-2">5.2. Amount format</h3>
+<p>The amount of the transaction is expressed in <b>rupees</b> only. The amount must not contain thousands
+separators or currency symbols. The value cannot be negative or zero.</p>
+<p>For example, INR 12.50 is expressed as <code>12.50</code>; INR 100 is expressed as <code>100</code>.</p>
+<div class="note warnbox"><b>Format the amount once and reuse the exact string.</b> The value you sign must be
+byte-identical to the value you send. Build the string first, hash that string, then send that same string. A JSON
+library that re-serialises <code>"100.00"</code> as <code>100</code> after you signed it will produce
+<code>401 signature mismatch</code> on every request.</div>
+<p>The same four inputs signed with two different amount strings produce two completely different hashes:</p>
+<pre>Key mk_test · Salt s3cr3t · txnid UK108-ESN78452 · productinfo "Order 1001" · email david@example.com
+
+amount = "100"      -&gt; message  UK108-ESN78452|100|Order 1001|david@example.com
+amount = "100.00"   -&gt; message  UK108-ESN78452|100.00|Order 1001|david@example.com
+                                                  ^^^ different string, different hash</pre>
+<div class="note"><b>The callback returns the amount in a different format.</b> Katana normalises it: ₹100.50 comes
+back as <code>"100.5"</code> and ₹100.00 as <code>"100"</code>. Compare amounts <b>numerically</b>, never as
+strings — see §8.1.</div>
+<h3 id="s5-3">5.3. Validating the response</h3>
+<p>Katana recommends that you validate the transaction details in the response.</p>
+<h4>If the integration approach is "hosted payment page"</h4>
+<ol>
+  <li>Create a pending transaction or order for a fixed amount on your website.</li>
+  <li>Redirect the customer to the Katana payment page, where they complete the transaction.</li>
+  <li>Katana posts the transaction confirmation to your callback URL, including the amount.</li>
+  <li>Validate the parameters received by recalculating the SHA-256 signature (§6.1 B). If it matches, compare
+    <code>AMOUNT</code> <b>numerically</b> against your pending order (§8.1), and compare <code>ORDER_ID</code>.</li>
+  <li>Before delivering, require <code>STATUS = "Captured"</code> and <code>RESPONSE_CODE = "000"</code>.</li>
+  <li>Perform a <b>double verification</b> with the status enquiry (§7) — note it uses a <b>different status
+    vocabulary</b>; deliver on <code>status = "SUCCESS"</code>.</li>
+  <li>Compare status values case-insensitively.</li>
+  <li>Once validated, process the transaction — for example, by dispatching the goods ordered.</li>
+</ol>
+<h4>If the integration approach is "UPI Intent deeplinks"</h4>
+<ol>
+  <li>Create a pending transaction or order for a fixed amount on your website using the order API.</li>
+  <li>Take <code>upi_intent</code> (or <code>qr_payload</code>) from the response and present it in your own payment
+    page.</li>
+  <li>Katana posts the transaction confirmation to your callback URL.</li>
+  <li>Validate the signature, amount and order reference exactly as above, then double-verify with §7, then
+    deliver.</li>
+</ol>
+<div class="note badbox"><b>Please note:</b> the implementations above are mandatory for all merchants. In the case of
+any discrepancy at the merchant's end, the merchant will be liable for any resulting losses. Katana will review the
+merchant system before go-live to confirm this — §10.1 lists what the review covers.</div>
+
+<h3 id="s5-4">5.4. P2P collection <span class="tag build">TO BUILD</span></h3>
+<p>P2P records a payment received against a registered trader and matches it on the bank reference (UTR), applying
+per-transaction, daily-amount and daily-count limits. <b>The matching engine and its controls are live inside
+Katana; the merchant-facing signed endpoint below is specified, not yet released.</b> See §1.3 for what is available
+today.</p>
+<table>
+  <tr><th>Purpose</th><th>Method</th><th>Proposed URL</th></tr>
+  <tr><td>Record a collection</td><td>POST</td><td><code>https://katanapay.co/api/v1/p2p/collect</code></td></tr>
+  <tr><td>Collection status</td><td>GET</td><td><code>https://katanapay.co/api/v1/p2p/collect/{id}</code></td></tr>
+</table>
+<pre>{ "key": "mk_9f2c…", "txnid": "UK108-P2P-5501", "trader_id": "…",
+  "amount": "2500", "utr": "123456789012",
+  "vpa": "payer@bank", "expected_amount": "2500",
+  "hash": "&lt;see section 6&gt;" }</pre>
+<h4>Outcomes</h4>
+<table>
+  <tr><th>Match result</th><th>Status</th><th>Meaning</th></tr>
+  <tr><td class="ok">CORRECT</td><td>SUCCESS</td><td>The UTR is new and the amount matches. Credited.</td></tr>
+  <tr><td class="warn">WRONG_AMOUNT</td><td>MANUAL_REVIEW</td><td>Amount differs from <code>expected_amount</code>. Held for review.</td></tr>
+  <tr><td class="warn">OVER_PER_TXN_LIMIT</td><td>MANUAL_REVIEW</td><td>Above the trader's per-transaction limit.</td></tr>
+  <tr><td class="warn">OVER_DAILY_AMOUNT</td><td>MANUAL_REVIEW</td><td>Above the trader's daily amount limit.</td></tr>
+  <tr><td class="warn">OVER_DAILY_COUNT</td><td>MANUAL_REVIEW</td><td>Above the trader's daily transaction count.</td></tr>
+  <tr><td class="bad">DUPLICATE</td><td>FAILED</td><td>That UTR already settled a collection. Rejected <code>409</code>.</td></tr>
+</table>
+<p>Limits are configured per trader. An inactive trader is refused <code>403</code> before any limit is evaluated,
+and an unknown trader returns <code>404</code>. A rejected collection is still written to the ledger, so the
+rejection is auditable.</p>
+<div class="note badbox"><b>Do not treat <code>409 DUPLICATE</code> as success.</b> The duplicate check is
+platform-wide: a 409 means that UTR is already recorded <i>somewhere</i>, which may be against a different trader
+entirely, not necessarily your own earlier retry. Investigate before crediting anyone.
+<br><br>
+<b>Omitting <code>expected_amount</code> disables amount matching</b> — every collection then evaluates as
+<code>CORRECT</code>. Always send it.</div>
+
+<h3 id="s5-5">5.5. Payout <span class="tag build">TO BUILD</span></h3>
+<p>Payout disburses funds to a beneficiary registered and approved in advance. <b>The payout engine and its controls
+are live inside Katana; the merchant-facing signed endpoint below is specified, not yet released.</b></p>
+<table>
+  <tr><th>Purpose</th><th>Method</th><th>Proposed URL</th></tr>
+  <tr><td>Register a beneficiary</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/beneficiaries</code></td></tr>
+  <tr><td>Create a payout</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/create</code></td></tr>
+  <tr><td>Payout status</td><td>GET</td><td><code>https://katanapay.co/api/v1/payouts/{id}</code></td></tr>
+</table>
+<pre>{ "key": "mk_9f2c…", "txnid": "UK108-PO-9001",
+  "beneficiary_id": "…", "amount": "5000", "currency": "INR",
+  "settlement_mode": "BANK", "purpose": "vendor settlement",
+  "hash": "&lt;see section 6&gt;" }</pre>
+<p><code>settlement_mode</code> is one of <code>BANK</code>, <code>UPI</code>, <code>WALLET</code> or
+<code>USDT</code>.</p>
+<h4>Beneficiary lifecycle</h4>
+<p>A beneficiary is not usable the moment you register it. It is created <code>PENDING</code> and must be approved by
+a <b>different person</b> than the one who created it. Only an <code>APPROVED</code> beneficiary can receive a
+payout. Build registration into your onboarding, not into your payment path.</p>
+<h4>Controls implemented in the payout engine today</h4>
+<table>
+  <tr><th>Control</th><th>Rule</th></tr>
+  <tr><td>Whitelisted beneficiary</td><td>Must exist and belong to your account (else <code>404</code>) and be <code>APPROVED</code> (else <code>409</code>).</td></tr>
+  <tr><td>Maker ≠ checker</td><td>The person who registered a beneficiary cannot approve it.</td></tr>
+  <tr><td>Payable balance</td><td>Your payable balance must cover the amount, else <code>409</code>.</td></tr>
+  <tr><td>Maker-checker on high value</td><td>Payouts at or above <b>₹50,000</b> are queued for second-person approval. The response means "queued", <b>not</b> paid.</td></tr>
+</table>
+<h4>Required before this endpoint is released</h4>
+<table>
+  <tr><th>Requirement</th><th>Status</th></tr>
+  <tr><td>Key + Salt authentication on the endpoint</td><td><span class="tag build">TO BUILD</span> — the payout route is currently operator-session only</td></tr>
+  <tr><td><b>Idempotency on <code>txnid</code></b></td><td><span class="tag build">TO BUILD</span> — <b>not yet implemented</b></td></tr>
+  <tr><td>Signed payout status callback</td><td><span class="tag build">TO BUILD</span></td></tr>
+</table>
+<div class="note badbox"><b>Idempotency does not exist on payouts yet.</b> Until it ships, a retried payout request
+creates a <b>second payout</b>. Do not build automatic retries against this endpoint. When it is released, the rule
+will be: a timeout is not a failure — retry with the <b>same</b> <code>txnid</code> or query the status, because
+issuing a second payout is unrecoverable.</div>
+
+<h3 id="s5-6">5.6. Limits <span class="tag dec">DECISION</span></h3>
+<table>
+  <tr><th>Limit</th><th>Value</th></tr>
+  <tr><td>Minimum transaction</td><td><span class="tag dec">DECISION</span> — the API rejects zero and negative amounts</td></tr>
+  <tr><td>Maximum transaction</td><td><span class="tag dec">DECISION</span> — orders ≥ ₹50,000 are held for review (§4.4)</td></tr>
+  <tr><td>Daily / monthly volume</td><td><span class="tag dec">DECISION</span> — per your commercial agreement</td></tr>
+  <tr><td>Order-creation rate</td><td><span class="tag dec">DECISION</span> — no rate limit is currently enforced</td></tr>
+  <tr><td>Status-enquiry rate</td><td><span class="tag dec">DECISION</span> — use <code>?wait=1</code> only for a customer-facing screen (§7.1)</td></tr>
+</table>
+<p>No <code>429</code> is currently returned. If rate limiting is introduced, treat a <code>429</code> as a
+throttling signal rather than a hard failure: wait one second, retry, up to three times, then fall back to a status
+enquiry.</p>
+
+<h2 id="s6">6. Generating a secure hash</h2>
+<p>Your code creates a secure hash over the transaction request data. Katana creates another secure hash and sends it
+back to you in every callback, so both directions are verifiable.</p>
+
+<h3 id="s6-1">6.1. SHA256 signature</h3>
+<div class="note badbox"><b>Which scheme do I use?</b> Your account is issued with <b>one</b> of the two below, and it
+is shown next to your Key in your portal. Signing with the wrong one produces <code>401 signature mismatch</code> on
+every request. Accounts opened for you by a Katana operator are commonly issued <b>Scheme 1</b>; accounts
+self-provisioned in the portal default to <b>Scheme 2</b>. Confirm before you write any code.</div>
+
+<h4>Scheme 1 — SHA-512, pipe-separated</h4>
+<pre>seq  = key|txnid|amount|productinfo|firstname|email|||||||||||salt
+         └────────────── 6 values ──────────────┘└ 10 empty ┘
+hash = SHA512(seq)                                   // lowercase hex, 128 characters</pre>
+<p>There are exactly <b>eleven</b> <code>|</code> characters between <code>email</code> and <code>salt</code> — five
+for the unused user-defined fields and five reserved, each contributing one empty segment.</p>
+<pre>Key mk_test · Salt s3cr3t
+
+txnid       = UK108-ESN78452
+amount      = 100
+productinfo = Order 1001
+firstname   = David
+email       = david@example.com
+
+seq  = mk_test|UK108-ESN78452|100|Order 1001|David|david@example.com|||||||||||s3cr3t
+hash = SHA512(seq) -&gt; lowercase hex</pre>
+
+<h4>Scheme 2 — HMAC-SHA256</h4>
+<pre>message = txnid + "|" + amount + "|" + productinfo + "|" + email
+hash    = HMAC_SHA256( key = KEY + SALT , message )      // lowercase hex, 64 characters</pre>
+<pre>Key mk_test · Salt s3cr3t
+
+message  = UK108-ESN78452|100|Order 1001|david@example.com
+HMAC key = mk_tests3cr3t
+hash     = HMAC_SHA256(HMAC key, message) -&gt; lowercase hex</pre>
+<p>Under either scheme, a field you omit is signed as an <b>empty string in its position</b> — the separators remain.
+Note that <code>firstname</code> is signed under Scheme 1 and not under Scheme 2.</p>
+<div class="note warnbox"><b>Self-check before your first call.</b> Print your signing string with the separators
+visible and count them. <code>signature mismatch</code> is almost always a wrong scheme, a reformatted amount
+(§5.2), or a wrong pipe count — very rarely a wrong Salt. See §9.2 for a full debugging order.</div>
+
+<h4>B. Verifying a response or callback from Katana</h4>
+<p>The callback hash is computed over <b>sorted name–value pairs</b>, which is a different construction from the
+request hash above. To verify:</p>
+<ol>
+  <li>Take every field received <b>except</b> <code>HASH</code>.</li>
+  <li>Sort the field names in <b>ascending byte order</b>.</li>
+  <li>Join them as <code>NAME=value</code> with a <b>tilde</b> <code>~</code> between pairs.</li>
+  <li>Append your <b>Salt</b> directly to the end of that string, with no separator.</li>
+  <li>Apply SHA-256 and convert the result to <b>UPPERCASE</b> hexadecimal.</li>
+  <li>Compare with the <code>HASH</code> field, in constant time.</li>
+</ol>
+<h4>Worked example 1 — a captured payment</h4>
+<pre>{ "AMOUNT": "100",
+  "CURRENCY_CODE": "356",
+  "ORDER_ID": "UK108-ESN78452",
+  "PAY_ID": "9323643809301818",
+  "RESPONSE_CODE": "000",
+  "RESPONSE_DATE_TIME": "2026-09-08T11:35:42.991Z",
+  "RRN": "123456789101",
+  "STATUS": "Captured",
+  "TXN_ID": "4694e5ce-b8cd-475a-82b9-eec7bb846367",
+  "HASH": "8EAC6B6D…" }</pre>
+<p>String to hash (shown wrapped; the real string has no line breaks):</p>
+<pre>AMOUNT=100~CURRENCY_CODE=356~ORDER_ID=UK108-ESN78452~PAY_ID=9323643809301818~
+RESPONSE_CODE=000~RESPONSE_DATE_TIME=2026-09-08T11:35:42.991Z~RRN=123456789101~
+STATUS=Captured~TXN_ID=4694e5ce-b8cd-475a-82b9-eec7bb846367&lt;YOUR_SALT&gt;</pre>
+
+<h4>Worked example 2 — a failed payment, with an empty field</h4>
+<p>A failed order carries an <b>empty</b> <code>RRN</code>. This is the case that breaks most verifiers, and it is
+not hypothetical — it is what every failed order looks like.</p>
+<pre>{ "AMOUNT": "100", "CURRENCY_CODE": "356", "ORDER_ID": "UK108-ESN78452",
+  "PAY_ID": "9323643809301818", "RESPONSE_CODE": "004",
+  "RESPONSE_DATE_TIME": "2026-09-08T11:41:02.114Z",
+  "RRN": "", "STATUS": "Failed",
+  "TXN_ID": "4694e5ce-b8cd-475a-82b9-eec7bb846367", "HASH": "…" }</pre>
+<p>String to hash — note <code>RRN=</code> is <b>present with nothing after the equals sign</b>:</p>
+<pre>AMOUNT=100~CURRENCY_CODE=356~ORDER_ID=UK108-ESN78452~PAY_ID=9323643809301818~
+RESPONSE_CODE=004~RESPONSE_DATE_TIME=2026-09-08T11:41:02.114Z~RRN=~
+STATUS=Failed~TXN_ID=4694e5ce-b8cd-475a-82b9-eec7bb846367&lt;YOUR_SALT&gt;</pre>
+<div class="note warnbox"><b>Empty and null values still take part.</b> Include the name with an empty value. Do not
+drop the field, and do not substitute the text "null" — either produces a different hash. Sort by raw byte order, not
+a locale-aware comparison, or underscores and letters may order differently from Katana's. Hash the UTF-8 bytes.</div>
+<div class="note"><b>Hash whatever arrives, not a fixed list.</b> Katana may add fields to the callback. Build your
+verifier to sort and join <i>every</i> field present except <code>HASH</code>, and ignore fields you do not recognise
+in your business logic. A verifier hard-coded to today's nine fields will start failing the day a tenth is
+added.</div>
+
+<h3 id="s6-2">6.2. Secret key</h3>
+<p>The Salt is the essential element in generating the hash. It is issued with your Key from
+<b>Integration → Generate Key + Salt</b> in your Katana portal, and is displayed <b>once</b>.</p>
+<table>
+  <tr><th>Credential</th><th>Handling</th></tr>
+  <tr><td><code>Key</code></td><td>Identifies your account. Sent with every request.</td></tr>
+  <tr><td><code>Salt</code></td><td><b>Secret.</b> Server-side only — never in browser code, a mobile application, or a repository. Signs your requests and verifies Katana's callbacks.</td></tr>
+</table>
+<p>One active pair exists per merchant account. Regenerating <b>immediately invalidates</b> the previous pair, so
+deploy the new Salt before regenerating in production.</p>
+<div class="note badbox"><b>The Salt is the only thing protecting order creation.</b> There is no IP allowlist and no
+second factor on the API. Treat Salt disclosure as a full compromise of your integration: regenerate immediately and
+reconcile every order created in the interim.</div>
+<h3 id="s6-3">6.3. Code integration examples</h3>
+<h4>PHP — create order (Scheme 2, HMAC-SHA256)</h4>
+<pre>$key="mk_9f2c"; $salt="your_salt";
+$o = ["txnid"=&gt;"UK108-ESN78452","amount"=&gt;"100","productinfo"=&gt;"Order 1001","email"=&gt;"david@example.com"];
+$msg = $o["txnid"]."|".$o["amount"]."|".$o["productinfo"]."|".$o["email"];
+$o["hash"] = hash_hmac("sha256", $msg, $key.$salt);
+$o["key"]=$key; $o["mode"]="INTENT";
+$o["return_url"]="https://yoursite.com/return";
+$o["notify_url"]="https://yoursite.com/callback";
+$ch=curl_init("https://katanapay.co/api/v1/katana-pay/order");
+curl_setopt_array($ch,[CURLOPT_POST=&gt;1,CURLOPT_RETURNTRANSFER=&gt;1,
+  CURLOPT_HTTPHEADER=&gt;["Content-Type: application/json"],CURLOPT_POSTFIELDS=&gt;json_encode($o)]);
+$res=json_decode(curl_exec($ch),true);
+if (!empty($res["reused"])) { /* collision — do NOT redirect; see 5.1 */ }
+header("Location: ".$res["pay_url"]);</pre>
+<h4>PHP — create order (Scheme 1, SHA-512)</h4>
+<pre>$seq  = implode("|", [$key,$txnid,$amount,$productinfo,$firstname,$email,
+                      "","","","","","","","","","", $salt]);
+$hash = hash("sha512", $seq);   // lowercase hex</pre>
+<h4>Node.js — create order (Scheme 2)</h4>
+<pre>import crypto from "crypto";
+const key="mk_9f2c", salt="your_salt";
+const o={ txnid:"UK108-ESN78452", amount:"100", productinfo:"Order 1001", email:"david@example.com" };
+const msg=[o.txnid,o.amount,o.productinfo,o.email].join("|");
+o.hash=crypto.createHmac("sha256",key+salt).update(msg).digest("hex");
+const r=await fetch("https://katanapay.co/api/v1/katana-pay/order",{method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({...o,key,mode:"INTENT",
+    return_url:"https://yoursite.com/return",
+    notify_url:"https://yoursite.com/callback"})});
+const data=await r.json();
+if (data.reused) { /* collision — do NOT redirect; see 5.1 */ }
+// redirect the customer to data.pay_url</pre>
+<h4>Node.js — create order (Scheme 1)</h4>
+<pre>const seq = [key,txnid,amount,productinfo,firstname,email,
+             "","","","","","","","","","", salt].join("|");
+const hash = crypto.createHash("sha512").update(seq,"utf8").digest("hex");</pre>
+<h4>Python — create order (Scheme 2)</h4>
+<pre>import hmac,hashlib,requests
+key,salt="mk_9f2c","your_salt"
+o={"txnid":"UK108-ESN78452","amount":"100","productinfo":"Order 1001","email":"david@example.com"}
+msg="|".join([o["txnid"],o["amount"],o["productinfo"],o["email"]])
+o["hash"]=hmac.new((key+salt).encode(),msg.encode(),hashlib.sha256).hexdigest()
+o.update(key=key, mode="INTENT",
+         return_url="https://yoursite.com/return",
+         notify_url="https://yoursite.com/callback")
+data=requests.post("https://katanapay.co/api/v1/katana-pay/order",json=o).json()
+if data.get("reused"): pass   # collision - do NOT redirect; see 5.1
+# redirect the customer to data["pay_url"]</pre>
+<h4>Python — create order (Scheme 1)</h4>
+<pre>seq  = "|".join([key,txnid,amount,productinfo,firstname,email] + [""]*10 + [salt])
+hash = hashlib.sha512(seq.encode("utf-8")).hexdigest()</pre>
+<h4>Verifying a callback — Node.js</h4>
+<pre>function verify(body, salt){
+  const got = String(body.HASH ?? "");
+  const f = { ...body }; delete f.HASH;
+  const str = Object.keys(f).sort()
+    .map(k =&gt; k + "=" + (f[k] == null ? "" : f[k])).join("~") + salt;
+  const exp = crypto.createHash("sha256").update(str,"utf8").digest("hex").toUpperCase();
+  return exp.length === got.length &amp;&amp;
+         crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(got));
+}</pre>
+<h4>Verifying a callback — PHP</h4>
+<pre>function verify($body,$salt){
+  $got=$body["HASH"] ?? ""; unset($body["HASH"]); ksort($body);
+  $parts=[]; foreach($body as $k=&gt;$v){$parts[]="$k=".($v??"");}
+  return hash_equals(strtoupper(hash("sha256", implode("~",$parts).$salt)), $got);
+}</pre>
+<h4>Verifying a callback — Python</h4>
+<pre>import hashlib, hmac
+def verify(body, salt):
+    got = body.get("HASH","")
+    f = {k:v for k,v in body.items() if k != "HASH"}
+    s = "~".join(f"{k}={'' if f[k] is None else f[k]}" for k in sorted(f)) + salt
+    exp = hashlib.sha256(s.encode("utf-8")).hexdigest().upper()
+    return hmac.compare_digest(exp, got)</pre>
+
+<h2 id="s7">7. Status enquiry</h2>
+<p>Use this API to verify transaction status <b>before service delivery</b>. It is the authoritative record: the
+callback is a convenience that can be missed (§8.3), the enquiry always reflects the truth.</p>
+<table>
+  <tr><th>Method</th><th>Environment</th><th>URL</th></tr>
+  <tr><td>GET</td><td>Production</td><td><code>https://katanapay.co/api/pay-status/{katana_order_id}</code></td></tr>
+</table>
+<p>Where <code>{katana_order_id}</code> is the <code>order.id</code> UUID returned when the order was created —
+<b>not</b> your <code>txnid</code>.</p>
+<div class="note badbox"><b>The enquiry uses a different status vocabulary from the callback.</b> It returns a
+lowercase <code>status</code> field and <b>no <code>RESPONSE_CODE</code> at all</b>. Match on
+<code>status</code> and <code>terminal</code>:
+<table>
+  <tr><th>Enquiry <code>status</code></th><th><code>terminal</code></th><th>Equivalent callback</th><th>Deliver?</th></tr>
+  <tr><td class="ok">SUCCESS</td><td>true</td><td><code>Captured</code> / <code>000</code></td><td><b>Yes</b></td></tr>
+  <tr><td class="warn">PENDING</td><td>false</td><td><code>Pending</code> / <code>005</code></td><td>No — still open</td></tr>
+  <tr><td>FAILED</td><td>true</td><td><code>Failed</code> / <code>004</code></td><td>No</td></tr>
+  <tr><td>EXPIRED</td><td>true</td><td><code>Expired</code> / <code>003</code></td><td>No — but see §7.3</td></tr>
+</table>
+Deliver only on <code>status = "SUCCESS"</code>. Compare case-insensitively and treat any value not in this table as
+not-paid.</div>
+
+<h3 id="s7-1">7.1. Status Enquiry Request</h3>
+<pre>GET https://katanapay.co/api/pay-status/8d20c0b6-1d0f-4389-bc0b-d1d9d02bfed6</pre>
+<h4>Long-poll variant</h4>
+<p>Add <code>?wait=1</code> to hold the request open until the order reaches a terminal state, up to approximately 25
+seconds. This lets a payment page show the result within about half a second of the credit landing, without polling
+in a tight loop. On timeout the request returns the current, non-terminal payload — it does <b>not</b> error, so do
+not write a <code>catch</code> that treats a normal timeout as failure.</p>
+<pre>GET https://katanapay.co/api/pay-status/8d20c0b6-…?wait=1</pre>
+<div class="note warnbox"><b>Never use <code>?wait=1</code> in a batch sweep.</b> Each request holds a connection for
+up to 25 seconds — a 500-order reconciliation run would hold 500 connections for 25 seconds each. Use the plain form
+for sweeps and the long-poll form only where a person is watching a screen.</div>
+<div class="note"><b>The enquiry is unauthenticated and its response is unsigned.</b> The order UUID is the
+capability. It provides no cryptographic assurance beyond TLS — for that, verify the callback <code>HASH</code>
+(§6.1 B).</div>
+
+<h3 id="s7-2">7.2. Status Enquiry Response</h3>
+<pre>{
+  "order_id": "UK108-ESN78452",
+  "amount": 100,
+  "currency_code": "INR",
+  "status": "SUCCESS",
+  "terminal": true,
+  "rrn": "123456789101",
+  "mode": "INTENT",
+  "proof_submitted": false,
+  "return_url": "https://yoursite.com/return"
+}</pre>
+<table>
+  <tr><th>Field</th><th>Description</th></tr>
+  <tr><td><code>status</code></td><td>Current status, in the enquiry vocabulary above.</td></tr>
+  <tr><td><code>terminal</code></td><td><code>true</code> once the order reached a final state. <code>SUCCESS</code> and <code>FAILED</code> are permanent; <code>EXPIRED</code> is <b>provisional</b> (§7.3).</td></tr>
+  <tr><td><code>rrn</code></td><td>Bank reference for the credit, when one was captured. See the note below.</td></tr>
+  <tr><td><code>proof_submitted</code></td><td><code>true</code> when the payer uploaded a payment proof; the order is then held for operator review (§4.4).</td></tr>
+</table>
+<div class="note warnbox"><b><code>RRN</code> is the acquirer reference when one was captured.</b> Where a payment is
+confirmed without a bank reference being supplied, Katana generates a deterministic internal reference in the same
+12-digit shape. Such a value <b>will not appear on a bank statement</b>. If a reconciliation lookup by
+<code>RRN</code> finds nothing at the bank, raise it with Katana rather than assuming the payment is missing.</div>
+<div class="note"><b>The order id is an unguessable capability, shared with the payer by design.</b> It appears in the
+<code>pay_url</code> you send the customer to, so it is not a secret between you and Katana — but anyone holding it
+can read that order's amount, status and <code>RRN</code>. Keep it out of email subjects, shareable pages,
+client-side analytics, ad-network URL parameters and third-party logs. Address your own systems by your
+<code>ORDER_ID</code>.</div>
+
+<h3 id="s7-3">7.3. Expiry and late credits</h3>
+<div class="note badbox"><b><code>Expired</code> is not permanent, and you will not get a second callback.</b> If the
+customer's payment lands after the order expired, Katana honours it and the order becomes <code>SUCCESS</code> —
+because the customer really did pay. But Katana sends <b>exactly one callback per order</b> (§8.3), and the
+<code>Expired</code> callback has already been sent. <b>No further notification is issued.</b></div>
+<p>Practical consequences you must build for:</p>
+<ul>
+  <li>Before you cancel an order, void a reservation or release stock on <code>Expired</code>, <b>re-run the status
+    enquiry</b>.</li>
+  <li>Your reconciliation sweep (§10.2) must re-check every order that ended <code>EXPIRED</code> in the last few
+    days, not just the ones still <code>PENDING</code>.</li>
+  <li>Treat <code>SUCCESS</code> and <code>FAILED</code> as permanent; treat <code>EXPIRED</code> as "probably not
+    paid, verify before acting irreversibly".</li>
+</ul>
+
+<h2 id="s8">8. Merchant callbacks</h2>
+<p>Use the callback to be notified when the payment flow reaches a terminal status. Share your callback URL with the
+Katana team and it will be configured for you, or pass <code>notify_url</code> per order to override it.</p>
+<div class="note warnbox"><b>An issued Key + Salt is a prerequisite for receiving any callback.</b> Katana never
+sends an unsigned callback, so an account with no signing credentials receives nothing at all — the delivery is
+recorded as skipped on Katana's side. Confirm your credentials are issued before testing your endpoint.</div>
+
+<h3 id="s8-1">8.1. Call-back Response</h3>
+<pre>{
+  "PAY_ID": "9323643809301818",
+  "ORDER_ID": "UK108-ESN78452",
+  "TXN_ID": "4694e5ce-b8cd-475a-82b9-eec7bb846367",
+  "AMOUNT": "100",
+  "CURRENCY_CODE": "356",
+  "STATUS": "Captured",
+  "RESPONSE_CODE": "000",
+  "RRN": "123456789101",
+  "RESPONSE_DATE_TIME": "2026-09-08T11:35:42.991Z",
+  "HASH": "8EAC6B6DC198A6B3DCA18995B0843A2A9D305825906261E0E34B425C7329DEBC"
+}</pre>
+<table>
+  <tr><th>Field name</th><th>Description</th><th>Example value</th></tr>
+  <tr><td><code>PAY_ID</code></td><td>Payment identifier assigned by Katana</td><td>9323643809301818</td></tr>
+  <tr><td><code>ORDER_ID</code></td><td>Your merchant reference number</td><td>UK108-ESN78452</td></tr>
+  <tr><td><code>TXN_ID</code></td><td>Transaction identifier generated by Katana</td><td>4694e5ce-…</td></tr>
+  <tr><td><code>AMOUNT</code></td><td>Amount <b>as booked on the order</b>, normalised (see below)</td><td>100</td></tr>
+  <tr><td><code>CURRENCY_CODE</code></td><td>3-digit ISO 4217 numeric code</td><td>356</td></tr>
+  <tr><td><code>STATUS</code></td><td>Transaction status</td><td>Captured</td></tr>
+  <tr><td><code>RESPONSE_CODE</code></td><td>Code for transaction status</td><td>000</td></tr>
+  <tr><td><code>RRN</code></td><td>Bank reference number. <b>Empty string</b> when none was captured.</td><td>123456789101</td></tr>
+  <tr><td><code>RESPONSE_DATE_TIME</code></td><td>Time the callback payload was first built. <b>Not</b> refreshed on retries.</td><td>2026-09-08T11:35:42.991Z</td></tr>
+  <tr><td><code>HASH</code></td><td>Value generated by SHA-256 (§6.1 B)</td><td>8EAC6B6D…</td></tr>
+</table>
+<div class="note badbox"><b>Verify the <code>HASH</code> before acting, then re-check the amount.</b> An unverified
+callback is indistinguishable from a forgery — anyone can POST to your URL. Confirm the signature (§6.1 B), then
+confirm the amount matches your pending order, before delivering anything.</div>
+<div class="note warnbox"><b>Compare <code>AMOUNT</code> numerically, never as a string.</b> Katana normalises it:
+₹100.50 is sent as <code>"100.5"</code>, ₹100.00 as <code>"100"</code>. A string comparison against the amount you
+booked fails on any order with a paise value.
+<pre>// WRONG — fails for 100.50
+if (body.AMOUNT !== order.amount) reject();
+
+// RIGHT
+if (Math.round(Number(body.AMOUNT) * 100) !== order.amountMinor) reject();</pre>
+Verify the <code>HASH</code> over the values <b>exactly as they arrived</b> — do not reformat <code>AMOUNT</code>
+before hashing.
+<br><br>
+<code>AMOUNT</code> is the amount <b>booked on the order</b>, echoed back. It is not independently derived from the
+credit, so it does not by itself prove the customer paid that amount. Reconcile against your bank statement by
+<code>RRN</code> (§10.2) for that assurance.</div>
+
+<h4>Callback headers</h4>
+<table>
+  <tr><th>Header</th><th>Meaning</th></tr>
+  <tr><td><code>x-event-type</code></td><td><code>payin.status</code></td></tr>
+  <tr><td><code>x-attempt</code></td><td>Delivery attempt number, from <code>1</code>. <b>Anything above 1 is a retry</b> — you have very likely already processed this order.</td></tr>
+  <tr><td><code>x-timestamp</code></td><td>Unix seconds at send.</td></tr>
+  <tr><td><code>x-payload-hash</code></td><td>Digest of the canonical payload. For logging only.</td></tr>
+  <tr><td><code>x-signature</code></td><td><b>Reserved for Katana's internal transport. Do not use it for authentication.</b> Verify the <code>HASH</code> field in the body (§6.1 B) — that is the only signature bound to your Salt.</td></tr>
+</table>
+
+<h3 id="s8-2">8.2. Merchant-Response</h3>
+<p>Reply <code>HTTP 200</code>. A body is optional; the following is accepted and recommended:</p>
+<pre>{ "STATUS": "TRUE" }</pre>
+<div class="note badbox"><b>Reply within 8 seconds.</b> Acknowledge first, process afterwards: write the callback to a
+queue or table, return <code>200</code> immediately, and do your fulfilment work asynchronously. A handler that
+charges a card, sends an email or waits on a third party before replying will blow the deadline, be recorded as
+failed, and be retried — which is how merchants end up double-fulfilling.</div>
+<div class="note warnbox"><b>Handle callbacks idempotently.</b> Key your handler on <code>ORDER_ID</code> and make a
+repeat delivery a no-op that still returns <code>200</code>. Your <code>ORDER_ID</code> dedupe is what protects you
+from replay — make it durable, not in-memory. <code>RESPONSE_DATE_TIME</code> is the first-attempt time and is not
+refreshed per delivery, so it cannot be used as a freshness bound.</div>
+
+<h3 id="s8-3">8.3. Delivery and retries</h3>
+<table>
+  <tr><th>&nbsp;</th><th>&nbsp;</th></tr>
+  <tr><td>Callbacks per order</td><td><b>Exactly one</b>, at the first terminal status</td></tr>
+  <tr><td>Attempts</td><td><b>6</b></td></tr>
+  <tr><td>Backoff</td><td>1 min → 5 min → 15 min → 1 hour → 6 hours → 24 hours</td></tr>
+  <tr><td>Your response deadline</td><td><b>8 seconds</b> per attempt; a slower reply is recorded as a failure and retried</td></tr>
+  <tr><td>Success</td><td>Any <code>2xx</code></td></tr>
+  <tr><td>After 6 failures</td><td>The callback is <b>abandoned</b>. Katana does not deliver it later.</td></tr>
+  <tr><td><code>notify_url</code> requirements</td><td>http(s), publicly resolvable; must not resolve to a private, loopback or link-local address</td></tr>
+</table>
+<p>Every attempt is recorded on Katana's side and can be replayed by your account manager on request.</p>
+<div class="note badbox"><b>The callback is a convenience, not a guarantee.</b> It is sent once, and abandoned after
+roughly 31 hours of failures. A status change after that first callback — including an <code>Expired</code> order
+that later succeeds (§7.3) — produces <b>no</b> further notification. The status enquiry (§7) is the authoritative
+record, and the daily reconciliation sweep (§10.2) is mandatory, not optional.</div>
+<h2 id="s9">9. Gateway options and response</h2>
+<h3 id="s9-1">9.1. Response Code for Valid Transaction</h3>
+<h4>Table 4 — response codes for valid transactions</h4>
+<table>
+  <tr><th>RESPONSE_CODE</th><th>STATUS</th><th>Terminal</th><th>Meaning</th></tr>
+  <tr><td class="ok">000</td><td>Captured</td><td>yes</td><td>Paid. Deliver the goods or service.</td></tr>
+  <tr><td class="warn">005</td><td>Pending</td><td>no</td><td>Awaiting payment.</td></tr>
+  <tr><td>004</td><td>Failed</td><td>yes</td><td>Declined or failed.</td></tr>
+  <tr><td>003</td><td>Expired</td><td><b class="warn">soft</b> ¹</td><td>Katana stopped waiting for the credit.</td></tr>
+</table>
+<p class="sub">¹ <b><code>Expired</code> is not permanent.</b> A late payment can still move the order to
+<code>SUCCESS</code>, and no second callback is sent. Re-check before writing it off — see §7.3.</p>
+<div class="note"><b>Treat any unrecognised code as not-paid.</b> Katana currently emits only the four codes above.
+Codes in the <code>0xx</code> range may be added; a code you do not recognise must never be read as success — log it
+and treat the order as unpaid.</div>
+<div class="note warnbox"><b><code>Captured</code> is not the same as settled.</b> A <code>000</code> callback means
+the payment was <b>collected</b>. Money reaching your bank account follows on the settlement cycle — see
+§10.3.</div>
+
+<h3 id="s9-2">9.2. Response Code for Invalid Transaction</h3>
+<h4>Table 5 — errors and indeterminate outcomes on order creation</h4>
+<table>
+  <tr><th>HTTP</th><th>Error</th><th>Meaning and action</th></tr>
+  <tr><td>200</td><td><i>none —</i> <code>reused: true</code></td><td>Not an error: this <code>txnid</code> already exists. Check <code>order.amount</code> matches what you sent; if not, you have collided with another order (§5.1).</td></tr>
+  <tr><td>401</td><td><code>invalid key</code></td><td>The Key is not recognised. Check you are using the right environment's credentials.</td></tr>
+  <tr><td>401</td><td><code>signature mismatch</code></td><td>The hash did not match. Work the debugging list below.</td></tr>
+  <tr><td>403</td><td>—</td><td>The merchant account is blocked. Contact your Katana account manager.</td></tr>
+  <tr><td>400</td><td><code>invalid amount</code></td><td>The amount is missing, zero, negative or not a number.</td></tr>
+  <tr><td>400</td><td>validation error</td><td>A field failed validation — for example a <code>return_url</code> that is not http(s), or more than 30 entries in <code>receiver_vpas</code>. The message text is diagnostic; <b>do not string-match on it</b>.</td></tr>
+  <tr><td>404</td><td>—</td><td>Status enquiry only: unknown order id. Check you sent the <code>order.id</code> UUID, not your <code>txnid</code>.</td></tr>
+  <tr><td>500</td><td><code>order create failed</code></td><td><b>Indeterminate, not failed.</b> Retry with the same <code>txnid</code>.</td></tr>
+  <tr><td>—</td><td>timeout / connection reset</td><td><b>Indeterminate.</b> Retry with the same <code>txnid</code>, then fall back to a status enquiry. <b>Never</b> re-issue with a new <code>txnid</code>.</td></tr>
+</table>
+<h4>Retry guidance</h4>
+<p>Treat <code>5xx</code> and network timeouts as <b>indeterminate, not failed</b>. Retry with the <b>same</b>
+<code>txnid</code>: order creation is idempotent on that value, so a retry returns the original order rather than
+creating a second one. Back off between attempts rather than retrying in a tight loop, give up after a small number
+of attempts, and fall back to a status enquiry (§7).</p>
+<h4>Debugging <code>401 signature mismatch</code></h4>
+<p>This is the most common integration failure. Work down the list in order — the cause is nearly always one of the
+first three.</p>
+<ol>
+  <li><b>Wrong scheme.</b> Confirm whether your Key is Scheme 1 (SHA-512) or Scheme 2 (HMAC-SHA256) — §6.1. Signing
+    with the other one fails 100% of the time.</li>
+  <li><b>The amount changed between signing and sending.</b> You signed <code>100</code> and sent
+    <code>100.00</code>, or a JSON library re-serialised the string as a number. Build the string once, sign it, send
+    it (§5.2).</li>
+  <li><b>Wrong separator count</b> (Scheme 1). Eleven <code>|</code> between <code>email</code> and
+    <code>salt</code>. Print the signing string and count them.</li>
+  <li><b>A field in the hash but not the request, or the reverse.</b> Omitted fields sign as empty strings in
+    position; they do not disappear.</li>
+  <li><b>Encoding.</b> Hash the UTF-8 bytes. Non-ASCII in <code>productinfo</code> or <code>firstname</code> is the
+    usual culprit.</li>
+  <li><b>Stale credentials.</b> Regenerating a Key + Salt invalidates the previous pair immediately (§6.2). Confirm
+    the deployed Salt is the current one.</li>
+</ol>
+<p>Still stuck: send Katana your <code>txnid</code>, your signing string <b>with the Salt redacted</b>, and the hash
+you computed.</p>
+<div class="note"><b>Keep signed free-text fields simple.</b> Avoid <code>|</code>, <code>~</code> and <code>=</code>
+in <code>txnid</code> and <code>productinfo</code> — they are the separators used by the two hashing constructions,
+and are not escaped. A safe <code>txnid</code> pattern is <code>^[A-Za-z0-9_-]{1,60}$</code>.</div>
+
+<h3 id="s9-3">9.3. Payment method codes</h3>
+<h4>Table 6 — supported payment methods</h4>
+<table>
+  <tr><th>Payment method</th><th><code>mode</code> value</th><th>Notes</th></tr>
+  <tr><td>UPI — Intent deeplink</td><td><code>INTENT</code></td><td>Returns <code>upi_intent</code> and per-application deeplinks.</td></tr>
+  <tr><td>UPI — QR</td><td><code>QR</code></td><td>Returns <code>qr_payload</code>. The default.</td></tr>
+</table>
+
+<h3 id="s9-4">9.4. Supported Currency and Currency Code</h3>
+<h4>Table 7 — supported currency with codes</h4>
+<table>
+  <tr><th>Name</th><th>Abbreviation</th><th>Code</th></tr>
+  <tr><td>Indian Rupee</td><td>INR</td><td>356</td></tr>
+</table>
+<p class="sub">Requests use the alphabetic code (<code>currency: "INR"</code>); callbacks return the ISO 4217 numeric
+code (<code>CURRENCY_CODE: "356"</code>).</p>
+<div class="note warnbox"><b>Only INR is supported.</b> Send <code>INR</code> or omit the field. Another currency
+value is not currently rejected at the API, but the payment instrument is always denominated in rupees — sending
+anything else will produce an inconsistent order.</div>
+
+<h2 id="s10">10. Going live and day-2 operations</h2>
+<h3 id="s10-1">10.1. Go-live checklist</h3>
+<ul>
+  <li>Production <b>Key + Salt</b> issued; Salt stored server-side only — never in browser code, an app binary, or a
+    repository.</li>
+  <li><b>Signing scheme confirmed</b> (§6.1) and a signed order accepted end to end.</li>
+  <li><code>txnid</code> scheme is <b>globally unique</b> and prefixed with your merchant code (§5.1).</li>
+  <li>Your response handler <b>checks <code>reused</code></b> and compares <code>order.amount</code> (§5.1).</li>
+  <li>Amount is built as a string once, signed, and sent unchanged (§5.2).</li>
+  <li><b>Collection UPI ID confirmed</b> on your account, and verified on a real test payment (§5.1).</li>
+  <li>Default <code>return_url</code> and callback URL saved with Katana, or passed per order.</li>
+  <li>Callback handler <b>verifies <code>HASH</code></b> before acting (§6.1 B), compares <code>AMOUNT</code>
+    <b>numerically</b> (§8.1), and returns <code>200</code> <b>within 8 seconds</b>.</li>
+  <li>Callback handler is <b>idempotent</b> on <code>ORDER_ID</code>, with durable dedupe.</li>
+  <li>Browser-return parameters are treated as <b>display only</b> (§4.5).</li>
+  <li>Reconciliation sweep runs on a schedule and can carry an order for <b>days</b> (held orders never expire,
+    §4.4).</li>
+  <li><code>EXPIRED</code> orders are <b>re-checked</b> before being written off (§7.3).</li>
+  <li>A test payment completed in each of: <b>success, failure, expiry, and callback-not-received</b>.</li>
+  <li>Escalation contact and account manager recorded on both sides (§11).</li>
+</ul>
+<h4>Katana's pre-go-live review</h4>
+<p>Per §5.3, Katana reviews the merchant integration before enabling production. The review covers: signature
+verification present on the callback handler; amount and order-reference comparison present; idempotent handling; and
+a working reconciliation sweep. Have these ready.</p>
+
+<h3 id="s10-2">10.2. Daily reconciliation</h3>
+<p>Run a sweep at least once a day. It must be able to close orders the callback never closed — given that the
+callback is sent once and abandoned after ~31 hours of failures (§8.3), and that held orders can stay open for days
+(§4.4), this is the safety net the rest of the design depends on.</p>
+<ol>
+  <li>Select your own orders that are not in a final state, plus any that reached a final state in the last 7 days.</li>
+  <li>For each, <code>GET /api/pay-status/{katana_order_id}</code> — <b>without</b> <code>?wait=1</code> (§7.1).</li>
+  <li>Apply the status table in §7. <b>Re-check every <code>EXPIRED</code> order</b> at least once (§7.3).</li>
+  <li>Compare amounts numerically and investigate any mismatch before adjusting your books.</li>
+  <li>Download the day's transactions from <b>Transactions → Export</b> in your Katana portal and match on
+    <code>RRN</code> against your bank statement. The export carries the date, your reference, amount, status,
+    payment id, bank reference and UPI handle.</li>
+</ol>
+<h4>What to escalate</h4>
+<ul>
+  <li>Any order Katana reports <code>SUCCESS</code> that you have no record of.</li>
+  <li>Any order you fulfilled that Katana does not report <code>SUCCESS</code>.</li>
+  <li>Any <code>RRN</code> appearing against two of your orders.</li>
+  <li>Any <code>RRN</code> that your bank statement does not show (§7.2).</li>
+</ul>
+<p>Keep <code>order.id</code>, <code>ORDER_ID</code>, <code>RRN</code> and the raw callback body for every
+transaction — those four are what every Katana investigation asks for.</p>
+
+<h3 id="s10-3">10.3. Settlement <span class="tag dec">DECISION</span></h3>
+<table>
+  <tr><th>Item</th><th>Value</th></tr>
+  <tr><td>Settlement cycle</td><td><span class="tag dec">DECISION</span></td></tr>
+  <tr><td>Cut-off time</td><td><span class="tag dec">DECISION</span></td></tr>
+  <tr><td>Settlement account</td><td>The bank account or UPI ID registered at onboarding. Changing it requires a signed request and re-verification.</td></tr>
+  <tr><td>Minimum settlement</td><td><span class="tag dec">DECISION</span></td></tr>
+  <tr><td>Fees / MDR</td><td><span class="tag dec">DECISION</span> — per your commercial agreement; not exposed in the API</td></tr>
+  <tr><td>Statement location</td><td><span class="tag dec">DECISION</span></td></tr>
+</table>
+<p>A callback with <code>STATUS: "Captured"</code> means the payment was <b>collected</b>. It does not mean it has
+been <b>settled</b> to your account. Settlement follows on the cycle above. Confirm every value here with your
+account manager before go-live.</p>
+
+<h3 id="s10-4">10.4. Refunds and disputes <span class="tag dec">DECISION</span></h3>
+<p><b>Katana does not currently expose a refund API.</b> A captured payment cannot be reversed through the
+integration.</p>
+<table>
+  <tr><th>Situation</th><th>Process</th></tr>
+  <tr><td>Refund to a customer</td><td>Raise with your Katana account manager, quoting <code>ORDER_ID</code> and <code>RRN</code>. Turnaround: <span class="tag dec">DECISION</span></td></tr>
+  <tr><td>Customer says they paid but the order shows unpaid</td><td>Run a status enquiry first (§7), and re-check if the order shows <code>EXPIRED</code> (§7.3). If still unpaid, raise it with the UTR from the customer's bank app.</td></tr>
+  <tr><td>Duplicate payment</td><td>As for a refund. Katana will not have auto-reversed it.</td></tr>
+</table>
+<p>Design your checkout on the assumption that a captured payment is final. If your business needs customer-initiated
+reversals, raise it before go-live.</p>
+
+<h2 id="s11">11. Support and escalation <span class="tag dec">DECISION</span></h2>
+<table>
+  <tr><th>Severity</th><th>Examples</th><th>Channel</th><th>Response</th></tr>
+  <tr><td><b>P1</b> — payments down</td><td>Orders failing platform-wide; no callbacks arriving at all</td><td><span class="tag dec">DECISION</span></td><td><span class="tag dec">DECISION</span></td></tr>
+  <tr><td><b>P2</b> — money at risk</td><td>A payment collected but not reflected; a duplicate <code>RRN</code>; an expired order that took a payment</td><td><span class="tag dec">DECISION</span></td><td><span class="tag dec">DECISION</span></td></tr>
+  <tr><td><b>P3</b> — integration</td><td><code>signature mismatch</code> in testing; field questions</td><td><span class="tag dec">DECISION</span></td><td><span class="tag dec">DECISION</span></td></tr>
+</table>
+<h4>Include in every ticket</h4>
+<p>A ticket without these will be returned:</p>
+<ul>
+  <li><code>ORDER_ID</code> (your reference) <b>and</b> <code>order.id</code> (Katana's UUID)</li>
+  <li><code>RRN</code>, if the payment reached a bank</li>
+  <li>The exact request body you sent, including the <code>hash</code> — <b>never the Salt</b></li>
+  <li>The raw callback body you received, if any</li>
+  <li>Timestamps in UTC, with the timezone stated</li>
+</ul>
+
+<p class="sub" style="margin-top:40px;border-top:1px solid var(--bd);padding-top:16px">Katana Payment Gateway Integration Guide · Version 1.1 · For integration support, contact your Katana account manager.</p>
+</div>
+</body>
+</html>
