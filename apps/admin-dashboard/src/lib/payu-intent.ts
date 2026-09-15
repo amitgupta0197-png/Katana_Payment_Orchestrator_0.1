@@ -6,8 +6,8 @@
 // The customer never sees a PayU page.
 //
 // Contract (PayU docs — "UPI Intent with S2S Integration"):
-//   POST  https://test.payu.in/_payment   (TEST)
-//         https://info.payu.in/_payment   (PROD)
+//   POST  https://test.payu.in/_payment     (TEST)
+//         https://secure.payu.in/_payment   (PROD — info.payu.in has no _payment: it answers 404)
 //   body  the hosted fields (key, txnid, amount, productinfo, firstname, email, phone, surl,
 //         furl, hash) plus pg=UPI, bankcode=INTENT, txn_s2s_flow=4, s2s_client_ip,
 //         s2s_device_info. Same request hash as the hosted form.
@@ -28,7 +28,7 @@ const REFUSED = "payu upi intent refused";
 
 export function payuS2sUrl(env?: string): string {
   return (env ?? "TEST").toUpperCase() === "PROD"
-    ? "https://info.payu.in/_payment"
+    ? "https://secure.payu.in/_payment"
     : "https://test.payu.in/_payment";
 }
 

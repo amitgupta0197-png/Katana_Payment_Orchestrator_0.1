@@ -75,6 +75,8 @@ async function run() {
   `, [String(MIN_AGE_MIN), String(MAX_AGE_HOURS)]).catch(() => []);
 
   let confirmed = 0, failed = 0, stillPending = 0, unreachable = 0, noCreds = 0;
+  // Why PayU gave no usable answer, e.g. "Invalid Hash." (a wrong Salt) — counted, never secret.
+  const unreachableReasons: Record<string, number> = {};
 
   const checks = [
     ...pending.map((o) => ({ ...o, payin: false })),
@@ -88,7 +90,12 @@ async function run() {
 
     const v = await verifyPayuTxn(mid, o.txn_id);
     if (o.payin) await markPayinChecked(o.txn_id, v.found ? v.status : null);
-    if (!v.found) { unreachable++; continue; }
+    if (!v.found) {
+      unreachable++;
+      const why = v.status.slice(0, 80);
+      unreachableReasons[why] = (unreachableReasons[why] ?? 0) + 1;
+      continue;
+    }
 
     const r = await applyVerifiedPayuStatus({
       txnid: o.txn_id, payuStatus: v.status, mihpayid: v.mihpayid, bankRefNum: v.bankRefNum,
@@ -99,7 +106,7 @@ async function run() {
     else stillPending++;
   }
 
-  return { checked: pending.length + payins.length, confirmed, failed, still_pending: stillPending, unreachable, no_creds: noCreds };
+  return { checked: pending.length + payins.length, confirmed, failed, still_pending: stillPending, unreachable, unreachable_reasons: unreachableReasons, no_creds: noCreds };
 }
 
 // Whitelisted in middleware (PUBLIC_API), so it carries its own auth like the other crons.
