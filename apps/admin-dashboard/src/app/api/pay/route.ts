@@ -18,6 +18,7 @@ import { toMinor, fromMinor } from "@/lib/money";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
+import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
 
@@ -39,6 +40,13 @@ const schema = z.object({
   // Hosted-gateway redirect: when truthy, Katana returns an auto-submit form to
   // the gateway's (PayU) hosted page instead of running the simulated pipeline.
   redirect: z.union([z.string(), z.boolean()]).optional(),
+  // UPI intent (PayU S2S): when truthy, Katana asks PayU for the UPI intent and returns
+  // app deep links as JSON — no PayU page. client_ip / device_info are the PAYING
+  // CUSTOMER's IP and user-agent (PayU requires them); the request's own headers are the
+  // merchant server's, so pass them.
+  intent: z.union([z.string(), z.boolean()]).optional(),
+  client_ip: z.string().max(64).optional(),
+  device_info: z.string().max(512).optional(),
   surl: z.string().optional(),   // merchant success URL (Katana forwards here after the gateway callback)
   furl: z.string().optional(),   // merchant failure URL
 });
@@ -123,6 +131,34 @@ export async function POST(req: Request) {
         surl: ret, furl: ret,
       });
       return new NextResponse(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }
+
+    // 2.6 UPI intent (real PayU, S2S): Katana asks PayU for the intent on the merchant's MID
+    //     and returns deep links for the customer's UPI apps. Confirmed later by the PayU
+    //     webhook / verify sweep, like the hosted redirect.
+    const wantIntent = body.intent === true || body.intent === "true" || body.intent === "1";
+    if (wantIntent) {
+      // Same rule as the redirect: the intent is issued on the real MID, so a test key cannot use it.
+      if (!livemode)
+        return NextResponse.json({ error: "test keys cannot use the PayU UPI intent" }, { status: 400 });
+      const gwMid = await getGatewayMid(merchantCode);
+      if (!gwMid || gwMid.gateway !== "PAYU") {
+        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+      }
+      const currency = (body.currency ?? "INR").toUpperCase();
+      if (currency !== "INR") return NextResponse.json({ error: "UPI intent supports INR only" }, { status: 400 });
+
+      const r = await issuePayuIntent({
+        mid: gwMid, merchantCode, livemode,
+        txnid: body.txnid, amount: amountStr, currency,
+        productinfo: body.productinfo ?? "Order", firstname: body.firstname ?? "Customer",
+        email: body.email ?? "", phone: body.phone ?? "9999999999",
+        clientSurl: body.surl ?? null, clientFurl: body.furl ?? null,
+        client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
+        actor: `merchant:${merchantCode}`,
+      });
+      return NextResponse.json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
+        { status: r.httpStatus });
     }
 
     // 3. map to the checkout pipeline. method must be one Katana supports.

@@ -173,6 +173,71 @@ if (!res.ok) throw new Error(data.error);
 
 ---
 
+## PayU UPI intent (S2S deep links)
+
+For a merchant whose money is collected on its **own PayU MID**, Katana can ask PayU for the
+UPI intent server-to-server and hand back app deep links. No PayU page, no Katana page: your
+app opens PhonePe / Google Pay / Paytm directly.
+
+**One-time setup (Super Admin).** Merchant page → **Gateway MID credentials** → **Set
+credentials**: Gateway `PAYU`, Main MID code, the PayU **Key** and **Salt**, scheme
+`PAYU_SHA512`, environment `PROD`. Ask PayU to enable **UPI Intent S2S** (`txn_s2s_flow=4`)
+on the MID, and set the PayU dashboard webhook to `https://katanapay.co/api/gateway/payu/webhook`.
+
+**Call.** Same signature as step 1, sent to `/api/pay` with `intent: true`. Live Key only
+(the intent is issued on the real MID), INR only.
+
+```
+POST https://katanapay.co/api/pay
+Content-Type: application/json
+```
+```jsonc
+{
+  "key": "mk_live_xxx", "txnid": "ORDER-1002", "amount": "10.00", "hash": "<step 1>",
+  "productinfo": "Order 1002", "firstname": "Asha", "email": "buyer@example.com",
+  "phone": "9876543210",
+  "intent": true,
+  "client_ip":   "49.36.10.20",        // the PAYING CUSTOMER's IP — PayU requires it
+  "device_info": "Mozilla/5.0 (Linux; Android 14) …", // the customer's user-agent
+  "surl": "https://yourshop.com/paid", "furl": "https://yourshop.com/failed"   // optional
+}
+```
+Pass `client_ip` and `device_info` from the customer's request to your server. Without them
+Katana falls back to your server's own IP and user-agent, which PayU may risk-decline.
+
+**Response (`201` new, `200` when the same `txnid` is re-sent):**
+```jsonc
+{
+  "verified": true, "merchant": "K-001", "livemode": true, "gateway": "PAYU", "reused": false,
+  "order": { "id": "<uuid>", "txn_id": "ORDER-1002", "status": "CREATED", "amount": "10.00", "currency": "INR" },
+  "payu_payment_id": "613345778913142018",
+  "deeplinks": {
+    "upi":     "upi://pay?pa=…&pn=…&tr=…&am=10.00&cu=INR",
+    "phonepe": "phonepe://upi/pay?pa=…",
+    "gpay":    "gpay://upi/pay?pa=…",
+    "paytm":   "paytm://upi/pay?pa=…",
+    "android": "intent://pay?pa=…#Intent;scheme=upi;end"
+  },
+  "upi_intent": "upi://pay?…", "qr_payload": "upi://pay?…"
+}
+```
+
+**Open the app.** Android: open `deeplinks.android` (the system shows every installed UPI app)
+or `deeplinks.upi`. iOS: open the button for the app the customer picked — `phonepe`, `gpay` or
+`paytm`. Desktop: render `qr_payload` as a QR. Open the link straight from a tap; a link opened
+without a user gesture is blocked by mobile browsers.
+
+**Result.** The customer approves in their UPI app and usually never returns to a browser, so
+the order is confirmed by the PayU webhook or Katana's PayU verify sweep (every few minutes),
+then delivered to you on your webhook as `payment.success` / `payment.failed`. Do not ship on the
+API response — `CREATED` only means the intent was issued.
+
+**Errors.** `400` test key / PayU not configured / non-INR · `401` invalid key or signature ·
+`403 LIVE_MODE_NOT_ACTIVATED` · `409 txnid already used` · `502` PayU refused — the message says
+why, e.g. `(EX087) … incorrectly calculated hash` means the stored PayU Key or Salt is wrong.
+
+---
+
 ## Test mode
 
 Orders created with a **test Key** (`mk_test_…`) pay a sandbox UPI ID, are labelled

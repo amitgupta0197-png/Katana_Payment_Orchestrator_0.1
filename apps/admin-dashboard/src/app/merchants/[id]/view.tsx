@@ -483,6 +483,21 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
     onError: (e: Error) => toast.error("PayU redirect failed", { description: e.message }),
   });
 
+  const [intentLinks, setIntentLinks] = useState<{ txn: string; links: Record<string, string> } | null>(null);
+  const intent = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/test-pay`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, email, intent: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as { order: { txn_id: string }; deeplinks: Record<string, string> };
+    },
+    onSuccess: (d) => { setIntentLinks({ txn: d.order.txn_id, links: d.deeplinks }); toast.success("UPI intent issued by PayU"); },
+    onError: (e: Error) => { setIntentLinks(null); toast.error("PayU UPI intent failed", { description: e.message }); },
+  });
+
   return (
     <Card className="mb-4">
       <CardHeader>
@@ -501,7 +516,22 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
           <Button onClick={() => payu.mutate()} disabled={payu.isPending}>
             <ArrowRight className="h-4 w-4" /> {payu.isPending ? "Redirecting…" : "Pay via PayU"}
           </Button>
+          <Button variant="secondary" onClick={() => intent.mutate()} disabled={intent.isPending}>
+            {intent.isPending ? "Asking PayU…" : "PayU UPI intent"}
+          </Button>
         </div>
+        {intentLinks && (
+          <div className="rounded-md border p-3 text-sm space-y-1">
+            <div><span className="text-[color:var(--color-text-muted)]">Txn:</span> <span className="font-mono text-xs">{intentLinks.txn}</span></div>
+            {Object.entries(intentLinks.links).map(([app, href]) => (
+              <div key={app} className="flex gap-2 items-baseline">
+                <span className="w-16 shrink-0 text-[color:var(--color-text-muted)]">{app}</span>
+                <a href={href} className="font-mono text-xs break-all text-[color:var(--color-brand)] hover:underline">{href}</a>
+              </div>
+            ))}
+            <p className="text-xs text-[color:var(--color-text-muted)]">Open a link on a phone with that UPI app. The order confirms through the PayU webhook or the verify sweep.</p>
+          </div>
+        )}
         {result && (
           <div className="rounded-md border p-3 text-sm space-y-1">
             <div><span className="text-[color:var(--color-text-muted)]">Result:</span> <Badge variant={result.order?.status === "SUCCESS" ? "success" : "danger"}>{result.order?.status ?? "—"}</Badge></div>

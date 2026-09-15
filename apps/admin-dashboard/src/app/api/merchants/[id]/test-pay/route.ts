@@ -13,6 +13,7 @@ import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { runCheckout } from "@/lib/checkout-core";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuFields, payuPaymentUrl } from "@/lib/payu";
+import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { toMinor, fromMinor } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ const schema = z.object({
   method: z.string().default("UPI_INTENT"),
   currency: z.string().default("INR"),
   redirect: z.boolean().default(false),
+  intent: z.boolean().default(false),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +46,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const currency = body.currency.toUpperCase();
 
   try {
+    if (body.intent) {
+      const gw = await getGatewayMid(merchantCode);
+      if (!gw || gw.gateway !== "PAYU") {
+        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+      }
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
+      const r = await issuePayuIntent({
+        mid: gw, merchantCode, livemode: false,
+        txnid: "TEST-" + Date.now(), amount: amountStr, currency,
+        productinfo: body.productinfo, firstname: body.firstname, email: body.email, phone: body.phone,
+        clientSurl: `${base}/api/pay-result`, clientFurl: `${base}/api/pay-result`,
+        client: intentClientFrom(req),   // the operator's own browser is the "customer" here
+        actor: `test:${g.session.user_id}`,
+      });
+      return NextResponse.json({ mode: "intent", ...r.body }, { status: r.httpStatus });
+    }
+
     if (body.redirect) {
       const gw = await getGatewayMid(merchantCode);
       if (!gw || gw.gateway !== "PAYU") {
