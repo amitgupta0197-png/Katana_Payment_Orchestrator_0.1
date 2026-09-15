@@ -46,12 +46,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const sig = req.headers.get("x-signature");
   if (!ts || !sig)
     return NextResponse.json({ error: "missing x-timestamp / x-signature headers" }, { status: 401 });
-  const secret = await readWebhookSecret(merchant.merchant_code).catch(() => null);
+  // ONE LINK, TWO SECRETS. The live secret is tried first, then the test secret; the one that
+  // verifies decides the callback's mode, and only an order of that mode can be confirmed below.
   // An unissued secret is reported exactly like a bad signature, so the link does not reveal
   // which merchants have finished setting up.
-  if (!secret) return NextResponse.json({ error: "callback rejected", reason: "signature mismatch" }, { status: 401 });
-  const check = verifySignature({ secret, hash: payloadHash(raw), timestamp: ts, signature: sig });
-  if (!check.ok) return NextResponse.json({ error: "callback rejected", reason: check.reason }, { status: 401 });
+  let livemode: boolean | null = null;
+  let reason = "signature mismatch";
+  for (const mode of [true, false]) {
+    const secret = await readWebhookSecret(merchant.merchant_code, mode).catch(() => null);
+    if (!secret) continue;
+    const check = verifySignature({ secret, hash: payloadHash(raw), timestamp: ts, signature: sig });
+    if (check.ok) { livemode = mode; break; }
+    if (check.reason !== "signature mismatch") reason = check.reason;
+  }
+  if (livemode === null) return NextResponse.json({ error: "callback rejected", reason }, { status: 401 });
 
   const ref = body.order_id ?? body.order_ref;
   if (!ref) return NextResponse.json({ error: "order_id required" }, { status: 400 });
@@ -59,8 +67,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   try {
     const own = await rows<{ id: string }>("vendorGateway", `
       SELECT id::text FROM vendor_payin_orders
-       WHERE vendor = 'POOLPAY' AND merchant_id = $1 AND order_id = $2
-    `, [merchant.merchant_code, ref]);
+       WHERE vendor = 'POOLPAY' AND merchant_id = $1 AND order_id = $2 AND livemode = $3
+    `, [merchant.merchant_code, ref, livemode]);
     if (!own.length) return NextResponse.json({ error: "not found" }, { status: 404 });
 
     const r = await confirmPoolPayOrder({
@@ -68,7 +76,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,
       evidence: "WEBHOOK",
-      actor: `gateway:tsp:${merchant.merchant_code}`,
+      actor: `gateway:tsp:${merchant.merchant_code}${livemode ? "" : ":test"}`,
       settlementStatus: body.settlement_status ?? null,
       note: body.note ?? `TSP webhook${body.provider_txn_id ? ` (${body.provider_txn_id})` : ""}`,
     });

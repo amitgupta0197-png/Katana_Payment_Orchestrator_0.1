@@ -12,6 +12,7 @@
 //   readCredential(...)   → plaintext string
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import type { PoolClient } from "pg";
 import { rows } from "@/lib/pg";
 
 const KEY_VERSION = 1;
@@ -61,9 +62,11 @@ export interface StoreInput {
   plaintext: string;
 }
 
-export async function storeCredential(input: StoreInput): Promise<string> {
+// `client` stores the credential inside the caller's own transaction on checkoutservice_db, so a
+// rotation can replace the sealed secret and its lookup row atomically (issueCheckoutCreds).
+export async function storeCredential(input: StoreInput, client?: PoolClient): Promise<string> {
   const sealed = sealValue(input.plaintext);
-  const r = await rows<{ credential_id: string }>("checkout", `
+  const sql = `
     INSERT INTO credential_vault
       (kind, owner_type, owner_id, label, iv, auth_tag, ciphertext, key_version)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -71,8 +74,12 @@ export async function storeCredential(input: StoreInput): Promise<string> {
       SET iv=EXCLUDED.iv, auth_tag=EXCLUDED.auth_tag,
           ciphertext=EXCLUDED.ciphertext, rotated_at=now()
     RETURNING credential_id::text
-  `, [input.kind, input.ownerType, input.ownerId, input.label,
-      sealed.iv, sealed.auth_tag, sealed.ciphertext, KEY_VERSION]);
+  `;
+  const params = [input.kind, input.ownerType, input.ownerId, input.label,
+    sealed.iv, sealed.auth_tag, sealed.ciphertext, KEY_VERSION];
+  const r = client
+    ? (await client.query<{ credential_id: string }>(sql, params)).rows
+    : await rows<{ credential_id: string }>("checkout", sql, params);
   return r[0].credential_id;
 }
 

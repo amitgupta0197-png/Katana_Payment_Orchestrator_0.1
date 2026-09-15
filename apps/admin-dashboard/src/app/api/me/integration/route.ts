@@ -42,13 +42,16 @@ export async function GET() {
   const code = await ownMerchantCode(g.session.scope_id);
   if (!code) return NextResponse.json({ error: "merchant not resolved" }, { status: 404 });
   try {
-    const status = await getCheckoutCredsStatus(code);
+    const [status, testStatus] = await Promise.all([
+      getCheckoutCredsStatus(code, true), getCheckoutCredsStatus(code, false),
+    ]);
     // Defensive: tolerate an older schema without these columns (degrades to blank).
     const m = (await rows<any>("merchant",
       `SELECT COALESCE(webhook_url,'') AS webhook_url, COALESCE(return_url,'') AS return_url FROM merchants WHERE merchant_code = $1`, [code]).catch(() => []))[0] ?? {};
     return NextResponse.json({
       merchant_code: code,
-      credentials: status,                  // { configured, key, scheme, salt_hint }
+      credentials: status,                  // live: { configured, key, scheme, salt_hint }
+      test_credentials: testStatus,         // test: same shape
       webhook_url: m.webhook_url ?? "",
       return_url: m.return_url ?? "",
       endpoints: endpoints(),
@@ -57,7 +60,10 @@ export async function GET() {
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
-const schema = z.object({ scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("HMAC_SHA256") });
+const schema = z.object({
+  scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("HMAC_SHA256"),
+  livemode: z.boolean().default(true),   // which pair to (re)generate; the other is untouched
+});
 
 export async function POST(req: Request) {
   const g = await gateOrResponse(["MERCHANT"]);
@@ -69,7 +75,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
-    const creds = await issueCheckoutCreds(code, body.scheme); // returns key + salt ONCE
-    return NextResponse.json({ creds }, { status: 201 });
+    const creds = await issueCheckoutCreds(code, body.scheme, body.livemode); // key + salt ONCE
+    return NextResponse.json({ creds, livemode: body.livemode }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

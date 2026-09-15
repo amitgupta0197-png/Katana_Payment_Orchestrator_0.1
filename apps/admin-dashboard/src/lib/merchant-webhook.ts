@@ -15,7 +15,13 @@ import { randomBytes } from "crypto";
 import { rows } from "@/lib/pg";
 import { readCredential, storeCredential } from "@/lib/credential-vault";
 
-const SECRET = { kind: "webhook_secret", ownerType: "merchant", label: "tsp_callback_secret" } as const;
+// ONE LINK, ONE SECRET PER MODE. The live secret keeps the original label, so a secret already
+// handed to a TSP keeps working. Whichever secret verifies a callback decides its mode, and a
+// callback may only confirm an order of that mode (callback/[slug]).
+const secretFor = (merchantCode: string, livemode: boolean) => ({
+  kind: "webhook_secret", ownerType: "merchant", ownerId: merchantCode,
+  label: livemode ? "tsp_callback_secret" : "tsp_callback_secret:test",
+} as const);
 
 const clean = (s: string) => s.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
@@ -70,13 +76,13 @@ export async function merchantByWebhookSlug(slug: string): Promise<{ id: string;
   return r[0] ?? null;
 }
 
-export async function readWebhookSecret(merchantCode: string): Promise<string | null> {
-  return readCredential({ ...SECRET, ownerId: merchantCode });
+export async function readWebhookSecret(merchantCode: string, livemode = true): Promise<string | null> {
+  return readCredential(secretFor(merchantCode, livemode));
 }
 
-/** Generate (or rotate) the link's signing secret. Returns the plaintext ONCE. */
-export async function rotateWebhookSecret(merchantCode: string): Promise<string> {
+/** Generate (or rotate) the link's signing secret for one mode. Returns the plaintext ONCE. */
+export async function rotateWebhookSecret(merchantCode: string, livemode = true): Promise<string> {
   const secret = randomBytes(32).toString("hex");
-  await storeCredential({ ...SECRET, ownerId: merchantCode, plaintext: secret });
+  await storeCredential({ ...secretFor(merchantCode, livemode), plaintext: secret });
   return secret;
 }

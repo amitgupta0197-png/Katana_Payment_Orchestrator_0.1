@@ -45,6 +45,7 @@ async function lookupConfig(merchantId: string): Promise<ConfigRow | null> {
 export async function enqueue(input: {
   merchantId: string; eventType: string; payload: Record<string, unknown>;
   orderId?: string | null; targetUrlOverride?: string;
+  livemode?: boolean;   // defaults to live; a test order's callback is recorded as test
 }): Promise<string | null> {
   const cfg = await lookupConfig(input.merchantId);
   const target = input.targetUrlOverride ?? cfg?.target_url;
@@ -53,12 +54,12 @@ export async function enqueue(input: {
 
   const ins = await rows<{ outbox_id: string }>("notification", `
     INSERT INTO webhook_outbox
-      (merchant_id, order_id, event_type, payload, target_url, status, next_attempt_at)
-    VALUES ($1, $2, $3, $4::jsonb, $5, 'PENDING', now())
+      (merchant_id, order_id, event_type, payload, target_url, status, next_attempt_at, livemode)
+    VALUES ($1, $2, $3, $4::jsonb, $5, 'PENDING', now(), $6)
     RETURNING outbox_id::text
   `, [
     input.merchantId, input.orderId ?? null, input.eventType,
-    JSON.stringify(input.payload), target,
+    JSON.stringify(input.payload), target, input.livemode !== false,
   ]);
   return ins[0]?.outbox_id ?? null;
 }

@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { toMinor, fromMinor } from "@/lib/money";
-import { resolveMerchantByCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
+import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
 import { runCheckout } from "@/lib/checkout-core";
@@ -61,11 +61,12 @@ export async function POST(req: Request) {
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
 
   try {
-    // 1. key -> merchant
-    const merchantCode = await resolveMerchantByCheckoutKey(body.key);
-    if (!merchantCode) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+    // 1. key -> merchant + mode (the key's prefix decides; a legacy mk_<hex> key is live)
+    const resolved = await resolveCheckoutKey(body.key);
+    if (!resolved) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+    const { merchantCode, livemode } = resolved;
 
-    const creds = await getCheckoutCreds(merchantCode);
+    const creds = await getCheckoutCreds(merchantCode, livemode);
     if (!creds || creds.key !== body.key) {
       return NextResponse.json({ error: "invalid key" }, { status: 401 });
     }
@@ -76,6 +77,9 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+    // Test orders are wired through checkout in the next test-mode step. Until then a test key
+    // is refused outright — it must never be able to create a live order.
+    if (!livemode) return NextResponse.json({ error: "test keys cannot create orders yet" }, { status: 403 });
 
     // 2.5 Hosted-gateway redirect (real PayU): build a signed PayU request with
     //     the merchant's stored gateway Key+Salt and hand the customer's browser

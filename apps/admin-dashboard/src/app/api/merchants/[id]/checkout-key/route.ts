@@ -22,11 +22,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const scope = await resolveMerchantScope(id, g.session);
   if ("response" in scope) return scope.response;
   try {
-    return NextResponse.json({ status: await getCheckoutCredsStatus(scope.code) });
+    const [status, testStatus] = await Promise.all([
+      getCheckoutCredsStatus(scope.code, true), getCheckoutCredsStatus(scope.code, false),
+    ]);
+    return NextResponse.json({ status, test_status: testStatus });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
-const schema = z.object({ scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("PAYU_SHA512") });
+const schema = z.object({
+  scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("PAYU_SHA512"),
+  livemode: z.boolean().default(true),   // which pair to (re)generate; the other is untouched
+});
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER"]);
@@ -44,8 +50,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const creds = await issueCheckoutCreds(scope.code, body.scheme);
+    const creds = await issueCheckoutCreds(scope.code, body.scheme, body.livemode);
     // Key + Salt returned ONCE for the merchant to configure their checkout.
-    return NextResponse.json({ creds }, { status: 201 });
+    return NextResponse.json({ creds, livemode: body.livemode }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

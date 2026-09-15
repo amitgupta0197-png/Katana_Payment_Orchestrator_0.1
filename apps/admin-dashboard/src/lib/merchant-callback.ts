@@ -40,7 +40,7 @@ async function merchantWebhookUrl(merchantCode: string): Promise<string | null> 
 export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boolean; reason?: string }> {
   const cur = (await rows<any>("vendorGateway", `
     SELECT id::text, order_id, merchant_id, pay_id, vendor_txn_id, amount::float AS amount,
-           currency_code, status, COALESCE(rrn,'') AS rrn, meta
+           currency_code, status, COALESCE(rrn,'') AS rrn, meta, livemode
       FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'
   `, [orderRowId]).catch(() => []))[0];
   if (!cur) return { sent: false, reason: "not found" };
@@ -72,11 +72,15 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
     RRN: String(cur.rrn ?? ""),
     RESPONSE_DATE_TIME: new Date().toISOString(),
   };
+  // Test callbacks say so. The field is added ONLY for test orders, so a live payload — and
+  // the HASH every merchant already verifies — is exactly what it was before test mode.
+  const livemode = cur.livemode !== false;
+  if (!livemode) payload.LIVEMODE = "false";
 
   // Sign with the merchant's checkout SALT so they verify with their existing creds.
   let hash = "";
   try {
-    const creds = await getCheckoutCreds(merchantCode);
+    const creds = await getCheckoutCreds(merchantCode, livemode);   // the salt of the order's own mode
     if (creds?.salt) hash = signPoolPay(payload, creds.salt);
   } catch { /* handled below */ }
   if (!hash) {
@@ -91,7 +95,7 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
 
   const outboxId = await enqueue({
     merchantId: merchantCode, eventType: "payin.status", orderId: orderRowId,
-    payload: body, targetUrlOverride: target,
+    payload: body, targetUrlOverride: target, livemode,
   }).catch(() => null);
 
   // Stamp BEFORE dispatching so a retry/parallel caller won't double-enqueue.

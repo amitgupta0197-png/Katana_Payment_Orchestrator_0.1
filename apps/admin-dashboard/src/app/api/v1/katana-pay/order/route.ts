@@ -11,7 +11,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
-import { resolveMerchantByCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
+import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
 
 export const dynamic = "force-dynamic";
@@ -54,10 +54,12 @@ export async function POST(req: Request) {
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
 
   try {
-    // 1. key -> merchant
-    const merchantCode = await resolveMerchantByCheckoutKey(body.key);
-    if (!merchantCode) return NextResponse.json({ error: "invalid key" }, { status: 401 });
-    const creds = await getCheckoutCreds(merchantCode);
+    // 1. key -> merchant + mode. The key's prefix decides the mode (mk_test_ / mk_live_; a
+    //    legacy mk_<hex> key is live) — never a field in the request.
+    const resolved = await resolveCheckoutKey(body.key);
+    if (!resolved) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+    const { merchantCode, livemode } = resolved;
+    const creds = await getCheckoutCreds(merchantCode, livemode);
     if (!creds || creds.key !== body.key) return NextResponse.json({ error: "invalid key" }, { status: 401 });
 
     // 2. verify the merchant's signature over the order (same fields as /api/pay)
@@ -66,6 +68,9 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+    // Test orders are wired through order creation in the next test-mode step. Until then a
+    // test key is refused outright — it must never be able to create a live order.
+    if (!livemode) return NextResponse.json({ error: "test keys cannot create orders yet" }, { status: 403 });
 
     // 3. create the pay-in (idempotent on txnid) and return the deeplink response.
     const amount = Number(amountStr);

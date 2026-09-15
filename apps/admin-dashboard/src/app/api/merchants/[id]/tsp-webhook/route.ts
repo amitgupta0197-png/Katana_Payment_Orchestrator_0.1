@@ -28,12 +28,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const link = await linkFor(scope.code);
     if (!link) return NextResponse.json({ error: "could not assign a webhook link" }, { status: 500 });
-    const secret = await readWebhookSecret(scope.code).catch(() => null);
-    return NextResponse.json({ ...link, secret_configured: !!secret });
+    const [secret, testSecret] = await Promise.all([
+      readWebhookSecret(scope.code, true).catch(() => null),
+      readWebhookSecret(scope.code, false).catch(() => null),
+    ]);
+    return NextResponse.json({ ...link, secret_configured: !!secret, test_secret_configured: !!testSecret });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER"]);
   if ("response" in g) return g.response;
   const { id } = await params;
@@ -42,11 +45,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     const link = await linkFor(scope.code);
     if (!link) return NextResponse.json({ error: "could not assign a webhook link" }, { status: 500 });
-    const secret = await rotateWebhookSecret(scope.code);
+    // { livemode: false } rotates the TEST secret; anything else rotates the live one.
+    const b = (await req.json().catch(() => ({}))) as { livemode?: unknown };
+    const livemode = b.livemode !== false;
+    const secret = await rotateWebhookSecret(scope.code, livemode);
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'TSP_WEBHOOK_SECRET_ROTATED', $2, $3::jsonb)
-    `, [id, g.session.email, JSON.stringify({ url: link.url })]).catch(() => {});
-    return NextResponse.json({ ...link, secret }, { status: 201 });
+    `, [id, g.session.email, JSON.stringify({ url: link.url, livemode })]).catch(() => {});
+    return NextResponse.json({ ...link, secret, livemode }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
