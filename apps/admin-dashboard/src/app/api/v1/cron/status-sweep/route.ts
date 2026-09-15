@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
   try {
     const pending = await rows<any>("vendorGateway", `
-      SELECT id::text, amount, status,
+      SELECT id::text, amount, status, livemode,
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
     let settled = 0, failed = 0, expired = 0, swept = 0;
     for (const o of pending) {
       const amountMinor = Math.round(Number(o.amount) * 100);
-      const d = resolvePoolPay(o.status, amountMinor, o.age_seconds);
+      // Sandbox amount rules apply to test orders only; a live order only ever expires here.
+      const d = resolvePoolPay(o.status, amountMinor, o.age_seconds, o.livemode !== false);
       if (!d.changed) continue;
       const rrn = d.status === "SUCCESS" ? genRrn(o.id) : null;
       await rows("vendorGateway", `

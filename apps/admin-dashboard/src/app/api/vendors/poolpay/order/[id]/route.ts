@@ -19,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const found = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel,
              COALESCE(rrn,'') AS rrn, response_code, status, customer_vpa, customer_phone,
-             meta, created_at,
+             meta, created_at, livemode,
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
        WHERE id = $1::uuid AND vendor = 'POOLPAY'
@@ -29,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     let order = found[0];
     if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
       const amountMinor = Math.round(Number(order.amount) * 100);
-      const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds);
+      const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds, order.livemode !== false);
       if (decision.changed) {
         const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
         const upd = await rows<any>("vendorGateway", `
@@ -38,7 +38,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
            WHERE id = $1::uuid
           RETURNING id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel,
                     COALESCE(rrn,'') AS rrn, response_code, status, customer_vpa, customer_phone,
-                    meta, created_at
+                    meta, created_at, livemode
         `, [order.id, decision.status, decision.response_code, rrn]);
         order = upd[0];
       }

@@ -72,19 +72,20 @@ export function buildDeeplinks(query: string): DeepLinks {
 //
 // CRITICAL: these amount-based outcomes are TEST hooks only. On real merchant
 // traffic they would auto-FAIL / auto-EXPIRE / auto-SUCCEED any order whose amount
-// happens to end in .13 / .11 / .99 paise — with NO payment ever made. They are
-// therefore gated behind POOLPAY_SANDBOX_OUTCOMES=1 and are OFF by default (and in
-// production). With them off, an order stays PENDING until a REAL confirmation
-// (agent bank-credit alert, vendor webhook, or manual ops) or the pending-expiry
-// timeout — it never changes state on its own.
-function sandboxOutcomesEnabled(): boolean {
-  return process.env.POOLPAY_SANDBOX_OUTCOMES === "1";
-}
+// happens to end in .13 / .11 / .99 paise — with NO payment ever made.
+//
+// THE ORDER'S MODE DECIDES, NOT AN ENVIRONMENT FLAG. They used to switch on for EVERY order
+// when POOLPAY_SANDBOX_OUTCOMES=1, so setting it on a production server would have auto-settled
+// a real ₹499.99 order. They now apply to TEST orders only — always, so testers can use them on
+// production — and never to a live order, whatever the environment says. The flag is retired.
+// A live order stays PENDING until a REAL confirmation (agent bank-credit alert, vendor webhook,
+// or manual ops) or the pending-expiry timeout — it never changes state on its own.
 export function decidePoolPayStatus(
   amountMinor: number,
   ageSeconds: number,
+  livemode = true,
 ): { status: "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED"; response_code: string } {
-  if (sandboxOutcomesEnabled()) {
+  if (!livemode) {
     if (amountMinor % 100 === 13) return { status: "FAILED", response_code: "U30" };
     if (amountMinor % 100 === 11) return { status: "EXPIRED", response_code: "U69" };
     if (amountMinor % 100 === 99 && ageSeconds >= 8) return { status: "SUCCESS", response_code: "00" }; // forced test success
@@ -123,11 +124,12 @@ export function resolvePoolPay(
   currentStatus: string,
   amountMinor: number,
   ageSeconds: number,
+  livemode = true,
 ): { status: string; response_code: string; changed: boolean } {
   if (POOLPAY_TERMINAL.has(currentStatus)) {
     return { status: currentStatus, response_code: "", changed: false }; // final-status lock
   }
-  const d = decidePoolPayStatus(amountMinor, ageSeconds);
+  const d = decidePoolPayStatus(amountMinor, ageSeconds, livemode);
   let status = d.status, code = d.response_code;
   if (status === "PENDING" && ageSeconds >= PENDING_EXPIRY_SECONDS) {
     status = "EXPIRED"; code = "U69"; // pending-expiry

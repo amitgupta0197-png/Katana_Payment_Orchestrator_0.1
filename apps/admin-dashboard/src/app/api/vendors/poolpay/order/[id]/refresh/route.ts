@@ -16,14 +16,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const found = await rows<any>("vendorGateway", `
-      SELECT id::text, status, amount, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
+      SELECT id::text, status, amount, livemode, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'
     `, [id]);
     if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const o = found[0];
 
     const amountMinor = Math.round(Number(o.amount) * 100);
-    const d = resolvePoolPay(o.status, amountMinor, o.age_seconds);
+    const d = resolvePoolPay(o.status, amountMinor, o.age_seconds, o.livemode !== false);
     if (d.changed) {
       const rrn = d.status === "SUCCESS" ? genRrn(o.id) : null;
       await rows("vendorGateway", `

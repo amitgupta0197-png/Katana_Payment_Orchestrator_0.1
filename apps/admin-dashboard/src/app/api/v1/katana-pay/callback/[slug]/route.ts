@@ -73,6 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     const r = await confirmPoolPayOrder({
       id: own[0].id,
+      livemode,                 // the mode the verifying secret proved
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,
       evidence: "WEBHOOK",

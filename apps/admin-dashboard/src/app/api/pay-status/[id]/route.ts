@@ -26,6 +26,7 @@ interface StatusPayload {
   mode: string; deeplinks: unknown; upi_intent: unknown; return_url: string | null;
   merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
+  livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
 }
 
 // The payee name (pn) and VPA (pa) are already public inside the UPI intent the
@@ -41,7 +42,7 @@ function upiParam(intent: unknown, key: string): string | null {
 async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   const found = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn,
-           status, meta, created_at, updated_at,
+           status, meta, created_at, updated_at, livemode,
            EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
       FROM vendor_payin_orders
      WHERE id = $1::uuid AND vendor = 'POOLPAY'
@@ -51,14 +52,14 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   let order = found[0];
   if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
     const amountMinor = Math.round(Number(order.amount) * 100);
-    const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds);
+    const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds, order.livemode !== false);
     if (decision.changed) {
       const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
       const upd = await rows<any>("vendorGateway", `
         UPDATE vendor_payin_orders
            SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
          WHERE id = $1::uuid
-        RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta, created_at, updated_at
+        RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta, created_at, updated_at, livemode
       `, [order.id, decision.status, decision.response_code, rrn]);
       order = upd[0];
       // Auto-resolution just flipped this order terminal — fire the merchant
@@ -75,6 +76,7 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
     merchant_name: upiParam(meta.upi_intent, "pn"),
     payee_vpa: upiParam(meta.upi_intent, "pa"),
     held,
+    livemode: order.livemode !== false,
     // Held orders wait for an operator and never expire, so they get no countdown.
     expires_at: !terminal && !held && createdAt
       ? new Date(createdAt.getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null,

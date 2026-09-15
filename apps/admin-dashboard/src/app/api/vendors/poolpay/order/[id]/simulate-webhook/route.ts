@@ -28,17 +28,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
 
   try {
-    const cur = await rows<{ id: string; order_id: string; status: string }>("vendorGateway",
-      `SELECT id::text, order_id, status FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
+    const cur = await rows<{ id: string; order_id: string; status: string; livemode: boolean }>("vendorGateway",
+      `SELECT id::text, order_id, status, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
     if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = cur[0];
     if (POOLPAY_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
+    if (order.livemode !== false)
+      return NextResponse.json({ error: "Simulate webhook only works on test orders" }, { status: 409 });
 
     // By id: an order ref is unique per merchant only, so confirming by ref could hit another
     // merchant's order with the same ref.
     const r = await confirmPoolPayOrder({
       id: order.id,
+      livemode: false,
       outcome,
       utr: outcome === "SUCCESS" ? genRrn(order.id) : null,
       evidence: "WEBHOOK",

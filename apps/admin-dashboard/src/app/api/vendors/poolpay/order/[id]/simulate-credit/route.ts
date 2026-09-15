@@ -23,11 +23,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const cur = await rows<any>("vendorGateway",
-      `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
+      `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
     if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = cur[0];
     if (POOLPAY_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
+    // A simulated credit may only ever settle a TEST order — on a live order it would mark a
+    // real customer's order paid with no money received.
+    if (order.livemode !== false)
+      return NextResponse.json({ error: "Simulate bank credit only works on test orders" }, { status: 409 });
 
     const meta = order.meta ?? {};
     const payee = meta.receiver_vpa ?? null;

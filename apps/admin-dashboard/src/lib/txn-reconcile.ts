@@ -233,6 +233,10 @@ export async function ingestTxnAlert(
   // When the capture carries no banker code the lookup stays unscoped (the credit has no
   // other owner), and a ref shared by several bankers goes to manual review instead.
   const scopeMerchant = input.merchant_id?.trim() || null;
+  // A CREDIT ONLY MATCHES ORDERS OF ITS OWN MODE. Every real channel (device, SMS, email, bank
+  // API, statement import) confirms LIVE orders; a SIMULATED credit confirms TEST orders. So no
+  // real payment can mark a test order paid, and no simulator can mark a live order paid.
+  const alertLivemode = source !== "SIMULATED";
   // Payee (settlement VPA) credited — STORED ONLY WHEN THE CAPTURE ACTUALLY STATED IT.
   //
   // This used to fall back to the banker's configured PRIMARY settlement VPA whenever the
@@ -533,8 +537,9 @@ export async function ingestTxnAlert(
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1
          AND ($2::text IS NULL OR merchant_id = $2)
+         AND livemode = $3
        ORDER BY created_at DESC
-    `, [orderRef, scopeMerchant]).catch(() => []);
+    `, [orderRef, scopeMerchant, alertLivemode]).catch(() => []);
     if (byRef.length > 1) {
       ambiguous = true; confidence = 60;
       matchDetail = `order id ${orderRef} exists for ${byRef.length} merchants — alert carries no merchant code`;
@@ -552,8 +557,9 @@ export async function ingestTxnAlert(
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1
          AND ($2::text IS NULL OR merchant_id = $2)
+         AND livemode = $3
        ORDER BY created_at DESC
-    `, [utr, scopeMerchant]).catch(() => []);
+    `, [utr, scopeMerchant, alertLivemode]).catch(() => []);
     if (byUtr.length === 1) {
       order = byUtr[0];
       if (amountMatches(order.amount, amount)) { confidence = 100; matchDetail = `exact UTR ${utr}`; }
@@ -571,8 +577,9 @@ export async function ingestTxnAlert(
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
          AND amount = $1 AND created_at >= now() - ($2 || ' minutes')::interval
          AND ($3::text IS NULL OR merchant_id = $3)
+         AND livemode = $4
        ORDER BY created_at DESC
-    `, [amount.toFixed(2), String(MATCH_WINDOW_MIN), scopeMerchant]).catch(() => []);
+    `, [amount.toFixed(2), String(MATCH_WINDOW_MIN), scopeMerchant, alertLivemode]).catch(() => []);
     // Prefer still-live orders; only fall back to an EXPIRED one when nothing live
     // matches the amount. A confident match on an expired order REVIVES it to SUCCESS
     // (see confirmPoolPayOrder soft-terminal rule) instead of leaving the credit unmatched.
@@ -647,8 +654,9 @@ export async function ingestTxnAlert(
          WHERE direction = 'CREDIT' AND (order_ref = $1 OR utr = $1)
            AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
            AND created_at >= now() - interval '24 hours'
+           AND livemode = $2   -- never fold a simulated credit into a real one, or back
          ORDER BY created_at DESC LIMIT 2
-      `, [orderRef]).catch(() => []);
+      `, [orderRef, alertLivemode]).catch(() => []);
       if (byOrder.length === 1) tgtId = byOrder[0].id;
     }
     // Fallback: same merchant+amount within a short window, exactly one complementary.
@@ -665,6 +673,7 @@ export async function ingestTxnAlert(
            -- the merge entirely: a ₹6 push arriving twice left the RRN stranded on its own
            -- row while the credit still showed "no RRN" (live 2026-08-15).
            AND COALESCE(outcome,'') <> 'DUPLICATE'
+           AND livemode = $7
            AND created_at >= now() - interval '15 minutes'
            AND ( ($4::text IS NOT NULL AND (utr IS NULL OR utr !~ '^[0-9]{12}$'))
               OR ($5::text IS NOT NULL AND order_ref IS NULL) )
@@ -677,7 +686,7 @@ export async function ingestTxnAlert(
                   OR regexp_replace(split_part($6::text, '@', 1), '[X*].*$', '')
                        LIKE regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') || '%' ) ) )
          ORDER BY created_at DESC LIMIT 2
-      `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef, input.payer_vpa ?? null]).catch(() => []);
+      `, [input.merchant_id, amount.toFixed(2), source, rrn, orderRef, input.payer_vpa ?? null, alertLivemode]).catch(() => []);
       if (compl.length === 1) tgtId = compl[0].id;
     }
     // BACKFILL: a one-tapped RRN for an OLDER payment (past the 15-min live window). Match the
@@ -695,13 +704,14 @@ export async function ingestTxnAlert(
            WHERE merchant_id = $1 AND amount = $2 AND direction = 'CREDIT' AND source <> $3
              AND (utr IS NULL OR utr !~ '^[0-9]{12}$')
              AND created_at >= now() - interval '14 days'
+             AND livemode = $6
              AND lower(split_part(payer_vpa, '@', 2)) = $4
              -- Prefix-of-prefix, not equality: the receipt and the email mask a different
              -- number of leading chars ("96***53" strips to "96", "9611XX" strips to "9611").
              AND ( regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') LIKE $5 || '%'
                 OR $5 LIKE regexp_replace(split_part(payer_vpa, '@', 1), '[X*].*$', '') || '%' )
            ORDER BY created_at DESC LIMIT 1
-        `, [input.merchant_id, amount.toFixed(2), source, domain, prefix]).catch(() => []);
+        `, [input.merchant_id, amount.toFixed(2), source, domain, prefix, alertLivemode]).catch(() => []);
         if (bf.length === 1) tgtId = bf[0].id;
       }
     }
@@ -823,6 +833,7 @@ export async function ingestTxnAlert(
   if (outcome === "CONFIRMED" && order) {
     confirm = await confirmPoolPayOrder({
       id: order.id, outcome: "SUCCESS", utr: storedRef, evidence: source === "EMAIL" ? "EMAIL" : "DEVICE", actor,
+      livemode: alertLivemode,
       settlementStatus: "SETTLED", note: `${source === "EMAIL" ? "email" : "bank"} credit alert${input.bank ? ` (${input.bank})` : ""}`,
     });
     if (!confirm.ok) {
@@ -840,7 +851,8 @@ export async function ingestTxnAlert(
   // purchase lot. Runs only after `outcome` has settled (the confirm block above can demote
   // it to DUPLICATE/UNMATCHED), is gated on DT_MODULE_ENABLED, and is fully isolated:
   // reconciliation is the system of record and must never fail because DT accounting did.
-  if (outcome === "CONFIRMED") {
+  // Live credits only: a simulated credit repays no real USDT advance.
+  if (outcome === "CONFIRMED" && alertLivemode) {
     try {
       const dt = await processPayin({ alert_id: alertId, banker_code: input.merchant_id ?? null, amount });
       if (dt.status === "CONSUMED")

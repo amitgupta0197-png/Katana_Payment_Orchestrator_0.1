@@ -60,6 +60,8 @@ export async function POST(req: Request) {
     const r = await confirmPoolPayOrder({
       orderRef: ref,
       merchantId: body.merchant_code ?? null,
+      // VENDOR_SECRET_POOLPAY is a live gateway secret: this callback may only confirm live orders.
+      livemode: true,
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,
       evidence: "WEBHOOK",

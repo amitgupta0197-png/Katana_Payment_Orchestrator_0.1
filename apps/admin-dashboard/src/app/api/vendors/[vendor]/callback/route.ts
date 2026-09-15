@@ -84,7 +84,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ vendor:
 
     const ord = await rows<any>("checkout", `
       SELECT id, status, txn_id, merchant_id, amount_minor::text AS amount_minor, currency
-        FROM checkout_orders WHERE txn_id = $1
+        FROM checkout_orders
+       WHERE txn_id = $1
+         AND livemode = true   -- a vendor's live secret may only move live orders
     `, [body.txn_id]);
     if (!ord.length) {
       await rows("checkout", `

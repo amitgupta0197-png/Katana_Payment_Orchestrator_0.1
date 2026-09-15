@@ -218,6 +218,10 @@ export interface ConfirmPoolPayInput {
   id?: string;                 // vendor_payin_orders.id (uuid) — ops path
   orderRef?: string;           // order_id (our reference) — webhook path
   merchantId?: string | null;  // merchant code that scopes an orderRef lookup
+  // The mode the EVIDENCE belongs to. A real bank credit or a live-secret webhook passes true, a
+  // simulator or test-secret webhook passes false; the order must be in that mode. Omitted only
+  // by human decisions (ops confirm, manual case), which may act on either.
+  livemode?: boolean;
   outcome: "SUCCESS" | "FAILED";
   utr?: string | null;         // UTR/RRN from bank / scrape / screenshot / gateway
   note?: string | null;
@@ -245,20 +249,29 @@ export async function confirmPoolPayOrder(input: ConfirmPoolPayInput): Promise<C
   // An order ref is unique per MERCHANT, not platform-wide (vendorGateway 0024/0025). A lookup
   // by ref is therefore scoped to the merchant when the caller knows it, and REFUSED when the
   // ref belongs to more than one merchant — never resolved to whichever row came back first.
+  const expected = typeof input.livemode === "boolean" ? input.livemode : null;
   const cur = input.id
     ? await rows<any>("vendorGateway",
-        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta
+        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta, livemode
            FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [key])
     : await rows<any>("vendorGateway",
-        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta
+        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta, livemode
            FROM vendor_payin_orders
           WHERE order_id = $1 AND vendor = 'POOLPAY'
             AND ($2::text IS NULL OR merchant_id = $2)
-          LIMIT 2`, [key, input.merchantId?.trim() || null]);
+            AND ($3::boolean IS NULL OR livemode = $3)
+          LIMIT 2`, [key, input.merchantId?.trim() || null, expected]);
   if (!cur.length) return { ok: false, status: 404, error: "not found" };
   if (cur.length > 1)
     return { ok: false, status: 409, error: `order ${key} exists for more than one merchant — include merchant_code` };
   const order = cur[0];
+
+  // EVIDENCE AND ORDER MUST BE IN THE SAME MODE. A real credit can never mark a test order paid,
+  // and a simulator or test-secret webhook can never mark a live order paid.
+  if (expected !== null && (order.livemode !== false) !== expected)
+    return { ok: false, status: 409, error: expected
+      ? "a test order cannot be confirmed by live evidence"
+      : "a live order cannot be confirmed by test evidence" };
 
   // Final-status lock. A retried webhook delivering the same terminal outcome is a
   // safe idempotent replay; a conflicting outcome is rejected.
@@ -274,11 +287,14 @@ export async function confirmPoolPayOrder(input: ConfirmPoolPayInput): Promise<C
     return { ok: false, status: 409, error: `order already ${order.status}` };
   }
 
-  // Duplicate-UTR blocking — a UTR/RRN may settle exactly one order.
+  // Duplicate-UTR blocking — a UTR/RRN may settle exactly one order OF ITS MODE. Across live
+  // orders this stays platform-wide on purpose: a real UPI reference is unique network-wide, so
+  // one payment can never settle two merchants' orders. Test orders carry generated references,
+  // which must never block a real one.
   if (input.outcome === "SUCCESS" && input.utr?.trim()) {
     const dup = await rows<{ order_id: string }>("vendorGateway",
-      `SELECT order_id FROM vendor_payin_orders WHERE rrn = $1 AND id <> $2::uuid LIMIT 1`,
-      [input.utr.trim(), order.id]);
+      `SELECT order_id FROM vendor_payin_orders WHERE rrn = $1 AND id <> $2::uuid AND livemode = $3 LIMIT 1`,
+      [input.utr.trim(), order.id, order.livemode !== false]);
     if (dup.length) return { ok: false, status: 409, error: `duplicate UTR — already used by order ${dup[0].order_id}` };
   }
 
