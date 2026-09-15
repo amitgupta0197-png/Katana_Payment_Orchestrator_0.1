@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useLiveActivation } from "@/components/merchant/live-activation-card";
 
 interface LinkStatus { slug: string; url: string; secret_configured: boolean; test_secret_configured?: boolean }
 
@@ -70,6 +71,9 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
   }
   const copy = (v: string) => { navigator.clipboard?.writeText(v); toast.success("Copied"); };
   const configured = (live: boolean) => (live ? link?.secret_configured : link?.test_secret_configured) === true;
+  // The live secret is locked until live mode is activated (the server refuses it regardless).
+  const activation = useLiveActivation(merchantId);
+  const liveLocked = activation.isSuccess && activation.data.status !== "ACTIVATED";
 
   return (
     <Card className="mb-4">
@@ -97,10 +101,11 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
                   <div className="flex min-w-0 items-center gap-2">
                     <ModeBadge live={live} />
                     <span className={`truncate text-xs ${configured(live) ? "" : "text-[color:var(--color-warning)]"}`}>
-                      {configured(live) ? "Secret issued · sealed" : "No secret yet"}
+                      {configured(live) ? "Secret issued · sealed" : live && liveLocked ? "Locked until live mode is activated" : "No secret yet"}
                     </span>
                   </div>
-                  <Button size="sm" variant={configured(live) ? "secondary" : "default"} onClick={() => setMode(live)}>
+                  <Button size="sm" variant={configured(live) ? "secondary" : "default"} onClick={() => setMode(live)}
+                    disabled={live && liveLocked}>
                     <KeyRound className="h-4 w-4" /> {configured(live) ? "Rotate" : "Generate"}
                   </Button>
                 </div>

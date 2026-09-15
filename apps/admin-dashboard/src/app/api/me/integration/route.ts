@@ -10,22 +10,12 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { issueCheckoutCreds, getCheckoutCredsStatus } from "@/lib/merchant-checkout";
 import { SIGNING_SCHEMES } from "@/lib/gateway-creds";
+import { ownMerchantCode } from "@/lib/merchant-keys";
+import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
 const BASE = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
-
-async function ownMerchantCode(scopeId: string | null): Promise<string | null> {
-  if (!scopeId) return null;
-  // A MERCHANT session's scope_id IS the cross-service merchant_code (varchar) — the
-  // same identity /api/merchants and the checkout vault key on. Normalize via the
-  // merchants table when a row exists; otherwise use scope_id directly so issue +
-  // read stay consistent (demo/seed personas have no merchants row).
-  const r = await rows<{ merchant_code: string }>(
-    "merchant", `SELECT merchant_code FROM merchants WHERE merchant_code = $1 OR id::text = $1 LIMIT 1`, [scopeId],
-  ).catch(() => []);
-  return r[0]?.merchant_code ?? scopeId;
-}
 
 function endpoints() {
   return {
@@ -77,5 +67,9 @@ export async function POST(req: Request) {
   try {
     const creds = await issueCheckoutCreds(code, body.scheme, body.livemode); // key + salt ONCE
     return NextResponse.json({ creds, livemode: body.livemode }, { status: 201 });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    const a = activationErrorResponse(err);   // a live pair before live mode is activated
+    if (a) return NextResponse.json(a.body, { status: a.status });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

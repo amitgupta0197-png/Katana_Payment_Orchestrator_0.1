@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LiveActivationCard, useLiveActivation } from "@/components/merchant/live-activation-card";
 
 interface Creds { configured: boolean; key?: string; scheme?: string; salt_hint?: string }
 
@@ -72,6 +73,9 @@ export default function IntegrationPage() {
   const key = samplePair?.key ?? "<your key>";
   const ep = d?.endpoints;
   const scheme = samplePair?.scheme ?? "HMAC_SHA256";
+  // Live credentials unlock once live mode is activated (the checklist card below).
+  const activation = useLiveActivation();
+  const liveLocked = activation.isSuccess && activation.data.status !== "ACTIVATED";
 
   const regen = useMutation({
     mutationFn: async ({ sch, livemode }: { sch: string; livemode: boolean }) => {
@@ -132,6 +136,8 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
           </div>
         } />
 
+      <LiveActivationCard />
+
       {/* Pine Labs — pull transactions + RRN from your Pine Labs account */}
       <div className="mb-4"><PinelabsConfigCard endpoint="/api/me/pinelabs" canEdit /></div>
 
@@ -152,7 +158,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
                   {live
                     ? <Badge variant="success">Live</Badge>
                     : <Badge className="bg-[color:var(--color-testmode-muted)] text-[color:var(--color-testmode-text)]">Test</Badge>}
-                  <Button size="sm" variant="secondary" onClick={() => setRegenMode(live)}>
+                  <Button size="sm" variant="secondary" onClick={() => setRegenMode(live)} disabled={live && liveLocked}>
                     <RefreshCw className="h-4 w-4" />{c?.configured ? "Regenerate" : "Generate"}
                   </Button>
                 </div>
@@ -164,7 +170,9 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
                   </div>
                 ) : (
                   <p className="text-[color:var(--color-text-muted)]">
-                    {live ? "No live credentials yet." : "No test credentials yet. Generate a test pair to start integrating."}
+                    {live
+                      ? (liveLocked ? "Unlocks when live mode is activated — see Activate live mode above." : "No live credentials yet.")
+                      : "No test credentials yet. Generate a test pair to start integrating."}
                   </p>
                 )}
               </div>

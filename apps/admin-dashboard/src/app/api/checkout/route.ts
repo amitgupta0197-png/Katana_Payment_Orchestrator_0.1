@@ -13,6 +13,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { runCheckout } from "@/lib/checkout-core";
 import { getLivemode } from "@/lib/mode";
+import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -77,8 +78,16 @@ export async function POST(req: Request) {
   const merchantId = s.persona === "MERCHANT" ? s.scope_id! : "tenant-default";
 
   try {
-    // A dashboard-created order follows the dashboard's Test / Live switch (live by default).
-    const r = await runCheckout({ merchantId, actorId: s.user_id, order: body, livemode: await getLivemode() });
+    // A dashboard-created order follows the dashboard's Test / Live switch (live by default). A
+    // banker's live order needs live mode activated; the admin's on-behalf tenant order is not a
+    // banker's and is not gated.
+    const livemode = await getLivemode();
+    if (livemode && s.persona === "MERCHANT") await assertLiveActivated(merchantId);
+    const r = await runCheckout({ merchantId, actorId: s.user_id, order: body, livemode });
     return NextResponse.json(r.body, { status: r.httpStatus });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    const a = activationErrorResponse(err);
+    if (a) return NextResponse.json(a.body, { status: a.status });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

@@ -7,6 +7,7 @@ import { rows } from "@/lib/pg";
 import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, POOLPAY_TERMINAL, SANDBOX_PAYEE_VPA, type DeepLinks } from "@/lib/poolpay";
 import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
+import { assertLiveActivated } from "@/lib/live-activation";
 
 export interface CreatePoolPayInput {
   orderId: string;
@@ -65,6 +66,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       "merchant", `SELECT blocked FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
     ).catch(() => []);
     if (b[0]?.blocked === true) throw new MerchantBlockedError(input.merchantId);
+    // A live order needs live mode activated for this merchant (lib/live-activation). Checked here
+    // so every route that creates a pay-in — key-signed or from the dashboard — is covered.
+    if (livemode) await assertLiveActivated(input.merchantId);
   }
 
   // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses

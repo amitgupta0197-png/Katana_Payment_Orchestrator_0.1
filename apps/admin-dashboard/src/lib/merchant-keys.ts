@@ -22,3 +22,14 @@ export async function resolveMerchantScope(
   }
   return { code };
 }
+
+// A MERCHANT session's own merchant_code. Its scope_id IS the cross-service merchant_code — the
+// identity keys, orders and the checkout vault are stamped with — normalised through the merchants
+// table when a row exists; demo / seed personas have none, so scope_id is used as-is.
+export async function ownMerchantCode(scopeId: string | null): Promise<string | null> {
+  if (!scopeId) return null;
+  const r = await rows<{ merchant_code: string }>(
+    "merchant", `SELECT merchant_code FROM merchants WHERE merchant_code = $1 OR id::text = $1 LIMIT 1`, [scopeId],
+  ).catch(() => []);
+  return r[0]?.merchant_code ?? scopeId;
+}

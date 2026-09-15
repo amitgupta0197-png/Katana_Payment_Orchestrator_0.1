@@ -14,6 +14,7 @@
 import { randomBytes } from "crypto";
 import { rows } from "@/lib/pg";
 import { readCredential, storeCredential } from "@/lib/credential-vault";
+import { assertLiveActivated } from "@/lib/live-activation";
 
 // ONE LINK, ONE SECRET PER MODE. The live secret keeps the original label, so a secret already
 // handed to a TSP keeps working. Whichever secret verifies a callback decides its mode, and a
@@ -82,6 +83,8 @@ export async function readWebhookSecret(merchantCode: string, livemode = true): 
 
 /** Generate (or rotate) the link's signing secret for one mode. Returns the plaintext ONCE. */
 export async function rotateWebhookSecret(merchantCode: string, livemode = true): Promise<string> {
+  // A live secret confirms real payments, so it needs live mode activated (lib/live-activation).
+  if (livemode) await assertLiveActivated(merchantCode);
   const secret = randomBytes(32).toString("hex");
   await storeCredential({ ...secretFor(merchantCode, livemode), plaintext: secret });
   return secret;

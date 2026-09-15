@@ -19,6 +19,7 @@ import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
 import { runCheckout } from "@/lib/checkout-core";
+import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,9 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+
+    // A live order — either branch below — needs live mode activated for this merchant.
+    if (livemode) await assertLiveActivated(merchantCode);
 
     // 2.5 Hosted-gateway redirect (real PayU): build a signed PayU request with
     //     the merchant's stored gateway Key+Salt and hand the customer's browser
@@ -141,5 +145,9 @@ export async function POST(req: Request) {
       },
     });
     return NextResponse.json({ verified: true, merchant: merchantCode, ...r.body }, { status: r.httpStatus });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    const a = activationErrorResponse(err);
+    if (a) return NextResponse.json(a.body, { status: a.status });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

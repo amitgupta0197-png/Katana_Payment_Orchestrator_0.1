@@ -15,6 +15,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
 import { getLivemode } from "@/lib/mode";
+import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (err) {
     if (err instanceof MerchantBlockedError)
       return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });
+    const a = activationErrorResponse(err);   // a live order before live mode is activated
+    if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
   }
 }

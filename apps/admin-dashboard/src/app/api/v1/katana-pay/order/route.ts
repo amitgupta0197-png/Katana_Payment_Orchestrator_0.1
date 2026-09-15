@@ -13,6 +13,7 @@ import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
+import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,8 @@ export async function POST(req: Request) {
     }, { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });
+    const a = activationErrorResponse(err);   // live key, live mode not activated
+    if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
   }
 }

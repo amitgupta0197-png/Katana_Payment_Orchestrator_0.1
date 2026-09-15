@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useLiveActivation } from "@/components/merchant/live-activation-card";
 
 type CheckoutCredsStatus =
   | { configured: false }
@@ -68,6 +69,10 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
   }
   const copy = (v: string) => { navigator.clipboard?.writeText(v); toast.success("Copied"); };
   const current = mode === null ? undefined : mode ? statusQ.data?.status : statusQ.data?.test_status;
+  // The live pair is locked until live mode is activated. The server refuses it regardless; this
+  // only saves the operator a failed click.
+  const activation = useLiveActivation(merchantId);
+  const liveLocked = activation.isSuccess && activation.data.status !== "ACTIVATED";
 
   return (
     <Card className="mb-4">
@@ -84,7 +89,8 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
             <div key={live ? "live" : "test"} className="space-y-2 rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <ModeBadge live={live} />
-                <Button size="sm" variant={s?.configured ? "secondary" : "default"} onClick={() => setMode(live)}>
+                <Button size="sm" variant={s?.configured ? "secondary" : "default"} onClick={() => setMode(live)}
+                  disabled={live && liveLocked}>
                   <KeyRound className="h-4 w-4" /> {s?.configured ? "Regenerate" : "Generate"}
                 </Button>
               </div>
@@ -96,7 +102,9 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
                 </div>
               ) : (
                 <div className={`text-xs ${MUTED}`}>
-                  {statusQ.isLoading ? "Loading…" : live ? "No live credentials issued yet." : "No test credentials yet. Generate a test pair to start integrating."}
+                  {statusQ.isLoading ? "Loading…"
+                    : live ? (liveLocked ? "Locked until live mode is activated for this banker." : "No live credentials issued yet.")
+                    : "No test credentials yet. Generate a test pair to start integrating."}
                 </div>
               )}
             </div>

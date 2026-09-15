@@ -12,6 +12,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { issueCheckoutCreds, getCheckoutCredsStatus } from "@/lib/merchant-checkout";
 import { SIGNING_SCHEMES } from "@/lib/gateway-creds";
+import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -53,5 +54,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const creds = await issueCheckoutCreds(scope.code, body.scheme, body.livemode);
     // Key + Salt returned ONCE for the merchant to configure their checkout.
     return NextResponse.json({ creds, livemode: body.livemode }, { status: 201 });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    const a = activationErrorResponse(err);   // a live pair before live mode is activated
+    if (a) return NextResponse.json(a.body, { status: a.status });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

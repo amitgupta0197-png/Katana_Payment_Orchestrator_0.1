@@ -10,6 +10,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { assignWebhookSlug, readWebhookSecret, rotateWebhookSecret, webhookUrl } from "@/lib/merchant-webhook";
+import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
 
@@ -54,5 +55,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       VALUES ($1::uuid, 'TSP_WEBHOOK_SECRET_ROTATED', $2, $3::jsonb)
     `, [id, g.session.email, JSON.stringify({ url: link.url, livemode })]).catch(() => {});
     return NextResponse.json({ ...link, secret, livemode }, { status: 201 });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  } catch (err) {
+    const a = activationErrorResponse(err);   // a live secret before live mode is activated
+    if (a) return NextResponse.json(a.body, { status: a.status });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

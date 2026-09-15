@@ -26,6 +26,7 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
 import { db, rows } from "@/lib/pg";
 import { computeSignature, type SigningScheme, type GatewaySignInput } from "@/lib/gateway-creds";
+import { assertLiveActivated } from "@/lib/live-activation";
 
 const labelFor = (livemode: boolean) => (livemode ? "checkout_integration" : "checkout_integration:test");
 
@@ -44,6 +45,8 @@ export function keyLivemode(mkey: string): boolean {
 // key that no lookup row pointed at — the merchant's integration then failed with "invalid
 // key" and nothing reported why. Rotating one mode never touches the other mode's key.
 export async function issueCheckoutCreds(merchantCode: string, scheme: SigningScheme, livemode = true): Promise<CheckoutCreds> {
+  // A live pair needs live mode activated (lib/live-activation); a test pair never does.
+  if (livemode) await assertLiveActivated(merchantCode);
   const creds: CheckoutCreds = {
     key: `${livemode ? "mk_live_" : "mk_test_"}${randomBytes(8).toString("hex")}`,
     salt: randomBytes(16).toString("hex"),

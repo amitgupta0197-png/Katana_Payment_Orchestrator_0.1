@@ -22,6 +22,7 @@ import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merc
 import { MerchantAgentCard } from "@/components/merchant/agent-permission";
 import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
+import { LiveActivationCard } from "@/components/merchant/live-activation-card";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -652,6 +653,9 @@ export default function MerchantDetailView({ id }: { id: string }) {
       />
 
       <ApiKeysCard merchant={merchant} />
+
+      {/* Live keys below stay locked until this is approved. */}
+      <LiveActivationCard merchantId={merchant.id} canDecide />
 
       {/* Shared with the provider's merchant page, so both show the test and live pairs the same way. */}
       <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
