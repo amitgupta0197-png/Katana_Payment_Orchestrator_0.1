@@ -30,7 +30,8 @@ const SETTLEMENT_TERMINAL =
 // paying its held balance into the bank account, which is the same money one leg later. The
 // bespoke airtel-settlement exclusion this report used to carry is subsumed by it.
 async function collectionsReport(title: string, dateClause: string): Promise<string> {
-  const base = `COALESCE(direction,'CREDIT') = 'CREDIT' AND ${IS_COLLECTION}`;
+  // Live credits only: a SIMULATED credit (the test-order simulator) is not collected money.
+  const base = `COALESCE(direction,'CREDIT') = 'CREDIT' AND ${IS_COLLECTION} AND livemode = true`;
   try {
     // The reported total is PROVEN money only — credits carrying the UPI network's own 12-digit
     // RRN, or matched to a confirmed order. Credits still without one are a claim the phone

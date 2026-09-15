@@ -150,7 +150,8 @@ async function vpaRows(q: StatementQuery): Promise<StatementRow[]> {
   // on-device screen read) and SETTLEMENT rows are the payment app paying its held balance
   // into the bank account — including either would double the statement total, once as the
   // customer's payment and again as the same money arriving in the bank.
-  const where = `WHERE direction = 'CREDIT' AND ${IS_COLLECTION}
+  // Live credits only: a SIMULATED credit (the test-order simulator) is not money.
+  const where = `WHERE direction = 'CREDIT' AND ${IS_COLLECTION} AND livemode = true
                    AND COALESCE(event_time, created_at) >= $1::timestamptz
                    AND COALESCE(event_time, created_at) <  $2::timestamptz${scope}`;
   const base = `

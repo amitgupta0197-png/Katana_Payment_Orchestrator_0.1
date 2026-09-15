@@ -55,7 +55,9 @@ export async function GET() {
   // Banker code first: branches can share a settlement VPA (PRIMESX and PRVZS23 are both
   // 9355449766@okbizaxis), so an unqualified payee_vpa match pulls another banker's credits
   // into this view. Fall back to the VPA only for untagged rows.
-  const OWNED = `direction = 'CREDIT'
+  // Live credits only, whatever the Test / Live switch says: these rows feed the day's
+  // collection totals, and a SIMULATED credit (the test-order simulator) is not money.
+  const OWNED = `direction = 'CREDIT' AND livemode = true
         AND (merchant_id = $1 OR (merchant_id IS NULL AND payee_vpa = ANY($2::text[])))`;
 
   // Only real collected money. Excluded, and why (shared predicate — see lib/settlement-credit):

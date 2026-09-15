@@ -82,7 +82,7 @@ export async function GET() {
     const c1 = (await rows<{ n: string }>("vendorGateway", `SELECT COUNT(*)::text n FROM vendor_manual_cases WHERE status='OPEN'`).catch(() => [{ n: "0" }]))[0];
     const c2 = (await rows<{ n: string }>("vendorGateway", `SELECT COUNT(*)::text n FROM vendor_security_alerts WHERE status='OPEN'`).catch(() => [{ n: "0" }]))[0];
     const c3 = (await rows<{ n: string }>("vendorGateway", `SELECT COUNT(*)::text n FROM vendor_devices WHERE status='TRUSTED'`).catch(() => [{ n: "0" }]))[0];
-    const c4 = (await rows<{ n: string }>("vendorGateway", `SELECT COUNT(*)::text n FROM vendor_txn_alerts WHERE outcome='CONFIRMED' AND created_at >= now() - interval '24 hours'`).catch(() => [{ n: "0" }]))[0];
+    const c4 = (await rows<{ n: string }>("vendorGateway", `SELECT COUNT(*)::text n FROM vendor_txn_alerts WHERE outcome='CONFIRMED' AND livemode = true AND created_at >= now() - interval '24 hours'`).catch(() => [{ n: "0" }]))[0];
 
     return NextResponse.json({
       counts: {

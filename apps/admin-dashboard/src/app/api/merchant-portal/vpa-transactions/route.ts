@@ -76,7 +76,8 @@ export async function GET(req: Request) {
     //
     // Both live in one shared predicate so this screen, the banker portal, the statements and
     // the Telegram report cannot drift apart on what "collected" means.
-    const isCollection = IS_COLLECTION;
+    // A SIMULATED credit (the test-order simulator) is a third kind of not-money: live only.
+    const isCollection = `${IS_COLLECTION} AND livemode = true`;
 
     // SEGREGATION BY BANKER CODE.
     //
