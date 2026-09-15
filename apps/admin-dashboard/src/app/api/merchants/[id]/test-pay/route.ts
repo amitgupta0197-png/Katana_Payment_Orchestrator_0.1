@@ -57,8 +57,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await rows("checkout", `
         INSERT INTO checkout_orders
           (tenant_id, merchant_id, client_ref, txn_id, amount, amount_minor, currency,
-           method, status, idempotency_key, customer_email, client_surl, client_furl)
-        VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, 'CREATED', $8, $9, $10, $10)
+           method, status, idempotency_key, customer_email, client_surl, client_furl, livemode)
+        VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, 'CREATED', $8, $9, $10, $10, false)
       `, [merchantCode, body.productinfo, txnid,
           Number(fromMinor(amountMinor, currency)), String(amountMinor), currency,
           body.method.toUpperCase(), txnid, body.email, result]).catch(() => {});
@@ -73,7 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // simulated: a test run must never post ledger, commission or reserve rows, or send the
     // banker's server a payment webhook.
     const r = await runCheckout({
-      merchantId: merchantCode, actorId: `test:${g.session.user_id}`, simulated: true,
+      merchantId: merchantCode, actorId: `test:${g.session.user_id}`, simulated: true, livemode: false,
       order: {
         client_ref: body.productinfo, amount: amountStr, currency,
         method: body.method.toUpperCase(),

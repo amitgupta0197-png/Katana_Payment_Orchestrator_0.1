@@ -68,9 +68,6 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
-    // Test orders are wired through order creation in the next test-mode step. Until then a
-    // test key is refused outright — it must never be able to create a live order.
-    if (!livemode) return NextResponse.json({ error: "test keys cannot create orders yet" }, { status: 403 });
 
     // 3. create the pay-in (idempotent on txnid) and return the deeplink response.
     const amount = Number(amountStr);
@@ -86,6 +83,7 @@ export async function POST(req: Request) {
       mode: body.mode,
       customerPhone: body.phone ?? null,
       merchantId: merchantCode,
+      livemode,                 // from the key; a test order pays the sandbox UPI ID
       returnUrl: body.return_url ?? null,
       notifyUrl: body.notify_url ?? null,
     });
@@ -95,6 +93,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       verified: true,
       merchant: merchantCode,
+      livemode,
       reused: r.reused,
       order: r.order,
       deeplinks: r.deeplinks,

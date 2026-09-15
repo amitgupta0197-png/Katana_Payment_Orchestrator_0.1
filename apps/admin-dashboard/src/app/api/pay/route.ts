@@ -77,15 +77,16 @@ export async function POST(req: Request) {
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
     if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
-    // Test orders are wired through checkout in the next test-mode step. Until then a test key
-    // is refused outright — it must never be able to create a live order.
-    if (!livemode) return NextResponse.json({ error: "test keys cannot create orders yet" }, { status: 403 });
 
     // 2.5 Hosted-gateway redirect (real PayU): build a signed PayU request with
     //     the merchant's stored gateway Key+Salt and hand the customer's browser
     //     off to PayU's hosted page. PayU posts the result to our return endpoint.
     const wantRedirect = body.redirect === true || body.redirect === "true" || body.redirect === "1";
     if (wantRedirect) {
+      // The hosted redirect sends the customer to the real PayU page on the merchant's MID.
+      // There is no separate test MID, so a test key cannot use it.
+      if (!livemode)
+        return NextResponse.json({ error: "test keys cannot use the hosted gateway redirect" }, { status: 400 });
       const gwMid = await getGatewayMid(merchantCode);
       if (!gwMid || gwMid.gateway !== "PAYU") {
         return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
@@ -129,6 +130,7 @@ export async function POST(req: Request) {
     const r = await runCheckout({
       merchantId: merchantCode,
       actorId: `merchant:${merchantCode}`,
+      livemode,   // from the key; a test order writes nothing to the ledger
       order: {
         client_ref: body.productinfo?.slice(0, 120) || body.txnid,
         amount: amountStr,

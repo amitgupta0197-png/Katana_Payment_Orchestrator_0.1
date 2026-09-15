@@ -47,18 +47,27 @@ function isRetryable(errorCode?: string): boolean {
 // but it must not create money: no ledger journal, commission, reserve hold or merchant
 // webhook. Before this flag the test button posted real ledger rows that flowed into
 // settlement batches, payouts and the banker's balance.
+//
+// `livemode: false` makes a TEST order: stamped on the row, and — like a simulated run — it
+// creates no ledger, commission or reserve entries. Unlike a simulated run it still sends the
+// merchant's webhook, marked livemode:false, because testing that callback is the point.
 export async function runCheckout(params: {
-  merchantId: string; actorId: string | null; order: CheckoutOrderInput; simulated?: boolean;
+  merchantId: string; actorId: string | null; order: CheckoutOrderInput; simulated?: boolean; livemode?: boolean;
 }): Promise<CheckoutResult> {
   const { merchantId, actorId, order: body } = params;
   const simulated = params.simulated === true;
+  const livemode = params.livemode !== false;
   const amountMinor = toMinor(typeof body.amount === "number" ? body.amount.toString() : body.amount, body.currency);
 
-  // Idempotency: replay the existing order if the key was already used.
+  // Idempotency: replay the existing order if the key was already used — BY THIS MERCHANT, IN
+  // THIS MODE. The key is the merchant's own txnid, so an unscoped lookup handed one merchant
+  // another merchant's order when their txnids collided (the same bug vendorGateway 0024 fixed
+  // for pay-ins), and would let a test order replay a live one.
   if (body.idempotency_key) {
     const existing = await rows<any>("checkout",
-      "SELECT id, txn_id, status, selected_rail, amount, currency FROM checkout_orders WHERE idempotency_key = $1 LIMIT 1",
-      [body.idempotency_key]);
+      `SELECT id, txn_id, status, selected_rail, amount, currency, livemode FROM checkout_orders
+        WHERE idempotency_key = $1 AND merchant_id = $2 AND livemode = $3 LIMIT 1`,
+      [body.idempotency_key, merchantId, livemode]);
     if (existing.length) {
       return { httpStatus: 200, body: { order: existing[0], idempotent_replay: true } };
     }
@@ -71,14 +80,14 @@ export async function runCheckout(params: {
   const orderRow = (await rows<any>("checkout", `
     INSERT INTO checkout_orders
       (tenant_id, merchant_id, client_ref, txn_id, amount, amount_minor, currency,
-       method, status, idempotency_key, customer_email)
-    VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, 'CREATED', $8, $9)
-    RETURNING id, client_ref, txn_id, amount, amount_minor::text, currency, method, status, created_at
+       method, status, idempotency_key, customer_email, livemode)
+    VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, 'CREATED', $8, $9, $10)
+    RETURNING id, client_ref, txn_id, amount, amount_minor::text, currency, method, status, created_at, livemode
   `, [
     merchantId, body.client_ref, txnId,
     Number(fromMinor(amountMinor, body.currency)),
     String(amountMinor), body.currency, body.method,
-    body.idempotency_key ?? null, body.customer_email ?? null,
+    body.idempotency_key ?? null, body.customer_email ?? null, livemode,
   ]))[0];
 
   await rows("checkout", `
@@ -236,12 +245,20 @@ export async function runCheckout(params: {
   let postedJournalId: string | null = null;
   let ledgerBreakdown: { gross: string; commission: string; reserve: string; net: string } | null = null;
 
-  if (nextStatus === "SUCCESS" && simulated) {
+  if (nextStatus === "SUCCESS" && (simulated || !livemode)) {
+    // No money: a simulated run or a test order posts nothing to the ledger.
     await publish({
       eventType: "payment.succeeded", producer: "payment_core",
       entityType: "payment", entityId: orderRow.id, actorId,
-      payload: { txn_id: txnId, amount_minor: String(amountMinor), provider: chosen.provider, provider_txn_id: chargeResult.providerTxnId, journal_id: null, simulated: true },
+      payload: { txn_id: txnId, amount_minor: String(amountMinor), provider: chosen.provider, provider_txn_id: chargeResult.providerTxnId, journal_id: null, simulated, livemode },
     });
+    if (!simulated) {
+      await enqueueWebhook({
+        merchantId, orderId: orderRow.id, eventType: "payment.success", livemode: false,
+        payload: { txn_id: txnId, amount_minor: String(amountMinor), currency: body.currency,
+                   provider: chosen.provider, provider_txn_id: chargeResult.providerTxnId, status: "SUCCESS", livemode: false },
+      }).catch(() => null);
+    }
   } else if (nextStatus === "SUCCESS") {
     const railMdrBps = (await rows<{ mdr_bps: number }>("routingEngine",
       `SELECT mdr_bps FROM rails WHERE provider=$1 AND method=$2 AND direction='PAYIN' LIMIT 1`,
@@ -318,9 +335,11 @@ export async function runCheckout(params: {
     }).catch(() => null);
   } else if (nextStatus === "FAILED" && !simulated) {
     await enqueueWebhook({
-      merchantId, orderId: orderRow.id, eventType: "payment.failed",
+      merchantId, orderId: orderRow.id, eventType: "payment.failed", livemode,
+      // livemode appears only on test payloads, so a live webhook body is unchanged.
       payload: { txn_id: txnId, amount_minor: String(amountMinor), currency: body.currency,
-                 provider: chosen.provider, error_code: chargeResult.errorCode, status: "FAILED" },
+                 provider: chosen.provider, error_code: chargeResult.errorCode, status: "FAILED",
+                 ...(livemode ? {} : { livemode: false }) },
     }).catch(() => null);
   }
 
@@ -328,6 +347,7 @@ export async function runCheckout(params: {
     httpStatus: 201,
     body: {
       simulated,
+      livemode,
       order: { ...orderRow, status: nextStatus, selected_rail: chosen.provider },
       route: { selected_rank: selectedRank, provider: chosen.provider, score: chosen.score, factors: chosen.factors,
                candidates: candidates.map(c => ({ rank: c.rank, provider: c.provider, score: Number(c.score.toFixed(4)), reasoning: c.reasoning })) },

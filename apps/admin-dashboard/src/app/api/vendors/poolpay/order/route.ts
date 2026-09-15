@@ -48,6 +48,9 @@ export async function POST(req: Request) {
       receiverVpas: body.receiver_vpas,
       mode: body.mode,
       customerPhone: body.customer_phone ?? null,
+      // The admin cockpit is a test harness with no merchant attached: its orders are always
+      // TEST, so they pay the sandbox UPI ID and never count toward live figures.
+      livemode: false,
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });

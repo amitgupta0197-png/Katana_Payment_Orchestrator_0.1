@@ -14,6 +14,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const v = cfg[0]?.settlement_vpa?.trim();
     if (v) receiverVpas = [v];
   }
-  if (!receiverVpas.length)
+  // A dashboard-created order follows the Test / Live switch (live by default). A test order
+  // always pays the sandbox UPI ID, so it needs no receiver.
+  const livemode = await getLivemode();
+  if (!receiverVpas.length && livemode)
     return NextResponse.json({ error: "no receiver VPA — add one here or set a PoolPay settlement VPA in payment config" }, { status: 400 });
 
   try {
@@ -103,10 +107,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       mode: body.mode,
       customerVpa: body.customer_vpa ?? null,
       customerPhone: body.customer_phone ?? null,
+      livemode,
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
-    return NextResponse.json({ order: r.order, deeplinks: r.deeplinks, upi_intent: r.upiIntent, qr_payload: r.upiIntent });
+    return NextResponse.json({ order: r.order, livemode, deeplinks: r.deeplinks, upi_intent: r.upiIntent, qr_payload: r.upiIntent });
   } catch (err) {
     if (err instanceof MerchantBlockedError)
       return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });

@@ -1,10 +1,10 @@
 // Shared PoolPay pay-in order creation. Used by both the cockpit test endpoint
 // and the merchant-signed /api/v1/poolpay/order endpoint so the deeplink/insert
-// logic lives in one place. Idempotent on (vendor, order_id).
+// logic lives in one place. Idempotent on (vendor, merchant, livemode, order_id).
 
 import { randomUUID } from "crypto";
 import { rows } from "@/lib/pg";
-import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, POOLPAY_TERMINAL, type DeepLinks } from "@/lib/poolpay";
+import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, POOLPAY_TERMINAL, SANDBOX_PAYEE_VPA, type DeepLinks } from "@/lib/poolpay";
 import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
@@ -21,6 +21,7 @@ export interface CreatePoolPayInput {
   merchantId?: string | null;
   returnUrl?: string | null;     // browser redirect target after payment (per-order)
   notifyUrl?: string | null;     // S2S status-callback target (per-order; overrides merchant default)
+  livemode?: boolean;            // false = TEST order (default live); set once, never changes
 }
 
 // Build the receiver-VPA pool with per-VPA health. The first READY VPA is active;
@@ -53,6 +54,10 @@ export class MerchantBlockedError extends Error {
 export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<CreatePoolPayResult> {
   const orderId = input.orderId;
   const note = `Order ${orderId}`;
+  // TEST ORDERS CANNOT MOVE MONEY. They pay the sandbox UPI ID (never a request receiver or
+  // the merchant's saved settlement VPA), never call a live gateway, and carry no sub-MID
+  // attribution — so a real customer cannot pay one, and none counts toward real volume.
+  const livemode = input.livemode !== false;
 
   // Risk: block-merchant — a blocked merchant cannot create new pay-ins.
   if (input.merchantId) {
@@ -66,7 +71,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // the parent merchant's API key but carries its own identity, so payin volume is
   // attributable per sub-MID. Best-effort: never block order creation on this.
   let subMidCode: string | null = null;
-  if (input.merchantId) {
+  if (input.merchantId && livemode) {
     const sm = await rows<{ sub_mid_code: string }>(
       "mid",
       `SELECT sub_mid_code FROM sub_mids WHERE merchant_id = $1 AND active_payin = true LIMIT 1`,
@@ -78,9 +83,11 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // Resolve the receiver VPA(s): explicit on the request first, else the merchant's
   // configured settlement VPA. Without this a hosted-checkout order that doesn't pass
   // a receiver would point the QR at the sandbox payee instead of the merchant's bank.
-  let receivers = (input.receiverVpas?.length ? input.receiverVpas : (input.receiverVpa ? [input.receiverVpa] : []))
-    .map((v) => v.trim()).filter(Boolean);
-  const saved = input.merchantId
+  let receivers = livemode
+    ? (input.receiverVpas?.length ? input.receiverVpas : (input.receiverVpa ? [input.receiverVpa] : []))
+        .map((v) => v.trim()).filter(Boolean)
+    : [];
+  const saved = input.merchantId && livemode
     ? (await rows<{ v: string | null; name: string | null; name_vpa: string | null }>(
         "merchant", `SELECT poolpay->>'settlement_vpa' AS v, poolpay->>'payee_name' AS name, poolpay->>'payee_name_vpa' AS name_vpa
                        FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
@@ -102,8 +109,8 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // override > provider integration config > env defaults. A provider configured
   // (and PROD + secret) "auto-integrates" all of its branches: their orders sign
   // and route with the provider's credentials with no per-branch setup.
-  const cfg = input.merchantId ? await resolvePoolPayConfig(input.merchantId).catch(() => null) : null;
-  const goLive = cfg?.live === true || poolpayLive();
+  const cfg = input.merchantId && livemode ? await resolvePoolPayConfig(input.merchantId).catch(() => null) : null;
+  const goLive = livemode && (cfg?.live === true || poolpayLive());
 
   // Real PoolPay when the cascade resolves to a live (PROD + secret) config or the
   // global POOLPAY_MODE=live env is set; deterministic sandbox otherwise.
@@ -121,7 +128,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
-    vendorTxnId = `${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("ppx")}`;
+    vendorTxnId = `${livemode ? "" : "test_"}${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("ppx")}`;
     const query = buildUpiQuery({ payeeVpa: active || undefined, payeeName, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
@@ -132,7 +139,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
     mode,                                  // QR | INTENT
-    receiver_vpa: active ?? input.receiverVpa ?? null,
+    receiver_vpa: livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,
     vpa_pool: pool,                        // [{ vpa, status }] for backup failover
     sender_vpa: input.customerVpa ?? null,
     sub_mid_code: subMidCode,
@@ -141,7 +148,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     return_url: input.returnUrl ?? null,   // browser redirect after pay
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     // Which integration config drove this order (cascade visibility).
-    integration: cfg ? {
+    integration: !livemode ? { source: "test", env: "SANDBOX", provider_id: null, live: false } : cfg ? {
       source: cfg.source,                  // merchant | provider | env
       env: cfg.env,                        // SANDBOX | PROD
       provider_id: cfg.providerId,
@@ -152,12 +159,12 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const inserted = await rows<any>("vendorGateway", `
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
-       vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta)
-    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb)
-    ON CONFLICT (vendor, COALESCE(merchant_id, ''), order_id) DO NOTHING
-    RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at
+       vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode)
+    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13)
+    ON CONFLICT (vendor, COALESCE(merchant_id, ''), livemode, order_id) DO NOTHING
+    RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode
   `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
-      vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta)]);
+      vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode]);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false };
 
@@ -170,12 +177,13 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // mirrors the index expression exactly, NULL included.
   const existing = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
-           channel, status, created_at, meta
+           channel, status, created_at, livemode, meta
       FROM vendor_payin_orders
      WHERE vendor = 'POOLPAY'
        AND order_id = $1
        AND COALESCE(merchant_id, '') = COALESCE($2, '')
-  `, [orderId, input.merchantId ?? null]);
+       AND livemode = $3        -- a test order must never replay the live order with the same ref
+  `, [orderId, input.merchantId ?? null, livemode]);
   const ex = existing[0];
   // A conflict guarantees a row on this key, so an empty result means the row was
   // deleted between the two statements. Say so rather than returning `order: undefined`,

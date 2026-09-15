@@ -12,6 +12,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { runCheckout } from "@/lib/checkout-core";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +75,8 @@ export async function POST(req: Request) {
   const merchantId = s.persona === "MERCHANT" ? s.scope_id! : "tenant-default";
 
   try {
-    const r = await runCheckout({ merchantId, actorId: s.user_id, order: body });
+    // A dashboard-created order follows the dashboard's Test / Live switch (live by default).
+    const r = await runCheckout({ merchantId, actorId: s.user_id, order: body, livemode: await getLivemode() });
     return NextResponse.json(r.body, { status: r.httpStatus });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

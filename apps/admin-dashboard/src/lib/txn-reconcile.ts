@@ -740,9 +740,9 @@ export async function ingestTxnAlert(
       (source, device_id, bank, sender, direction, amount, utr, order_ref, payer_vpa, payer_name, payee_vpa, narration, raw,
        event_time, message_hash, nonce, parser_version, txn_type, device_status,
        matched_order_id, matched_order_ref, match_confidence, outcome, detail, merchant_id, details,
-       payee_vpa_source)
+       payee_vpa_source, livemode)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, COALESCE($14::timestamptz, now()),
-            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb,$27)
+            $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb,$27,$28)
     RETURNING id::text
   `, [
     source, deviceId, input.bank ?? null, input.sender ?? null, input.direction ?? "CREDIT",
@@ -751,6 +751,8 @@ export async function ingestTxnAlert(
     order?.id ?? null, order?.order_id ?? null, confidence, outcome, detail, input.merchant_id ?? null,
     input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
     payeeSource,
+    // A SIMULATED credit is test traffic: it is recorded as such and stays out of collections.
+    source !== "SIMULATED",
   ]))[0];
   const alertId = ins.id;
 
