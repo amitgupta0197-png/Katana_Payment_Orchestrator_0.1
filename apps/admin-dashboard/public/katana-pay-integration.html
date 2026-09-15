@@ -294,8 +294,10 @@ data=requests.post("https://katanapay.co/api/v1/katana-pay/order",json=o).json()
 
 <h2 id="testmode">11. Test mode</h2>
 <p>Integrate with the <b>test pair</b> first. Test orders behave exactly like live ones (hosted page, callbacks,
-status enquiry) except that they pay a sandbox UPI ID, the hosted page shows a <b>Test payment</b> label, and the
-paise of the amount force the outcome so every branch can be tested without a real payer:</p>
+status enquiry) except that they pay a sandbox UPI ID and the hosted page shows a <b>Test payment</b> label with
+<b>Simulate success</b> and <b>Simulate failure</b> buttons. Tap one and the order settles that way; your server
+receives the same signed callback a real payment sends. From your own code, the paise of the amount also force the
+outcome, so every branch can be tested without a real payer:</p>
 <table>
   <tr><th>Send amount</th><th>Order becomes</th><th>Use it to test</th></tr>
   <tr><td><code>100.99</code></td><td><code>SUCCESS</code> after ~8 s</td><td>Happy path, callback verification, fulfilment</td></tr>
@@ -310,8 +312,14 @@ confirm a test order.</div>
 while you are viewing test data. Live totals, statements and settlement never include test orders.</p>
 
 <h2 id="golive">12. Go-live checklist</h2>
+<div class="note warnbox"><b>Live mode must be activated first.</b> Live keys and live orders are locked until Katana
+activates live mode for your account. In the dashboard, open <b>Integration → Activate live mode</b>: once every item
+is ticked (onboarding approved, settlement UPI ID saved, webhook URL set, one successful test payment), tap
+<b>Request activation</b>. Until it is approved a live Key is refused with <code>403</code> and
+<code>"code": "LIVE_MODE_NOT_ACTIVATED"</code>.</div>
 <ul>
   <li>Complete a test integration with the <b>test Key + Salt</b>: success, failure and expiry callbacks all verify (§11).</li>
+  <li>Request <b>live mode activation</b> and wait for approval.</li>
   <li>Generate your <b>live Key + Salt</b>, store the Salt securely (server-side only) and swap both on your server.</li>
   <li>Set your default <b>return_url</b> and <b>webhook URL</b> in the dashboard (or pass them per order).</li>
   <li>Store <code>txnid</code>, <code>order.id</code>, <code>PAY_ID</code> and <code>RRN</code> against your order (§9).</li>

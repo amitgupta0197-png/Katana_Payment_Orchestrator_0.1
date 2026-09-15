@@ -180,7 +180,8 @@ hash = SHA512(seq)                                        // lowercase hex`;
         <CardHeader><CardTitle className="text-base">Go-live checklist</CardTitle></CardHeader>
         <CardContent>
           <ul className="space-y-1.5 text-sm">
-            <li>· Test integration done with the <b>test pair</b>: amounts ending .99, .13 and .11 give success, failure and expiry callbacks that all verify.</li>
+            <li>· Test integration done with the <b>test pair</b>: Simulate success / failure on the test pay page (or amounts ending .99, .13 and .11) give callbacks that all verify.</li>
+            <li>· <b>Live mode activated</b>: the banker completes Integration → Activate live mode and Katana approves it. Live keys stay locked until then.</li>
             <li>· Live Key + Salt issued and swapped in, Salt stored server-side only.</li>
             <li>· Default <b>return_url</b> and <b>webhook URL</b> saved (or passed per order).</li>
             <li>· Small live payment made — callback received and <b>HASH verified</b> with the live Salt.</li>

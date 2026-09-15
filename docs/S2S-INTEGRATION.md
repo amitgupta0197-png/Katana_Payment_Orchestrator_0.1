@@ -187,8 +187,19 @@ paise digits of the amount** force outcomes (a live order ending `.99` behaves l
 | `.13` | auto-FAILED |
 | anything else | stays PENDING; auto-expires after 15 min |
 
-Test orders can also be settled from the dashboard's **Simulate bank credit (test)** button.
-Real bank credits only ever confirm live orders.
+Test orders can also be settled by hand: the hosted pay page of a test order shows **Simulate
+success** and **Simulate failure** buttons (and the dashboard has **Simulate bank credit (test)**).
+Either way the merchant's webhook receives the normal signed callback. Real bank credits only ever
+confirm live orders.
+
+## Going live
+
+A merchant's live Key + Salt, live TSP secret and live orders are locked until **live mode is
+activated**. The merchant completes the checklist on **Integration → Activate live mode**
+(onboarding approved, settlement UPI ID saved, webhook URL set, one successful test payment) and
+requests activation; a Super Admin approves it on the merchant page or under **Live activations**.
+Before approval a live Key gets `403` with `"code": "LIVE_MODE_NOT_ACTIVATED"`. Merchants already
+taking live payments when this shipped were activated automatically.
 
 ---
 

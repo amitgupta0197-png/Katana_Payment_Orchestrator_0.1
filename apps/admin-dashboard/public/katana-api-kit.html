@@ -236,7 +236,8 @@ base URL, and the Key that signs an order decides its mode. A test order never r
   <tr><td>Payee</td><td>A sandbox UPI ID</td><td>The merchant's settlement UPI ID</td></tr>
   <tr><td>Callbacks</td><td>Signed with the test Salt, carry <code>"LIVEMODE": "false"</code></td><td>Signed with the live Salt</td></tr>
   <tr><td>Ledger, statements, settlement</td><td>Never included</td><td>Included</td></tr>
-  <tr><td>Forced-outcome amounts</td><td>On</td><td>Off</td></tr>
+  <tr><td>Forced-outcome amounts</td><td>On, plus Simulate success / failure buttons on the hosted pay page</td><td>Off</td></tr>
+  <tr><td>Available</td><td>From the first day</td><td>After live mode is activated for the merchant (checklist + Katana approval); before that a live Key gets <code>403 LIVE_MODE_NOT_ACTIVATED</code></td></tr>
 </table>
 <p>On a test order the paise value of the amount selects the result, so every branch can be tested without a real
 payer:</p>

@@ -177,11 +177,14 @@ Integrate with the **test pair** first. Test orders behave like live ones — ho
 | `.11` | `EXPIRED` |
 | anything else | stays `PENDING`, expires after 15 min |
 
-The pay page shows a **Test payment** label on test orders. These rules apply **only** to test orders: a live order ending in `.99` behaves like any other amount. In the dashboard, flip the **Test / Live** switch in the header to see test orders.
+The pay page shows a **Test payment** label on test orders, with **Simulate success** and **Simulate failure** buttons: tap one and the order settles that way, and your server receives the same signed callback a real payment sends. These rules apply **only** to test orders: a live order ending in `.99` behaves like any other amount. In the dashboard, flip the **Test / Live** switch in the header to see test orders.
 
 ## 11. Go-live checklist
 
+Live keys and live orders are locked until **live mode is activated** for your account. Open **Integration → Activate live mode** in the dashboard: once every item is ticked (onboarding approved, settlement UPI ID saved, webhook URL set, one successful test payment), tap **Request activation** and Katana approves it. Until then a live Key is refused with `403` and `"code": "LIVE_MODE_NOT_ACTIVATED"`.
+
 - Complete a test integration with the **test Key + Salt**: success, failure and expiry callbacks all verify.
+- Request **live mode activation** and wait for approval.
 - Generate your **live Key + Salt**; store the Salt server-side only, and swap both on your server.
 - Set default **return_url** + **webhook URL** in the dashboard (or pass per order).
 - Make a small live payment; confirm the callback arrives and the **HASH verifies** with the live Salt.
