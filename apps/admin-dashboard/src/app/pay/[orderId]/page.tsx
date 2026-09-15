@@ -9,7 +9,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Check, ShieldCheck, Upload, Loader2, FileCheck2, ArrowRight, Share2, Smartphone, RefreshCw } from "lucide-react";
+import { Copy, Check, ShieldCheck, Upload, Loader2, FileCheck2, ArrowRight, Share2, Smartphone, RefreshCw, X } from "lucide-react";
 import { PaytmLogo, PhonePeLogo, GooglePayLogo } from "@/components/icons/upi-apps";
 import { openUpiApp } from "@/lib/upi";
 
@@ -280,7 +280,10 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
         </button>
       )}
 
-      <ProofUpload orderId={orderId} onSubmitted={onProof} />
+      {/* A test order is settled with the simulator, not a screenshot. */}
+      {d.livemode === false
+        ? <TestSimulate orderId={orderId} onDone={onProof} />
+        : <ProofUpload orderId={orderId} onSubmitted={onProof} />}
 
       <div className="mt-auto pt-6">
         {upi && qrLive && (
@@ -498,6 +501,41 @@ function safeReturnUrl(d: PayStatus): string | null {
 // Sender payment-proof upload. After paying by UPI, the sender attaches a screenshot
 // (+ optional UTR) so the receiver can verify the credit. Posts multipart to the
 // public proof endpoint; the order then moves to "under verification".
+// Test orders only: decide the outcome without paying. The order goes through the same
+// confirmation as a real payment, so the merchant's server receives its usual status callback.
+function TestSimulate({ orderId, onDone }: { orderId: string; onDone: () => void }) {
+  const [busy, setBusy] = useState<"SUCCESS" | "FAILED" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async (outcome: "SUCCESS" | "FAILED") => {
+    setBusy(outcome); setErr(null);
+    try {
+      const r = await fetch(`/api/pay-status/${orderId}/simulate`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Couldn't simulate that. Try again.");
+      onDone();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div className="kp-rise mt-4 rounded-3xl p-4" style={{ border: "1px dashed rgba(251,146,60,.55)", background: "rgba(251,146,60,.08)" }}>
+      <div className="text-sm font-semibold" style={{ color: "#fdba74" }}>Test payment: no money moves</div>
+      <p className="kp-dim mt-1 text-xs">Choose what happens to this order. Your server receives the same callback a real payment sends.</p>
+      <div className="mt-3 grid grid-cols-2 gap-2.5">
+        <button type="button" disabled={!!busy} onClick={() => run("SUCCESS")} className="kp-pill kp-pill-solid !h-11 !text-sm disabled:opacity-60">
+          {busy === "SUCCESS" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Simulate success
+        </button>
+        <button type="button" disabled={!!busy} onClick={() => run("FAILED")} className="kp-pill kp-pill-glass !h-11 !text-sm disabled:opacity-60">
+          {busy === "FAILED" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Simulate failure
+        </button>
+      </div>
+      {err && <div className="mt-2 text-xs text-red-300">{err}</div>}
+    </div>
+  );
+}
+
 function ProofUpload({ orderId, onSubmitted }: { orderId: string; onSubmitted: () => void }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
