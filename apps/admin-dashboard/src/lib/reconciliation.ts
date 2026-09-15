@@ -66,12 +66,14 @@ export async function runReconciliation(input: RunInput): Promise<RunResult> {
     SELECT txn_id, merchant_id, amount_minor::text, currency, created_at
       FROM checkout_orders
      WHERE status = 'SUCCESS' AND created_at >= $1 AND created_at < $2
+       AND livemode = true   -- test orders have no partner or ledger side to reconcile
   `, [start, end]).catch(() => []);
   const partner = await rows<PartnerRow>("vendorGateway", `
     SELECT pay_id, vendor, COALESCE(vendor_txn_id,'') AS vendor_txn_id,
            amount::text, currency_code, created_at
       FROM vendor_payin_orders
      WHERE created_at >= $1 AND created_at < $2
+       AND livemode = true
   `, [start, end]).catch(() => []);
   const ledger = await rows<LedgerRow>("ledger", `
     SELECT id::text, COALESCE(ref_id,'') AS ref_id,

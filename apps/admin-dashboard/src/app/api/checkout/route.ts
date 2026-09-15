@@ -37,11 +37,13 @@ export async function GET(req: Request) {
       where += ` AND merchant_id = ANY($${params.length + 1}::text[])`;
       params.push(ids);
     }
+    // Lists follow the dashboard's Test / Live switch — never a mix of test and live orders.
+    where += ` AND livemode = $${params.length + 1}`; params.push(await getLivemode());
     if (status) { where += ` AND status = $${params.length + 1}`; params.push(status); }
 
     const orders = await rows<any>("checkout", `
       SELECT id, tenant_id, merchant_id, client_ref, txn_id, amount, amount_minor::text,
-             currency, method, selected_rail, status, created_at
+             currency, method, selected_rail, status, created_at, livemode
         FROM checkout_orders
        WHERE ${where}
        ORDER BY created_at DESC LIMIT ${limit}

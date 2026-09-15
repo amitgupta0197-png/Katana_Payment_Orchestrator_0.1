@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], recent: [], series: [] });
     }
 
-    const window = txnWindowFromUrl(new URL(req.url), scoped ? codes : null);
+    const window = txnWindowFromUrl(new URL(req.url), scoped ? codes : null, await getLivemode());
     const co = txnConditions("", window);
     // Unscoped (SUPER_ADMIN) pay-ins still exclude rows with no merchant at all, exactly as
     // before the filter existed — as an `extra` so a date can never displace it.

@@ -27,6 +27,7 @@ export async function branchCollectedSuccess(merchantKey: string): Promise<numbe
       FROM vendor_payin_orders
      WHERE vendor = 'POOLPAY' AND merchant_id = ANY($1::text[])
        AND status IN ('SUCCESS','SUCCEEDED')
+       AND livemode = true   -- a test order never creates a settlement receivable
   `, [keys]).catch(() => [{ total: 0 }]);
   return r[0]?.total ?? 0;
 }

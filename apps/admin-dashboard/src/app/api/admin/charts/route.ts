@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function GET() {
   if ("response" in g) return g.response;
 
   const DAYS = 14;
+  // Order series and breakdowns follow the dashboard's Test / Live switch (live by default).
+  const livemode = await getLivemode();
   const series = `
     SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
            COUNT(*)::int AS total,
@@ -23,15 +26,15 @@ export async function GET() {
            COUNT(*) FILTER (WHERE status IN ('FAILED','EXPIRED'))::int AS failed,
            COALESCE(SUM(amount)::float,0) AS gross
       FROM %T
-     WHERE created_at >= now() - interval '${DAYS} days'
+     WHERE created_at >= now() - interval '${DAYS} days' AND livemode = $1
      GROUP BY 1`;
 
   const [checkoutSeries, payinSeries, funnel, coStatus, ppStatus] = await Promise.all([
-    safe(rows<DayRow>("checkout", series.replace("%T", "checkout_orders")), []),
-    safe(rows<DayRow>("vendorGateway", series.replace("%T", "vendor_payin_orders")), []),
+    safe(rows<DayRow>("checkout", series.replace("%T", "checkout_orders"), [livemode]), []),
+    safe(rows<DayRow>("vendorGateway", series.replace("%T", "vendor_payin_orders"), [livemode]), []),
     safe(rows<{ stage: string; n: number }>("merchant", `SELECT stage, COUNT(*)::int AS n FROM merchants GROUP BY stage`), []),
-    safe(rows<{ status: string; n: number }>("checkout", `SELECT status, COUNT(*)::int AS n FROM checkout_orders GROUP BY status`), []),
-    safe(rows<{ status: string; n: number }>("vendorGateway", `SELECT status, COUNT(*)::int AS n FROM vendor_payin_orders GROUP BY status`), []),
+    safe(rows<{ status: string; n: number }>("checkout", `SELECT status, COUNT(*)::int AS n FROM checkout_orders WHERE livemode = $1 GROUP BY status`, [livemode]), []),
+    safe(rows<{ status: string; n: number }>("vendorGateway", `SELECT status, COUNT(*)::int AS n FROM vendor_payin_orders WHERE livemode = $1 GROUP BY status`, [livemode]), []),
   ]);
 
   // Merge the two sources into one continuous DAYS-day axis.

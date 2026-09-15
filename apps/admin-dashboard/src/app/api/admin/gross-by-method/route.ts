@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,19 +17,21 @@ export async function GET() {
   if ("response" in g) return g.response;
 
   try {
+    // Follows the dashboard's Test / Live switch (live by default).
+    const livemode = await getLivemode();
     const checkout = await rows<Row>("checkout", `
       SELECT COALESCE(NULLIF(merchant_id,''),'—') AS merchant_id,
              COALESCE(NULLIF(method,''),'UNKNOWN') AS method,
              COALESCE(NULLIF(selected_rail,''),'DIRECT') AS channel,
              status, amount::float AS amount
-        FROM checkout_orders LIMIT 5000
-    `).catch(() => []);
+        FROM checkout_orders WHERE livemode = $1 LIMIT 5000
+    `, [livemode]).catch(() => []);
     const payin = await rows<Row>("vendorGateway", `
       SELECT COALESCE(NULLIF(merchant_id,''),'—') AS merchant_id,
              COALESCE(NULLIF(channel,''),'UNKNOWN') AS method,
              vendor AS channel, status, amount::float AS amount
-        FROM vendor_payin_orders WHERE merchant_id IS NOT NULL LIMIT 5000
-    `).catch(() => []);
+        FROM vendor_payin_orders WHERE merchant_id IS NOT NULL AND livemode = $1 LIMIT 5000
+    `, [livemode]).catch(() => []);
 
     const all = [...checkout, ...payin];
     const methods = new Set<string>();

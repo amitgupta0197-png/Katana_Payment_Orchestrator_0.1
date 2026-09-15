@@ -29,11 +29,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const orders = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, vendor, amount::float AS amount, currency_code, status,
              COALESCE(rrn,'') AS rrn, COALESCE(sub_mid_code,'') AS sub_mid_code,
-             meta, created_at
+             meta, created_at, livemode
         FROM vendor_payin_orders
        WHERE merchant_id = $1
+         AND livemode = $2   -- follows the dashboard's Test / Live switch
        ORDER BY created_at DESC LIMIT 100
-    `, [scope.code]).catch(() => []);
+    `, [scope.code, await getLivemode()]).catch(() => []);
 
     const shaped = orders.map((o: any) => {
       const m = o.meta ?? {};
@@ -41,6 +42,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       return {
         id: o.id, order_id: o.order_id, vendor: o.vendor, amount: o.amount, currency_code: o.currency_code,
         status: o.status, rrn: o.rrn, sub_mid_code: o.sub_mid_code, created_at: o.created_at,
+        livemode: o.livemode !== false,
         mode: m.mode ?? "QR",
         active_vpa: m.receiver_vpa ?? null,
         vpa_total: pool.length,

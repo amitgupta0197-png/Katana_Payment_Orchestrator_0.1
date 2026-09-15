@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function GET() {
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayIso = today.toISOString();
+  // Today's order KPIs follow the dashboard's Test / Live switch (live by default).
+  const livemode = await getLivemode();
 
   const [
     providers, providersPending,
@@ -38,15 +41,15 @@ export async function GET() {
          rows<{ n: number }>("settlement", `SELECT COUNT(*)::int AS n FROM disputes WHERE status NOT IN ('WON','LOST','EXPIRED')`)), [{ n: 0 }]),
     safe(rows<{ n: number }>("riskVelocity", `SELECT COUNT(*)::int AS n FROM risk_cases WHERE status NOT IN ('CLEARED','BLOCKED')`), [{ n: 0 }]),
     safe(rows<{ n: number; gross: number }>("checkout",
-      `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM checkout_orders WHERE created_at >= $1`, [todayIso]), [{ n: 0, gross: 0 }]),
+      `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM checkout_orders WHERE created_at >= $1 AND livemode = $2`, [todayIso, livemode]), [{ n: 0, gross: 0 }]),
     safe(rows<{ n: number }>("checkout",
-      `SELECT COUNT(*)::int AS n FROM checkout_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED')`, [todayIso]), [{ n: 0 }]),
+      `SELECT COUNT(*)::int AS n FROM checkout_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED') AND livemode = $2`, [todayIso, livemode]), [{ n: 0 }]),
     // Katana Pay (PoolPay) pay-ins are tracked in vendor_payin_orders — include them
     // so the "today" KPIs reflect S2S/QR pay-ins, not just checkout-gateway orders.
     safe(rows<{ n: number; gross: number }>("vendorGateway",
-      `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM vendor_payin_orders WHERE created_at >= $1`, [todayIso]), [{ n: 0, gross: 0 }]),
+      `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM vendor_payin_orders WHERE created_at >= $1 AND livemode = $2`, [todayIso, livemode]), [{ n: 0, gross: 0 }]),
     safe(rows<{ n: number }>("vendorGateway",
-      `SELECT COUNT(*)::int AS n FROM vendor_payin_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED')`, [todayIso]), [{ n: 0 }]),
+      `SELECT COUNT(*)::int AS n FROM vendor_payin_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED') AND livemode = $2`, [todayIso, livemode]), [{ n: 0 }]),
     safe(rows<{ batches: number; net: number }>("settlement",
       `SELECT COUNT(*)::int AS batches, COALESCE(SUM(net_amount)::float,0) AS net FROM settlement_batches WHERE batch_date >= $1`, [todayIso]), [{ batches: 0, net: 0 }]),
   ]);

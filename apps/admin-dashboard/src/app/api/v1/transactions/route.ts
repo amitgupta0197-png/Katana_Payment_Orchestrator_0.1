@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { checkoutToUniversal, payinToUniversal, normalizeStatus, type UniversalTxn } from "@/lib/universal-txn";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -29,21 +30,23 @@ export async function GET(req: Request) {
     if (codes && !codes.length) return NextResponse.json({ transactions: [], total: 0 });
 
     const scoped = codes !== null;
+    // Follows the dashboard's Test / Live switch: never a mix of test and live orders.
+    const livemode = await getLivemode();
     const checkout = await rows<any>("checkout", `
       SELECT id::text, merchant_id, amount, currency, status, method, txn_id,
              COALESCE(NULLIF(selected_rail,''),'DIRECT') AS selected_rail, created_at
         FROM checkout_orders
-       ${scoped ? "WHERE merchant_id = ANY($1::text[])" : ""}
+       ${scoped ? "WHERE merchant_id = ANY($1::text[]) AND livemode = $2" : "WHERE livemode = $1"}
        ORDER BY created_at DESC LIMIT 1000
-    `, scoped ? [codes] : []).catch(() => []);
+    `, scoped ? [codes, livemode] : [livemode]).catch(() => []);
 
     const payin = await rows<any>("vendorGateway", `
       SELECT id::text, merchant_id, amount, currency_code, status, channel, vendor,
              vendor_txn_id, COALESCE(rrn,'') AS rrn, COALESCE(sub_mid_code,'') AS sub_mid_code, created_at
         FROM vendor_payin_orders
-       ${scoped ? "WHERE merchant_id = ANY($1::text[])" : "WHERE merchant_id IS NOT NULL"}
+       ${scoped ? "WHERE merchant_id = ANY($1::text[]) AND livemode = $2" : "WHERE merchant_id IS NOT NULL AND livemode = $1"}
        ORDER BY created_at DESC LIMIT 1000
-    `, scoped ? [codes] : []).catch(() => []);
+    `, scoped ? [codes, livemode] : [livemode]).catch(() => []);
 
     let txns: UniversalTxn[] = [...checkout.map(checkoutToUniversal), ...payin.map(payinToUniversal)];
 

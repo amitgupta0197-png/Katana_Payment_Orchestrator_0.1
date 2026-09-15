@@ -63,6 +63,7 @@ async function measureAvailability(windowMin: number): Promise<{ value: number; 
       COUNT(*) FILTER (WHERE status IN ('SUCCESS','PROCESSING','PENDING','AUTH_REQUIRED','AUTH_CHALLENGE','AUTHENTICATED'))::int AS ok
       FROM checkout_orders
      WHERE created_at > now() - ($1::int * interval '1 minute')
+       AND livemode = true   -- availability of real payments only
   `, [windowMin]).catch(() => []);
   const total = r[0]?.total ?? 0;
   const ok = r[0]?.ok ?? 0;

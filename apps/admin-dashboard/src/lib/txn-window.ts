@@ -29,6 +29,8 @@ export interface TxnWindow {
   from: string | null;    // YYYY-MM-DD, inclusive, IST
   to: string | null;      // YYYY-MM-DD, inclusive, IST
   status: string | null;
+  /** true = live orders (the default); false = the dashboard is switched to test. */
+  livemode: boolean;
 }
 
 // Anything that is not a plain calendar date is dropped rather than passed to the cast:
@@ -37,9 +39,12 @@ export interface TxnWindow {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const readDate = (v: string | null): string | null => (v && DATE_RE.test(v) ? v : null);
 
-export function txnWindowFromUrl(url: URL, codes: string[] | null): TxnWindow {
+// `livemode` comes from the dashboard's Test / Live switch (lib/mode.ts), never from the URL, so
+// a shared link cannot flip someone else's view into the other mode.
+export function txnWindowFromUrl(url: URL, codes: string[] | null, livemode = true): TxnWindow {
   return {
     codes,
+    livemode,
     from: readDate(url.searchParams.get("from")),
     to: readDate(url.searchParams.get("to")),
     status: url.searchParams.get("status"),
@@ -71,6 +76,8 @@ export function txnConditions(
   if (w.from) { args.push(w.from); cond.push(`${prefix}created_at >= ${IST_DAY_START(`$${args.length}`)}`); }
   if (w.to) { args.push(w.to); cond.push(`${prefix}created_at < ${IST_DAY_END(`$${args.length}`)}`); }
   if (w.status) { args.push(w.status.toUpperCase()); cond.push(`${prefix}status = $${args.length}`); }
+  // The mode ALWAYS applies: a list, a total or a CSV never mixes test and live orders.
+  args.push(w.livemode); cond.push(`${prefix}livemode = $${args.length}`);
   cond.push(...extra);
   return { where: cond.length ? "WHERE " + cond.join(" AND ") : "", args };
 }

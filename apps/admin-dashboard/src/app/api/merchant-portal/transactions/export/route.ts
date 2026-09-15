@@ -11,6 +11,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { toCsv, csvResponse, datedFilename, type CsvColumn } from "@/lib/csv";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,8 @@ export async function GET(req: Request) {
     const scoped = s.persona === "PROVIDER";
     if (scoped && !codes.length) return csvResponse(datedFilename("transactions"), toCsv(COLUMNS, []));
 
-    const window = txnWindowFromUrl(url, scoped ? codes : null);
+    // Same mode as the screen it was downloaded from, so the file matches what was on screen.
+    const window = txnWindowFromUrl(url, scoped ? codes : null, await getLivemode());
     const co = txnConditions("o.", window);
     const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"]);
 

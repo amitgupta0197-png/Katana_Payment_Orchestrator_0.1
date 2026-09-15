@@ -24,10 +24,12 @@ export async function createRefund(input: CreateRefundInput): Promise<{
 }> {
   const amt = BigInt(String(input.amountMinor));
   const order = await rows<any>("checkout",
-    `SELECT id::text, merchant_id, status, selected_rail, amount_minor::text AS amount_minor
+    `SELECT id::text, merchant_id, status, selected_rail, amount_minor::text AS amount_minor, livemode
        FROM checkout_orders WHERE txn_id=$1 LIMIT 1`, [input.txnId]);
   if (!order.length) throw new Error("order not found");
   const o = order[0];
+  // A refund posts a journal against the merchant's real balance; a test order moved no money.
+  if (o.livemode === false) throw new Error("test orders cannot be refunded — no money moved");
   if (o.status !== "SUCCESS" && o.status !== "PARTIALLY_REFUNDED")
     throw new Error(`cannot refund from status ${o.status}`);
   if (BigInt(o.amount_minor) < amt)

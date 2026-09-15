@@ -44,6 +44,8 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
     settlement_amount: number | null; status: string | null; updated_at: string | null;
     notes: string | null; rrn: string | null; order_id: string | null;
   }
+  // A statement is an official record of real money: LIVE orders only, whatever the dashboard's
+  // Test / Live switch says. Both sources below filter on it.
   const orders = await rows<R>("checkout", `
     SELECT o.merchant_id,
            COALESCE(NULLIF(d.customer_name,''), NULLIF(o.customer_email,''), NULLIF(d.vpa,'')) AS party,
@@ -64,7 +66,7 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
            o.id::text                                                                          AS order_id
       FROM checkout_orders o
       LEFT JOIN payment_details d ON d.order_id = o.id
-     WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz${scope}
+     WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz AND o.livemode = true${scope}
      ORDER BY o.created_at DESC LIMIT ${MAX_ROWS}
   `, args).catch(() => []);
 
@@ -82,7 +84,7 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
            amount::float AS amount, status, updated_at::text AS updated_at,
            NULLIF(rrn,'') AS rrn, order_id
       FROM vendor_payin_orders
-     WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz${payinScope}
+     WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND livemode = true${payinScope}
      ORDER BY created_at DESC LIMIT ${MAX_ROWS}
   `, payinArgs).catch(() => []);
 

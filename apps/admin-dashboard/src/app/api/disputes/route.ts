@@ -62,6 +62,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
+    // A dispute posts journals against the merchant's real balance; a test order moved no money.
+    // Checked whether or not a merchant_id was supplied, since that path skips the lookup below.
+    const mode = await rows<{ livemode: boolean }>("checkout",
+      "SELECT livemode FROM checkout_orders WHERE txn_id=$1 LIMIT 1", [body.txn_id]).catch(() => []);
+    if (mode[0]?.livemode === false)
+      return NextResponse.json({ error: "test orders cannot be disputed — no money moved" }, { status: 400 });
+
     let merchantId = body.merchant_id;
     let orderId: string | undefined;
     if (!merchantId) {

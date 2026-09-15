@@ -19,6 +19,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { branchKeysForMerchant, branchKeysForProvider } from "@/lib/provider-integration";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -75,8 +76,12 @@ export async function GET(req: Request) {
     });
   }
 
-  const where = keys ? "vendor = 'POOLPAY' AND merchant_id = ANY($1::text[])" : "vendor = 'POOLPAY'";
-  const args = keys ? [keys] : [];
+  // Follows the dashboard's Test / Live switch: the funnel never mixes test and live orders.
+  const livemode = await getLivemode();
+  const where = keys
+    ? "vendor = 'POOLPAY' AND merchant_id = ANY($1::text[]) AND livemode = $2"
+    : "vendor = 'POOLPAY' AND livemode = $1";
+  const args = keys ? [keys, livemode] : [livemode];
 
   try {
     const agg = await rows<any>("vendorGateway", `

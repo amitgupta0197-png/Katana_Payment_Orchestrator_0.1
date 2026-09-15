@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { getLivemode } from "@/lib/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ vendor:
              COALESCE(meta->>'review','') AS review,
              COALESCE(meta->'proof'->>'utr','') AS proof_utr,
              COALESCE(meta->'confirmation'->>'evidence','') AS confirm_evidence,
-             created_at
+             created_at, livemode
         FROM vendor_payin_orders WHERE upper(vendor) = upper($1)
+         AND livemode = $2   -- follows the dashboard's Test / Live switch
        ORDER BY created_at DESC LIMIT 200
-    `, [vendor]).catch(() => []);
+    `, [vendor, await getLivemode()]).catch(() => []);
     const credentials = await rows<any>("vendorGateway", `
       SELECT id::text, vendor, env, COALESCE(pay_id,'') AS pay_id, active, created_at
         FROM vendor_credentials WHERE upper(vendor) = upper($1)

@@ -93,6 +93,7 @@ async function velocityScore(merchantId: string, customerRef?: string): Promise<
     SELECT COUNT(*)::int AS recent
       FROM checkout_orders
      WHERE merchant_id=$1 AND customer_email=$2 AND created_at > now() - interval '10 minutes'
+       AND livemode = true   -- test traffic must never trip a live velocity rule
   `, [merchantId, customerRef]).catch(() => []);
   const recent = r[0]?.recent ?? 0;
   return clamp(recent / 10);
