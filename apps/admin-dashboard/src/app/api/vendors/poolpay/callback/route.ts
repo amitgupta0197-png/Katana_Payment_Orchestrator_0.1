@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
 const schema = z.object({
   order_id: z.string().optional(),          // our order reference
   order_ref: z.string().optional(),         // alias
+  merchant_code: z.string().max(60).optional(), // disambiguates an order ref shared by merchants
   status: z.enum(["SUCCESS", "FAILED"]),
   utr: z.string().max(40).optional(),
   rrn: z.string().max(40).optional(),
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
   try {
     const r = await confirmPoolPayOrder({
       orderRef: ref,
+      merchantId: body.merchant_code ?? null,
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,
       evidence: "WEBHOOK",

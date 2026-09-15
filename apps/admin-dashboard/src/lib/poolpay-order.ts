@@ -209,6 +209,7 @@ export type PoolPayEvidence = "UTR" | "SCREENSHOT" | "WEBHOOK" | "MANUAL" | "DEV
 export interface ConfirmPoolPayInput {
   id?: string;                 // vendor_payin_orders.id (uuid) — ops path
   orderRef?: string;           // order_id (our reference) — webhook path
+  merchantId?: string | null;  // merchant code that scopes an orderRef lookup
   outcome: "SUCCESS" | "FAILED";
   utr?: string | null;         // UTR/RRN from bank / scrape / screenshot / gateway
   note?: string | null;
@@ -233,12 +234,22 @@ export interface ConfirmPoolPayResult {
 export async function confirmPoolPayOrder(input: ConfirmPoolPayInput): Promise<ConfirmPoolPayResult> {
   const key = input.id ?? input.orderRef;
   if (!key) return { ok: false, status: 400, error: "id or orderRef required" };
-  const where = input.id ? "id = $1::uuid" : "order_id = $1";
-
-  const cur = await rows<any>("vendorGateway",
-    `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta
-       FROM vendor_payin_orders WHERE ${where} AND vendor = 'POOLPAY'`, [key]);
+  // An order ref is unique per MERCHANT, not platform-wide (vendorGateway 0024/0025). A lookup
+  // by ref is therefore scoped to the merchant when the caller knows it, and REFUSED when the
+  // ref belongs to more than one merchant — never resolved to whichever row came back first.
+  const cur = input.id
+    ? await rows<any>("vendorGateway",
+        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta
+           FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [key])
+    : await rows<any>("vendorGateway",
+        `SELECT id::text, order_id, status, COALESCE(rrn,'') AS rrn, meta
+           FROM vendor_payin_orders
+          WHERE order_id = $1 AND vendor = 'POOLPAY'
+            AND ($2::text IS NULL OR merchant_id = $2)
+          LIMIT 2`, [key, input.merchantId?.trim() || null]);
   if (!cur.length) return { ok: false, status: 404, error: "not found" };
+  if (cur.length > 1)
+    return { ok: false, status: 409, error: `order ${key} exists for more than one merchant — include merchant_code` };
   const order = cur[0];
 
   // Final-status lock. A retried webhook delivering the same terminal outcome is a

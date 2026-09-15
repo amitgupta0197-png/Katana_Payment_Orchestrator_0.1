@@ -16,7 +16,11 @@ import { payloadHash, sign, retrySchedule } from "@/lib/webhooks";
 import { publish } from "@/lib/events";
 import { safeFetch } from "@/lib/safe-fetch";
 
-const DEFAULT_SECRET = "sandbox-merchant-secret-do-not-use-in-prod";
+// NO FALLBACK SECRET. A merchant with no merchant_webhook_configs row used to have its
+// callbacks signed with a constant committed to this repo, so anyone could forge a valid
+// x-signature for them. Those callbacks are now sent WITHOUT x-signature; the Katana Pay
+// status callback's authenticity rests on the HASH in its body, signed with the merchant's
+// own checkout salt (lib/merchant-callback.ts), which is unaffected.
 
 export interface OutboxRow {
   outbox_id: string;
@@ -92,26 +96,28 @@ export async function dispatchPending(opts: { limit?: number } = {}): Promise<{
   let delivered = 0, failed = 0, deadLettered = 0;
   for (const row of due) {
     const cfg = await lookupConfig(row.merchant_id);
-    const secret = cfg?.secret ?? DEFAULT_SECRET;
+    const secret = cfg?.secret?.trim() || null;
     const target = row.target_url;
     const attemptNo = row.attempts + 1;
     const hash = payloadHash(row.payload);
     const ts = Math.floor(Date.now() / 1000);
-    const signature = sign(secret, hash, ts);
+    const signature = secret ? sign(secret, hash, ts) : null;
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-event-type": row.event_type,
+      "x-timestamp": String(ts),
+      "x-payload-hash": hash,
+      "x-attempt": String(attemptNo),
+    };
+    if (signature) headers["x-signature"] = signature;
 
     const started = Date.now();
     let status = 0, body = "", err: string | null = null;
     try {
       const r = await safeFetch(fullUrl(target), {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-event-type": row.event_type,
-          "x-timestamp": String(ts),
-          "x-signature": signature,
-          "x-payload-hash": hash,
-          "x-attempt": String(attemptNo),
-        },
+        headers,
         body: JSON.stringify(row.payload),
       });
       status = r.status;

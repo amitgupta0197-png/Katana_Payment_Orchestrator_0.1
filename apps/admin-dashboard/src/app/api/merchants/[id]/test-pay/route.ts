@@ -70,8 +70,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ mode: "redirect", payu_url: payuPaymentUrl(gw.env), fields });
     }
 
+    // simulated: a test run must never post ledger, commission or reserve rows, or send the
+    // banker's server a payment webhook.
     const r = await runCheckout({
-      merchantId: merchantCode, actorId: `test:${g.session.user_id}`,
+      merchantId: merchantCode, actorId: `test:${g.session.user_id}`, simulated: true,
       order: {
         client_ref: body.productinfo, amount: amountStr, currency,
         method: body.method.toUpperCase(),

@@ -227,6 +227,12 @@ export async function ingestTxnAlert(
   const amount = Number(input.amount);
   const utr = input.utr?.trim() || null;
   const orderRef = input.order_ref?.trim() || null;
+  // ORDER MATCHING IS SCOPED TO THE BANKER THE CREDIT BELONGS TO. Order refs are unique per
+  // banker, not platform-wide (vendorGateway 0024/0025), and many bankers take the same
+  // amounts, so an unscoped lookup could confirm ANOTHER banker's order with a real credit.
+  // When the capture carries no banker code the lookup stays unscoped (the credit has no
+  // other owner), and a ref shared by several bankers goes to manual review instead.
+  const scopeMerchant = input.merchant_id?.trim() || null;
   // Payee (settlement VPA) credited — STORED ONLY WHEN THE CAPTURE ACTUALLY STATED IT.
   //
   // This used to fall back to the banker's configured PRIMARY settlement VPA whenever the
@@ -525,9 +531,14 @@ export async function ingestTxnAlert(
   if (orderRef) {
     const byRef = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
-        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1 ORDER BY created_at DESC
-    `, [orderRef]).catch(() => []);
-    if (byRef.length) {
+        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1
+         AND ($2::text IS NULL OR merchant_id = $2)
+       ORDER BY created_at DESC
+    `, [orderRef, scopeMerchant]).catch(() => []);
+    if (byRef.length > 1) {
+      ambiguous = true; confidence = 60;
+      matchDetail = `order id ${orderRef} exists for ${byRef.length} merchants — alert carries no merchant code`;
+    } else if (byRef.length === 1) {
       order = byRef[0];
       if (amountMatches(order.amount, amount)) { confidence = 100; matchDetail = `exact order id ${orderRef}`; }
       // Order id matched but the credited amount differs — NEVER auto-confirm a mismatch
@@ -539,8 +550,10 @@ export async function ingestTxnAlert(
   if (utr && !order) {
     const byUtr = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
-        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1 ORDER BY created_at DESC
-    `, [utr]).catch(() => []);
+        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1
+         AND ($2::text IS NULL OR merchant_id = $2)
+       ORDER BY created_at DESC
+    `, [utr, scopeMerchant]).catch(() => []);
     if (byUtr.length === 1) {
       order = byUtr[0];
       if (amountMatches(order.amount, amount)) { confidence = 100; matchDetail = `exact UTR ${utr}`; }
@@ -548,7 +561,7 @@ export async function ingestTxnAlert(
     }
     else if (byUtr.length > 1) { duplicate = true; dupDetail = `UTR ${utr} on ${byUtr.length} orders`; }
   }
-  if (!order && !duplicate) {
+  if (!order && !duplicate && !ambiguous) {
     // Candidates include recently-EXPIRED orders (within the recency window) so a
     // genuine LATE payment — one that landed after the order timed out — is not lost.
     // SUCCESS/SUCCEEDED/FAILED are excluded (hard final).
@@ -557,8 +570,9 @@ export async function ingestTxnAlert(
         FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
          AND amount = $1 AND created_at >= now() - ($2 || ' minutes')::interval
+         AND ($3::text IS NULL OR merchant_id = $3)
        ORDER BY created_at DESC
-    `, [amount.toFixed(2), String(MATCH_WINDOW_MIN)]).catch(() => []);
+    `, [amount.toFixed(2), String(MATCH_WINDOW_MIN), scopeMerchant]).catch(() => []);
     // Prefer still-live orders; only fall back to an EXPIRED one when nothing live
     // matches the amount. A confident match on an expired order REVIVES it to SUCCESS
     // (see confirmPoolPayOrder soft-terminal rule) instead of leaving the credit unmatched.

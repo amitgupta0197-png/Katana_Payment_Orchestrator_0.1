@@ -42,10 +42,16 @@ function isRetryable(errorCode?: string): boolean {
   return ["TIMEOUT", "PROVIDER_DOWN", "RATE_LIMITED"].includes(errorCode);
 }
 
+// `simulated` is for test harnesses (the admin "Test checkout"). Every rail adapter here is a
+// sandbox that returns SUCCESS, so a simulated run still exercises routing, risk and state —
+// but it must not create money: no ledger journal, commission, reserve hold or merchant
+// webhook. Before this flag the test button posted real ledger rows that flowed into
+// settlement batches, payouts and the banker's balance.
 export async function runCheckout(params: {
-  merchantId: string; actorId: string | null; order: CheckoutOrderInput;
+  merchantId: string; actorId: string | null; order: CheckoutOrderInput; simulated?: boolean;
 }): Promise<CheckoutResult> {
   const { merchantId, actorId, order: body } = params;
+  const simulated = params.simulated === true;
   const amountMinor = toMinor(typeof body.amount === "number" ? body.amount.toString() : body.amount, body.currency);
 
   // Idempotency: replay the existing order if the key was already used.
@@ -230,7 +236,13 @@ export async function runCheckout(params: {
   let postedJournalId: string | null = null;
   let ledgerBreakdown: { gross: string; commission: string; reserve: string; net: string } | null = null;
 
-  if (nextStatus === "SUCCESS") {
+  if (nextStatus === "SUCCESS" && simulated) {
+    await publish({
+      eventType: "payment.succeeded", producer: "payment_core",
+      entityType: "payment", entityId: orderRow.id, actorId,
+      payload: { txn_id: txnId, amount_minor: String(amountMinor), provider: chosen.provider, provider_txn_id: chargeResult.providerTxnId, journal_id: null, simulated: true },
+    });
+  } else if (nextStatus === "SUCCESS") {
     const railMdrBps = (await rows<{ mdr_bps: number }>("routingEngine",
       `SELECT mdr_bps FROM rails WHERE provider=$1 AND method=$2 AND direction='PAYIN' LIMIT 1`,
       [chosen.provider, railMethod]).catch(() => []))[0]?.mdr_bps ?? 195;
@@ -304,7 +316,7 @@ export async function runCheckout(params: {
       payload: { txn_id: txnId, amount_minor: String(amountMinor), currency: body.currency,
                  provider: chosen.provider, provider_txn_id: chargeResult.providerTxnId, status: "SUCCESS" },
     }).catch(() => null);
-  } else if (nextStatus === "FAILED") {
+  } else if (nextStatus === "FAILED" && !simulated) {
     await enqueueWebhook({
       merchantId, orderId: orderRow.id, eventType: "payment.failed",
       payload: { txn_id: txnId, amount_minor: String(amountMinor), currency: body.currency,
@@ -315,6 +327,7 @@ export async function runCheckout(params: {
   return {
     httpStatus: 201,
     body: {
+      simulated,
       order: { ...orderRow, status: nextStatus, selected_rail: chosen.provider },
       route: { selected_rank: selectedRank, provider: chosen.provider, score: chosen.score, factors: chosen.factors,
                candidates: candidates.map(c => ({ rank: c.rank, provider: c.provider, score: Number(c.score.toFixed(4)), reasoning: c.reasoning })) },

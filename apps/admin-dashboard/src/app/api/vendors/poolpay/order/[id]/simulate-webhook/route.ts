@@ -35,8 +35,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (POOLPAY_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
 
+    // By id: an order ref is unique per merchant only, so confirming by ref could hit another
+    // merchant's order with the same ref.
     const r = await confirmPoolPayOrder({
-      orderRef: order.order_id,
+      id: order.id,
       outcome,
       utr: outcome === "SUCCESS" ? genRrn(order.id) : null,
       evidence: "WEBHOOK",

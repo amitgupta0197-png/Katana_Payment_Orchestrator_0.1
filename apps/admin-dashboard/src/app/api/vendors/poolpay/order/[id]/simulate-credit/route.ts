@@ -1,10 +1,12 @@
 // POST /api/vendors/poolpay/order/:id/simulate-credit — cockpit/merchant demo helper
 // (SUPER_ADMIN / PROVIDER / MERCHANT). Sandbox has no Android agent yet, so this
-// builds a realistic bank-credit alert FROM the order (amount + payee VPA + a fresh
-// UTR — but NOT the order id) and runs it through the SAME reconciler the public
-// /api/v1/txn-alert ingestion uses. So it exercises the real match-and-confirm path:
-// the alert is matched back to this pending order by amount + payee VPA + recency and
-// the order is auto-confirmed — flipping the customer pay page to "Payment received".
+// builds a realistic bank-credit alert FROM the order and runs it through the SAME
+// reconciler the public /api/v1/txn-alert ingestion uses, so it exercises the real
+// match-and-confirm path and flips the customer pay page to "Payment received".
+//
+// The alert names THIS order (order ref + the order's merchant code). It used to carry only
+// the amount and payee VPA, so it matched by amount + recency — which could confirm a
+// DIFFERENT, real pending order that happened to share the amount.
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
@@ -21,7 +23,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const cur = await rows<any>("vendorGateway",
-      `SELECT id::text, order_id, amount::float AS amount, status, meta FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
+      `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
     if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = cur[0];
     if (POOLPAY_TERMINAL.has(order.status))
@@ -36,6 +38,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       bank: "HDFC",
       direction: "CREDIT",
       amount: order.amount,
+      order_ref: order.order_id,
+      merchant_id: order.merchant_id ?? undefined,
       utr,
       payer_vpa: meta.sender_vpa ?? order.customer_vpa ?? "payer@upi",
       payee_vpa: payee,
