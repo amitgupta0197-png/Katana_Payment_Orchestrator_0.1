@@ -121,8 +121,9 @@ hash = SHA512(seq)                                        // lowercase hex`;
         <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />Credentials (Key + Salt)</CardTitle>
           <CardDescription>Every request carries the Key; the Salt signs it and verifies our callbacks.</CardDescription></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Key + Salt are issued <b>per banker</b>, in that banker&apos;s own portal under <b>Integration → Generate Key + Salt</b>. If you need a pair for an account you manage, ask your Katana account manager.</p>
-          <p className="text-[color:var(--color-text-muted)]">The Salt is shown <b>once</b> at issue and is never displayed again. Keep it server-side only — never in browser or app code. Regenerating invalidates the old pair immediately.</p>
+          <p>Key + Salt are issued <b>per banker</b>, in that banker&apos;s own portal under <b>Integration</b>. If you need a pair for an account you manage, ask your Katana account manager.</p>
+          <p>Each banker has a <b>test pair</b> (<code className="text-xs">mk_test_…</code>) and a <b>live pair</b> (<code className="text-xs">mk_live_…</code>). The Key that signs an order decides its mode: test orders pay a sandbox UPI ID and never move real money. Integrate with the test pair, then swap in the live pair.</p>
+          <p className="text-[color:var(--color-text-muted)]">Each Salt is shown <b>once</b> at issue and is never displayed again. Keep it server-side only — never in browser or app code. Regenerating a pair invalidates only that pair, immediately.</p>
         </CardContent>
       </Card>
 
@@ -179,9 +180,10 @@ hash = SHA512(seq)                                        // lowercase hex`;
         <CardHeader><CardTitle className="text-base">Go-live checklist</CardTitle></CardHeader>
         <CardContent>
           <ul className="space-y-1.5 text-sm">
-            <li>· Key + Salt issued, Salt stored server-side only.</li>
+            <li>· Test integration done with the <b>test pair</b>: amounts ending .99, .13 and .11 give success, failure and expiry callbacks that all verify.</li>
+            <li>· Live Key + Salt issued and swapped in, Salt stored server-side only.</li>
             <li>· Default <b>return_url</b> and <b>webhook URL</b> saved (or passed per order).</li>
-            <li>· Test payment made — callback received and <b>HASH verified</b>.</li>
+            <li>· Small live payment made — callback received and <b>HASH verified</b> with the live Salt.</li>
             <li>· Callbacks handled <b>idempotently</b> — the same ORDER_ID may arrive more than once.</li>
           </ul>
           <div className="mt-3 flex flex-wrap items-center gap-2">

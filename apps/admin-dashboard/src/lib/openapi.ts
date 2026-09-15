@@ -24,9 +24,11 @@ export const openapiSpec = {
       "3. Receive the result via **webhook** (configured in the dashboard) or by polling",
       "   `GET /api/pay-status/{id}` until `terminal: true`.",
       "",
-      "## Sandbox",
-      "While in sandbox, the amount's last two paise digits force outcomes:",
-      "`.99` → success (~8s), `.11` → expired, `.13` → failed; anything else stays PENDING.",
+      "## Test mode",
+      "Each merchant has a test pair (`mk_test_…`) and a live pair (`mk_live_…`); the Key that signs the order",
+      "decides its mode. Test orders pay a sandbox UPI ID and never move real money. For test orders only, the",
+      "amount's last two paise digits force outcomes: `.99` → success (~8s), `.11` → expired, `.13` → failed;",
+      "anything else stays PENDING.",
     ].join("\n"),
   },
   servers: [{ url: "https://katanapay.co", description: "Production" }],
@@ -48,7 +50,7 @@ export const openapiSpec = {
                 qr: {
                   summary: "QR order with customer name + mobile",
                   value: {
-                    key: "mk_xxx",
+                    key: "mk_test_xxx",
                     txnid: "ORDER-1001",
                     amount: "499.00",
                     hash: "<hex signature>",
@@ -96,7 +98,7 @@ export const openapiSpec = {
         type: "object",
         required: ["key", "txnid", "amount", "hash"],
         properties: {
-          key: { type: "string", description: "Public Checkout Key (mk_…).", example: "mk_xxx" },
+          key: { type: "string", description: "Public Checkout Key. `mk_test_…` creates a test order, `mk_live_…` a live one.", example: "mk_test_xxx" },
           txnid: { type: "string", maxLength: 60, description: "Your unique order id (idempotency key).", example: "ORDER-1001" },
           amount: { type: "string", description: "Major-unit amount as a string.", example: "499.00" },
           hash: { type: "string", description: "Signature over the order (see Authentication)." },
@@ -117,6 +119,7 @@ export const openapiSpec = {
           verified: { type: "boolean", example: true },
           merchant: { type: "string", example: "K-001" },
           reused: { type: "boolean", description: "true when an existing order matched the txnid." },
+          livemode: { type: "boolean", description: "false when the order was created with a test Key.", example: true },
           order: { $ref: "#/components/schemas/Order" },
           deeplinks: {
             type: "object",
@@ -149,6 +152,7 @@ export const openapiSpec = {
           status: { type: "string", enum: ["PENDING", "SUCCESS", "FAILED", "EXPIRED"], example: "SUCCESS" },
           terminal: { type: "boolean", description: "true once the status is final.", example: true },
           rrn: { type: "string", description: "Bank UTR / RRN once paid.", example: "455537238396" },
+          livemode: { type: "boolean", description: "false for a test order.", example: true },
         },
       },
       Error: {

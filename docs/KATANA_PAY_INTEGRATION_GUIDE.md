@@ -13,15 +13,22 @@ Hosted-checkout pay-ins for any platform. Base URL: `https://katanapay.co` · v1
 
 ## 1. Credentials (Key + Salt)
 
-Issued from the Katana dashboard (**Branch portal → Integration → Generate Key + Salt**, or ask your Katana admin).
+Issued from the Katana dashboard (**Branch portal → Integration → Generate**, or ask your Katana admin). Every account has **two pairs**:
+
+| Pair | Key starts with | Orders it creates |
+|---|---|---|
+| **Test** | `mk_test_` | Test orders. They pay a sandbox UPI ID, never move real money and never appear in live totals, statements or settlement. |
+| **Live** | `mk_live_` | Real payments. |
+
+The Key you sign with decides the mode — there is no mode field to send. Keys issued before test mode (`mk_` followed by hex) are live and keep working unchanged.
 
 | Field | Meaning |
 |---|---|
-| `Key` | Public-ish identifier (`mk_…`) sent with every request. |
+| `Key` | Public-ish identifier (`mk_test_…` / `mk_live_…`) sent with every request. |
 | `Salt` | **Secret.** Shown once at issue. Signs requests + verifies callbacks. Server-side only. |
 | `Scheme` | `HMAC_SHA256` (recommended) or `PAYU_SHA512`. |
 
-> Keep the Salt safe. Lost it → regenerate, which **invalidates the old pair**. One active Key per account.
+> Keep each Salt safe. Lost it → regenerate that pair, which **invalidates only that pair** (the other mode is untouched). One active Key per mode.
 
 ## 2. Endpoints
 
@@ -54,11 +61,13 @@ Issued from the Katana dashboard (**Branch portal → Integration → Generate K
 
 **Response (201 new / 200 reused):**
 ```json
-{ "verified": true, "merchant": "UK-108",
+{ "verified": true, "merchant": "UK-108", "livemode": true,
   "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "status": "PENDING" },
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",
   "deeplinks": { "upi": "upi://pay?…" }, "upi_intent": "upi://pay?…", "qr_payload": "upi://pay?…" }
 ```
+`livemode` is `false` for an order created with a test Key. A `txnid` is unique per mode, so the same ref in test and live creates two separate orders.
+
 Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`.
 
 ## 4. Sign the request
@@ -98,9 +107,11 @@ On every terminal status we **POST** JSON to your `notify_url` (or saved webhook
 
 **Paid** = `STATUS=Captured` and `RESPONSE_CODE=000`.
 
+Callbacks for **test orders** also carry `"LIVEMODE":"false"` (included in the HASH like any other field) and are signed with the **test Salt**. Live callbacks omit it. Verify with the Salt of the matching mode, and never fulfil a real order from a `LIVEMODE=false` callback.
+
 ## 7. Status enquiry
 
-`GET /api/pay-status/{order_id}` → `{ status, amount, rrn, terminal, … }`. Use as a fallback if a callback is missed.
+`GET /api/pay-status/{order_id}` → `{ status, amount, rrn, terminal, livemode, … }`. Use as a fallback if a callback is missed.
 
 ## 8. Status & response codes
 
@@ -155,10 +166,24 @@ function verify(body, salt){
 }
 ```
 
-## 10. Go-live checklist
+## 10. Test mode
 
-- Generate your **Key + Salt**; store the Salt server-side only.
+Integrate with the **test pair** first. Test orders behave like live ones — hosted page, callbacks, status enquiry — except that they pay a sandbox UPI ID, and the paise of the amount force the outcome:
+
+| Amount ends in | Order becomes |
+|---|---|
+| `.99` (e.g. `100.99`) | `SUCCESS` after ~8 s |
+| `.13` | `FAILED` |
+| `.11` | `EXPIRED` |
+| anything else | stays `PENDING`, expires after 15 min |
+
+The pay page shows a **Test payment** label on test orders. These rules apply **only** to test orders: a live order ending in `.99` behaves like any other amount. In the dashboard, flip the **Test / Live** switch in the header to see test orders.
+
+## 11. Go-live checklist
+
+- Complete a test integration with the **test Key + Salt**: success, failure and expiry callbacks all verify.
+- Generate your **live Key + Salt**; store the Salt server-side only, and swap both on your server.
 - Set default **return_url** + **webhook URL** in the dashboard (or pass per order).
-- Test a small amount; confirm the callback arrives and the **HASH verifies**.
+- Make a small live payment; confirm the callback arrives and the **HASH verifies** with the live Salt.
 - Treat callbacks as **idempotent** (same `ORDER_ID` may repeat).
 - Always confirm **server-side** before fulfilling.

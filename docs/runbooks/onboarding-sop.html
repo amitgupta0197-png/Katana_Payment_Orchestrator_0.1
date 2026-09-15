@@ -420,7 +420,7 @@ ul.check li::before{content:"";position:absolute;left:.4mm;top:1.3mm;width:2.8mm
       <tr><td class="m">2</td><td class="k">Issue Key + Salt</td><td>Tech</td><td class="nw">same day</td><td>Merchant → Integration → Generate Key + Salt. Salt shown <strong>once</strong>; regenerating invalidates the old pair. Record the scheme: operator-issued accounts are commonly Scheme 1 (SHA-512); portal self-issued default to Scheme 2 (HMAC-SHA256, recommended). Send Key and Salt through <strong>separate channels</strong>; never Telegram.</td></tr>
       <tr><td class="m">3</td><td class="k">Callback &amp; return URLs</td><td>Merchant → Ops</td><td class="nw">same day</td><td>HTTPS (policy; the API also accepts http, so Ops must check), publicly resolvable, not private / loopback / link-local. Saved on the merchant profile or passed per order. Ops also creates the merchant's webhook signing config (Admin → Webhooks); without it transport headers are signed with a placeholder secret. Merchants authenticate on body <code>HASH</code> only.</td></tr>
       <tr><td class="m">4</td><td class="k">Merchant builds</td><td>Merchant</td><td class="nw">merchant-dependent</td><td>Order create (§7.2), signing (§7.3), callback verify (§7.4), status enquiry (§7.5), daily recon sweep (§7.7).</td></tr>
-      <tr><td class="m">5</td><td class="k">UAT</td><td>Tech</td><td class="nw">1–2 BD</td><td>Run the test matrix (§7.8) with small live amounts, or on sandbox if one is issued.</td></tr>
+      <tr><td class="m">5</td><td class="k">UAT</td><td>Tech</td><td class="nw">1–2 BD</td><td>Run the test matrix (§7.8) with the merchant's test Key + Salt (<code>mk_test_…</code>, forced-outcome amounts), then one small live payment with the live pair.</td></tr>
       <tr><td class="m">6</td><td class="k">Pre-go-live review</td><td>Tech</td><td class="nw">0.5 BD</td><td>Katana verifies the merchant's handler: HASH verification, numeric amount + order check, idempotency, working recon sweep (§7.9).</td></tr>
     </tbody>
   </table></div>
@@ -858,7 +858,6 @@ ETA: 22 Sep</pre>
   <div class="tbl"><table>
     <thead><tr><th>Item</th><th>Rail</th><th>Status</th><th>Owner</th></tr></thead>
     <tbody>
-      <tr><td>Sandbox base URL and sandbox Key + Salt for merchants</td><td>Intent</td><td><span class="chip c-dec">DECISION</span></td><td>Tech Lead</td></tr>
       <tr><td>Min / max transaction, daily &amp; monthly volume, rate limits</td><td>All</td><td><span class="chip c-dec">DECISION</span></td><td>Risk + Finance</td></tr>
       <tr><td>High-value review SLA (₹50,000 hold is deployment-wide, not per merchant)</td><td>Intent, Payout</td><td><span class="chip c-dec">DECISION</span></td><td>Head of Ops</td></tr>
       <tr><td>Settlement cycle, cut-off, minimum, statement location</td><td>All</td><td><span class="chip c-dec">DECISION</span></td><td>Finance Controller</td></tr>

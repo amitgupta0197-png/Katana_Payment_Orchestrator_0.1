@@ -67,20 +67,29 @@
   <a href="#codes">8. Status &amp; response codes</a>
   <a href="#trace">9. Traceability — following one payment end to end</a>
   <a href="#samples">10. Sample code (PHP / Node / Python)</a>
-  <a href="#golive">11. Go-live checklist</a>
+  <a href="#testmode">11. Test mode</a>
+  <a href="#golive">12. Go-live checklist</a>
 </div>
 
 <h2 id="creds">1. Credentials (Key + Salt)</h2>
 <p>Every merchant account gets its <b>own dedicated</b> <b>Key</b> and <b>Salt</b>, issued from the Katana dashboard
-(<b>Integration → Generate Key + Salt</b>, or ask your Katana account manager). They are not shared between
+(<b>Integration → Generate</b>, or ask your Katana account manager). They are not shared between
 merchants, and every order and callback is bound to the pair that signed it.</p>
+<h3>Test and live pairs</h3>
+<table>
+  <tr><th>Pair</th><th>Key starts with</th><th>Orders it creates</th></tr>
+  <tr><td><b>Test</b></td><td><code>mk_test_</code></td><td>Test orders: they pay a sandbox UPI ID, never move real money and never appear in live totals, statements or settlement (§11).</td></tr>
+  <tr><td><b>Live</b></td><td><code>mk_live_</code></td><td>Real payments.</td></tr>
+</table>
+<p>The Key you sign with decides the mode; there is no mode field to send. Keys issued before test mode
+(<code>mk_</code> followed by hex) are live and keep working unchanged.</p>
 <table>
   <tr><th>Field</th><th>Meaning</th></tr>
-  <tr><td><code>Key</code></td><td>Public-ish identifier (<code>mk_…</code>) sent with every request. Identifies which merchant the order belongs to.</td></tr>
+  <tr><td><code>Key</code></td><td>Public-ish identifier (<code>mk_test_…</code> / <code>mk_live_…</code>) sent with every request. Identifies the merchant and the mode.</td></tr>
   <tr><td><code>Salt</code></td><td><b>Secret.</b> Shown only once at issue. Used to sign your requests and to verify our callbacks. Never expose it in client-side code.</td></tr>
   <tr><td><code>Scheme</code></td><td>Signing algorithm for your account: <code>HMAC_SHA256</code> (recommended) or the legacy SHA-512 format (§4).</td></tr>
 </table>
-<div class="note warnbox"><b>Keep the Salt safe.</b> If lost, regenerate — which <b>invalidates the old pair</b>, so update your server immediately. One active Key per merchant account.</div>
+<div class="note warnbox"><b>Keep each Salt safe.</b> If lost, regenerate that pair — which <b>invalidates only that pair</b> (the other mode is untouched), so update your server immediately. One active Key per mode.</div>
 
 <h2 id="endpoints">2. Endpoints</h2>
 <table>
@@ -94,7 +103,8 @@ merchants, and every order and callback is bound to the pair that signed it.</p>
 <h2 id="create">3. Create an order</h2>
 <p><code>POST /api/v1/katana-pay/order</code> with a JSON body (form-encoded is also accepted). <b>Idempotent on
 <code>txnid</code></b> — re-sending the same <code>txnid</code> returns the existing order rather than creating a
-second one, so a retry after a network timeout is always safe.</p>
+second one, so a retry after a network timeout is always safe. A <code>txnid</code> is unique per mode: the same
+reference sent with a test Key and a live Key creates two separate orders.</p>
 <h3>Request fields</h3>
 <table>
   <tr><th>Field</th><th>Req</th><th>Description</th></tr>
@@ -116,6 +126,7 @@ second one, so a retry after a network timeout is always safe.</p>
 <pre>{
   "verified": true,
   "merchant": "UK-108",
+  "livemode": true,                                   // false = created with a test Key
   "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "amount": 100, "status": "PENDING", … },
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // redirect the customer here
   "deeplinks": { "upi": "upi://pay?…", … },
@@ -173,6 +184,9 @@ attempt is recorded — so a callback is never silently dropped.</p>
   <li><code>SHA256</code> it → hex → <b>UPPERCASE</b>. It must equal <code>HASH</code>.</li>
 </ol>
 <p><b>Paid</b> = <code>STATUS</code> is <code>Captured</code> and <code>RESPONSE_CODE</code> is <code>000</code>.</p>
+<div class="note warnbox"><b>Test callbacks.</b> A callback for a test order also carries <code>"LIVEMODE": "false"</code>
+(included in the HASH like any other field) and is signed with the <b>test Salt</b>. Live callbacks omit the field.
+Verify with the Salt of the matching mode, and never fulfil a real order from a <code>LIVEMODE=false</code> callback.</div>
 <div class="note warnbox"><b>Treat callbacks as idempotent.</b> The same <code>ORDER_ID</code> may arrive more than
 once (a retry, or a status that settles twice). Key your handler on <code>ORDER_ID</code> and make a second
 delivery a no-op.</div>
@@ -181,7 +195,7 @@ delivery a no-op.</div>
 <p>At any time: <code>GET /api/pay-status/{order_id}</code></p>
 <pre>{ "order_id": "ORDER-1001", "amount": 100, "currency_code": "INR",
   "status": "SUCCESS", "terminal": true, "rrn": "123456789012",
-  "mode": "QR", "return_url": "…" }</pre>
+  "mode": "QR", "livemode": true, "return_url": "…" }</pre>
 <p><code>terminal: true</code> means the order has reached a final state and will not change again.</p>
 <h3>Long-poll: <code>?wait=1</code></h3>
 <p>Add <code>?wait=1</code> and the request is <b>held open until the order becomes terminal</b> (up to ~25s), instead
@@ -278,12 +292,30 @@ data=requests.post("https://katanapay.co/api/v1/katana-pay/order",json=o).json()
   return strtoupper(hash("sha256",$str))===$got;
 }</pre>
 
-<h2 id="golive">11. Go-live checklist</h2>
+<h2 id="testmode">11. Test mode</h2>
+<p>Integrate with the <b>test pair</b> first. Test orders behave exactly like live ones (hosted page, callbacks,
+status enquiry) except that they pay a sandbox UPI ID, the hosted page shows a <b>Test payment</b> label, and the
+paise of the amount force the outcome so every branch can be tested without a real payer:</p>
+<table>
+  <tr><th>Send amount</th><th>Order becomes</th><th>Use it to test</th></tr>
+  <tr><td><code>100.99</code></td><td><code>SUCCESS</code> after ~8 s</td><td>Happy path, callback verification, fulfilment</td></tr>
+  <tr><td><code>100.13</code></td><td><code>FAILED</code></td><td>Decline handling</td></tr>
+  <tr><td><code>100.11</code></td><td><code>EXPIRED</code></td><td>Expiry handling</td></tr>
+  <tr><td><code>100.00</code></td><td>stays <code>PENDING</code>, expires after 15 min</td><td>Long-poll and your own re-check</td></tr>
+</table>
+<div class="note badbox">These rules apply <b>only</b> to test orders. A live order changes state only on a real
+confirmed credit, and an amount ending in <code>.99</code> behaves exactly like any other. Real bank credits never
+confirm a test order.</div>
+<p>In the dashboard, the <b>Test / Live</b> switch in the header shows test orders; an orange banner stays on
+while you are viewing test data. Live totals, statements and settlement never include test orders.</p>
+
+<h2 id="golive">12. Go-live checklist</h2>
 <ul>
-  <li>Generate your <b>Key + Salt</b> and store the Salt securely (server-side only).</li>
+  <li>Complete a test integration with the <b>test Key + Salt</b>: success, failure and expiry callbacks all verify (§11).</li>
+  <li>Generate your <b>live Key + Salt</b>, store the Salt securely (server-side only) and swap both on your server.</li>
   <li>Set your default <b>return_url</b> and <b>webhook URL</b> in the dashboard (or pass them per order).</li>
   <li>Store <code>txnid</code>, <code>order.id</code>, <code>PAY_ID</code> and <code>RRN</code> against your order (§9).</li>
-  <li>Test with a small amount; confirm you receive the callback and the <b>HASH verifies</b>.</li>
+  <li>Make a small live payment; confirm you receive the callback and the <b>HASH verifies</b> with the live Salt.</li>
   <li>Handle callbacks <b>idempotently</b> — the same <code>ORDER_ID</code> may arrive more than once.</li>
   <li>Make create-order <b>retry-safe</b> by always reusing the same <code>txnid</code>.</li>
   <li>Always confirm <b>server-side</b> before fulfilling — never trust the browser redirect alone.</li>

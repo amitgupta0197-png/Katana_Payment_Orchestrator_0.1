@@ -226,17 +226,20 @@ repository.</div>
 <div class="note badbox"><b>Status tags are load-bearing.</b> Only UPI Intent is callable by a merchant server today.
 See §1.3 for what is available on the other two lines in the meantime.</div>
 
-<h3 id="s2-4">2.4. Test environment <span class="tag dec">DECISION</span></h3>
-<p>Katana runs a sandbox mode internally, in which an order never reaches a bank and no money moves. Whether a
-sandbox <b>host</b> is exposed to merchants, and on what URL, is not yet settled.</p>
+<h3 id="s2-4">2.4. Test mode</h3>
+<p>There is no separate sandbox host. Every merchant has a <b>test</b> and a <b>live</b> Key + Salt on the same
+base URL, and the Key that signs an order decides its mode. A test order never reaches a bank and no money moves.</p>
 <table>
-  <tr><th>Item</th><th>Status</th></tr>
-  <tr><td>Sandbox base URL</td><td><span class="tag dec">DECISION</span> — ask your account manager</td></tr>
-  <tr><td>Sandbox Key + Salt</td><td>Issued as a separate pair from production, when a sandbox is provided</td></tr>
-  <tr><td>Forced-outcome test amounts</td><td>Supported by the platform but disabled by default; must be enabled on the sandbox host before the matrix below applies</td></tr>
+  <tr><th>Item</th><th>Test</th><th>Live</th></tr>
+  <tr><td>Base URL</td><td colspan="2"><code>https://katanapay.co</code> for both</td></tr>
+  <tr><td>Key prefix</td><td><code>mk_test_</code></td><td><code>mk_live_</code> (keys issued before test mode, <code>mk_</code> + hex, are live)</td></tr>
+  <tr><td>Payee</td><td>A sandbox UPI ID</td><td>The merchant's settlement UPI ID</td></tr>
+  <tr><td>Callbacks</td><td>Signed with the test Salt, carry <code>"LIVEMODE": "false"</code></td><td>Signed with the live Salt</td></tr>
+  <tr><td>Ledger, statements, settlement</td><td>Never included</td><td>Included</td></tr>
+  <tr><td>Forced-outcome amounts</td><td>On</td><td>Off</td></tr>
 </table>
-<p>Where forced outcomes are enabled, the paise value of the amount selects the result, so every branch can be tested
-without a real payer:</p>
+<p>On a test order the paise value of the amount selects the result, so every branch can be tested without a real
+payer:</p>
 <table>
   <tr><th>Send amount</th><th>Order becomes</th><th>Use it to test</th></tr>
   <tr><td><code>100.99</code></td><td><code>SUCCESS</code> after ~8 s</td><td>Happy path, callback verification, fulfilment</td></tr>
@@ -244,9 +247,9 @@ without a real payer:</p>
   <tr><td><code>100.11</code></td><td><code>EXPIRED</code></td><td>Expiry and re-check handling (§7.3)</td></tr>
   <tr><td><code>100.00</code></td><td>stays <code>PENDING</code></td><td>Reconciliation sweep and long-poll</td></tr>
 </table>
-<div class="note badbox">These hooks exist <b>only</b> in sandbox. In production an order changes state only on a real
+<div class="note badbox">These hooks exist <b>only</b> for test orders. A live order changes state only on a real
 confirmed credit, and an amount ending in <code>.99</code> behaves exactly like any other. Never rely on them
-against production credentials.</div>
+with live credentials.</div>
 
 <h2 id="s3">3. Inceptive fraud prevention</h2>
 <p>No one knows your business and your customers better than you do, and the same applies to your fraud screening.</p>
@@ -363,7 +366,7 @@ callback (§8) or the status enquiry (§7) first.</div>
   <tr><td>Hosted payment page</td><td>Production</td><td><code>https://katanapay.co/pay/{katana_order_id}</code></td><td>GET</td></tr>
   <tr><td>Status enquiry</td><td>Production</td><td><code>https://katanapay.co/api/pay-status/{katana_order_id}</code></td><td>GET</td></tr>
 </table>
-<p class="sub">See §2.4 for the sandbox equivalents. <code>{katana_order_id}</code> is the <code>order.id</code> UUID
+<p class="sub">See §2.4 for test mode. <code>{katana_order_id}</code> is the <code>order.id</code> UUID
 returned on order creation — <b>not</b> your <code>txnid</code>. Sending your own reference here returns
 <code>404</code>.</p>
 

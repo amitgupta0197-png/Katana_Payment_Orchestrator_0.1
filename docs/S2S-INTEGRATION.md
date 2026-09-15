@@ -12,12 +12,17 @@ order" button.
   pair that belongs to one merchant. There is no provider-level credential — a provider
   integrating into their own platform uses each merchant's Key + Salt (one pair per
   merchant) and passes the right `key` per order.
-- **The Salt is secret** — keep it server-side only. The Key (`mk_…`) is a public handle.
-- **Idempotent** on your `txnid`: re-sending the same `txnid` returns the same order.
+- **The Salt is secret** — keep it server-side only. The Key is a public handle.
+- **Test and live pairs.** Each merchant has a test pair (`mk_test_…`) and a live pair
+  (`mk_live_…`). The Key that signs the order decides its mode: test orders pay a sandbox UPI
+  ID and never move real money. Pre-test-mode keys (`mk_` + hex) are live.
+- **Idempotent** on your `txnid` within a mode: re-sending the same `txnid` with the same
+  pair returns the same order; the same `txnid` in test and live is two separate orders.
 
 ### Getting a merchant's Key + Salt
-Open the merchant in the dashboard → **Checkout integration (Key + Salt)** card →
-**Generate**. The Salt is shown **once**. Available to:
+Open the merchant in the dashboard → **Checkout integration (Key + Salt)** card → **Test**
+or **Live** panel → **Generate**. Each Salt is shown **once**, and regenerating one pair
+leaves the other untouched. Available to:
 - **Super Admin** — on the merchant detail page.
 - **Provider** — on the provider portal's merchant detail page (mapped merchants only).
 
@@ -53,7 +58,7 @@ Content-Type: application/json
 
 ```jsonc
 {
-  "key":    "mk_xxx",
+  "key":    "mk_test_xxx",
   "txnid":  "ORDER-1001",
   "amount": "10.00",
   "hash":   "<hex signature from step 1>",
@@ -82,6 +87,7 @@ Also accepts `application/x-www-form-urlencoded` (same fields).
   "verified": true,
   "merchant": "K-001",
   "reused": false,
+  "livemode": false,               // false = created with a test Key
   "order": { "id": "<uuid>", "order_id": "ORDER-1001", "amount": 10, "currency_code": "INR", "status": "PENDING" },
   "deeplinks": { "upi": "upi://pay?...", "paytm": "paytmmp://pay?...", "phonepe": "phonepe://pay?..." },
   "upi_intent": "upi://pay?pa=...&am=10.00...",
@@ -144,7 +150,7 @@ credit SMS (auto-reconciliation), or when ops confirm it with a UTR.
 import crypto from "crypto";
 
 const BASE = "https://katanapay.co";
-const KEY  = "mk_xxx";
+const KEY  = "mk_test_xxx";                    // swap for the live pair to take real payments
 const SALT = process.env.KATANA_SALT;          // secret — never ship to the client
 
 const order = { txnid: "ORDER-1001", amount: "10.00", productinfo: "Order 1001", email: "buyer@example.com" };
@@ -167,16 +173,22 @@ if (!res.ok) throw new Error(data.error);
 
 ---
 
-## Sandbox testing
+## Test mode
 
-While Katana Pay runs in sandbox, the **last two paise digits of the amount** force outcomes:
+Orders created with a **test Key** (`mk_test_…`) pay a sandbox UPI ID, are labelled
+**Test payment** on the hosted page, and never reach the ledger, settlement or statements.
+`GET /api/pay-status` returns `livemode: false` for them. For test orders only, the **last two
+paise digits of the amount** force outcomes (a live order ending `.99` behaves like any other):
 
 | Amount ends in | Result |
 |----------------|--------|
 | `.99` (e.g. ₹9.99) | auto-SUCCESS (~8s) |
 | `.11` | auto-EXPIRED |
 | `.13` | auto-FAILED |
-| anything else | stays PENDING until the SMS/webhook confirms; auto-expires after 15 min |
+| anything else | stays PENDING; auto-expires after 15 min |
+
+Test orders can also be settled from the dashboard's **Simulate bank credit (test)** button.
+Real bank credits only ever confirm live orders.
 
 ---
 
