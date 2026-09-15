@@ -74,7 +74,7 @@ const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api
 // Prefix-matched public surfaces: the customer-facing PoolPay payment page and
 // its status endpoint (the order id in the URL is the capability).
 const PUBLIC_UI_PREFIX = ["/pay", "/katana-pay"];
-const PUBLIC_API_PREFIX = ["/api/pay-status", "/api/oauth"];
+const PUBLIC_API_PREFIX = ["/api/pay-status", "/api/oauth", "/api/v1/katana-pay/callback"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
+import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -93,6 +94,7 @@ export default function ProviderPortalMerchantDetailView({ id }: { id: string })
 
       <div className="mt-4">
         <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+        <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
       </div>
     </>
   );

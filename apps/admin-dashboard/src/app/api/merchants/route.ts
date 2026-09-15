@@ -8,6 +8,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { hashPassword, generatePassword } from "@/lib/password";
+import { assignWebhookSlug } from "@/lib/merchant-webhook";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,10 @@ export async function POST(req: Request) {
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'APPLICATION_SUBMITTED', $2, $3::jsonb)
     `, [res[0].id, s.email, JSON.stringify(body)]);
+
+    // The merchant's TSP webhook link exists from onboarding, derived from their website.
+    // A failure here never blocks onboarding: the card assigns it lazily on first view.
+    await assignWebhookSlug(res[0].merchant_code, body.website).catch(() => null);
 
     // Map the new merchant under a provider for traceability.
     // provider_merchant_mappings.merchant_id is the merchant UUID (not merchant_code);

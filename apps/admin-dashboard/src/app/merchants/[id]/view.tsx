@@ -20,6 +20,7 @@ import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
 import { PaymentMethodsCard, PoolPayConfigCard } from "@/components/merchant/payment-config";
 import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merchant/payin-operations";
 import { MerchantAgentCard } from "@/components/merchant/agent-permission";
+import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
@@ -770,6 +771,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <ApiKeysCard merchant={merchant} />
 
       <CheckoutKeyCard merchant={merchant} />
+
+      <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
 
       <GatewayMidCard merchant={merchant} />
 
