@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { ProviderPortalShell } from "./_components/portal-shell";
+import { getLivemode } from "@/lib/mode";
 
 export default async function ProviderPortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -10,7 +11,7 @@ export default async function ProviderPortalLayout({ children }: { children: Rea
     redirect(session.persona === "SUPER_ADMIN" ? "/" : "/banker-portal");
   }
   return (
-    <ProviderPortalShell scopeLabel={session.scope_label} email={session.email} fullName={session.full_name}>
+    <ProviderPortalShell scopeLabel={session.scope_label} email={session.email} fullName={session.full_name} livemode={await getLivemode()}>
       {children}
     </ProviderPortalShell>
   );

@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { ModeSwitch } from "@/components/layout/mode-switch";
+import { TestModeBanner } from "@/components/layout/test-mode-banner";
 import { PortalMobileNav } from "@/components/layout/portal-mobile-nav";
 
 const NAV = [
@@ -33,8 +35,8 @@ const NAV = [
 ];
 
 export function ProviderPortalShell({
-  children, scopeLabel, email, fullName,
-}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string }) {
+  children, scopeLabel, email, fullName, livemode,
+}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string; livemode: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -103,12 +105,14 @@ export function ProviderPortalShell({
               <span className="font-medium text-[color:var(--color-text)]">{fullName}</span>
               <span className="text-[color:var(--color-text-muted)]">{email}</span>
             </div>
+            <ModeSwitch initialLivemode={livemode} />
             <ThemeToggle />
             <Button variant="secondary" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </header>
+        <TestModeBanner livemode={livemode} />
         <main
           role="main"
           className="flex-1 overflow-y-auto bg-[color:var(--color-surface-muted)] px-4 py-5 sm:px-6 sm:py-8"

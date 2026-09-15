@@ -27,6 +27,12 @@
   --color-warning-muted: #fef3c7;
   --color-danger: #dc2626;
   --color-danger-muted: #fee2e2;
+
+  /* Test mode — its own orange, separate from warning (amber already means "needs attention"). */
+  --color-testmode: #c2410c;       /* active switch pill, banner rule */
+  --color-testmode-fg: #ffffff;    /* text on the pill */
+  --color-testmode-muted: #ffedd5; /* banner ground */
+  --color-testmode-text: #9a3412;  /* banner text */
   --color-info: #0ea5e9;
   --color-info-muted: #e0f2fe;
 }
@@ -58,6 +64,11 @@ html[data-theme="dark"],
   --color-warning-muted: #33240f;
   --color-danger: #ef4444;
   --color-danger-muted: #341417;
+
+  --color-testmode: #fb923c;
+  --color-testmode-fg: #1c0a00;
+  --color-testmode-muted: #3a1f0c;
+  --color-testmode-text: #fdba74;
   --color-info: #38bdf8;
   --color-info-muted: #0e2b3a;
 

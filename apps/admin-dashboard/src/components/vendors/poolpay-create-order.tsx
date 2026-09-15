@@ -22,7 +22,8 @@ import { openUpiApp } from "@/lib/upi";
 
 interface DeepLinks { paytm: string; phonepe: string; upi: string }
 interface CreatedOrder {
-  order: { id: string; order_id: string; amount: number; currency_code: string; status: string };
+  order: { id: string; order_id: string; amount: number; currency_code: string; status: string; livemode?: boolean };
+  livemode?: boolean;   // false = a test order (pays a sandbox UPI ID, no real money)
   deeplinks: DeepLinks;
   upi_intent: string;
   qr_payload: string;
@@ -130,7 +131,7 @@ export function PoolPayCreateOrder({
                 <Input value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} placeholder="9XXXXXXXXX" />
               </div>
             </div>
-            <p className={`text-xs ${MUTED}`}>Orders stay PENDING until paid &amp; confirmed (webhook / UTR). Sandbox: amounts ending .13 fail, .11 expire, .99 force-succeed; others await confirmation.</p>
+            <p className={`text-xs ${MUTED}`}>Orders stay PENDING until paid &amp; confirmed (webhook / UTR). In test mode the order pays a sandbox UPI ID, and amounts ending .13 fail, .11 expire and .99 succeed.</p>
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -148,6 +149,8 @@ export function PoolPayCreateOrder({
 
 function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: () => void }) {
   const id = created.order.id;
+  // Test orders can be settled with the simulator; the server refuses it for live orders.
+  const isTest = created.order.livemode === false || created.livemode === false;
   // Poll the public pay-status endpoint — it's readable by every persona (the order
   // id in the URL is the capability) so this panel works from the cockpit AND the
   // merchant/provider-scoped merchant page without an auth mismatch.
@@ -204,7 +207,10 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Complete payment</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Complete payment
+            {isTest && <Badge className="bg-[color:var(--color-testmode-muted)] text-[color:var(--color-testmode-text)]">Test</Badge>}
+          </DialogTitle>
           <DialogDescription>
             Order <span className="font-mono">{created.order.order_id}</span> · {formatAmount(created.order.amount, created.order.currency_code)}
           </DialogDescription>
@@ -248,9 +254,11 @@ function PaymentPanel({ created, onClose }: { created: CreatedOrder; onClose: ()
               </div>
             </div>
             <p className={`text-xs ${MUTED}`}>Waiting for the customer to pay — status updates automatically.</p>
-            <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => sim.mutate()} disabled={sim.isPending}>
-              {sim.isPending ? "Simulating bank credit…" : "Simulate bank credit (sandbox)"}
-            </Button>
+            {isTest && (
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => sim.mutate()} disabled={sim.isPending}>
+                {sim.isPending ? "Simulating bank credit…" : "Simulate bank credit (test)"}
+              </Button>
+            )}
           </div>
         ) : (
           <div className="rounded-md border p-3 text-sm">

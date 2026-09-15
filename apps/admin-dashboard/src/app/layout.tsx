@@ -4,6 +4,8 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { TestModeBanner } from "@/components/layout/test-mode-banner";
+import { getLivemode } from "@/lib/mode";
 
 export const metadata: Metadata = {
   title: {
@@ -48,6 +50,9 @@ async function isStandaloneShell(): Promise<boolean> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const standalone = await isStandaloneShell();
+  // Portals render their own banner; the admin shell reads the switch here so the banner
+  // arrives with the page instead of flashing in after hydration.
+  const livemode = standalone ? true : await getLivemode();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -66,6 +71,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Sidebar />
               <div className="flex flex-1 flex-col min-w-0">
                 <Header />
+                <TestModeBanner livemode={livemode} />
                 <main
                   id="main-content"
                   role="main"

@@ -17,9 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
+interface Creds { configured: boolean; key?: string; scheme?: string; salt_hint?: string }
+
 interface Integration {
   merchant_code: string;
-  credentials: { configured: boolean; key?: string; scheme?: string; salt_hint?: string };
+  credentials: Creds;          // live pair
+  test_credentials?: Creds;    // test pair
   webhook_url: string; return_url: string;
   endpoints: { base_url: string; create_order: string; pay_page: string; status_enquiry: string };
   schemes: string[];
@@ -58,20 +61,25 @@ export default function IntegrationPage() {
     queryKey: ["me-integration"],
     queryFn: async () => (await fetch("/api/me/integration").then(async (r) => { const d = await r.json().catch(() => null); if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status); return d; })) as Integration,
   });
-  const [regenOpen, setRegenOpen] = useState(false);
-  const [newCreds, setNewCreds] = useState<{ key: string; salt: string; scheme: string } | null>(null);
+  // Which pair the generate dialog is for: false = test, true = live, null = closed.
+  const [regenMode, setRegenMode] = useState<boolean | null>(null);
+  const [newCreds, setNewCreds] = useState<{ key: string; salt: string; scheme: string; livemode: boolean } | null>(null);
 
   const d = q.data;
-  const key = d?.credentials?.key ?? "<your key>";
+  // The code samples use the TEST pair when there is one, so copying them while integrating
+  // can never create a live order.
+  const samplePair = d?.test_credentials?.configured ? d.test_credentials : d?.credentials;
+  const key = samplePair?.key ?? "<your key>";
   const ep = d?.endpoints;
-  const scheme = d?.credentials?.scheme ?? "HMAC_SHA256";
+  const scheme = samplePair?.scheme ?? "HMAC_SHA256";
 
   const regen = useMutation({
-    mutationFn: async (sch: string) => {
-      const r = await fetch("/api/me/integration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheme: sch }) });
-      const dd = await r.json().catch(() => ({})); if (!r.ok) throw new Error(dd.error ?? "Failed"); return dd.creds as { key: string; salt: string; scheme: string };
+    mutationFn: async ({ sch, livemode }: { sch: string; livemode: boolean }) => {
+      const r = await fetch("/api/me/integration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheme: sch, livemode }) });
+      const dd = await r.json().catch(() => ({})); if (!r.ok) throw new Error(dd.error ?? "Failed");
+      return { ...(dd.creds as { key: string; salt: string; scheme: string }), livemode };
     },
-    onSuccess: (creds) => { setNewCreds(creds); setRegenOpen(false); qc.invalidateQueries({ queryKey: ["me-integration"] }); },
+    onSuccess: (creds) => { setNewCreds(creds); setRegenMode(null); qc.invalidateQueries({ queryKey: ["me-integration"] }); },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
@@ -127,21 +135,41 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
       {/* Pine Labs — pull transactions + RRN from your Pine Labs account */}
       <div className="mb-4"><PinelabsConfigCard endpoint="/api/me/pinelabs" canEdit /></div>
 
-      {/* Credentials */}
+      {/* Credentials — one pair per mode */}
       <Card className="mb-4">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div><CardTitle className="text-base inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />Your credentials</CardTitle>
-            <CardDescription>The Key goes in every request; the Salt signs the hash and is shown only once.</CardDescription></div>
-          <Button size="sm" variant="secondary" onClick={() => setRegenOpen(true)}><RefreshCw className="h-4 w-4" />{d?.credentials?.configured ? "Regenerate" : "Generate"} Key + Salt</Button>
+        <CardHeader>
+          <CardTitle className="text-base inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />Your credentials</CardTitle>
+          <CardDescription>
+            Integrate with the test pair: test orders pay a sandbox UPI ID and never move real money. Put the live pair on your server to take real payments. Each Salt is shown only once.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {q.isLoading ? "Loading…" : d?.credentials?.configured ? (
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Key</div><Copyable value={d.credentials.key!} /></div>
-              <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{schemeLabel(d.credentials.scheme!)}</Badge></div>
-              <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><span className="font-mono text-xs">{d.credentials.salt_hint}</span></div>
-            </div>
-          ) : <p className="text-[color:var(--color-text-muted)]">No credentials yet — click <b>Generate Key + Salt</b>.</p>}
+        <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+          {([false, true] as const).map((live) => {
+            const c = live ? d?.credentials : d?.test_credentials;
+            return (
+              <div key={live ? "live" : "test"} className="space-y-3 rounded-md border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  {live
+                    ? <Badge variant="success">Live</Badge>
+                    : <Badge className="bg-[color:var(--color-testmode-muted)] text-[color:var(--color-testmode-text)]">Test</Badge>}
+                  <Button size="sm" variant="secondary" onClick={() => setRegenMode(live)}>
+                    <RefreshCw className="h-4 w-4" />{c?.configured ? "Regenerate" : "Generate"}
+                  </Button>
+                </div>
+                {q.isLoading ? <p className="text-[color:var(--color-text-muted)]">Loading…</p> : c?.configured ? (
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Key</div><Copyable value={c.key!} /></div>
+                    <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{schemeLabel(c.scheme!)}</Badge></div>
+                    <div className="space-y-1"><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><span className="font-mono text-xs">{c.salt_hint}</span></div>
+                  </div>
+                ) : (
+                  <p className="text-[color:var(--color-text-muted)]">
+                    {live ? "No live credentials yet." : "No test credentials yet. Generate a test pair to start integrating."}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -190,12 +218,19 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
       </Card>
 
       {/* Regenerate dialog */}
-      <Dialog open={regenOpen} onOpenChange={setRegenOpen}>
+      <Dialog open={regenMode !== null} onOpenChange={(o) => !o && setRegenMode(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Generate Key + Salt</DialogTitle><DialogDescription>This replaces any existing credentials. The Salt is shown only once — copy it now.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Generate {regenMode ? "live" : "test"} Key + Salt</DialogTitle>
+            <DialogDescription>
+              This replaces your {regenMode ? "live" : "test"} credentials; your {regenMode ? "test" : "live"} pair is not affected.
+              {regenMode ? " Anything still using the old live Key stops working immediately." : ""} The Salt is shown only once — copy it now.
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex gap-2">
             {(d?.schemes ?? ["HMAC_SHA256", "PAYU_SHA512"]).map((s) => (
-              <Button key={s} variant="secondary" disabled={regen.isPending} onClick={() => regen.mutate(s)}>{schemeLabel(s)}</Button>
+              <Button key={s} variant="secondary" disabled={regen.isPending || regenMode === null}
+                onClick={() => regenMode !== null && regen.mutate({ sch: s, livemode: regenMode })}>{schemeLabel(s)}</Button>
             ))}
           </div>
         </DialogContent>
@@ -203,9 +238,14 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
 
       <Dialog open={!!newCreds} onOpenChange={(o) => !o && setNewCreds(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Save these now</DialogTitle><DialogDescription>The Salt will never be shown again.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Save your {newCreds?.livemode ? "live" : "test"} credentials now</DialogTitle><DialogDescription>The Salt will never be shown again.</DialogDescription></DialogHeader>
           {newCreds && (
             <div className="space-y-2 text-sm">
+              <div><div className="text-xs text-[color:var(--color-text-muted)]">Mode</div>
+                {newCreds.livemode
+                  ? <Badge variant="success">Live</Badge>
+                  : <Badge className="bg-[color:var(--color-testmode-muted)] text-[color:var(--color-testmode-text)]">Test</Badge>}
+              </div>
               <div><div className="text-xs text-[color:var(--color-text-muted)]">Key</div><Copyable value={newCreds.key} /></div>
               <div><div className="text-xs text-[color:var(--color-text-muted)]">Salt</div><Copyable value={newCreds.salt} /></div>
               <div><div className="text-xs text-[color:var(--color-text-muted)]">Scheme</div><Badge variant="brand">{schemeLabel(newCreds.scheme)}</Badge></div>

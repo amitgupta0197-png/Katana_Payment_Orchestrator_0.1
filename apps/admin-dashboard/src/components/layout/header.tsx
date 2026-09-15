@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogoutButton } from "./logout-button";
 import { ThemeToggle } from "./theme-toggle";
+import { ModeSwitch } from "./mode-switch";
+import { getLivemode } from "@/lib/mode";
 import { MobileNav } from "./sidebar";
 import { NavSearch } from "./nav-search";
 
@@ -12,6 +14,7 @@ export async function Header() {
   // headers() is awaited so we can later read x-session-persona if needed.
   await headers();
   const session = await getSession();
+  const livemode = await getLivemode();
   const personaLabel: Record<string, string> = {
     SUPER_ADMIN: "Super Admin", PROVIDER: "Merchant", MERCHANT: "Banker",
   };
@@ -45,6 +48,7 @@ export async function Header() {
             <span className="text-[color:var(--color-text-muted)]">{session.email}</span>
           </div>
         )}
+        {session && <ModeSwitch initialLivemode={livemode} />}
         <ThemeToggle />
         {session ? (
           <LogoutButton />

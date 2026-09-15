@@ -25,6 +25,7 @@ interface PayStatus {
   held?: boolean;
   expires_at?: string | null;
   completed_at?: string | null;
+  livemode?: boolean;   // false = a test order: labelled so nobody mistakes it for a real payment
 }
 
 type Phase = "loading" | "waiting" | "verifying" | "success" | "failed" | "expired";
@@ -116,7 +117,7 @@ function PaymentInner({ orderId }: { orderId: string }) {
   }
 
   return (
-    <Screen tone={tone} merchant={merchant}>
+    <Screen tone={tone} merchant={merchant} test={d?.livemode === false}>
       <div aria-live="polite" className="flex flex-1 flex-col">
         {phase === "loading" && <LoadingBody />}
         {phase === "waiting" && d && <WaitingBody key="waiting" d={d} merchant={merchant} orderId={orderId} onProof={() => q.refetch()} />}
@@ -130,7 +131,7 @@ function PaymentInner({ orderId }: { orderId: string }) {
 
 /* ------------------------------------------------------------------ chrome */
 
-function Screen({ tone, merchant, children }: { tone: Tone; merchant: string | null; children: React.ReactNode }) {
+function Screen({ tone, merchant, test = false, children }: { tone: Tone; merchant: string | null; test?: boolean; children: React.ReactNode }) {
   return (
     <main className="kp-root force-dark relative min-h-[100dvh] overflow-hidden">
       <style>{KP_CSS}</style>
@@ -143,9 +144,17 @@ function Screen({ tone, merchant, children }: { tone: Tone; merchant: string | n
             <span aria-hidden className="kp-avatar">{merchant ? merchant.charAt(0).toUpperCase() : "K"}</span>
             <span className="truncate text-sm font-semibold">{merchant ?? "Katana Pay"}</span>
           </div>
-          <span className="kp-dim flex shrink-0 items-center gap-1 text-[11px]">
-            <ShieldCheck className="h-3.5 w-3.5" /> Secured UPI
-          </span>
+          {test ? (
+            // A test order pays a sandbox UPI ID: say so plainly, in place of the security claim.
+            <span className="flex shrink-0 items-center rounded-full px-2.5 py-1 text-[11px] font-semibold"
+              style={{ background: "#fb923c", color: "#1c0a00" }}>
+              Test payment
+            </span>
+          ) : (
+            <span className="kp-dim flex shrink-0 items-center gap-1 text-[11px]">
+              <ShieldCheck className="h-3.5 w-3.5" /> Secured UPI
+            </span>
+          )}
         </header>
         {children}
         <footer className="kp-faint mt-5 text-center text-[11px]">Powered by Katana Pay</footer>
