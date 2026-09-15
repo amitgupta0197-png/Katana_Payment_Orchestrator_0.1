@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/poolpay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
+import { checkPayuPayinNow } from "@/lib/payu-result";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ function upiParam(intent: unknown, key: string): string | null {
 async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   const found = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn,
-           status, meta, created_at, updated_at, livemode,
+           status, meta, created_at, updated_at, livemode, vendor_txn_id, merchant_id,
            EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
       FROM vendor_payin_orders
      WHERE id = $1::uuid AND vendor = 'POOLPAY'
@@ -50,6 +51,15 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   if (!found.length) return null;
 
   let order = found[0];
+
+  // A PayU order is settled by PayU. Ask PayU directly (at most every 4s per order, however many
+  // pages are polling) so the page flips within seconds of the customer approving in their UPI app,
+  // instead of waiting for PayU's webhook or the sweep.
+  if (order.meta?.gateway?.provider === "PAYU" && order.livemode !== false && !POOLPAY_TERMINAL.has(order.status)) {
+    const r = await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }));
+    if (r.applied) return readOrderStatus(id);
+  }
+
   if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
     const amountMinor = Math.round(Number(order.amount) * 100);
     const decision = resolvePoolPay(order.status, amountMinor, order.age_seconds, order.livemode !== false);

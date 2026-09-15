@@ -23,6 +23,7 @@ import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
 import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { verifyPayuTxn } from "@/lib/payu-verify";
 
 // PayU pay-ins created through the Katana Pay order flow (lib/poolpay-order) live in
 // vendor_payin_orders, not checkout_orders, keyed by the PayU txnid Katana generated. They
@@ -140,6 +141,55 @@ export async function applyVerifiedPayuStatus(input: {
   }).catch(() => null);
 
   return { applied: true, status: nextStatus };
+}
+
+/**
+ * Stamp a PayU pay-in as checked now — atomically, and only if it was last checked more than
+ * `minIntervalSec` ago. False when someone else checked it moments ago, when PayU already gave a
+ * final failure, or when the order is settled. This single UPDATE is what stops several open pay
+ * pages plus the 15s sweep from multiplying PayU verify calls for one order.
+ */
+export async function claimPayuPayinCheck(txnid: string, minIntervalSec: number): Promise<boolean> {
+  const r = await rows<{ id: string }>("vendorGateway", `
+    UPDATE vendor_payin_orders
+       SET meta = jsonb_set(meta, '{gateway,checked_at}',
+                            to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1
+       AND meta->'gateway'->>'provider' = 'PAYU'
+       AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
+       AND COALESCE(meta->'gateway'->>'final', '') = ''
+       AND (meta->'gateway'->>'checked_at' IS NULL
+            OR (meta->'gateway'->>'checked_at')::timestamptz < now() - make_interval(secs => $2::double precision))
+    RETURNING id::text
+  `, [txnid, minIntervalSec]).catch(() => []);
+  return r.length > 0;
+}
+
+/** Remember PayU's definite failure: an EXPIRED order cannot become FAILED, so it must not be asked again. */
+export async function markPayuPayinFinal(txnid: string, payuStatus: string): Promise<void> {
+  await rows("vendorGateway", `
+    UPDATE vendor_payin_orders
+       SET meta = jsonb_set(meta, '{gateway,final}', to_jsonb($2::text))
+     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
+  `, [txnid, payuStatus]).catch(() => {});
+}
+
+/**
+ * Ask PayU now whether a PayU pay-in was paid, and settle it if so. Called from the pay-status poll
+ * so the customer's page flips within seconds of approving in their UPI app — without waiting for
+ * PayU's webhook (which may not be configured) or the sweep. Throttled by claimPayuPayinCheck.
+ */
+export async function checkPayuPayinNow(txnid: string, merchantId: string, minIntervalSec: number): Promise<{ applied: boolean }> {
+  if (!(await claimPayuPayinCheck(txnid, minIntervalSec))) return { applied: false };
+  const mid = await getGatewayMid(merchantId);
+  if (!mid || mid.gateway !== "PAYU") return { applied: false };
+  const v = await verifyPayuTxn(mid, txnid);
+  if (!v.found) return { applied: false };
+  if (v.status === "failure" || v.status === "failed") await markPayuPayinFinal(txnid, v.status);
+  const r = await applyVerifiedPayuStatus({
+    txnid, payuStatus: v.status, mihpayid: v.mihpayid, bankRefNum: v.bankRefNum, raw: v.raw,
+  });
+  return { applied: r.applied };
 }
 
 /** Parse a PayU POST body, which may be JSON or form-encoded depending on channel. */

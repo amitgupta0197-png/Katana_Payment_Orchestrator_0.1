@@ -16,7 +16,7 @@ import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
-import { applyVerifiedPayuStatus } from "@/lib/payu-result";
+import { applyVerifiedPayuStatus, claimPayuPayinCheck, markPayuPayinFinal } from "@/lib/payu-result";
 
 export const dynamic = "force-dynamic";
 
@@ -25,18 +25,6 @@ export const dynamic = "force-dynamic";
 const MIN_AGE_MIN = 2;
 const MAX_AGE_HOURS = 48;
 const BATCH = 100;
-
-// Stamp a PayU pay-in with when we last asked PayU, and with PayU's answer once it is a definite
-// failure, so the sweep's back-off and stop conditions above can see it.
-async function markPayinChecked(txnid: string, payuStatus: string | null): Promise<void> {
-  const patch: Record<string, string> = { checked_at: new Date().toISOString() };
-  if (payuStatus === "failure" || payuStatus === "failed") patch.final = payuStatus;
-  await rows("vendorGateway", `
-    UPDATE vendor_payin_orders
-       SET meta = jsonb_set(meta, '{gateway}', COALESCE(meta->'gateway', '{}'::jsonb) || $2::jsonb)
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
-  `, [txnid, JSON.stringify(patch)]).catch(() => {});
-}
 
 async function run() {
   const pending = await rows<{ txn_id: string; merchant_id: string }>("checkout", `
@@ -59,20 +47,22 @@ async function run() {
      WHERE vendor = 'POOLPAY' AND meta->'gateway'->>'provider' = 'PAYU'
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND livemode = true
-       AND created_at <  now() - ($1 || ' minutes')::interval
-       AND created_at >= now() - ($2 || ' hours')::interval
+       -- No 2-minute grace here: with UPI intent the customer approves in their app within
+       -- seconds and there is no browser return to wait for. The pay page asks PayU itself too.
+       AND created_at <  now() - interval '5 seconds'
+       AND created_at >= now() - ($1 || ' hours')::interval
        -- PayU already answered failure: an EXPIRED order cannot be moved to FAILED, so without
        -- this it would be asked about again on every run for 48 hours.
        AND COALESCE(meta->'gateway'->>'final', '') = ''
-       -- This sweep runs every 15s. Ask every 30s while the customer is likely still in their
-       -- UPI app, then every 10 minutes, so abandoned intents don't hammer PayU's verify API.
+       -- Ask every 10s while the customer is likely still in their UPI app, then every 10 minutes,
+       -- so abandoned intents don't hammer PayU's verify API.
        AND (meta->'gateway'->>'checked_at' IS NULL
             OR (meta->'gateway'->>'checked_at')::timestamptz < now() - CASE
-                 WHEN created_at >= now() - interval '30 minutes' THEN interval '30 seconds'
+                 WHEN created_at >= now() - interval '30 minutes' THEN interval '10 seconds'
                  ELSE interval '10 minutes' END)
      ORDER BY created_at DESC
      LIMIT ${BATCH}
-  `, [String(MIN_AGE_MIN), String(MAX_AGE_HOURS)]).catch(() => []);
+  `, [String(MAX_AGE_HOURS)]).catch(() => []);
 
   let confirmed = 0, failed = 0, stillPending = 0, unreachable = 0, noCreds = 0;
   // Why PayU gave no usable answer, e.g. "Invalid Hash." (a wrong Salt) — counted, never secret.
@@ -88,8 +78,10 @@ async function run() {
     // Leave the order pending — guessing would be worse than not knowing.
     if (!mid || mid.gateway !== "PAYU") { noCreds++; continue; }
 
+    // An open pay page may have asked PayU about this order moments ago (lib/payu-result).
+    if (o.payin && !(await claimPayuPayinCheck(o.txn_id, 5))) continue;
     const v = await verifyPayuTxn(mid, o.txn_id);
-    if (o.payin) await markPayinChecked(o.txn_id, v.found ? v.status : null);
+    if (o.payin && v.found && (v.status === "failure" || v.status === "failed")) await markPayuPayinFinal(o.txn_id, v.status);
     if (!v.found) {
       unreachable++;
       const why = v.status.slice(0, 80);
