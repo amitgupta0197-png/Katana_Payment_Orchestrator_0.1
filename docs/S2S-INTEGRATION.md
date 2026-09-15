@@ -179,6 +179,17 @@ For a merchant whose money is collected on its **own PayU MID**, Katana can ask 
 UPI intent server-to-server and hand back app deep links. No PayU page, no Katana page: your
 app opens PhonePe / Google Pay / Paytm directly.
 
+**Automatic on the order API.** Once a merchant has PayU credentials, every **live** order from
+`POST /api/v1/katana-pay/order` (step 2) and the dashboard's **Create S2S order** gets its
+`deeplinks`, `upi_intent`, `qr_payload` and `pay_url` page from PayU instead of a link to the
+merchant's own UPI ID — same request, same response. Send `client_ip` and `device_info` (the
+customer's) on that call too. These orders are confirmed by PayU only (webhook or Katana's
+verify sweep), never by the collection device, and the status reaches you through the usual
+signed callback. If PayU refuses, the call returns `502` with PayU's reason and no order is
+created. Test orders are unchanged (sandbox UPI ID).
+
+The call below is the alternative for merchants on the `/api/pay` checkout.
+
 **One-time setup (Super Admin).** Merchant page → **Gateway MID credentials** → **Set
 credentials**: Gateway `PAYU`, Main MID code, the PayU **Key** and **Salt**, scheme
 `PAYU_SHA512`, environment `PROD`. Ask PayU to enable **UPI Intent S2S** (`txn_s2s_flow=4`)

@@ -14,6 +14,7 @@ import { pgError } from "@/lib/pg";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
 import { activationErrorResponse } from "@/lib/live-activation";
+import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ const schema = z.object({
   receiver_vpas: z.array(z.string()).max(30).optional(), // receiver VPA pool (backup failover)
   mode: z.enum(["QR", "INTENT"]).optional(),
   currency: z.string().optional(),
+  // The PAYING CUSTOMER's IP and user-agent. Required by PayU when the merchant is paid through
+  // PayU; this request's own headers belong to the merchant's server.
+  client_ip: z.string().max(64).optional(),
+  device_info: z.string().max(512).optional(),
   // Restrict to http(s) so a stored return_url/notify_url can't carry javascript:/data:/file:
   // (open-redirect / scheme abuse — audit M8). SSRF on notify_url is additionally blocked at
   // egress by safeFetch.
@@ -87,6 +92,7 @@ export async function POST(req: Request) {
       livemode,                 // from the key; a test order pays the sandbox UPI ID
       returnUrl: body.return_url ?? null,
       notifyUrl: body.notify_url ?? null,
+      client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
     });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
@@ -104,6 +110,7 @@ export async function POST(req: Request) {
     }, { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });
+    if (err instanceof PayuIntentError) return NextResponse.json({ error: err.message }, { status: err.status });
     const a = activationErrorResponse(err);   // live key, live mode not activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

@@ -16,6 +16,8 @@ import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
 import { getLivemode } from "@/lib/mode";
 import { activationErrorResponse } from "@/lib/live-activation";
+import { getGatewayMid } from "@/lib/gateway-creds";
+import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +97,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // A dashboard-created order follows the Test / Live switch (live by default). A test order
   // always pays the sandbox UPI ID, so it needs no receiver.
   const livemode = await getLivemode();
-  if (!receiverVpas.length && livemode)
+  // A merchant with PayU Key + Salt is paid through PayU's collection account, so it needs no receiver.
+  const viaPayu = livemode && (await getGatewayMid(scope.code).catch(() => null))?.gateway === "PAYU";
+  if (!receiverVpas.length && livemode && !viaPayu)
     return NextResponse.json({ error: "no receiver VPA — add one here or set a PoolPay settlement VPA in payment config" }, { status: 400 });
 
   try {
@@ -111,6 +115,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       customerVpa: body.customer_vpa ?? null,
       customerPhone: body.customer_phone ?? null,
       livemode,
+      client: intentClientFrom(req),
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
@@ -118,6 +123,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (err) {
     if (err instanceof MerchantBlockedError)
       return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });
+    if (err instanceof PayuIntentError) return NextResponse.json({ error: err.message }, { status: err.status });
     const a = activationErrorResponse(err);   // a live order before live mode is activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

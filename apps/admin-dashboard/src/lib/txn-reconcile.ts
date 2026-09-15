@@ -536,6 +536,7 @@ export async function ingestTxnAlert(
     const byRef = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1
+         AND COALESCE(meta->'gateway'->>'provider', '') <> 'PAYU'   -- PayU orders are confirmed by PayU only
          AND ($2::text IS NULL OR merchant_id = $2)
          AND livemode = $3
        ORDER BY created_at DESC
@@ -556,6 +557,7 @@ export async function ingestTxnAlert(
     const byUtr = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1
+         AND COALESCE(meta->'gateway'->>'provider', '') <> 'PAYU'
          AND ($2::text IS NULL OR merchant_id = $2)
          AND livemode = $3
        ORDER BY created_at DESC
@@ -575,6 +577,9 @@ export async function ingestTxnAlert(
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
+         -- A PayU order is paid to PayU, never to the merchant's account, so a credit the
+         -- merchant's device sees can never be its payment — even at the same amount.
+         AND COALESCE(meta->'gateway'->>'provider', '') <> 'PAYU'
          AND amount = $1 AND created_at >= now() - ($2 || ' minutes')::interval
          AND ($3::text IS NULL OR merchant_id = $3)
          AND livemode = $4

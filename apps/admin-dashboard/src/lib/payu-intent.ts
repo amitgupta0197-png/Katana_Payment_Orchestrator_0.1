@@ -32,6 +32,11 @@ export function payuS2sUrl(env?: string): string {
     : "https://test.payu.in/_payment";
 }
 
+/** PayU refused to issue an intent, so no order was created. Routes answer 502 with the message. */
+export class PayuIntentError extends Error {
+  readonly status = 502;
+}
+
 export interface PayuIntentLinks {
   upi: string;        // generic upi://pay — also the QR payload
   phonepe: string;

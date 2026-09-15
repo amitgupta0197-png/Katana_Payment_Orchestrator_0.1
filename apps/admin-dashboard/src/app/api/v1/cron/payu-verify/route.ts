@@ -26,6 +26,18 @@ const MIN_AGE_MIN = 2;
 const MAX_AGE_HOURS = 48;
 const BATCH = 100;
 
+// Stamp a PayU pay-in with when we last asked PayU, and with PayU's answer once it is a definite
+// failure, so the sweep's back-off and stop conditions above can see it.
+async function markPayinChecked(txnid: string, payuStatus: string | null): Promise<void> {
+  const patch: Record<string, string> = { checked_at: new Date().toISOString() };
+  if (payuStatus === "failure" || payuStatus === "failed") patch.final = payuStatus;
+  await rows("vendorGateway", `
+    UPDATE vendor_payin_orders
+       SET meta = jsonb_set(meta, '{gateway}', COALESCE(meta->'gateway', '{}'::jsonb) || $2::jsonb)
+     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
+  `, [txnid, JSON.stringify(patch)]).catch(() => {});
+}
+
 async function run() {
   const pending = await rows<{ txn_id: string; merchant_id: string }>("checkout", `
     SELECT txn_id, merchant_id
@@ -38,15 +50,44 @@ async function run() {
      LIMIT ${BATCH}
   `, [String(MIN_AGE_MIN), String(MAX_AGE_HOURS)]).catch(() => []);
 
+  // PayU pay-ins from the Katana Pay order flow (vendor_payin_orders, keyed by the PayU txnid).
+  // EXPIRED is included on purpose: the pay page stops waiting after 15 minutes, but a customer
+  // who approved late has still paid, and confirmPoolPayOrder revives an expired order on success.
+  const payins = await rows<{ txn_id: string; merchant_id: string }>("vendorGateway", `
+    SELECT vendor_txn_id AS txn_id, merchant_id
+      FROM vendor_payin_orders
+     WHERE vendor = 'POOLPAY' AND meta->'gateway'->>'provider' = 'PAYU'
+       AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
+       AND livemode = true
+       AND created_at <  now() - ($1 || ' minutes')::interval
+       AND created_at >= now() - ($2 || ' hours')::interval
+       -- PayU already answered failure: an EXPIRED order cannot be moved to FAILED, so without
+       -- this it would be asked about again on every run for 48 hours.
+       AND COALESCE(meta->'gateway'->>'final', '') = ''
+       -- This sweep runs every 15s. Ask every 30s while the customer is likely still in their
+       -- UPI app, then every 10 minutes, so abandoned intents don't hammer PayU's verify API.
+       AND (meta->'gateway'->>'checked_at' IS NULL
+            OR (meta->'gateway'->>'checked_at')::timestamptz < now() - CASE
+                 WHEN created_at >= now() - interval '30 minutes' THEN interval '30 seconds'
+                 ELSE interval '10 minutes' END)
+     ORDER BY created_at DESC
+     LIMIT ${BATCH}
+  `, [String(MIN_AGE_MIN), String(MAX_AGE_HOURS)]).catch(() => []);
+
   let confirmed = 0, failed = 0, stillPending = 0, unreachable = 0, noCreds = 0;
 
-  for (const o of pending) {
+  const checks = [
+    ...pending.map((o) => ({ ...o, payin: false })),
+    ...payins.map((o) => ({ ...o, payin: true })),
+  ];
+  for (const o of checks) {
     const mid = await getGatewayMid(o.merchant_id);
     // No stored key+salt means we cannot authenticate a verify call for this merchant.
     // Leave the order pending — guessing would be worse than not knowing.
     if (!mid || mid.gateway !== "PAYU") { noCreds++; continue; }
 
     const v = await verifyPayuTxn(mid, o.txn_id);
+    if (o.payin) await markPayinChecked(o.txn_id, v.found ? v.status : null);
     if (!v.found) { unreachable++; continue; }
 
     const r = await applyVerifiedPayuStatus({
@@ -58,7 +99,7 @@ async function run() {
     else stillPending++;
   }
 
-  return { checked: pending.length, confirmed, failed, still_pending: stillPending, unreachable, no_creds: noCreds };
+  return { checked: pending.length + payins.length, confirmed, failed, still_pending: stillPending, unreachable, no_creds: noCreds };
 }
 
 // Whitelisted in middleware (PUBLIC_API), so it carries its own auth like the other crons.

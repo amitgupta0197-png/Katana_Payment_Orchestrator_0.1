@@ -8,6 +8,8 @@ import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, 
 import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { assertLiveActivated } from "@/lib/live-activation";
+import { getGatewayMid } from "@/lib/gateway-creds";
+import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 
 export interface CreatePoolPayInput {
   orderId: string;
@@ -23,6 +25,16 @@ export interface CreatePoolPayInput {
   returnUrl?: string | null;     // browser redirect target after payment (per-order)
   notifyUrl?: string | null;     // S2S status-callback target (per-order; overrides merchant default)
   livemode?: boolean;            // false = TEST order (default live); set once, never changes
+  client?: PayuIntentClient | null; // paying customer's IP + user-agent — PayU requires them
+}
+
+/** Set on meta.gateway when PayU issued the order's UPI intent. */
+interface PayuGatewayMeta {
+  provider: "PAYU";
+  txnid: string;                 // the txnid we sent PayU (also vendor_txn_id)
+  payment_id: string | null;
+  env: string;
+  payee_vpa: string | null;      // PayU's collection VPA from the intent
 }
 
 // Build the receiver-VPA pool with per-VPA health. The first READY VPA is active;
@@ -116,6 +128,15 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const cfg = input.merchantId && livemode ? await resolvePoolPayConfig(input.merchantId).catch(() => null) : null;
   const goLive = livemode && (cfg?.live === true || poolpayLive());
 
+  // PayU: a live order for a merchant with PayU Key + Salt gets its UPI intent from PayU, so the
+  // customer pays PayU's collection account on the merchant's MID. A link built locally to the
+  // merchant's own UPI ID is exactly what UPI apps decline. PayU then confirms the order
+  // (lib/payu-result); the bank-credit matcher leaves these orders alone.
+  const payuMid = livemode && !goLive && input.merchantId
+    ? await getGatewayMid(input.merchantId).then((m) => (m?.gateway === "PAYU" ? m : null)).catch(() => null)
+    : null;
+  let gateway: PayuGatewayMeta | null = null;
+
   // Real PoolPay when the cascade resolves to a live (PROD + secret) config or the
   // global POOLPAY_MODE=live env is set; deterministic sandbox otherwise.
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string, status = "PENDING";
@@ -128,6 +149,28 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       clientId: cfg.clientId, apiKey: cfg.apiKey, returnUrl: cfg.returnUrl,
     } : undefined);
     payId = r.payId; vendorTxnId = r.vendorTxnId; deeplinks = r.deeplinks; upiIntent = r.upiIntent; status = r.status || "PENDING";
+  } else if (payuMid) {
+    // PayU refuses a reused txnid, so a replayed order ref must not reach PayU again.
+    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+    if (prior) return prior;
+
+    vendorTxnId = shortId("kp");   // PayU txnid: unique per MID, at most 25 characters
+    const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
+    const r = await createPayuUpiIntent(payuMid, {
+      txnid: vendorTxnId, amount: input.amount.toFixed(2), productinfo: note,
+      firstname: "Customer", email: "payments@katanapay.co",
+      phone: input.customerPhone?.trim() || "9999999999",
+      surl: `${base}/api/gateway/payu/return`, furl: `${base}/api/gateway/payu/return`,
+    }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
+    if (!r.ok) throw new PayuIntentError(r.error);
+
+    payId = r.paymentId ?? shortId("pay");
+    deeplinks = { upi: r.links.upi, paytm: r.links.paytm, phonepe: r.links.phonepe };
+    upiIntent = r.links.upi;
+    gateway = {
+      provider: "PAYU", txnid: vendorTxnId, payment_id: r.paymentId, env: payuMid.env ?? "TEST",
+      payee_vpa: new URLSearchParams(r.intentQuery).get("pa"),
+    };
   } else {
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
@@ -143,7 +186,8 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
     mode,                                  // QR | INTENT
-    receiver_vpa: livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,
+    // A PayU order is paid to PayU's collection account, not the merchant's UPI ID.
+    receiver_vpa: gateway ? gateway.payee_vpa : livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,
     vpa_pool: pool,                        // [{ vpa, status }] for backup failover
     sender_vpa: input.customerVpa ?? null,
     sub_mid_code: subMidCode,
@@ -152,7 +196,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     return_url: input.returnUrl ?? null,   // browser redirect after pay
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     // Which integration config drove this order (cascade visibility).
-    integration: !livemode ? { source: "test", env: "SANDBOX", provider_id: null, live: false } : cfg ? {
+    gateway,                               // PayU txnid + payment id when PayU issued the intent
+    integration: !livemode ? { source: "test", env: "SANDBOX", provider_id: null, live: false }
+      : gateway ? { source: "payu", env: gateway.env, provider_id: null, live: true } : cfg ? {
       source: cfg.source,                  // merchant | provider | env
       env: cfg.env,                        // SANDBOX | PROD
       provider_id: cfg.providerId,
@@ -172,13 +218,22 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false };
 
-  // IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT.
-  //
-  // The conflict above is on (vendor, merchant, order_id), so re-read on the SAME key.
-  // Re-reading by (vendor, order_id) alone is what made a colliding txnid hand one
-  // merchant another merchant's order — its UUID, its amount and its deeplinks, so the
-  // payer was sent to the wrong collection VPA (migration 0024). The merchant predicate
-  // mirrors the index expression exactly, NULL included.
+  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+  // A conflict guarantees a row on this key, so an empty result means the row was
+  // deleted between the two statements. Say so rather than returning `order: undefined`,
+  // which surfaces to the caller as an opaque "order create failed".
+  if (!prior) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
+  return prior;
+}
+
+// IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT.
+//
+// The insert conflicts on (vendor, merchant, order_id), so re-read on the SAME key.
+// Re-reading by (vendor, order_id) alone is what made a colliding txnid hand one
+// merchant another merchant's order — its UUID, its amount and its deeplinks, so the
+// payer was sent to the wrong collection VPA (migration 0024). The merchant predicate
+// mirrors the index expression exactly, NULL included.
+async function readExistingOrder(orderId: string, merchantId: string | null, livemode: boolean): Promise<CreatePoolPayResult | null> {
   const existing = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
            channel, status, created_at, livemode, meta
@@ -187,12 +242,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
        AND order_id = $1
        AND COALESCE(merchant_id, '') = COALESCE($2, '')
        AND livemode = $3        -- a test order must never replay the live order with the same ref
-  `, [orderId, input.merchantId ?? null, livemode]);
+  `, [orderId, merchantId, livemode]);
   const ex = existing[0];
-  // A conflict guarantees a row on this key, so an empty result means the row was
-  // deleted between the two statements. Say so rather than returning `order: undefined`,
-  // which surfaces to the caller as an opaque "order create failed".
-  if (!ex) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
+  if (!ex) return null;
   // `meta` carries the receiver VPA, the VPA pool, the sub-MID and confirmation detail.
   // It is needed here for the stored deeplinks, but it is not part of the caller's
   // order shape — strip it so it cannot reach an API response.
@@ -200,8 +252,8 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const storedMeta = exMeta ?? {};
   return {
     order: exOrder,
-    deeplinks: (storedMeta.deeplinks as typeof deeplinks) ?? deeplinks,
-    upiIntent: (storedMeta.upi_intent as string) ?? upiIntent,
+    deeplinks: storedMeta.deeplinks as DeepLinks,
+    upiIntent: storedMeta.upi_intent as string,
     reused: true,
   };
 }

@@ -22,6 +22,43 @@ import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
+import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+
+// PayU pay-ins created through the Katana Pay order flow (lib/poolpay-order) live in
+// vendor_payin_orders, not checkout_orders, keyed by the PayU txnid Katana generated. They
+// are settled through confirmPoolPayOrder so the pay page, the merchant's status callback
+// and the reports see the payment exactly as they see any other pay-in.
+async function findPayuPayin(txnid: string): Promise<{ id: string; merchant_id: string; meta: any } | null> {
+  return (await rows<{ id: string; merchant_id: string; meta: any }>("vendorGateway", `
+    SELECT id::text, merchant_id, meta FROM vendor_payin_orders
+     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
+     LIMIT 1
+  `, [txnid]).catch(() => []))[0] ?? null;
+}
+
+async function settlePayuPayin(
+  orderId: string, outcome: "SUCCESS" | "FAILED",
+  detail: { utr?: string; mihpayid?: string; source: string },
+): Promise<{ applied: boolean; reason?: string }> {
+  const r = await confirmPoolPayOrder({
+    id: orderId,
+    livemode: true,               // PayU intents are only ever issued for live orders
+    outcome,
+    utr: detail.utr?.trim() || null,
+    evidence: "WEBHOOK",
+    actor: "gateway:payu",
+    note: `PayU ${detail.source}${detail.mihpayid ? ` (mihpayid ${detail.mihpayid})` : ""}`,
+  });
+  if (!r.ok) return { applied: false, reason: r.error };
+  return r.idempotent ? { applied: false, reason: "already_final" } : { applied: true };
+}
+
+function payuOutcome(status: string): "SUCCESS" | "FAILED" | null {
+  const s = status.toLowerCase();
+  if (s === "success") return "SUCCESS";
+  if (s === "failure" || s === "failed") return "FAILED";
+  return null;
+}
 
 export interface PayuOutcome {
   /** false when the payload had no txnid, or no order matches it. */
@@ -58,7 +95,14 @@ export async function applyVerifiedPayuStatus(input: {
   const o = (await rows<any>("checkout",
     `SELECT id, merchant_id, status FROM checkout_orders WHERE txn_id = $1 LIMIT 1`,
     [input.txnid]).catch(() => []))[0];
-  if (!o) return { applied: false, status: "UNKNOWN", reason: "unknown_txn" };
+  if (!o) {
+    const v = await findPayuPayin(input.txnid);
+    if (!v) return { applied: false, status: "UNKNOWN", reason: "unknown_txn" };
+    const outcome = payuOutcome(input.payuStatus);
+    if (!outcome) return { applied: false, status: "UNKNOWN", reason: `still ${input.payuStatus.toLowerCase()}` };
+    const r = await settlePayuPayin(v.id, outcome, { utr: input.bankRefNum, mihpayid: input.mihpayid, source: "verify_api" });
+    return { applied: r.applied, status: outcome, reason: r.reason };
+  }
 
   // Detail is worth keeping even for an order that is already final or still pending:
   // this is often the only channel that ever describes a payment whose callback was lost.
@@ -129,7 +173,25 @@ export async function applyPayuResult(
   const o = (await rows<any>("checkout",
     `SELECT id, merchant_id, status, client_surl, client_furl FROM checkout_orders WHERE txn_id = $1 LIMIT 1`,
     [txnid]).catch(() => []))[0];
-  if (!o) return { matched: false, txnid, status: "UNKNOWN", hashOk: false, dest: null, reason: "unknown_txn", applied: false };
+  if (!o) {
+    const v = await findPayuPayin(txnid);
+    if (!v) return { matched: false, txnid, status: "UNKNOWN", hashOk: false, dest: null, reason: "unknown_txn", applied: false };
+    const mid = await getGatewayMid(v.merchant_id);
+    const hashOk = !!mid && !!p.hash && payuResponseHash(mid, {
+      status: p.status || "", email: p.email || "", firstname: p.firstname || "",
+      productinfo: p.productinfo || "", amount: p.amount || "", txnid,
+      additionalCharges: p.additionalCharges,
+    }).toLowerCase() === p.hash.toLowerCase();
+    const dest = typeof v.meta?.return_url === "string" ? v.meta.return_url : null;
+    // Unlike a checkout order, an unverified payload here is IGNORED rather than recorded as
+    // FAILED: this URL is public, and a forged "failure" must not close an order the customer
+    // can still pay. The verify sweep settles it from PayU's own answer.
+    if (!hashOk) return { matched: true, txnid, status: "UNKNOWN", hashOk, dest, reason: "hash_verification_failed", applied: false };
+    const outcome = payuOutcome(payuStatus);
+    if (!outcome) return { matched: true, txnid, status: "UNKNOWN", hashOk, dest, reason: `still ${payuStatus}`, applied: false };
+    const r = await settlePayuPayin(v.id, outcome, { utr: p.bank_ref_num || p.bank_ref_no, mihpayid: p.mihpayid, source });
+    return { matched: true, txnid, status: outcome, hashOk, dest, reason: r.reason, applied: r.applied };
+  }
 
   // Verify PayU's response hash with THIS merchant's stored PayU salt. Without a stored
   // salt the hash can't be checked, so the payment is not treated as successful — we do
