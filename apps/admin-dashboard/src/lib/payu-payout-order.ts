@@ -15,7 +15,7 @@
 
 import { rows } from "@/lib/pg";
 import { recordEvent, recordFraudAlert } from "@/lib/fifo";
-import { sendStatusCallback } from "@/lib/fifo-notify";
+import { sendPayoutCallback } from "@/lib/payout-api";
 import {
   getPayuPayoutCreds, payuTransfer, payuTransferStatus, type PayoutRail,
 } from "@/lib/payu-payout";
@@ -55,8 +55,8 @@ async function note(o: PayuPayoutOrder, reason: string, payload?: Record<string,
   await recordEvent({ orderId: o.id, from: o.status, to: o.status, actorKind: "gateway", reason, payload });
 }
 
-async function notifyMerchant(o: PayuPayoutOrder, status: string, utr?: string | null) {
-  await sendStatusCallback({ ...o, status, utr: utr ?? o.utr });
+async function notifyMerchant(o: PayuPayoutOrder) {
+  await sendPayoutCallback(o.id);
 }
 
 export type DispatchResult = { status: string; error?: string };
@@ -77,7 +77,7 @@ export async function dispatchPayuPayout(orderId: string): Promise<DispatchResul
     : ben.status !== "APPROVED" ? `beneficiary is ${ben.status}`
     : null;
   if (blocker) {
-    if (await moveIf(o, "QUEUED", "CANCELLED", blocker, { failure_reason: blocker })) await notifyMerchant(o, "CANCELLED");
+    if (await moveIf(o, "QUEUED", "CANCELLED", blocker, { failure_reason: blocker })) await notifyMerchant(o);
     return { status: "CANCELLED", error: blocker };
   }
 
@@ -98,7 +98,7 @@ export async function dispatchPayuPayout(orderId: string): Promise<DispatchResul
   }
   if (t.definite) {
     if (await moveIf(o, "SUBMITTED", "FAILED", `PayU refused the transfer: ${t.error}`, { failure_reason: t.error, provider_status: "REJECTED" }))
-      await notifyMerchant(o, "FAILED");
+      await notifyMerchant(o);
     return { status: "FAILED", error: t.error };
   }
   // PayU may or may not have the request. The status lookup (by merchantRefId) settles it;
@@ -149,13 +149,13 @@ export async function syncPayuPayout(o: PayuPayoutOrder, opts: { hint?: string; 
         return { outcome: "mismatch" };
       }
       if (await moveIf(o, "SUBMITTED", "COMPLETED", "PayU confirmed the transfer", { utr: s.bankRef ?? null }, evidence))
-        await notifyMerchant(o, "COMPLETED", s.bankRef);
+        await notifyMerchant(o);
       return { outcome: "completed" };
     }
     if (s.status === "FAILED" || s.status === "REVERSED") {
       const why = s.msg ?? `PayU status ${s.status}`;
       if (await moveIf(o, "SUBMITTED", "FAILED", `PayU: ${why}`, { failure_reason: why }, evidence))
-        await notifyMerchant(o, "FAILED");
+        await notifyMerchant(o);
       return { outcome: "failed" };
     }
     return { outcome: "pending", detail: s.status };
@@ -169,7 +169,7 @@ export async function syncPayuPayout(o: PayuPayoutOrder, opts: { hint?: string; 
         orderId: o.id, orderRef: o.order_ref, merchantId: o.merchant_id, type: "ANOMALY", severity: "HIGH",
         detail: `Payout reversed after success: ${why}`, payload: { kind: "PAYU_PAYOUT_REVERSED", ...evidence },
       });
-      await notifyMerchant(o, "REVERSED");
+      await notifyMerchant(o);
     }
     return { outcome: "reversed" };
   }

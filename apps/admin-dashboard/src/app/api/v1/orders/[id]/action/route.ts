@@ -9,6 +9,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { operatorForUser, transition, settlePayinToLedger, findDuplicateUtr, recordFraudAlert } from "@/lib/fifo";
 import { settlePayoutToLedger } from "@/lib/fifo-payout";
 import { sendStatusCallback } from "@/lib/fifo-notify";
+import { sendPayoutCallback } from "@/lib/payout-api";
 
 export const dynamic = "force-dynamic";
 
@@ -85,14 +86,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       } else if (o.direction === "PAYOUT") {
         journalId = await settlePayoutToLedger({ merchantId: o.merchant_id, txnRef: o.txn_ref, amountMinor: BigInt(o.amount_minor), currency: o.currency, provider: o.settlement_mode });
       }
-      await sendStatusCallback({ ...o, status: "COMPLETED", utr: body.utr, tx_hash: body.tx_hash });
+      if (o.direction === "PAYOUT") await sendPayoutCallback(o.id);
+      else await sendStatusCallback({ ...o, status: "COMPLETED", utr: body.utr, tx_hash: body.tx_hash });
       return NextResponse.json({ ok: true, status: "COMPLETED", journal_id: journalId });
     }
     if (body.action === "reject") {
       const r = await transition({ orderId: o.id, to: "REJECTED", actor, actorKind, reason: body.reason ?? "rejected by operator" });
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 409 });
       await rows("fifo", `UPDATE fifo_queue SET status='CANCELLED' WHERE order_id=$1::uuid`, [o.id]).catch(() => {});
-      await sendStatusCallback({ ...o, status: "REJECTED" });
+      if (o.direction === "PAYOUT") await sendPayoutCallback(o.id);
+      else await sendStatusCallback({ ...o, status: "REJECTED" });
       return NextResponse.json({ ok: true, status: "REJECTED" });
     }
     // hold → escalate to risk. Release the queue row so it stops counting against

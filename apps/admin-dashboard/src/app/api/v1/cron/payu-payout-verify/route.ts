@@ -8,11 +8,14 @@
 // failed automatically: if the lookup is wrong and the money did go, failing it would invite
 // the merchant to pay the same person again.
 //
+// It also delivers due merchant callbacks from webhook_outbox (payout and pay-in alike).
+//
 // Run it every minute from the server crontab, like payu-verify:
 //   * * * * * curl -s -H "x-cron-key: $FIFO_CRON_KEY" http://127.0.0.1:3100/api/v1/cron/payu-payout-verify
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { flagPayoutMissingAtPayu, syncPayuPayout, type PayuPayoutOrder } from "@/lib/payu-payout-order";
+import { dispatchPending } from "@/lib/webhook-outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +55,10 @@ async function run() {
       flagged++;
     }
   }
-  return { checked: due.length, ...counts, flagged_missing: flagged, unknown_reasons: reasons };
+  // Merchant callbacks that failed earlier are due again on the outbox schedule
+  // (1m, 5m, 15m, 1h, 6h, 24h). Nothing else runs these retries on a timer.
+  const callbacks = await dispatchPending({ limit: 50 }).catch(() => null);
+  return { checked: due.length, ...counts, flagged_missing: flagged, unknown_reasons: reasons, callbacks };
 }
 
 // Whitelisted in middleware (PUBLIC_API), so it carries its own auth like the other crons.

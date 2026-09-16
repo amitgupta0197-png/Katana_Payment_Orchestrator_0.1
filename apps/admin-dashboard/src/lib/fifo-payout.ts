@@ -13,6 +13,7 @@ import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORK
 import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settlement";
 import { getPayuPayoutCreds, payuPayoutBalance, type PayoutRail } from "@/lib/payu-payout";
 import { dispatchPayuPayout } from "@/lib/payu-payout-order";
+import { sendPayoutCallback } from "@/lib/payout-api";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -36,17 +37,20 @@ export async function merchantPayableMinor(merchantId: string): Promise<bigint> 
 export interface CreateBeneficiaryInput {
   merchantId: string; beneficiaryName: string; bankName?: string; accountNumber?: string;
   ifsc?: string; upiId?: string; walletAddress?: string; network?: string; createdBy?: string;
+  /** Merchant's own reference (API registrations); unique per merchant. */
+  merchantRef?: string;
 }
 
 export async function createBeneficiary(input: CreateBeneficiaryInput): Promise<{ id: string }> {
   const { last4 } = maskAccount(input.accountNumber);
   const r = (await rows<{ id: string }>("fifo", `
     INSERT INTO fifo_beneficiaries
-      (merchant_id, beneficiary_name, bank_name, account_number, account_last4, ifsc, upi_id, wallet_address, network, created_by)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      (merchant_id, beneficiary_name, bank_name, account_number, account_last4, ifsc, upi_id, wallet_address, network, created_by, merchant_ref)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     RETURNING id::text
   `, [input.merchantId, input.beneficiaryName, input.bankName ?? null, input.accountNumber ?? null, last4,
-      input.ifsc ?? null, input.upiId ?? null, input.walletAddress ?? null, input.network ?? null, input.createdBy ?? null]))[0];
+      input.ifsc ?? null, input.upiId ?? null, input.walletAddress ?? null, input.network ?? null, input.createdBy ?? null,
+      input.merchantRef ?? null]))[0];
 
   // Maker-checker record (BRD §9). Wallet adds are the more sensitive USDT path.
   await rows("fifo", `
@@ -78,6 +82,10 @@ export interface CreatePayoutInput {
   rail?: PayoutRail;
   /** Caller's idempotency key: a repeat returns the first payout instead of paying twice. */
   merchantTxnId?: string;
+  /** Set by the merchant API from the key's mode. A test payout must go to PayU UAT. */
+  livemode?: boolean;
+  /** Where the signed status callback goes; else the merchant's webhook URL. */
+  callbackUrl?: string;
 }
 
 // RBI rail limits (paise). PayU applies its own on top.
@@ -87,13 +95,14 @@ const IMPS_MAX_MINOR = 50_000_000n;   // ₹5,00,000
 // A repeated merchant_txn_id returns the first payout, but only if it is the same request.
 async function existingPayout(input: CreatePayoutInput): Promise<{ order?: any; error?: string; status?: number } | null> {
   const p = (await rows<any>("fifo", `
-    SELECT id::text, order_ref, status, provider, failure_reason, amount_minor::text, beneficiary_id::text
+    SELECT id::text, order_ref, status, provider, failure_reason, amount_minor::text, beneficiary_id::text, livemode
       FROM fifo_orders WHERE merchant_id=$1 AND merchant_txn_id=$2 AND direction='PAYOUT'
   `, [input.merchantId, input.merchantTxnId]))[0];
   if (!p) return null;
-  if (p.amount_minor !== input.amountMinor.toString() || p.beneficiary_id !== input.beneficiaryId)
+  if (p.amount_minor !== input.amountMinor.toString() || p.beneficiary_id !== input.beneficiaryId
+      || (input.livemode !== undefined && p.livemode !== input.livemode))
     return { error: `txnid ${input.merchantTxnId} was already used for a different payout (${p.order_ref})`, status: 409 };
-  const { amount_minor: _a, beneficiary_id: _b, ...order } = p;
+  const { amount_minor: _a, beneficiary_id: _b, livemode: _l, ...order } = p;
   return { order: { ...order, idempotent: true } };
 }
 
@@ -130,6 +139,13 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
   // A merchant with PayU Payouts credentials pays from their own PayU account: PayU's
   // balance is the limit, not Katana's payable ledger (which PayU pay-ins don't credit).
   const payu = mode === "USDT" ? null : await getPayuPayoutCreds(input.merchantId);
+  // A test key must never move real money: it needs PayU UAT credentials, and a live key
+  // must not land in PayU's sandbox.
+  if (input.livemode === false && payu?.env !== "TEST")
+    return { error: "test payouts need PayU UAT (TEST) payout credentials for this merchant", status: 409 };
+  if (input.livemode === true && payu && payu.env !== "PROD")
+    return { error: "this merchant's PayU payout credentials are TEST; use a test key", status: 409 };
+
   let rail: PayoutRail | undefined;
   if (payu) {
     if (input.currency !== "INR") return { error: "PayU payouts are INR only", status: 400 };
@@ -167,13 +183,14 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
       INSERT INTO fifo_orders
         (order_ref, merchant_id, direction, amount_minor, currency, settlement_mode, purpose, txn_ref, beneficiary_id, status,
          usdt_network, usdt_rate, usdt_rate_source, usdt_rate_locked_at, usdt_amount,
-         provider, payout_rail, merchant_txn_id, livemode)
-      VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED',$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         provider, payout_rail, merchant_txn_id, livemode, callback_url)
+      VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING id::text, order_ref
     `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency,
         rail === "UPI" ? "UPI" : mode, input.purpose ?? null, txnRef, input.beneficiaryId,
         usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null,
-        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, payu ? payu.env === "PROD" : true]))[0];
+        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, payu ? payu.env === "PROD" : true,
+        input.callbackUrl ?? null]))[0];
   } catch (err) {
     // Two requests with the same merchant_txn_id raced; the loser returns the winner's payout.
     if ((err as { code?: string }).code === "23505" && input.merchantTxnId) {
@@ -229,6 +246,7 @@ export async function decideApproval(id: string, approve: boolean, checker: stri
       else await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 1, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [a.resource_id]);
     } else {
       await transition({ orderId: a.resource_id, to: "REJECTED", actor: checker, actorKind: "admin", reason: reason ?? "payout rejected by checker" });
+      await sendPayoutCallback(a.resource_id);
     }
   } else if ((a.action_type === "BENEFICIARY_ADD" || a.action_type === "USDT_WALLET_CHANGE") && a.resource_id) {
     await rows("fifo", `UPDATE fifo_beneficiaries SET status=$2, approved_by=$3, approved_at=now() WHERE id=$1::uuid AND status='PENDING'`,

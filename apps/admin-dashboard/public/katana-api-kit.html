@@ -163,11 +163,11 @@ calls with their secret and receives their notifications on a callback URL issue
   <tr><th>Business line</th><th>Merchant-callable API</th><th>What you can do today</th></tr>
   <tr><td><b>UPI Intent</b> (pay-in)</td><td><span class="tag live">LIVE</span></td><td>Full self-service integration — §4 to §9.</td></tr>
   <tr><td><b>P2P</b></td><td><span class="tag build">TO BUILD</span></td><td>Collections are recorded and matched by Katana operators; outcomes reach you through account-manager reporting, not an API.</td></tr>
-  <tr><td><b>Payout</b></td><td><span class="tag build">TO BUILD</span></td><td>Payouts are raised and approved inside Katana by your account team.</td></tr>
+  <tr><td><b>Payout</b></td><td><span class="tag live">LIVE</span></td><td>Register beneficiaries, send payouts and receive signed status callbacks — §5.5.</td></tr>
 </table>
 <div class="note"><b>What <span class="tag build">TO BUILD</span> means.</b> The engine, its controls and its data
 model are live and in daily operational use inside Katana. What does not yet exist is the signed, merchant-callable
-endpoint. The contracts in §5.4 and §5.5 are the specification that endpoint will be built to — stable enough to
+endpoint. The contract in §5.4 is the specification that endpoint will be built to — stable enough to
 design against, and Katana will tell you before they change. The lead time is integration and testing, not building
 the engine.</div>
 
@@ -221,9 +221,9 @@ repository.</div>
   <tr><th>Line</th><th>What it does</th><th>Status</th></tr>
   <tr><td><b>UPI Intent</b> (pay-in)</td><td>Collection by UPI deeplink or QR, hosted or embedded.</td><td><span class="tag live">LIVE</span></td></tr>
   <tr><td><b>P2P</b></td><td>Collection recorded against a trader and matched on UTR, with limit and duplicate controls.</td><td><span class="tag build">TO BUILD</span></td></tr>
-  <tr><td><b>Payout</b></td><td>Disbursement to a whitelisted beneficiary by bank, UPI, wallet or USDT.</td><td><span class="tag build">TO BUILD</span></td></tr>
+  <tr><td><b>Payout</b></td><td>Disbursement to an approved beneficiary by IMPS, NEFT, RTGS or UPI.</td><td><span class="tag live">LIVE</span></td></tr>
 </table>
-<div class="note badbox"><b>Status tags are load-bearing.</b> Only UPI Intent is callable by a merchant server today.
+<div class="note badbox"><b>Status tags are load-bearing.</b> UPI Intent and Payout are callable by a merchant server today.
 See §1.3 for what is available on the other two lines in the meantime.</div>
 
 <h3 id="s2-4">2.4. Test mode</h3>
@@ -533,44 +533,82 @@ entirely, not necessarily your own earlier retry. Investigate before crediting a
 <b>Omitting <code>expected_amount</code> disables amount matching</b> — every collection then evaluates as
 <code>CORRECT</code>. Always send it.</div>
 
-<h3 id="s5-5">5.5. Payout <span class="tag build">TO BUILD</span></h3>
-<p>Payout disburses funds to a beneficiary registered and approved in advance. <b>The payout engine and its controls
-are live inside Katana; the merchant-facing signed endpoint below is specified, not yet released.</b></p>
+<h3 id="s5-5">5.5. Payout <span class="tag live">LIVE</span></h3>
+<p>Payout sends money to a beneficiary you registered and Katana approved in advance, by IMPS, NEFT, RTGS or UPI.
+Requests are signed with the <b>same Key + Salt</b> as pay-ins; the Key decides test or live.</p>
 <table>
-  <tr><th>Purpose</th><th>Method</th><th>Proposed URL</th></tr>
-  <tr><td>Register a beneficiary</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/beneficiaries</code></td></tr>
-  <tr><td>Create a payout</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/create</code></td></tr>
-  <tr><td>Payout status</td><td>GET</td><td><code>https://katanapay.co/api/v1/payouts/{id}</code></td></tr>
+  <tr><th>Purpose</th><th>Method</th><th>URL</th><th>Signed string</th></tr>
+  <tr><td>Register a beneficiary</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/beneficiaries</code></td><td><code>beneficiary_ref|name|account_number|ifsc|upi_id</code></td></tr>
+  <tr><td>Create a payout</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/create</code></td><td><code>txnid|amount|beneficiary|rail|purpose</code></td></tr>
+  <tr><td>Payout status</td><td>POST</td><td><code>https://katanapay.co/api/v1/payouts/status</code></td><td><code>txnid</code> (or <code>payout_id</code>)</td></tr>
 </table>
-<pre>{ "key": "mk_9f2c…", "txnid": "UK108-PO-9001",
-  "beneficiary_id": "…", "amount": "5000", "currency": "INR",
-  "settlement_mode": "BANK", "purpose": "vendor settlement",
-  "hash": "&lt;see section 6&gt;" }</pre>
-<p><code>settlement_mode</code> is one of <code>BANK</code>, <code>UPI</code>, <code>WALLET</code> or
-<code>USDT</code>.</p>
+<p>The hash uses your account's scheme (§6.1) over <b>these</b> fields instead of the pay-in fields:</p>
+<pre>Scheme 1  hash = SHA512( key|f1|f2|…|salt )              // lowercase hex
+Scheme 2  hash = HMAC_SHA256( key = KEY + SALT , f1|f2|… )  // lowercase hex</pre>
+<p>A field you leave out is signed as an <b>empty string in its position</b>. <code>beneficiary</code> is whichever of
+<code>beneficiary_ref</code> or <code>beneficiary_id</code> you send. <code>amount</code> is a string (at most two
+decimals) and is signed <b>exactly as sent</b>.</p>
+<pre>Key mk_test · Salt s3cr3t · Scheme 1
+
+txnid=PO-9001  amount=1500.00  beneficiary_ref=vendor-7  rail=IMPS  purpose=vendor settlement
+seq  = mk_test|PO-9001|1500.00|vendor-7|IMPS|vendor settlement|s3cr3t
+hash = SHA512(seq) -&gt; lowercase hex
+
+POST /api/v1/payouts/create
+{ "key": "mk_test", "txnid": "PO-9001", "amount": "1500.00",
+  "beneficiary_ref": "vendor-7", "rail": "IMPS", "purpose": "vendor settlement",
+  "notify_url": "https://yoursite.com/payout-callback", "hash": "…" }
+
+201 { "payout": { "payout_id": "PO-3FA2C19B7D10", "txnid": "PO-9001", "status": "PROCESSING",
+                  "terminal": false, "amount": "1500.00", "rail": "IMPS", "utr": null, … },
+      "reused": false, "approval_required": false }</pre>
+
 <h4>Beneficiary lifecycle</h4>
-<p>A beneficiary is not usable the moment you register it. It is created <code>PENDING</code> and must be approved by
-a <b>different person</b> than the one who created it. Only an <code>APPROVED</code> beneficiary can receive a
-payout. Build registration into your onboarding, not into your payment path.</p>
-<h4>Controls implemented in the payout engine today</h4>
+<pre>{ "key": "mk_test", "beneficiary_ref": "vendor-7", "name": "Asha Traders",
+  "account_number": "001122334455", "ifsc": "HDFC0001234", "hash": "…" }</pre>
+<p>Send <code>account_number</code> + <code>ifsc</code>, or <code>upi_id</code>, or both. A beneficiary is created
+<code>PENDING</code> and can't be paid until someone at Katana approves it. Re-sending the same
+<code>beneficiary_ref</code> with the same details returns it with its current status, so the same call is your
+status check. A <code>beneficiary_ref</code> can't be reused for different details (<code>409</code>) — register a
+changed account under a new ref. Build registration into onboarding, not into your payment path.</p>
+
+<h4>Statuses</h4>
+<table>
+  <tr><th>Status</th><th>Meaning</th></tr>
+  <tr><td><code>PROCESSING</code></td><td>Accepted; on its way to the bank.</td></tr>
+  <tr><td><code>ON_HOLD</code></td><td>Waiting for approval (payouts of ₹50,000 and above) or a review.</td></tr>
+  <tr><td class="ok"><code>SUCCESS</code></td><td>Paid. <code>utr</code> carries the bank reference.</td></tr>
+  <tr><td class="bad"><code>FAILED</code></td><td>Not paid. <code>failure_reason</code> says why. Nothing left your account.</td></tr>
+  <tr><td class="bad"><code>REJECTED</code></td><td>Refused by the approver, or cancelled before sending.</td></tr>
+  <tr><td class="warn"><code>REVERSED</code></td><td>Paid, then returned by the beneficiary's bank.</td></tr>
+</table>
+
+<h4>Status callback</h4>
+<p>When a payout reaches <code>SUCCESS</code>, <code>FAILED</code>, <code>REJECTED</code> or <code>REVERSED</code>,
+Katana POSTs a JSON callback to the payout's <code>notify_url</code> (else your webhook URL), once per status:</p>
+<pre>{ "EVENT": "payout.status", "PAYOUT_ID": "PO-3FA2C19B7D10", "ORDER_ID": "PO-9001",
+  "AMOUNT": "1500.00", "CURRENCY_CODE": "356", "STATUS": "SUCCESS", "RAIL": "IMPS",
+  "UTR": "327012345470", "FAILURE_REASON": "", "RESPONSE_DATE_TIME": "2026-09-17T10:41:02.114Z",
+  "HASH": "…" }</pre>
+<p>Verify <code>HASH</code> exactly as for a pay-in callback (§6.1 B) — the same verifier works. <code>ORDER_ID</code>
+is your <code>txnid</code>; <code>EVENT</code> tells a payout callback from a pay-in one. Test payouts also carry
+<code>LIVEMODE=false</code> and are signed with your test Salt. Return <code>2xx</code>; failed deliveries are
+retried after 1m, 5m, 15m, 1h, 6h and 24h.</p>
+
+<h4>Controls</h4>
 <table>
   <tr><th>Control</th><th>Rule</th></tr>
-  <tr><td>Whitelisted beneficiary</td><td>Must exist and belong to your account (else <code>404</code>) and be <code>APPROVED</code> (else <code>409</code>).</td></tr>
-  <tr><td>Maker ≠ checker</td><td>The person who registered a beneficiary cannot approve it.</td></tr>
-  <tr><td>Payable balance</td><td>Your payable balance must cover the amount, else <code>409</code>.</td></tr>
-  <tr><td>Maker-checker on high value</td><td>Payouts at or above <b>₹50,000</b> are queued for second-person approval. The response means "queued", <b>not</b> paid.</td></tr>
+  <tr><td>Approved beneficiary</td><td>Must exist and belong to your account (else <code>404</code>) and be <code>APPROVED</code> (else <code>409</code>).</td></tr>
+  <tr><td>Maker ≠ checker</td><td>The Key that registered a beneficiary can't approve it; a person at Katana does.</td></tr>
+  <tr><td>Balance</td><td>The payout account must cover the amount, else <code>409</code>.</td></tr>
+  <tr><td>Approval on high value</td><td>Payouts of <b>₹50,000</b> and above return <code>ON_HOLD</code> — queued, <b>not</b> paid.</td></tr>
+  <tr><td>Rails</td><td>IMPS up to ₹5,00,000; RTGS from ₹2,00,000; UPI needs a <code>upi_id</code>; IMPS/NEFT/RTGS need account + IFSC. Default: IMPS for a bank beneficiary, UPI for a UPI-only one.</td></tr>
+  <tr><td>Test mode</td><td>A test Key pays out only through the payout provider's sandbox and never moves real money. A Key only sees payouts of its own mode.</td></tr>
 </table>
-<h4>Required before this endpoint is released</h4>
-<table>
-  <tr><th>Requirement</th><th>Status</th></tr>
-  <tr><td>Key + Salt authentication on the endpoint</td><td><span class="tag build">TO BUILD</span> — the payout route is currently operator-session only</td></tr>
-  <tr><td><b>Idempotency on <code>txnid</code></b></td><td><span class="tag build">TO BUILD</span> — <b>not yet implemented</b></td></tr>
-  <tr><td>Signed payout status callback</td><td><span class="tag build">TO BUILD</span></td></tr>
-</table>
-<div class="note badbox"><b>Idempotency does not exist on payouts yet.</b> Until it ships, a retried payout request
-creates a <b>second payout</b>. Do not build automatic retries against this endpoint. When it is released, the rule
-will be: a timeout is not a failure — retry with the <b>same</b> <code>txnid</code> or query the status, because
-issuing a second payout is unrecoverable.</div>
+<div class="note badbox"><b>A timeout is not a failure.</b> <code>/api/v1/payouts/create</code> is idempotent on
+<code>txnid</code>: retry with the <b>same</b> <code>txnid</code> (you get the first payout back, <code>reused: true</code>)
+or ask <code>/api/v1/payouts/status</code>. A new <code>txnid</code> is a second payout, and a second payout can't be
+recalled. The same <code>txnid</code> with a different amount or beneficiary is refused with <code>409</code>.</div>
 
 <h3 id="s5-6">5.6. Limits <span class="tag dec">DECISION</span></h3>
 <table>
