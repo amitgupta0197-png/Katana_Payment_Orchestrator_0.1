@@ -79,7 +79,8 @@ export async function GET(req: Request) {
     const orders = await rows<any>("fifo", `
       SELECT id, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode,
              status, risk_score, risk_decision, txn_ref, utr, tx_hash,
-             usdt_network, usdt_rate, usdt_amount, created_at, completed_at
+             usdt_network, usdt_rate, usdt_amount, created_at, completed_at,
+             provider, payout_rail, provider_ref, provider_status, failure_reason, livemode
         FROM fifo_orders WHERE ${where}
        ORDER BY created_at DESC LIMIT 200
     `, params);

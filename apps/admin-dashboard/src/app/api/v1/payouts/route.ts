@@ -1,5 +1,6 @@
 // POST /api/v1/payouts — create a payout order (BRD §18, FR-007). Validates an
 // APPROVED beneficiary + merchant payable balance; high-value routes to maker-checker.
+// Merchants with PayU Payouts credentials are paid through PayU on the chosen rail.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -17,6 +18,9 @@ const schema = z.object({
   currency: z.string().default("INR"),
   settlement_mode: z.enum(["BANK", "USDT", "WALLET", "UPI"]).optional(),
   purpose: z.string().optional(),
+  rail: z.enum(["IMPS", "NEFT", "RTGS", "UPI"]).optional(),
+  // Idempotency key: PayU accepts up to 40 chars for its merchantRefId, so keep ours tidy too.
+  txnid: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/, "txnid: 1-40 letters, digits, _ or -").optional(),
 });
 
 export async function POST(req: Request) {
@@ -33,8 +37,9 @@ export async function POST(req: Request) {
     const r = await createPayout({
       merchantId, beneficiaryId: body.beneficiary_id, amountMinor: toMinor(amountStr, currency), currency,
       settlementMode: body.settlement_mode, purpose: body.purpose, actor: s.email,
+      rail: body.rail, merchantTxnId: body.txnid,
     });
     if (r.error) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
-    return NextResponse.json({ order: r.order }, { status: 201 });
+    return NextResponse.json({ order: r.order }, { status: r.order?.idempotent ? 200 : 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

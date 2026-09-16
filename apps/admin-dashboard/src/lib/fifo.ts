@@ -26,12 +26,15 @@ export const VERIFY_SLA_SECONDS = Number(process.env.FIFO_VERIFY_SLA ?? 600);
 export const NEXT: Record<string, string[]> = {
   CREATED:        ["VALIDATED", "REJECTED"],
   VALIDATED:      ["QUEUED", "HOLD"],
-  QUEUED:         ["ASSIGNED", "CANCELLED"],
+  QUEUED:         ["ASSIGNED", "CANCELLED", "SUBMITTED"], // SUBMITTED = handed to a payout provider (PayU)
   ASSIGNED:       ["ACCEPTED", "QUEUED", "HOLD"],   // reassign returns to queue; SLA escalation -> HOLD
   ACCEPTED:       ["PROCESSING", "QUEUED", "HOLD"],  // operator/compliance can hold any in-flight item
   PROCESSING:     ["PROOF_UPLOADED", "FAILED", "HOLD"],
   PROOF_UPLOADED: ["COMPLETED", "REJECTED", "PROCESSING", "HOLD"], // duplicate-UTR / risk hold
-  COMPLETED:      ["SETTLED", "REFUND", "DISPUTE"],
+  // Only the provider's confirmed answer moves a SUBMITTED payout. No HOLD: the money may
+  // already be on its way, so holding it here would only hide it.
+  SUBMITTED:      ["COMPLETED", "FAILED"],
+  COMPLETED:      ["SETTLED", "REFUND", "DISPUTE", "REVERSED"], // REVERSED: the bank returned a paid-out transfer
   SETTLED:        ["REFUND", "DISPUTE"],           // post-settlement refund/chargeback
   HOLD:           ["VALIDATED", "QUEUED", "REJECTED", "CANCELLED"],
 };

@@ -22,6 +22,7 @@ import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merc
 import { MerchantAgentCard } from "@/components/merchant/agent-permission";
 import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
+import { PayuPayoutCard } from "@/components/merchant/payu-payout-card";
 import { LiveActivationCard } from "@/components/merchant/live-activation-card";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { formatDateTime, statusVariant } from "@/lib/utils";
@@ -693,6 +694,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
       <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
 
       <GatewayMidCard merchant={merchant} />
+
+      <PayuPayoutCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
 
       <TestCheckoutCard merchant={merchant} />
 

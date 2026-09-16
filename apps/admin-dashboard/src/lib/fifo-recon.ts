@@ -21,11 +21,13 @@ export async function runReconciliation(input: {
 }): Promise<{ run_id: string; total: number; matched: number; mismatched: number; summary: Record<string, number> }> {
   const source: ReconSource = input.source ?? "LEDGER";
 
-  // Completed/settled orders are the reconciliation universe.
+  // Completed/settled orders are the reconciliation universe. Provider-paid payouts (PayU)
+  // never touch Katana's ledger, so there is nothing here to match them against; the
+  // provider's status API is their reconciliation (cron/payu-payout-verify).
   const orders = await rows<any>("fifo", `
     SELECT id::text, order_ref, txn_ref, utr, direction, amount_minor::text, settlement_mode, status, completed_at
       FROM fifo_orders
-     WHERE status IN ('COMPLETED','SETTLED','FAILED')
+     WHERE status IN ('COMPLETED','SETTLED','FAILED') AND provider IS NULL
      ORDER BY completed_at NULLS LAST, created_at
      LIMIT 1000
   `);

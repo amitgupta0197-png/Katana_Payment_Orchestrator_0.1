@@ -12,7 +12,8 @@ export async function GET() {
   if ("response" in g) return g.response;
   // Merchants see only their own slice (§31 merchant dashboard).
   const mid = g.session.persona === "MERCHANT" ? g.session.scope_id : null;
-  const oFilter = mid ? "WHERE merchant_id = $1" : "";
+  // Test payouts (PayU UAT) are not money.
+  const oFilter = mid ? "WHERE livemode AND merchant_id = $1" : "WHERE livemode";
   const oParams = mid ? [mid] : [];
   try {
     const byStatus = await rows<any>("fifo", `
@@ -46,7 +47,7 @@ export async function GET() {
       },
       payout: {
         completed_count: pick("PAYOUT", "COMPLETED").n, completed_amount_minor: pick("PAYOUT", "COMPLETED").amt,
-        pending: sumDir("PAYOUT", ["QUEUED", "ASSIGNED", "ACCEPTED", "PROCESSING", "PROOF_UPLOADED", "HOLD"]),
+        pending: sumDir("PAYOUT", ["QUEUED", "ASSIGNED", "ACCEPTED", "PROCESSING", "PROOF_UPLOADED", "HOLD", "SUBMITTED"]),
       },
       queue: { queued: q("QUEUED"), assigned: q("ASSIGNED"), accepted: q("ACCEPTED"), sla_breaches: breaches },
       exceptions: {

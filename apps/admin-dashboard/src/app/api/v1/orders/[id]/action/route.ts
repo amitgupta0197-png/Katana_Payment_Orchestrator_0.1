@@ -29,10 +29,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const o = (await rows<any>("fifo", `
-      SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode, status, txn_ref, callback_url
+      SELECT id::text, order_ref, merchant_id, direction, amount_minor::text, currency, settlement_mode, status, txn_ref, callback_url, provider
         FROM fifo_orders WHERE order_ref=$1 OR id::text=$1 LIMIT 1
     `, [id]))[0];
     if (!o) return NextResponse.json({ error: "order not found" }, { status: 404 });
+    // PayU closes its own payouts. A hand-typed UTR here could mark one paid that PayU failed.
+    if (o.provider) return NextResponse.json({ error: `${o.provider} handles this payout; it can't be worked by hand` }, { status: 409 });
 
     // Only the assigned operator (or an admin) may act on the item.
     const opId = await operatorForUser(s.email, s.full_name, s.user_id);

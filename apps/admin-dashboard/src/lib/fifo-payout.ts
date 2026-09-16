@@ -2,6 +2,8 @@
 // FR-007). Payout orders reuse fifo_orders (direction='PAYOUT'); they validate an
 // APPROVED (whitelisted) beneficiary, check the merchant's payable balance, and
 // route high-value requests through a maker-checker approval before queuing.
+// A merchant with PayU Payouts credentials is paid out through PayU (lib/payu-payout-order)
+// instead of the operator queue, limited by their PayU balance rather than the ledger.
 
 import { rows } from "@/lib/pg";
 import { randomBytes } from "crypto";
@@ -9,6 +11,8 @@ import { postJournal } from "@/lib/ledger";
 import { transition, recordEvent, recordFraudAlert } from "@/lib/fifo";
 import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORKS } from "@/lib/fifo-usdt";
 import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settlement";
+import { getPayuPayoutCreds, payuPayoutBalance, type PayoutRail } from "@/lib/payu-payout";
+import { dispatchPayuPayout } from "@/lib/payu-payout-order";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -70,27 +74,82 @@ export async function decideBeneficiary(id: string, approve: boolean, checker: s
 export interface CreatePayoutInput {
   merchantId: string; beneficiaryId: string; amountMinor: bigint; currency: string;
   settlementMode?: string; purpose?: string; actor?: string | null;
+  /** Bank rail for a provider payout; picked from the beneficiary when absent. */
+  rail?: PayoutRail;
+  /** Caller's idempotency key: a repeat returns the first payout instead of paying twice. */
+  merchantTxnId?: string;
+}
+
+// RBI rail limits (paise). PayU applies its own on top.
+const RTGS_MIN_MINOR = 20_000_000n;   // ₹2,00,000
+const IMPS_MAX_MINOR = 50_000_000n;   // ₹5,00,000
+
+// A repeated merchant_txn_id returns the first payout, but only if it is the same request.
+async function existingPayout(input: CreatePayoutInput): Promise<{ order?: any; error?: string; status?: number } | null> {
+  const p = (await rows<any>("fifo", `
+    SELECT id::text, order_ref, status, provider, failure_reason, amount_minor::text, beneficiary_id::text
+      FROM fifo_orders WHERE merchant_id=$1 AND merchant_txn_id=$2 AND direction='PAYOUT'
+  `, [input.merchantId, input.merchantTxnId]))[0];
+  if (!p) return null;
+  if (p.amount_minor !== input.amountMinor.toString() || p.beneficiary_id !== input.beneficiaryId)
+    return { error: `txnid ${input.merchantTxnId} was already used for a different payout (${p.order_ref})`, status: 409 };
+  const { amount_minor: _a, beneficiary_id: _b, ...order } = p;
+  return { order: { ...order, idempotent: true } };
+}
+
+// Which rail a PayU payout goes on, or why it can't go.
+function pickRail(b: { account_number: string | null; ifsc: string | null; upi_id: string | null }, amountMinor: bigint, asked?: PayoutRail): { rail?: PayoutRail; error?: string } {
+  const hasBank = !!(b.account_number && b.ifsc);
+  const rail = asked ?? (hasBank ? "IMPS" : b.upi_id ? "UPI" : undefined);
+  if (!rail) return { error: "beneficiary has neither a bank account + IFSC nor a UPI ID" };
+  if (rail === "UPI" && !b.upi_id) return { error: "beneficiary has no UPI ID" };
+  if (rail !== "UPI" && !hasBank) return { error: `beneficiary needs an account number and IFSC for ${rail}` };
+  if (rail === "RTGS" && amountMinor < RTGS_MIN_MINOR) return { error: "RTGS needs at least ₹2,00,000" };
+  if (rail === "IMPS" && amountMinor > IMPS_MAX_MINOR) return { error: "IMPS allows at most ₹5,00,000; use NEFT or RTGS" };
+  return { rail };
 }
 
 export async function createPayout(input: CreatePayoutInput): Promise<{ order?: any; error?: string; status?: number }> {
   if (input.amountMinor <= 0n) return { error: "amount must be > 0", status: 400 };
 
+  if (input.merchantTxnId) {
+    const prior = await existingPayout(input);
+    if (prior) return prior;
+  }
+
   // Beneficiary must exist, belong to the merchant, and be APPROVED (whitelisted).
   const b = (await rows<any>("fifo", `
-    SELECT id::text, status, beneficiary_name, wallet_address, network FROM fifo_beneficiaries
+    SELECT id::text, status, beneficiary_name, wallet_address, network, account_number, ifsc, upi_id FROM fifo_beneficiaries
      WHERE id=$1::uuid AND merchant_id=$2
   `, [input.beneficiaryId, input.merchantId]))[0];
   if (!b) return { error: "beneficiary not found for merchant", status: 404 };
   if (b.status !== "APPROVED") return { error: `beneficiary not whitelisted (status=${b.status})`, status: 409 };
 
-  // Balance + reserve check (BRD §18).
-  const payable = await merchantPayableMinor(input.merchantId);
-  if (input.amountMinor > payable)
-    return { error: `insufficient payable balance (have ${payable}, need ${input.amountMinor})`, status: 409 };
+  const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();
+
+  // A merchant with PayU Payouts credentials pays from their own PayU account: PayU's
+  // balance is the limit, not Katana's payable ledger (which PayU pay-ins don't credit).
+  const payu = mode === "USDT" ? null : await getPayuPayoutCreds(input.merchantId);
+  let rail: PayoutRail | undefined;
+  if (payu) {
+    if (input.currency !== "INR") return { error: "PayU payouts are INR only", status: 400 };
+    const picked = pickRail(b, input.amountMinor, input.rail);
+    if (picked.error) return { error: picked.error, status: 409 };
+    rail = picked.rail;
+    // If PayU can't be asked, carry on: PayU itself holds a payout it can't fund.
+    const bal = await payuPayoutBalance(payu);
+    if (bal.ok && bal.data.balanceMinor < input.amountMinor)
+      return { error: `insufficient PayU payout balance (have ${bal.data.balanceMinor}, need ${input.amountMinor})`, status: 409 };
+  } else {
+    if (input.rail) return { error: "rail applies only to PayU payouts; this merchant has no PayU payout credentials", status: 400 };
+    // Balance + reserve check (BRD §18).
+    const payable = await merchantPayableMinor(input.merchantId);
+    if (input.amountMinor > payable)
+      return { error: `insufficient payable balance (have ${payable}, need ${input.amountMinor})`, status: 409 };
+  }
 
   const orderRef = "PO-" + randomBytes(6).toString("hex").toUpperCase();
   const txnRef = "TXN-" + randomBytes(8).toString("hex").toUpperCase();
-  const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();
 
   // USDT settlement controls (BRD §11.C, §22, FR-008): network whitelist + wallet
   // (already APPROVED) + locked rate. Computed USDT amount stored on the order.
@@ -102,14 +161,27 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     usdt = { network: b.network.toUpperCase(), rate: lock.rate, source: lock.source, lockedAt: lock.lockedAt, amount: computeUsdtAmount(input.amountMinor, lock.rate) };
   }
 
-  const o = (await rows<any>("fifo", `
-    INSERT INTO fifo_orders
-      (order_ref, merchant_id, direction, amount_minor, currency, settlement_mode, purpose, txn_ref, beneficiary_id, status,
-       usdt_network, usdt_rate, usdt_rate_source, usdt_rate_locked_at, usdt_amount)
-    VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED',$9,$10,$11,$12,$13)
-    RETURNING id::text, order_ref
-  `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency, mode, input.purpose ?? null, txnRef, input.beneficiaryId,
-      usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null]))[0];
+  let o: any;
+  try {
+    o = (await rows<any>("fifo", `
+      INSERT INTO fifo_orders
+        (order_ref, merchant_id, direction, amount_minor, currency, settlement_mode, purpose, txn_ref, beneficiary_id, status,
+         usdt_network, usdt_rate, usdt_rate_source, usdt_rate_locked_at, usdt_amount,
+         provider, payout_rail, merchant_txn_id, livemode)
+      VALUES ($1,$2,'PAYOUT',$3,$4,$5,$6,$7,$8::uuid,'CREATED',$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      RETURNING id::text, order_ref
+    `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency,
+        rail === "UPI" ? "UPI" : mode, input.purpose ?? null, txnRef, input.beneficiaryId,
+        usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null,
+        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, payu ? payu.env === "PROD" : true]))[0];
+  } catch (err) {
+    // Two requests with the same merchant_txn_id raced; the loser returns the winner's payout.
+    if ((err as { code?: string }).code === "23505" && input.merchantTxnId) {
+      const prior = await existingPayout(input);
+      if (prior) return prior;
+    }
+    throw err;
+  }
   await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: `payout to ${b.beneficiary_name}`, payload: usdt ? { usdt } : undefined });
   await transition({ orderId: o.id, to: "VALIDATED", reason: "beneficiary whitelisted + balance ok", actor: input.actor });
 
@@ -124,7 +196,13 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     return { order: { id: o.id, order_ref: o.order_ref, status: "HOLD", approval_required: true, usdt } };
   }
 
-  // Otherwise enqueue for operator/finance execution.
+  // PayU payouts go straight to PayU; the rest wait for an operator.
+  if (payu) {
+    await transition({ orderId: o.id, to: "QUEUED", reason: "released to PayU", actor: input.actor });
+    await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [o.id]).catch(() => {});
+    const d = await dispatchPayuPayout(o.id);
+    return { order: { id: o.id, order_ref: o.order_ref, status: d.status, provider: "PAYU", rail, approval_required: false, error: d.error } };
+  }
   await transition({ orderId: o.id, to: "QUEUED", reason: "added to FIFO payout queue", actor: input.actor });
   await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [o.id]).catch(() => {});
   await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 0, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [o.id]);
@@ -146,7 +224,9 @@ export async function decideApproval(id: string, approve: boolean, checker: stri
     if (approve) {
       await transition({ orderId: a.resource_id, to: "QUEUED", actor: checker, actorKind: "admin", reason: "high-value payout approved" });
       await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [a.resource_id]).catch(() => {});
-      await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 1, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [a.resource_id]);
+      const o = (await rows<{ provider: string | null }>("fifo", `SELECT provider FROM fifo_orders WHERE id=$1::uuid`, [a.resource_id]))[0];
+      if (o?.provider === "PAYU") await dispatchPayuPayout(a.resource_id);
+      else await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 1, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [a.resource_id]);
     } else {
       await transition({ orderId: a.resource_id, to: "REJECTED", actor: checker, actorKind: "admin", reason: reason ?? "payout rejected by checker" });
     }
