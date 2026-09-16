@@ -10,8 +10,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { wormAppend } from "@/lib/worm";
 import {
-  getPayuPayoutCreds, getPayuPayoutStatus, payuPayoutBalance, registerPayuPayoutWebhook, storePayuPayoutCreds,
+  getPayuPayoutCreds, getPayuPayoutStatus, payoutWebhookUrl, payuPayoutBalance, registerPayuPayoutWebhook, storePayuPayoutCreds,
 } from "@/lib/payu-payout";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +30,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const code = await merchantCode(id);
     if (!code) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
     const status = await getPayuPayoutStatus(code);
-    if (!status.configured || new URL(req.url).searchParams.get("balance") !== "1") return NextResponse.json({ status });
+    const webhook_url = payoutWebhookUrl();   // for "Copy endpoint"; not a secret
+    if (!status.configured || new URL(req.url).searchParams.get("balance") !== "1") return NextResponse.json({ status, webhook_url });
 
     const bal = await payuPayoutBalance((await getPayuPayoutCreds(code))!);
     return NextResponse.json({
-      status,
+      status, webhook_url,
       balance: bal.ok
         ? { ok: true, balance_minor: bal.data.balanceMinor.toString(), low_balance: bal.data.lowBalance }
         : { ok: false, error: bal.error },
@@ -52,6 +54,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const g = await gateOrResponse(["SUPER_ADMIN"]);
   if ("response" in g) return g.response;
   const { id } = await params;
+  // Who changed a merchant's PayU payout setup, and to what — never the secrets themselves.
+  const audit = (action: string, before: unknown, after: unknown) => wormAppend({
+    actorId: g.session.user_id, actorEmail: g.session.email, action,
+    resourceType: "merchant", resourceId: id, before, after,
+  }).catch(() => {});
   try {
     const code = await merchantCode(id);
     if (!code) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
@@ -63,6 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!r.ok) return NextResponse.json({ error: `PayU: ${r.error}` }, { status: 502 });
       // Stored only after PayU took it: until then the old token is still the one PayU sends.
       await storePayuPayoutCreds(code, { ...creds, webhook_token: r.data.token, webhook_registered_at: new Date().toISOString() });
+      await audit("merchant.payu_payout.webhook_registered", null, { merchant_code: code, url: r.data.url, env: creds.env });
       return NextResponse.json({ status: await getPayuPayoutStatus(code), webhook_url: r.data.url });
     }
 
@@ -71,6 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: (e as Error).message }, { status: 400 });
     }
     const prev = await getPayuPayoutCreds(code);
+    const before = await getPayuPayoutStatus(code);
     // The registered webhook belongs to the PayU account, so it survives a secret rotation
     // but not a switch to another account or environment.
     const sameAccount = prev && prev.payout_merchant_id === body.payout_merchant_id && prev.env === body.env;
@@ -79,6 +88,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       webhook_token: sameAccount ? prev.webhook_token : undefined,
       webhook_registered_at: sameAccount ? prev.webhook_registered_at : undefined,
     });
-    return NextResponse.json({ status: await getPayuPayoutStatus(code) }, { status: 201 });
+    const after = await getPayuPayoutStatus(code);
+    await audit(prev ? "merchant.payu_payout.rotated" : "merchant.payu_payout.set", before, { merchant_code: code, ...after });
+    return NextResponse.json({ status: after }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

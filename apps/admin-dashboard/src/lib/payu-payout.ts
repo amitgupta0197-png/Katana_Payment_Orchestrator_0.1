@@ -206,7 +206,7 @@ export interface PayuTransferState {
 // listTransactions filters by date (DD/MM/YYYY). Without a range PayU searches a default
 // window, so pass one that surely contains the payout: its creation day (IST) minus a day,
 // through today.
-function istDate(d: Date): string {
+export function istDate(d: Date): string {
   const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric" }).formatToParts(d);
   const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
   return `${get("day")}/${get("month")}/${get("year")}`;
@@ -235,20 +235,42 @@ export async function payuTransferStatus(c: PayuPayoutCreds, merchantRefId: stri
   const rows: any[] = Array.isArray(j?.data?.transactionDetails) ? j.data.transactionDetails : [];
   const d = rows.find((x) => String(x?.merchantRefId) === merchantRefId);
   if (!d) return { ok: true, data: { found: false } };
+  return { ok: true, data: transferState(d) };
+}
+
+function transferState(d: any): PayuTransferState & { merchantRefId: string } {
   let amountMinor: bigint | undefined;
   if (d.amount != null && Number.isFinite(Number(d.amount))) amountMinor = BigInt(Math.round(Number(d.amount) * 100));
   return {
-    ok: true,
-    data: {
-      found: true,
-      status: String(d.txnStatus ?? "").toUpperCase(),
-      payuRef: d.payuTransactionRefNo ? String(d.payuTransactionRefNo) : undefined,
-      bankRef: d.bankTransactionRefNo ? String(d.bankTransactionRefNo) : d.utr ? String(d.utr) : undefined,
-      amountMinor,
-      msg: d.msg ? String(d.msg) : undefined,
-      raw: d,
-    },
+    found: true,
+    merchantRefId: String(d.merchantRefId ?? ""),
+    status: String(d.txnStatus ?? "").toUpperCase(),
+    payuRef: d.payuTransactionRefNo ? String(d.payuTransactionRefNo) : undefined,
+    bankRef: d.bankTransactionRefNo ? String(d.bankTransactionRefNo) : d.utr ? String(d.utr) : undefined,
+    amountMinor,
+    msg: d.msg ? String(d.msg) : undefined,
+    raw: d,
   };
+}
+
+/** Every transfer PayU has for a date range (IST days, inclusive), for reconciliation. */
+export async function payuListTransfers(c: PayuPayoutCreds, from: Date, to: Date, maxPages = 20): Promise<PayuCall<(PayuTransferState & { merchantRefId: string })[]>> {
+  const out: (PayuTransferState & { merchantRefId: string })[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const body = new URLSearchParams({ from: istDate(from), to: istDate(to), page: String(page), pageSize: "1000" });
+    const r = await call(c, `${apiBase(c.env)}/payout/payment/listTransactions`, {
+      method: "POST", contentType: "application/x-www-form-urlencoded", body: body.toString(), timeoutMs: 30_000,
+    });
+    if (!r.ok) return r;
+    const { httpStatus, body: j } = r.data;
+    if (j?.status !== 0 && j?.status !== "0")
+      return { ok: false, definite: false, error: `list: ${String(j?.msg ?? "http_" + httpStatus).slice(0, 160)}` };
+    const rows: any[] = Array.isArray(j?.data?.transactionDetails) ? j.data.transactionDetails : [];
+    out.push(...rows.map(transferState));
+    const pages = Number(j?.data?.noOfPages ?? 1);
+    if (!rows.length || page >= pages) return { ok: true, data: out };
+  }
+  return { ok: false, definite: false, error: `list: more than ${maxPages} pages; narrow the date range` };
 }
 
 // ── Balance ──────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { pgError } from "@/lib/pg";
 import { sweepSlaBreaches, sweepAssignmentSla, sweepVerificationSla } from "@/lib/fifo";
 import { runReconciliation } from "@/lib/fifo-recon";
+import { runPayuPayoutRecon } from "@/lib/payu-payout-recon";
 import { scanAnomalies } from "@/lib/fifo-anomaly";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,9 @@ export async function POST(req: Request) {
     out.assignment_sla = await sweepAssignmentSla().catch((e) => ({ error: (e as Error).message }));
     out.verification_sla = await sweepVerificationSla().catch((e) => ({ error: (e as Error).message }));
     out.reconciliation = await runReconciliation({ source: "LEDGER", createdBy: "cron@daily" }).catch((e) => ({ error: (e as Error).message }));
+    // Yesterday's PayU payouts against PayU's own list (reports exceptions, changes nothing).
+    const yesterday = new Date(Date.now() - 86_400_000);
+    out.payu_payout_recon = await runPayuPayoutRecon({ from: yesterday, to: yesterday, createdBy: "cron@daily" }).catch((e) => ({ error: (e as Error).message }));
     out.anomaly = await scanAnomalies().catch((e) => ({ error: (e as Error).message }));
     return NextResponse.json({ ok: true, ...out });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

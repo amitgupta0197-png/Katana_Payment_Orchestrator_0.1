@@ -16,6 +16,7 @@
 import { rows } from "@/lib/pg";
 import { recordEvent, recordFraudAlert } from "@/lib/fifo";
 import { sendPayoutCallback } from "@/lib/payout-api";
+import { isMerchantSuspended } from "@/lib/payout-policy";
 import {
   getPayuPayoutCreds, payuTransfer, payuTransferStatus, type PayoutRail,
 } from "@/lib/payu-payout";
@@ -72,7 +73,8 @@ export async function dispatchPayuPayout(orderId: string): Promise<DispatchResul
   `, [o.beneficiary_id]).catch(() => []))[0];
   const creds = await getPayuPayoutCreds(o.merchant_id);
   // Checked before claiming: these cancel the payout without anything having been sent.
-  const blocker = !creds ? "PayU payout credentials are not set for this merchant"
+  const blocker = (await isMerchantSuspended(o.merchant_id)) ? "payouts are suspended for this merchant"
+    : !creds ? "PayU payout credentials are not set for this merchant"
     : !ben ? "beneficiary no longer exists"
     : ben.status !== "APPROVED" ? `beneficiary is ${ben.status}`
     : null;
@@ -133,10 +135,13 @@ export async function syncPayuPayout(o: PayuPayoutOrder, opts: { hint?: string; 
   if (!r.ok) return { outcome: "unknown", detail: r.error };
   const s = r.data;
   if (!s.found) return { outcome: "not_found" };
+  if (opts.hint === "MANUAL_CHECK" && o.status === "SUBMITTED" && s.status !== "SUCCESS" && s.status !== "FAILED" && s.status !== "REVERSED")
+    await note(o, `status checked: PayU says ${s.status}`, { payu_raw: s.raw });
 
   await rows("fifo", `UPDATE fifo_orders SET provider_status=$2, provider_ref=COALESCE($3, provider_ref) WHERE id=$1::uuid`,
     [o.id, s.status ?? null, s.payuRef ?? null]).catch(() => {});
-  const evidence = { payu_status: s.status, payu_ref: s.payuRef, bank_ref: s.bankRef, msg: s.msg, webhook_event: opts.hint };
+  // PayU's answer is kept verbatim on the order timeline (the audit trail for this payout).
+  const evidence = { payu_status: s.status, payu_ref: s.payuRef, bank_ref: s.bankRef, msg: s.msg, webhook_event: opts.hint, payu_raw: s.raw };
 
   if (o.status === "SUBMITTED") {
     if (s.status === "SUCCESS") {

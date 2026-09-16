@@ -14,6 +14,7 @@ import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settl
 import { getPayuPayoutCreds, payuPayoutBalance, type PayoutRail } from "@/lib/payu-payout";
 import { dispatchPayuPayout } from "@/lib/payu-payout-order";
 import { sendPayoutCallback } from "@/lib/payout-api";
+import { checkPayoutPolicy, getPayoutPolicy, isMerchantSuspended } from "@/lib/payout-policy";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -126,6 +127,9 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     if (prior) return prior;
   }
 
+  if (await isMerchantSuspended(input.merchantId))
+    return { error: "payouts are suspended for this merchant", status: 403 };
+
   // Beneficiary must exist, belong to the merchant, and be APPROVED (whitelisted).
   const b = (await rows<any>("fifo", `
     SELECT id::text, status, beneficiary_name, wallet_address, network, account_number, ifsc, upi_id FROM fifo_beneficiaries
@@ -146,12 +150,23 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
   if (input.livemode === true && payu && payu.env !== "PROD")
     return { error: "this merchant's PayU payout credentials are TEST; use a test key", status: 409 };
 
+  const policy = await getPayoutPolicy(input.merchantId);
+  const livemode = payu ? payu.env === "PROD" : true;
   let rail: PayoutRail | undefined;
   if (payu) {
     if (input.currency !== "INR") return { error: "PayU payouts are INR only", status: 400 };
-    const picked = pickRail(b, input.amountMinor, input.rail);
+    // Without an explicit rail, take the first of the merchant's allowed rails this beneficiary
+    // and amount can use; with no such rail, the default pick explains what's wrong.
+    const fitting = input.rail ? undefined
+      : policy.allowed_rails?.find((r) => !pickRail(b, input.amountMinor, r).error);
+    const picked = pickRail(b, input.amountMinor, input.rail ?? fitting);
     if (picked.error) return { error: picked.error, status: 409 };
     rail = picked.rail;
+  }
+  const policyError = await checkPayoutPolicy(policy, input.amountMinor, rail, livemode);
+  if (policyError) return { error: policyError, status: 409 };
+
+  if (payu) {
     // If PayU can't be asked, carry on: PayU itself holds a payout it can't fund.
     const bal = await payuPayoutBalance(payu);
     if (bal.ok && bal.data.balanceMinor < input.amountMinor)
@@ -189,7 +204,7 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency,
         rail === "UPI" ? "UPI" : mode, input.purpose ?? null, txnRef, input.beneficiaryId,
         usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null,
-        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, payu ? payu.env === "PROD" : true,
+        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, livemode,
         input.callbackUrl ?? null]))[0];
   } catch (err) {
     // Two requests with the same merchant_txn_id raced; the loser returns the winner's payout.
@@ -202,14 +217,17 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
   await recordEvent({ orderId: o.id, from: null, to: "CREATED", actor: input.actor, reason: `payout to ${b.beneficiary_name}`, payload: usdt ? { usdt } : undefined });
   await transition({ orderId: o.id, to: "VALIDATED", reason: "beneficiary whitelisted + balance ok", actor: input.actor });
 
-  // High-value payouts require maker-checker approval before they can queue.
-  if (input.amountMinor >= HIGH_VALUE_PAYOUT_MINOR) {
-    await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: `high-value payout — awaiting maker-checker (>= ${HIGH_VALUE_PAYOUT_MINOR})` });
+  // High-value payouts, and every payout of a MAKER_CHECKER merchant, wait for a second person.
+  const highValue = input.amountMinor >= HIGH_VALUE_PAYOUT_MINOR;
+  if (highValue || policy.approval_rule === "MAKER_CHECKER") {
+    await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: highValue
+      ? `high-value payout — awaiting maker-checker (>= ${HIGH_VALUE_PAYOUT_MINOR})`
+      : "merchant policy: every payout needs maker-checker approval" });
     await rows("fifo", `
       INSERT INTO fifo_approvals (action_type, resource_type, resource_id, order_ref, merchant_id, amount_minor, currency, detail, maker)
       VALUES ('PAYOUT_HIGH_VALUE','order',$1,$2,$3,$4,$5,$6,$7)
     `, [o.id, o.order_ref, input.merchantId, input.amountMinor.toString(), input.currency, `Payout ${input.amountMinor} to ${b.beneficiary_name}`, input.actor ?? null]).catch(() => {});
-    await recordFraudAlert({ orderId: o.id, orderRef: o.order_ref, merchantId: input.merchantId, type: "HIGH_VALUE", severity: "MEDIUM", detail: `High-value payout pending approval` });
+    if (highValue) await recordFraudAlert({ orderId: o.id, orderRef: o.order_ref, merchantId: input.merchantId, type: "HIGH_VALUE", severity: "MEDIUM", detail: `High-value payout pending approval` });
     return { order: { id: o.id, order_ref: o.order_ref, status: "HOLD", approval_required: true, usdt } };
   }
 
@@ -238,7 +256,13 @@ export async function decideApproval(id: string, approve: boolean, checker: stri
     [id, approve ? "APPROVED" : "REJECTED", checker, reason ?? null]);
 
   if (a.action_type === "PAYOUT_HIGH_VALUE" && a.resource_id) {
-    if (approve) {
+    const merchant = (await rows<{ merchant_id: string }>("fifo", `SELECT merchant_id FROM fifo_orders WHERE id=$1::uuid`, [a.resource_id]))[0];
+    if (approve && merchant && await isMerchantSuspended(merchant.merchant_id)) {
+      // Suspended while the payout waited: nothing new goes out.
+      await transition({ orderId: a.resource_id, to: "REJECTED", actor: checker, actorKind: "admin", reason: "merchant suspended while the payout awaited approval" });
+      await rows("fifo", `UPDATE fifo_orders SET failure_reason='payouts are suspended for this merchant' WHERE id=$1::uuid`, [a.resource_id]).catch(() => {});
+      await sendPayoutCallback(a.resource_id);
+    } else if (approve) {
       await transition({ orderId: a.resource_id, to: "QUEUED", actor: checker, actorKind: "admin", reason: "high-value payout approved" });
       await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [a.resource_id]).catch(() => {});
       const o = (await rows<{ provider: string | null }>("fifo", `SELECT provider FROM fifo_orders WHERE id=$1::uuid`, [a.resource_id]))[0];

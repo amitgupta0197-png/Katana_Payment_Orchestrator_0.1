@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, RefreshCw, Webhook } from "lucide-react";
+import { Copy, KeyRound, RefreshCw, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,11 +39,17 @@ export function PayuPayoutCard({ merchantId, merchantCode }: { merchantId: strin
     queryFn: async () => {
       const r = await fetch(`/api/merchants/${merchantId}/payu-payout`);
       if (r.status === 403) return { restricted: true as const };
-      return (await readJson(r)) as { status: PayoutStatus };
+      return (await readJson(r)) as { status: PayoutStatus; webhook_url: string };
     },
   });
   const restricted = (statusQ.data as { restricted?: boolean })?.restricted;
   const status = (statusQ.data as { status?: PayoutStatus })?.status;
+  const webhookUrl = (statusQ.data as { webhook_url?: string })?.webhook_url;
+  const copyEndpoint = async () => {
+    if (!webhookUrl) return;
+    try { await navigator.clipboard.writeText(webhookUrl); toast.success("Webhook endpoint copied", { description: webhookUrl }); }
+    catch { toast.error("Couldn't copy", { description: webhookUrl }); }
+  };
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -145,6 +151,9 @@ export function PayuPayoutCard({ merchantId, merchantCode }: { merchantId: strin
               </Button>
               <Button size="sm" variant="secondary" onClick={() => register.mutate()} disabled={register.isPending}>
                 <Webhook className="h-4 w-4" /> {status.webhook_registered_at ? "Re-register webhook" : "Register webhook"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={copyEndpoint} disabled={!webhookUrl} title={webhookUrl}>
+                <Copy className="h-4 w-4" /> Copy endpoint
               </Button>
             </div>
           </div>

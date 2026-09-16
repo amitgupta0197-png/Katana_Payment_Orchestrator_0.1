@@ -42,7 +42,7 @@ export default function PayoutsPage() {
   const { confirm, dialog } = useConfirm();
   const [merchantId, setMerchantId] = useState("");
   const [ben, setBen] = useState({ beneficiary_name: "", bank_name: "", account_number: "", ifsc: "", upi_id: "", wallet_address: "", network: "" });
-  const [payout, setPayout] = useState({ beneficiary_id: "", amount: "", rail: "" });
+  const [payout, setPayout] = useState({ beneficiary_id: "", amount: "", rail: "", txnid: "" });
 
   const beneficiaries = useQuery({
     queryKey: ["beneficiaries"],
@@ -77,16 +77,22 @@ export default function PayoutsPage() {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
   const createPayout = useMutation({
-    mutationFn: async () => jpost("/api/v1/payouts", { merchant_id: merchantId || undefined, beneficiary_id: payout.beneficiary_id, amount: payout.amount, rail: payout.rail || undefined }),
+    mutationFn: async () => jpost("/api/v1/payouts", { merchant_id: merchantId || undefined, beneficiary_id: payout.beneficiary_id, amount: payout.amount, rail: payout.rail || undefined, txnid: payout.txnid || undefined }),
     onSuccess: (d) => {
       const o = d.order ?? {};
       if (o.approval_required) toast.success("Payout created — awaiting maker-checker");
+      else if (o.idempotent) toast.info(`Reference already used — showing ${o.order_ref} (${o.status})`);
       else if (o.provider && o.status === "FAILED") toast.error(`${o.provider} refused ${o.order_ref}`, { description: o.error });
       else if (o.provider) toast.success(`Payout ${o.order_ref} sent to ${o.provider}`, { description: o.error ? `No answer yet (${o.error}) — the status check will settle it.` : undefined });
       else toast.success(`Payout queued ${o.order_ref}`);
-      setPayout({ beneficiary_id: "", amount: "", rail: "" }); invalidate();
+      setPayout({ beneficiary_id: "", amount: "", rail: "", txnid: "" }); invalidate();
     },
     onError: (e: Error) => toast.error("Payout failed", { description: e.message }),
+  });
+  const checkStatus = useMutation({
+    mutationFn: async (ref: string) => jpost(`/api/v1/payouts/${encodeURIComponent(ref)}/check`, {}),
+    onSuccess: (d, ref) => { toast.success(`${ref}: ${d.status}`, { description: `PayU check: ${d.outcome}${d.detail ? ` (${d.detail})` : ""}` }); invalidate(); },
+    onError: (e: Error) => toast.error("Status check failed", { description: e.message }),
   });
   const decideApproval = useMutation({
     mutationFn: async (v: { id: string; decision: "approve" | "reject" }) => jpost(`/api/v1/approvals/${v.id}/decide`, { decision: v.decision }),
@@ -160,6 +166,8 @@ export default function PayoutsPage() {
               {approved.map((b) => <option key={b.id} value={b.id}>{b.beneficiary_name} · {b.bank_name ?? b.network ?? "—"} ({b.merchant_id})</option>)}
             </select>
             <MoneyInput value={payout.amount} onChange={(v) => setPayout({ ...payout, amount: v })} required placeholder="Amount" />
+            <Input className="h-9" placeholder="Merchant reference (optional) — e.g. INV-1042; reusing it won't pay twice" value={payout.txnid}
+              onChange={(e) => setPayout({ ...payout, txnid: e.target.value.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) })} />
             <select className="h-9 w-full rounded-md border bg-transparent px-2 text-sm" value={payout.rail} onChange={(e) => setPayout({ ...payout, rail: e.target.value })}>
               <option value="">Rail: automatic (PayU merchants only)</option>
               <option value="IMPS">IMPS — instant, up to ₹5,00,000</option>
@@ -233,7 +241,12 @@ export default function PayoutsPage() {
                 {o.utr && <span className="text-xs">UTR {o.utr}</span>}
                 {o.tx_hash && <span className="text-xs font-mono">tx {String(o.tx_hash).slice(0, 12)}…</span>}
               </div>
-              <span className="text-xs text-[color:var(--color-text-muted)]">{formatDateTime(o.created_at)}</span>
+              <div className="flex items-center gap-2">
+                {o.provider && ["SUBMITTED", "COMPLETED"].includes(o.status) && (
+                  <Button size="sm" variant="secondary" onClick={() => checkStatus.mutate(o.order_ref)} disabled={checkStatus.isPending}>Check status</Button>
+                )}
+                <span className="text-xs text-[color:var(--color-text-muted)]">{formatDateTime(o.created_at)}</span>
+              </div>
             </div>
           ))}
         </CardContent>
