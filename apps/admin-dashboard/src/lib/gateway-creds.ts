@@ -14,6 +14,7 @@
 import { createHash, createHmac } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
 import { rows } from "@/lib/pg";
+import { gatewayDef, hint } from "@/lib/pg-catalog";
 
 export type SigningScheme = "PAYU_SHA512" | "HMAC_SHA256";
 export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
@@ -21,12 +22,14 @@ export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
 const VAULT_LABEL = "gateway_mid";
 
 export interface GatewayMid {
-  gateway: string;      // e.g. PAYU, AIRPAY
-  mid_code: string;     // the Main MID identifier at the gateway
-  key: string;          // gateway-provided merchant key
-  salt: string;         // gateway-provided salt
+  gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM
+  mid_code: string;     // the merchant's id at the gateway
+  key: string;          // the gateway's public credential (PayU key, Razorpay Key ID, Cashfree App ID, …)
+  salt: string;         // the gateway's secret (PayU salt, Razorpay Key Secret, CCAvenue Working Key, …)
   scheme: SigningScheme;
-  env?: "TEST" | "PROD";   // gateway environment (PayU test vs secure). Default TEST.
+  env?: "TEST" | "PROD";   // gateway environment. Default TEST.
+  /** Gateway-specific extras (Razorpay webhook secret, PhonePe client version, Paytm website, …). */
+  extra?: Record<string, string>;
 }
 
 // Persist (or rotate) a merchant's gateway MID credentials. Sealed at rest.
@@ -50,15 +53,21 @@ export async function getGatewayMid(merchantCode: string): Promise<GatewayMid | 
 // Non-secret status for the operator UI — deliberately omits key + salt.
 export type GatewayMidStatus =
   | { configured: false }
-  | { configured: true; gateway: string; mid_code: string; scheme: SigningScheme; env: "TEST" | "PROD"; key_hint: string };
+  | {
+      configured: true; gateway: string; gateway_name: string; connector: boolean;
+      mid_code: string; scheme: SigningScheme; env: "TEST" | "PROD"; env_label: string; key_hint: string;
+    };
 
 export async function getGatewayMidStatus(merchantCode: string): Promise<GatewayMidStatus> {
   const mid = await getGatewayMid(merchantCode);
   if (!mid) return { configured: false };
+  const def = gatewayDef(mid.gateway);
+  const env = mid.env ?? "TEST";
   return {
-    configured: true, gateway: mid.gateway, mid_code: mid.mid_code, scheme: mid.scheme,
-    env: mid.env ?? "TEST",
-    key_hint: mid.key.length > 4 ? `••••${mid.key.slice(-4)}` : "••••",
+    configured: true, gateway: mid.gateway, gateway_name: def?.name ?? mid.gateway,
+    connector: def?.payin.connector ?? false,
+    mid_code: mid.mid_code, scheme: mid.scheme, env, env_label: def?.payin.env[env] ?? env,
+    key_hint: hint(mid.key),
   };
 }
 

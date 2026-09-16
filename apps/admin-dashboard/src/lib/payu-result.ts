@@ -226,7 +226,7 @@ export async function applyPayuResult(
   if (!o) {
     const v = await findPayuPayin(txnid);
     if (!v) return { matched: false, txnid, status: "UNKNOWN", hashOk: false, dest: null, reason: "unknown_txn", applied: false };
-    const mid = await getGatewayMid(v.merchant_id);
+    const mid = await getGatewayMid(v.merchant_id).then((m) => (m?.gateway === "PAYU" ? m : null));
     const hashOk = !!mid && !!p.hash && payuResponseHash(mid, {
       status: p.status || "", email: p.email || "", firstname: p.firstname || "",
       productinfo: p.productinfo || "", amount: p.amount || "", txnid,
@@ -246,7 +246,8 @@ export async function applyPayuResult(
   // Verify PayU's response hash with THIS merchant's stored PayU salt. Without a stored
   // salt the hash can't be checked, so the payment is not treated as successful — we do
   // not take PayU's word for it unsigned.
-  const gwMid = await getGatewayMid(o.merchant_id);
+  // Only PayU credentials can check a PayU hash; a merchant on another gateway has none.
+  const gwMid = await getGatewayMid(o.merchant_id).then((m) => (m?.gateway === "PAYU" ? m : null));
   const expected = gwMid ? payuResponseHash(gwMid, {
     status: p.status || "", email: p.email || "", firstname: p.firstname || "",
     productinfo: p.productinfo || "", amount: p.amount || "", txnid,

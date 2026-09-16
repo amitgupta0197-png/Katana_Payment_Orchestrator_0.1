@@ -27,7 +27,7 @@
 // failed while PayU is actually paying it invites the merchant to pay the same person twice.
 
 import { randomBytes, timingSafeEqual } from "crypto";
-import { storeCredential, readCredential } from "@/lib/credential-vault";
+import { getPayoutGateway, storePayoutGateway } from "@/lib/payout-gateway";
 
 export type PayuEnv = "TEST" | "PROD";
 export type PayoutRail = "IMPS" | "NEFT" | "RTGS" | "UPI";
@@ -42,34 +42,26 @@ export interface PayuPayoutCreds {
   webhook_registered_at?: string;
 }
 
-const VAULT_LABEL = "payu_payout";
-
-export async function storePayuPayoutCreds(merchantCode: string, creds: PayuPayoutCreds): Promise<void> {
-  await storeCredential({
-    kind: "mid_secret", ownerType: "merchant", ownerId: merchantCode,
-    label: VAULT_LABEL, plaintext: JSON.stringify(creds),
-  });
-}
-
+/**
+ * The merchant's PayU payout credentials, or null when their payout gateway isn't PayU.
+ * Everything that sends a PayU payout starts here, so a merchant on another payout gateway
+ * can never be paid through PayU by mistake.
+ */
 export async function getPayuPayoutCreds(merchantCode: string): Promise<PayuPayoutCreds | null> {
-  const pt = await readCredential({ kind: "mid_secret", ownerType: "merchant", ownerId: merchantCode, label: VAULT_LABEL });
-  if (!pt) return null;
-  try { return JSON.parse(pt) as PayuPayoutCreds; } catch { return null; }
+  const g = await getPayoutGateway(merchantCode);
+  if (!g || g.gateway !== "PAYU") return null;
+  const { client_id, client_secret, payout_merchant_id } = g.fields;
+  if (!client_id || !client_secret || !payout_merchant_id) return null;
+  return { client_id, client_secret, payout_merchant_id, env: g.env, webhook_token: g.webhook_token, webhook_registered_at: g.webhook_registered_at };
 }
 
-// Non-secret view for the admin UI — no secret, no webhook token.
-export type PayuPayoutStatus =
-  | { configured: false }
-  | { configured: true; env: PayuEnv; payout_merchant_id: string; client_id_hint: string; webhook_registered_at: string | null };
-
-export async function getPayuPayoutStatus(merchantCode: string): Promise<PayuPayoutStatus> {
-  const c = await getPayuPayoutCreds(merchantCode);
-  if (!c) return { configured: false };
-  return {
-    configured: true, env: c.env, payout_merchant_id: c.payout_merchant_id,
-    client_id_hint: c.client_id.length > 4 ? `••••${c.client_id.slice(-4)}` : "••••",
-    webhook_registered_at: c.webhook_registered_at ?? null,
-  };
+/** Save PayU payout credentials back (after a webhook registration). */
+export async function storePayuPayoutCreds(merchantCode: string, c: PayuPayoutCreds): Promise<void> {
+  await storePayoutGateway(merchantCode, {
+    gateway: "PAYU", env: c.env,
+    fields: { client_id: c.client_id, client_secret: c.client_secret, payout_merchant_id: c.payout_merchant_id },
+    webhook_token: c.webhook_token, webhook_registered_at: c.webhook_registered_at,
+  });
 }
 
 function accountsBase(env: PayuEnv): string {

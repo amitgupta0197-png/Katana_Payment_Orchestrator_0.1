@@ -46,9 +46,9 @@ function loadPayoutCreds(merchant) {
   const row = psql("checkoutservice_db",
     `SELECT encode(iv,'hex'), encode(auth_tag,'hex'), encode(ciphertext,'hex')
        FROM credential_vault
-      WHERE kind='mid_secret' AND owner_type='merchant' AND owner_id=${lit(merchant)} AND label='payu_payout'
+      WHERE kind='mid_secret' AND owner_type='merchant' AND owner_id=${lit(merchant)} AND label='payout_gateway'
       ORDER BY key_version DESC LIMIT 1`);
-  if (!row) throw new Error(`no PayU payout credentials stored for merchant ${merchant}`);
+  if (!row) throw new Error(`no payout gateway stored for merchant ${merchant}`);
   const [iv, tag, ct] = row.split("\t");
   const key = Buffer.from(envVar("VAULT_MASTER_KEY"), "base64");
   const d = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "hex"));
@@ -74,7 +74,8 @@ async function send(event, ref, token) {
 const statusOf = (ref) => psql("fifoservice_db", `SELECT status FROM fifo_orders WHERE txn_ref=${lit(ref)}`);
 
 const creds = loadPayoutCreds(MERCHANT);
-step("1", `Merchant ${MERCHANT} → PayU payout account ${creds.payout_merchant_id}, env ${creds.env}`);
+if (creds.gateway !== "PAYU") { console.log(`merchant ${MERCHANT}'s payout gateway is ${creds.gateway}, not PAYU — nothing to test`); process.exit(1); }
+step("1", `Merchant ${MERCHANT} → PayU payout account ${creds.fields.payout_merchant_id}, env ${creds.env}`);
 creds.webhook_token ? ok("webhook token decrypted (not printed)")
                     : console.log("   ! webhook not registered from Katana yet — only the status-API check applies");
 
