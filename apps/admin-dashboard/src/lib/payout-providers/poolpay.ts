@@ -4,7 +4,7 @@
 // Contract (PoolPay Withdrawal API Integration Document v1.7):
 //   host      https://payout.pp-007.com (production; PoolPay whitelists the caller's IP)
 //   hash      base64 HMAC-SHA256(data, salt)
-//   initiate  POST /payout/api/gateway/v1/initiate
+//   initiate  POST /payout/api/gateway/v1/init
 //             { transfer_mode (IMPS | RTGS | UPI), beneficiary_name, beneficiary_mobile_number,
 //               beneficiary_account_number, beneficiary_ifsc | beneficiary_vpa, purpose, amount
 //               (rupees, ≤2 decimals), pay_id (number), order_id, remarks (RTGS only), hash }
@@ -163,7 +163,7 @@ export const poolpayConnector: PayoutConnector<PoolpayPayoutCreds> = {
 
     let json: string;
     try { json = jsonWithPayId(body, c.pay_id); } catch (e) { return { ok: false, definite: true, error: (e as Error).message }; }
-    const r = await post(c, "/payout/api/gateway/v1/initiate", json);
+    const r = await post(c, "/payout/api/gateway/v1/init", json);
     if (!r.ok) return r;
     const { httpStatus, body: j } = r.data;
     const status = String(j?.status ?? "");

@@ -7,6 +7,7 @@ import { cashfreePayin } from "@/lib/payin-providers/cashfree";
 import { phonepePayin } from "@/lib/payin-providers/phonepe";
 import { paytmPayin } from "@/lib/payin-providers/paytm";
 import { ccavenuePayin } from "@/lib/payin-providers/ccavenue";
+import { poolpayPayin } from "@/lib/payin-providers/poolpay";
 import type { PayinConnector } from "@/lib/payin-providers/types";
 
 const CONNECTORS: Record<string, PayinConnector> = {
@@ -15,6 +16,7 @@ const CONNECTORS: Record<string, PayinConnector> = {
   PHONEPE: phonepePayin,
   PAYTM: paytmPayin,
   CCAVENUE: ccavenuePayin,
+  POOLPAY: poolpayPayin,
 };
 
 export const PAYIN_GATEWAYS = Object.keys(CONNECTORS);

@@ -172,13 +172,14 @@ export const GATEWAYS: GatewayDef[] = [
   },
   {
     id: "POOLPAY", name: "PoolPay", logo: null, color: "#0B5FFF",
-    // Pay-ins wait for PoolPay's pay-in API document; saved credentials aren't used until then.
     payin: {
-      connector: false,
-      env: { TEST: "UAT", PROD: "Production (gateway.pp-007.com)" },
+      connector: true,
+      env: { TEST: "UAT (enter PoolPay's UAT URL below)", PROD: "Production (gateway.pp-007.com)" },
+      note: "Hosted checkout and UPI intent. PoolPay must whitelist Katana's server IP (72.61.227.233). PoolPay reports results to the return URL Katana sends with each order; optionally also add Katana's payment events URL in the PoolPay portal.",
       fields: [
-        { name: "key", label: "Pay ID", pattern: "^\\d{1,19}$" },
+        { name: "key", label: "Pay ID", placeholder: "16-digit Pay ID from PoolPay", pattern: "^\\d{1,19}$" },
         { name: "salt", label: "Secret key", secret: true },
+        { name: "api_base", label: "API base URL (required for UAT)", placeholder: "https://gateway.pp-007.com", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true },
       ],
     },
     payout: {

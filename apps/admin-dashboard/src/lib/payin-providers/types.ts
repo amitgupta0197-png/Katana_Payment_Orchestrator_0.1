@@ -61,8 +61,8 @@ export interface PayinConnector {
   checkout(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<CheckoutStart>>;
   /** Get a UPI intent server-to-server (no gateway page). Gateways without one omit it. */
   upiIntent?(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<{ intentQuery: string; paymentId: string | null }>>;
-  /** What the gateway says happened to the order Katana created as `txnid`. */
-  status(mid: GatewayMid, txnid: string): Promise<PayinCall<PayinState>>;
+  /** What the gateway says happened to the order Katana created as `txnid` (for `amountMinor`). */
+  status(mid: GatewayMid, txnid: string, amountMinor?: bigint): Promise<PayinCall<PayinState>>;
 }
 
 export function publicBase(): string {

@@ -156,9 +156,16 @@ export async function checkGatewayPayin(input: {
   if (!gw || gw.mid.gateway !== input.provider) return { applied: false, status: "UNKNOWN", reason: "no_gateway_credentials" };
   if (input.throttleSec != null && !(await claimGatewayPayinCheck(input.provider, input.txnid, input.throttleSec)))
     return { applied: false, status: "UNKNOWN", reason: "checked_recently" };
-  const s = await gw.connector.status(gw.mid, input.txnid);
+  const s = await gw.connector.status(gw.mid, input.txnid, await orderAmountMinor(input.provider, input.txnid));
   if (!s.ok) return { applied: false, status: "UNKNOWN", reason: "lookup_failed", lookupError: s.error };
   return applyGatewayPayinState(input.provider, input.txnid, s.data, input.source);
+}
+
+async function orderAmountMinor(provider: string, txnid: string): Promise<bigint | undefined> {
+  const c = (await rows<{ a: string }>("checkout", `SELECT amount_minor::text AS a FROM checkout_orders WHERE txn_id = $1 LIMIT 1`, [txnid]).catch(() => []))[0];
+  if (c) return BigInt(c.a);
+  const v = await findGatewayPayin(provider, txnid);
+  return v ? BigInt(Math.round(Number(v.amount) * 100)) : undefined;
 }
 
 /** Resolve the merchant and provider of an order Katana created, by its txnid. */
