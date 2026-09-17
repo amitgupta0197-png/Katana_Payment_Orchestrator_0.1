@@ -3,7 +3,7 @@
 // the API, and again before a held payout is sent.
 
 import { rows } from "@/lib/pg";
-import type { PayoutRail } from "@/lib/payu-payout";
+import type { PayoutRail } from "@/lib/payout-providers/types";
 
 export type ApprovalRule = "AUTO" | "MAKER_CHECKER";
 export const PAYOUT_RAILS: PayoutRail[] = ["IMPS", "NEFT", "RTGS", "UPI"];

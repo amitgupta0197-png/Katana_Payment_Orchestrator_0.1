@@ -21,7 +21,7 @@ export async function runReconciliation(input: {
 }): Promise<{ run_id: string; total: number; matched: number; mismatched: number; summary: Record<string, number> }> {
   const source: ReconSource = input.source ?? "LEDGER";
 
-  // Completed/settled orders are the reconciliation universe. Provider-paid payouts (PayU)
+  // Completed/settled orders are the reconciliation universe. Gateway-paid payouts (PayU etc.)
   // never touch Katana's ledger, so there is nothing here to match them against; the
   // provider's status API is their reconciliation (cron/payu-payout-verify).
   const orders = await rows<any>("fifo", `

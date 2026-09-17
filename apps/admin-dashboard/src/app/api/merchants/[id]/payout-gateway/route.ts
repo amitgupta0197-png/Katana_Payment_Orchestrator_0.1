@@ -1,9 +1,10 @@
 // The merchant's payout gateway (money out) and its credentials.
 //   GET  /api/merchants/[id]/payout-gateway             non-secret status + webhook URL
-//   GET  /api/merchants/[id]/payout-gateway?balance=1   ...plus the live balance (gateways with a connector)
+//   GET  /api/merchants/[id]/payout-gateway?balance=1   ...plus the live balance (gateways with a balance API)
 //   POST /api/merchants/[id]/payout-gateway             connect / rotate: { gateway, env, fields }
 //   POST /api/merchants/[id]/payout-gateway?action=register-webhook
-//        point the gateway's payout webhook at Katana, with a fresh shared token (PayU)
+//        point the gateway's payout webhook at Katana by API (PayU; the others are set in their
+//        own dashboards, or per transfer for Paytm)
 //
 // SUPER_ADMIN only: these are gateway secrets Katana holds for the merchant. One payout gateway
 // per merchant; saving another replaces it. Changes are audited, never the secrets.
@@ -14,9 +15,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { wormAppend } from "@/lib/worm";
 import { GATEWAYS, gatewayDef, validateCredFields, type GatewayId } from "@/lib/pg-catalog";
 import { getPayoutGateway, getPayoutGatewayStatus, storePayoutGateway } from "@/lib/payout-gateway";
-import {
-  getPayuPayoutCreds, payoutWebhookUrl, payuPayoutBalance, registerPayuPayoutWebhook, storePayuPayoutCreds,
-} from "@/lib/payu-payout";
+import { activePayoutProvider, payoutConnector, payoutWebhookUrlFor, prodEnabled } from "@/lib/payout-providers";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +32,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const code = await merchantCode(id);
     if (!code) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
     const status = await getPayoutGatewayStatus(code);
-    const webhook_url = payoutWebhookUrl();   // for "Copy endpoint"; not a secret
+    // For "Copy endpoint"; not a secret.
+    const webhook_url = payoutWebhookUrlFor(status.configured ? status.gateway : "PAYU");
     if (new URL(req.url).searchParams.get("balance") !== "1") return NextResponse.json({ status, webhook_url });
 
-    // Only a gateway with a payout connector can be asked; today that is PayU.
-    const payu = await getPayuPayoutCreds(code);
-    if (!payu) return NextResponse.json({ status, webhook_url, balance: { ok: false, error: "balance check isn't available for this gateway yet" } });
-    const bal = await payuPayoutBalance(payu);
+    const active = await activePayoutProvider(code);
+    if (!active?.connector.balance)
+      return NextResponse.json({ status, webhook_url, balance: { ok: false, error: `${active?.connector.name ?? "This gateway"} has no balance API; check the balance in its dashboard` } });
+    const bal = await active.connector.balance(active.creds);
     return NextResponse.json({
       status, webhook_url,
       balance: bal.ok
@@ -69,13 +69,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!code) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
 
     if (new URL(req.url).searchParams.get("action") === "register-webhook") {
-      const creds = await getPayuPayoutCreds(code);
-      if (!creds) return NextResponse.json({ error: "webhook registration is only available for PayU payouts today" }, { status: 409 });
-      const r = await registerPayuPayoutWebhook(creds);
-      if (!r.ok) return NextResponse.json({ error: `PayU: ${r.error}` }, { status: 502 });
-      // Stored only after PayU took it: until then the old token is still the one PayU sends.
-      await storePayuPayoutCreds(code, { ...creds, webhook_token: r.data.token, webhook_registered_at: new Date().toISOString() });
-      await audit("merchant.payout_gateway.webhook_registered", null, { merchant_code: code, gateway: "PAYU", url: r.data.url, env: creds.env });
+      const active = await activePayoutProvider(code);
+      if (!active?.connector.registerWebhook)
+        return NextResponse.json({ error: `${active?.connector.name ?? "This gateway"}'s webhook is set in its own dashboard, not by API` }, { status: 409 });
+      const r = await active.connector.registerWebhook(code, active.creds);
+      if (!r.ok) return NextResponse.json({ error: `${active.connector.name}: ${r.error}` }, { status: 502 });
+      await audit("merchant.payout_gateway.webhook_registered", null, { merchant_code: code, gateway: active.connector.id, url: r.data.url, env: active.creds.env });
       return NextResponse.json({ status: await getPayoutGatewayStatus(code), webhook_url: r.data.url });
     }
 
@@ -88,13 +87,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!v.values) return NextResponse.json({ error: v.error }, { status: 400 });
     if (body.gateway === "RAZORPAY" && v.values.key_id.startsWith("rzp_live_") !== (body.env === "PROD"))
       return NextResponse.json({ error: "the Key ID's mode (rzp_test_ / rzp_live_) doesn't match the environment" }, { status: 400 });
+    // Live keys for a gateway whose connector hasn't been proven end to end yet would sit
+    // unusable (every payout refused); say so now rather than at the first payout.
+    if (body.env === "PROD" && payoutConnector(body.gateway) && !prodEnabled(body.gateway as GatewayId))
+      return NextResponse.json({ error: `live ${gatewayDef(body.gateway)!.name} payouts aren't switched on yet — connect its sandbox (TEST) account first` }, { status: 409 });
 
     const prev = await getPayoutGateway(code);
     const before = await getPayoutGatewayStatus(code);
     // A registered webhook belongs to that gateway account, so it survives a secret rotation
     // but not a change of gateway, environment or payout account.
     const sameAccount = prev && prev.gateway === body.gateway && prev.env === body.env
-      && (body.gateway !== "PAYU" || prev.fields.payout_merchant_id === v.values.payout_merchant_id);
+      && (body.gateway !== "PAYU" || prev.fields.payout_merchant_id === v.values.payout_merchant_id)
+      && (body.gateway !== "RAZORPAY" || prev.fields.account_number === v.values.account_number);
     await storePayoutGateway(code, {
       gateway: body.gateway as GatewayId,
       env: body.env, fields: v.values,

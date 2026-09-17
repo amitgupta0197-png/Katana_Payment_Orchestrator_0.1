@@ -33,7 +33,7 @@ export default function FifoReconciliationPage() {
   });
 
   const run = useMutation({
-    mutationFn: async (source?: "PAYU_PAYOUT") => {
+    mutationFn: async (source?: "PROVIDER_PAYOUT") => {
       const r = await fetch("/api/v1/reconciliation/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(source ? { source } : {}) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
@@ -68,7 +68,7 @@ export default function FifoReconciliationPage() {
       {inputDialog}
       <PageHeader title="FIFO Reconciliation" description="Match completed orders against the ledger; classify mismatches (BRD §21, AC-007)." icon={GitCompareArrows}
         actions={<div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => run.mutate("PAYU_PAYOUT")} disabled={run.isPending} title="Yesterday's PayU payouts against PayU's transfer list"><Play className="h-4 w-4" /> Reconcile PayU payouts</Button>
+          <Button size="sm" variant="secondary" onClick={() => run.mutate("PROVIDER_PAYOUT")} disabled={run.isPending} title="Yesterday's gateway payouts (PayU, RazorpayX, Cashfree, Paytm) against each gateway's records"><Play className="h-4 w-4" /> Reconcile gateway payouts</Button>
           <Button size="sm" onClick={() => run.mutate(undefined)} disabled={run.isPending}><Play className="h-4 w-4" /> {run.isPending ? "Running…" : "Run reconciliation"}</Button>
         </div>} />
 

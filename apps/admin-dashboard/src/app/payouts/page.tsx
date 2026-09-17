@@ -91,7 +91,7 @@ export default function PayoutsPage() {
   });
   const checkStatus = useMutation({
     mutationFn: async (ref: string) => jpost(`/api/v1/payouts/${encodeURIComponent(ref)}/check`, {}),
-    onSuccess: (d, ref) => { toast.success(`${ref}: ${d.status}`, { description: `PayU check: ${d.outcome}${d.detail ? ` (${d.detail})` : ""}` }); invalidate(); },
+    onSuccess: (d, ref) => { toast.success(`${ref}: ${d.status}`, { description: `Gateway check: ${d.outcome}${d.detail ? ` (${d.detail})` : ""}` }); invalidate(); },
     onError: (e: Error) => toast.error("Status check failed", { description: e.message }),
   });
   const decideApproval = useMutation({
@@ -159,7 +159,7 @@ export default function PayoutsPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4" /> Raise payout</CardTitle><CardDescription>Whitelisted beneficiary only. High-value goes to maker-checker. Merchants with PayU payout credentials are paid through PayU.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4" /> Raise payout</CardTitle><CardDescription>Whitelisted beneficiary only. High-value goes to maker-checker. Merchants with a connected payout gateway (PayU, RazorpayX, Cashfree, Paytm) are paid through it.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             <select className="h-9 w-full rounded-md border bg-transparent px-2 text-sm" value={payout.beneficiary_id} onChange={(e) => setPayout({ ...payout, beneficiary_id: e.target.value })}>
               <option value="">Select whitelisted beneficiary…</option>
@@ -169,7 +169,7 @@ export default function PayoutsPage() {
             <Input className="h-9" placeholder="Merchant reference (optional) — e.g. INV-1042; reusing it won't pay twice" value={payout.txnid}
               onChange={(e) => setPayout({ ...payout, txnid: e.target.value.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) })} />
             <select className="h-9 w-full rounded-md border bg-transparent px-2 text-sm" value={payout.rail} onChange={(e) => setPayout({ ...payout, rail: e.target.value })}>
-              <option value="">Rail: automatic (PayU merchants only)</option>
+              <option value="">Rail: automatic (gateway payouts only)</option>
               <option value="IMPS">IMPS — instant, up to ₹5,00,000</option>
               <option value="NEFT">NEFT</option>
               <option value="RTGS">RTGS — ₹2,00,000 and above</option>
@@ -235,7 +235,7 @@ export default function PayoutsPage() {
                 <span className="text-xs text-[color:var(--color-text-muted)]">{o.merchant_id} · {o.settlement_mode}</span>
                 <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
                 {o.provider && <Badge variant="brand">{o.provider} · {o.payout_rail}{o.livemode === false ? " · test" : ""}</Badge>}
-                {o.provider_status && o.provider_status !== o.status && <span className="text-xs text-[color:var(--color-text-muted)]">PayU {o.provider_status}</span>}
+                {o.provider_status && o.provider_status !== o.status && <span className="text-xs text-[color:var(--color-text-muted)]">{o.provider} {o.provider_status}</span>}
                 {o.failure_reason && <span className="text-xs text-[color:var(--color-danger)]">{o.failure_reason}</span>}
                 {o.settlement_mode === "USDT" && o.usdt_amount && <Badge variant="info">{o.usdt_amount} USDT @ {o.usdt_rate} {o.usdt_network}</Badge>}
                 {o.utr && <span className="text-xs">UTR {o.utr}</span>}

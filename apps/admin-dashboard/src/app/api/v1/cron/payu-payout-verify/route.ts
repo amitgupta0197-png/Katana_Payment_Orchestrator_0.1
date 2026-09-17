@@ -1,10 +1,12 @@
-// GET/POST /api/v1/cron/payu-payout-verify — settle PayU payouts we haven't heard back about.
+// GET/POST /api/v1/cron/payu-payout-verify — settle gateway payouts we haven't heard back about.
+// (The path predates the other gateways; it now covers every payout gateway with a connector:
+// PayU, RazorpayX, Cashfree and Paytm.)
 //
-// PayU reports a payout's result by webhook, and webhooks get lost. This sweep asks PayU's
-// status API about every payout still SUBMITTED and applies the answer, through the same
-// syncPayuPayout the webhook uses, so the two can overlap safely.
+// Gateways report a payout's result by webhook, and webhooks get lost. This sweep asks each
+// gateway's status API about every payout still SUBMITTED and applies the answer, through the
+// same syncProviderPayout the webhooks use, so the two can overlap safely.
 //
-// A payout PayU still has no record of 30 minutes after sending is flagged for ops, never
+// A payout the gateway still has no record of 30 minutes after sending is flagged for ops, never
 // failed automatically: if the lookup is wrong and the money did go, failing it would invite
 // the merchant to pay the same person again.
 //
@@ -14,7 +16,9 @@
 //   * * * * * curl -s -H "x-cron-key: $FIFO_CRON_KEY" http://127.0.0.1:3100/api/v1/cron/payu-payout-verify
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
-import { flagPayoutMissingAtPayu, syncPayuPayout, type PayuPayoutOrder } from "@/lib/payu-payout-order";
+import {
+  flagPayoutMissingAtProvider, PROVIDER_ORDER_COLS, syncProviderPayout, type ProviderPayoutOrder,
+} from "@/lib/provider-payout-order";
 import { dispatchPending } from "@/lib/webhook-outbox";
 
 export const dynamic = "force-dynamic";
@@ -25,11 +29,10 @@ const MISSING_AFTER_MIN = 30;
 async function run() {
   // Ask every 15s for the first half hour (IMPS/UPI usually settle in seconds), then every
   // 10 minutes (NEFT batches, bank retries) for up to a week.
-  const due = await rows<PayuPayoutOrder & { submitted_at: Date }>("fifo", `
-    SELECT id::text, order_ref, txn_ref, merchant_id, amount_minor::text, currency, status, provider,
-           payout_rail, purpose, beneficiary_id::text, callback_url, utr, created_at, submitted_at
+  const due = await rows<ProviderPayoutOrder & { submitted_at: Date }>("fifo", `
+    SELECT ${PROVIDER_ORDER_COLS}, submitted_at
       FROM fifo_orders
-     WHERE provider = 'PAYU' AND direction = 'PAYOUT' AND status = 'SUBMITTED'
+     WHERE provider IS NOT NULL AND direction = 'PAYOUT' AND status = 'SUBMITTED'
        AND submitted_at < now() - interval '5 seconds'
        AND submitted_at >= now() - interval '7 days'
        AND (provider_checked_at IS NULL
@@ -44,14 +47,14 @@ async function run() {
   const reasons: Record<string, number> = {};
   let flagged = 0;
   for (const o of due) {
-    const r = await syncPayuPayout(o, { minGapSeconds: 5 });
+    const r = await syncProviderPayout(o, { minGapSeconds: 5 });
     counts[r.outcome] = (counts[r.outcome] ?? 0) + 1;
     if (r.outcome === "unknown" && r.detail) {
-      const why = r.detail.slice(0, 80);
+      const why = `${o.provider}: ${r.detail}`.slice(0, 80);
       reasons[why] = (reasons[why] ?? 0) + 1;
     }
     if (r.outcome === "not_found" && new Date(o.submitted_at).getTime() < Date.now() - MISSING_AFTER_MIN * 60_000) {
-      await flagPayoutMissingAtPayu(o);
+      await flagPayoutMissingAtProvider(o);
       flagged++;
     }
   }

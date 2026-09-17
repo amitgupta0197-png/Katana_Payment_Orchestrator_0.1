@@ -2,8 +2,9 @@
 // FR-007). Payout orders reuse fifo_orders (direction='PAYOUT'); they validate an
 // APPROVED (whitelisted) beneficiary, check the merchant's payable balance, and
 // route high-value requests through a maker-checker approval before queuing.
-// A merchant with PayU Payouts credentials is paid out through PayU (lib/payu-payout-order)
-// instead of the operator queue, limited by their PayU balance rather than the ledger.
+// A merchant whose payout gateway has a connector (PayU, RazorpayX, Cashfree, Paytm) is paid
+// out through it (lib/provider-payout-order) instead of the operator queue, limited by their
+// gateway balance rather than the ledger.
 
 import { rows } from "@/lib/pg";
 import { randomBytes } from "crypto";
@@ -11,8 +12,8 @@ import { postJournal } from "@/lib/ledger";
 import { transition, recordEvent, recordFraudAlert } from "@/lib/fifo";
 import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORKS } from "@/lib/fifo-usdt";
 import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settlement";
-import { getPayuPayoutCreds, payuPayoutBalance, type PayoutRail } from "@/lib/payu-payout";
-import { dispatchPayuPayout } from "@/lib/payu-payout-order";
+import { activePayoutProvider, prodEnabled, type PayoutRail } from "@/lib/payout-providers";
+import { dispatchProviderPayout } from "@/lib/provider-payout-order";
 import { sendPayoutCallback } from "@/lib/payout-api";
 import { checkPayoutPolicy, getPayoutPolicy, isMerchantSuspended } from "@/lib/payout-policy";
 
@@ -83,13 +84,13 @@ export interface CreatePayoutInput {
   rail?: PayoutRail;
   /** Caller's idempotency key: a repeat returns the first payout instead of paying twice. */
   merchantTxnId?: string;
-  /** Set by the merchant API from the key's mode. A test payout must go to PayU UAT. */
+  /** Set by the merchant API from the key's mode. A test payout must go to the gateway's sandbox. */
   livemode?: boolean;
   /** Where the signed status callback goes; else the merchant's webhook URL. */
   callbackUrl?: string;
 }
 
-// RBI rail limits (paise). PayU applies its own on top.
+// RBI rail limits (paise). Gateways apply their own on top.
 const RTGS_MIN_MINOR = 20_000_000n;   // ₹2,00,000
 const IMPS_MAX_MINOR = 50_000_000n;   // ₹5,00,000
 
@@ -107,7 +108,7 @@ async function existingPayout(input: CreatePayoutInput): Promise<{ order?: any; 
   return { order: { ...order, idempotent: true } };
 }
 
-// Which rail a PayU payout goes on, or why it can't go.
+// Which rail a provider payout goes on, or why it can't go.
 function pickRail(b: { account_number: string | null; ifsc: string | null; upi_id: string | null }, amountMinor: bigint, asked?: PayoutRail): { rail?: PayoutRail; error?: string } {
   const hasBank = !!(b.account_number && b.ifsc);
   const rail = asked ?? (hasBank ? "IMPS" : b.upi_id ? "UPI" : undefined);
@@ -140,39 +141,44 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
 
   const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();
 
-  // A merchant with PayU Payouts credentials pays from their own PayU account: PayU's
-  // balance is the limit, not Katana's payable ledger (which PayU pay-ins don't credit).
-  const payu = mode === "USDT" ? null : await getPayuPayoutCreds(input.merchantId);
-  // A test key must never move real money: it needs PayU UAT credentials, and a live key
-  // must not land in PayU's sandbox.
-  if (input.livemode === false && payu?.env !== "TEST")
-    return { error: "test payouts need PayU UAT (TEST) payout credentials for this merchant", status: 409 };
-  if (input.livemode === true && payu && payu.env !== "PROD")
-    return { error: "this merchant's PayU payout credentials are TEST; use a test key", status: 409 };
+  // A merchant with a connected payout gateway pays from their own gateway account: its
+  // balance is the limit, not Katana's payable ledger (which gateway pay-ins don't credit).
+  const provider = mode === "USDT" ? null : await activePayoutProvider(input.merchantId);
+  const pname = provider?.connector.name;
+  // A test key must never move real money: it needs the gateway's sandbox credentials, and a
+  // live key must not land in a sandbox.
+  if (input.livemode === false && provider?.creds.env !== "TEST")
+    return { error: "test payouts need sandbox (TEST) payout gateway credentials for this merchant", status: 409 };
+  if (input.livemode === true && provider && provider.creds.env !== "PROD")
+    return { error: `this merchant's ${pname} payout credentials are TEST; use a test key`, status: 409 };
+  if (provider && provider.creds.env === "PROD" && !prodEnabled(provider.connector.id))
+    return { error: `live ${pname} payouts are not switched on yet`, status: 409 };
 
   const policy = await getPayoutPolicy(input.merchantId);
-  const livemode = payu ? payu.env === "PROD" : true;
+  const livemode = provider ? provider.creds.env === "PROD" : true;
   let rail: PayoutRail | undefined;
-  if (payu) {
-    if (input.currency !== "INR") return { error: "PayU payouts are INR only", status: 400 };
+  if (provider) {
+    if (input.currency !== "INR") return { error: `${pname} payouts are INR only`, status: 400 };
     // Without an explicit rail, take the first of the merchant's allowed rails this beneficiary
     // and amount can use; with no such rail, the default pick explains what's wrong.
     const fitting = input.rail ? undefined
       : policy.allowed_rails?.find((r) => !pickRail(b, input.amountMinor, r).error);
     const picked = pickRail(b, input.amountMinor, input.rail ?? fitting);
     if (picked.error) return { error: picked.error, status: 409 };
+    if (!provider.connector.rails.includes(picked.rail!)) return { error: `${pname} can't pay on ${picked.rail}`, status: 409 };
     rail = picked.rail;
   }
   const policyError = await checkPayoutPolicy(policy, input.amountMinor, rail, livemode);
   if (policyError) return { error: policyError, status: 409 };
 
-  if (payu) {
-    // If PayU can't be asked, carry on: PayU itself holds a payout it can't fund.
-    const bal = await payuPayoutBalance(payu);
-    if (bal.ok && bal.data.balanceMinor < input.amountMinor)
-      return { error: `insufficient PayU payout balance (have ${bal.data.balanceMinor}, need ${input.amountMinor})`, status: 409 };
+  if (provider) {
+    // If the gateway can't be asked (or has no balance API), carry on: the gateway itself
+    // holds a payout it can't fund.
+    const bal = provider.connector.balance ? await provider.connector.balance(provider.creds) : null;
+    if (bal?.ok && bal.data.balanceMinor < input.amountMinor)
+      return { error: `insufficient ${pname} payout balance (have ${bal.data.balanceMinor}, need ${input.amountMinor})`, status: 409 };
   } else {
-    if (input.rail) return { error: "rail applies only to PayU payouts; this merchant has no PayU payout credentials", status: 400 };
+    if (input.rail) return { error: "rail applies only to gateway payouts; this merchant has no connected payout gateway", status: 400 };
     // Balance + reserve check (BRD §18).
     const payable = await merchantPayableMinor(input.merchantId);
     if (input.amountMinor > payable)
@@ -204,7 +210,7 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     `, [orderRef, input.merchantId, input.amountMinor.toString(), input.currency,
         rail === "UPI" ? "UPI" : mode, input.purpose ?? null, txnRef, input.beneficiaryId,
         usdt?.network ?? null, usdt?.rate ?? null, usdt?.source ?? null, usdt?.lockedAt ?? null, usdt?.amount ?? null,
-        payu ? "PAYU" : null, rail ?? null, input.merchantTxnId ?? null, livemode,
+        provider?.connector.id ?? null, rail ?? null, input.merchantTxnId ?? null, livemode,
         input.callbackUrl ?? null]))[0];
   } catch (err) {
     // Two requests with the same merchant_txn_id raced; the loser returns the winner's payout.
@@ -231,12 +237,12 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
     return { order: { id: o.id, order_ref: o.order_ref, status: "HOLD", approval_required: true, usdt } };
   }
 
-  // PayU payouts go straight to PayU; the rest wait for an operator.
-  if (payu) {
-    await transition({ orderId: o.id, to: "QUEUED", reason: "released to PayU", actor: input.actor });
+  // Gateway payouts go straight to the gateway; the rest wait for an operator.
+  if (provider) {
+    await transition({ orderId: o.id, to: "QUEUED", reason: `released to ${pname}`, actor: input.actor });
     await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [o.id]).catch(() => {});
-    const d = await dispatchPayuPayout(o.id);
-    return { order: { id: o.id, order_ref: o.order_ref, status: d.status, provider: "PAYU", rail, approval_required: false, error: d.error } };
+    const d = await dispatchProviderPayout(o.id);
+    return { order: { id: o.id, order_ref: o.order_ref, status: d.status, provider: provider.connector.id, rail, approval_required: false, error: d.error } };
   }
   await transition({ orderId: o.id, to: "QUEUED", reason: "added to FIFO payout queue", actor: input.actor });
   await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [o.id]).catch(() => {});
@@ -266,7 +272,7 @@ export async function decideApproval(id: string, approve: boolean, checker: stri
       await transition({ orderId: a.resource_id, to: "QUEUED", actor: checker, actorKind: "admin", reason: "high-value payout approved" });
       await rows("fifo", `UPDATE fifo_orders SET queued_at=now() WHERE id=$1::uuid`, [a.resource_id]).catch(() => {});
       const o = (await rows<{ provider: string | null }>("fifo", `SELECT provider FROM fifo_orders WHERE id=$1::uuid`, [a.resource_id]))[0];
-      if (o?.provider === "PAYU") await dispatchPayuPayout(a.resource_id);
+      if (o?.provider) await dispatchProviderPayout(a.resource_id);
       else await rows("fifo", `INSERT INTO fifo_queue (order_id, priority, status) VALUES ($1::uuid, 1, 'QUEUED') ON CONFLICT (order_id) DO NOTHING`, [a.resource_id]);
     } else {
       await transition({ orderId: a.resource_id, to: "REJECTED", actor: checker, actorKind: "admin", reason: reason ?? "payout rejected by checker" });

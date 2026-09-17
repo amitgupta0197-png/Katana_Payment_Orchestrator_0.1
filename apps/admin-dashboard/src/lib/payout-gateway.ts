@@ -1,8 +1,8 @@
 // The merchant's payout gateway: which gateway pays their payouts, and its sealed credentials.
 //
-// One per merchant (vault label "payout_gateway"). Fields follow lib/pg-catalog. Only gateways
-// with a payout connector actually send money (PayU today, via lib/payu-payout); a merchant
-// whose payout gateway has no connector yet keeps the operator queue.
+// One per merchant (vault label "payout_gateway"). Fields follow lib/pg-catalog. Gateways with a
+// payout connector (lib/payout-providers) send the money; a merchant whose payout gateway has no
+// connector keeps the operator queue.
 
 import { storeCredential, readCredential } from "@/lib/credential-vault";
 import { gatewayDef, hint, type GatewayEnv, type GatewayId } from "@/lib/pg-catalog";
@@ -36,6 +36,7 @@ export type PayoutGatewayStatus =
   | { configured: false }
   | {
       configured: true; gateway: GatewayId; gateway_name: string; connector: boolean;
+      webhook: "api" | "dashboard" | "per_transfer" | null; balance: boolean;
       env: GatewayEnv; env_label: string;
       /** Non-secret fields as saved, secret ones as a hint. */
       summary: { label: string; value: string }[];
@@ -49,6 +50,7 @@ export async function getPayoutGatewayStatus(merchantCode: string): Promise<Payo
   return {
     configured: true, gateway: c.gateway, gateway_name: gatewayDef(c.gateway)?.name ?? c.gateway,
     connector: svc?.connector ?? false,
+    webhook: svc?.webhook ?? null, balance: svc?.balance ?? false,
     env: c.env, env_label: svc?.env[c.env] ?? c.env,
     summary: (svc?.fields ?? []).filter((f) => c.fields[f.name]).map((f) => ({
       label: f.label, value: f.secret ? "sealed" : f.show ? c.fields[f.name] : hint(c.fields[f.name]),

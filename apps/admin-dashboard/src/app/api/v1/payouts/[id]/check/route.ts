@@ -1,11 +1,11 @@
 // POST /api/v1/payouts/[id]/check — "Check status" on one provider payout (dashboard).
-// Asks PayU now and applies only a valid move (lib/payu-payout-order); PayU's raw answer is
-// kept on the order timeline. Operator-paid payouts have no provider to ask.
+// Asks the payout's gateway now and applies only a valid move (lib/provider-payout-order); the
+// gateway's raw answer is kept on the order timeline. Operator-paid payouts have no provider to ask.
 import { NextResponse } from "next/server";
 import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { rows } from "@/lib/pg";
-import { loadPayuPayout, syncPayuPayout } from "@/lib/payu-payout-order";
+import { loadProviderPayout, syncProviderPayout } from "@/lib/provider-payout-order";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +16,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     const ref = (await rows<{ id: string }>("fifo",
       `SELECT id::text FROM fifo_orders WHERE (order_ref=$1 OR id::text=$1) AND direction='PAYOUT' LIMIT 1`, [id]))[0];
-    const o = ref ? await loadPayuPayout("id", ref.id) : null;
+    const o = ref ? await loadProviderPayout("id", ref.id) : null;
     if (!o) return NextResponse.json({ error: "not a provider payout" }, { status: 404 });
     if (g.session.persona === "MERCHANT" && o.merchant_id !== g.session.scope_id)
       return NextResponse.json({ error: "not found" }, { status: 404 });
-    const r = await syncPayuPayout(o, { hint: "MANUAL_CHECK", minGapSeconds: 3 });
-    const now = (await loadPayuPayout("id", o.id))!;
+    const r = await syncProviderPayout(o, { hint: "MANUAL_CHECK", minGapSeconds: 3 });
+    const now = (await loadProviderPayout("id", o.id))!;
     return NextResponse.json({ outcome: r.outcome, detail: r.detail ?? null, status: now.status });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

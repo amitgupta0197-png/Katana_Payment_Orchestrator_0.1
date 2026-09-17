@@ -1,8 +1,9 @@
 "use client";
 
 // The merchant's payout gateway: which gateway pays out for them, with sealed credentials.
-// For a gateway with a payout connector (PayU today) it also checks the balance, registers the
-// webhook and copies the webhook URL. Secrets are write-only here.
+// For a gateway with a payout connector it also checks the balance (where the gateway has a
+// balance API), registers the webhook (PayU) or copies the URL to set in the gateway's
+// dashboard. Secrets are write-only here.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +18,7 @@ import type { GatewayId } from "@/lib/pg-catalog";
 
 interface PayoutStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
+  webhook?: "api" | "dashboard" | "per_transfer" | null; balance?: boolean;
   env?: "TEST" | "PROD"; env_label?: string;
   summary?: { label: string; value: string }[];
   webhook_registered_at?: string | null;
@@ -101,9 +103,13 @@ export function PayoutGatewayCard({ merchantId, merchantCode }: { merchantId: st
               {status.connector && (
                 <div>
                   <span className="text-[color:var(--color-text-muted)]">Webhook:</span>{" "}
-                  {status.webhook_registered_at
-                    ? <>registered {formatDateTime(status.webhook_registered_at)}</>
-                    : <Badge variant="warning">not registered — results arrive only through the status check</Badge>}
+                  {status.webhook === "per_transfer"
+                    ? <>sent with every transfer — nothing to set up</>
+                    : status.webhook === "dashboard"
+                      ? <>add the endpoint below in the {status.gateway_name} dashboard (payout events); until then results arrive through the status check</>
+                      : status.webhook_registered_at
+                        ? <>registered {formatDateTime(status.webhook_registered_at)}</>
+                        : <Badge variant="warning">not registered — results arrive only through the status check</Badge>}
                 </div>
               )}
               {balance?.ok && (
@@ -116,15 +122,21 @@ export function PayoutGatewayCard({ merchantId, merchantCode }: { merchantId: st
             </div>
             {status.connector ? (
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => check.mutate()} disabled={check.isPending}>
-                  <RefreshCw className="h-4 w-4" /> {check.isPending ? `Asking ${status.gateway_name}…` : "Check balance"}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => register.mutate()} disabled={register.isPending}>
-                  <Webhook className="h-4 w-4" /> {status.webhook_registered_at ? "Re-register webhook" : "Register webhook"}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={copyEndpoint} disabled={!webhookUrl} title={webhookUrl}>
-                  <Copy className="h-4 w-4" /> Copy endpoint
-                </Button>
+                {status.balance && (
+                  <Button size="sm" variant="secondary" onClick={() => check.mutate()} disabled={check.isPending}>
+                    <RefreshCw className="h-4 w-4" /> {check.isPending ? `Asking ${status.gateway_name}…` : "Check balance"}
+                  </Button>
+                )}
+                {status.webhook === "api" && (
+                  <Button size="sm" variant="secondary" onClick={() => register.mutate()} disabled={register.isPending}>
+                    <Webhook className="h-4 w-4" /> {status.webhook_registered_at ? "Re-register webhook" : "Register webhook"}
+                  </Button>
+                )}
+                {status.webhook !== "per_transfer" && (
+                  <Button size="sm" variant="secondary" onClick={copyEndpoint} disabled={!webhookUrl} title={webhookUrl}>
+                    <Copy className="h-4 w-4" /> Copy endpoint
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="text-xs text-[color:var(--color-text-muted)]">

@@ -4,7 +4,8 @@
 // No secrets here. A merchant connects ONE gateway for pay-ins and ONE for payouts; they may
 // differ.
 //
-// `connector: true` means Katana actually routes money through that gateway today. The others
+// `connector: true` means Katana actually routes money through that gateway today. Payout
+// connectors other than PayU run in PROD only once switched on (PAYOUT_CONNECTORS_PROD). The others
 // can be selected and their credentials saved, but the merchant keeps using Katana's current
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
@@ -27,6 +28,10 @@ export interface GatewayService {
   connector: boolean;
   env: Record<GatewayEnv, string>;   // how each environment is labelled in the UI
   note?: string;
+  /** Payouts: how the gateway learns Katana's webhook URL. */
+  webhook?: "api" | "dashboard" | "per_transfer";
+  /** Payouts: Katana can read the account balance. */
+  balance?: boolean;
 }
 
 export interface GatewayDef {
@@ -49,7 +54,7 @@ export const GATEWAYS: GatewayDef[] = [
       ],
     },
     payout: {
-      connector: true,
+      connector: true, webhook: "api", balance: true,
       env: { TEST: "UAT (uatoneapi.payu.in)", PROD: "Live (payout.payumoney.com)" },
       note: "From the PayU Payouts dashboard. The payout merchant ID is not the payment MID.",
       fields: [
@@ -72,9 +77,9 @@ export const GATEWAYS: GatewayDef[] = [
       ],
     },
     payout: {
-      connector: false,
+      connector: true, webhook: "dashboard",
       env: { TEST: "Test mode", PROD: "Live mode" },
-      note: "RazorpayX. Uses the Key ID / Secret plus the RazorpayX account number money is paid from.",
+      note: "RazorpayX. Uses the Key ID / Secret plus the RazorpayX account number money is paid from. Add Katana's webhook URL (payout events) in RazorpayX → Settings → Webhooks, with the same webhook secret as here.",
       fields: [
         { name: "key_id", label: "Key ID", placeholder: "rzp_test_…", pattern: "^rzp_(test|live)_[A-Za-z0-9]+$" },
         { name: "key_secret", label: "Key Secret", secret: true },
@@ -95,9 +100,9 @@ export const GATEWAYS: GatewayDef[] = [
       ],
     },
     payout: {
-      connector: false,
+      connector: true, webhook: "dashboard",
       env: { TEST: "Sandbox", PROD: "Production" },
-      note: "Cashfree Payouts has its own Client ID and Secret, separate from the payment gateway keys.",
+      note: "Cashfree Payouts has its own Client ID and Secret, separate from the payment gateway keys. Whitelist Katana's server IP under Payouts → Developers → Two-Factor Authentication, and add Katana's webhook URL (v2) under Payouts → Developers → Webhooks.",
       fields: [
         { name: "client_id", label: "Payouts Client ID" },
         { name: "client_secret", label: "Payouts Client Secret", secret: true },
@@ -144,9 +149,9 @@ export const GATEWAYS: GatewayDef[] = [
       ],
     },
     payout: {
-      connector: false,
+      connector: true, webhook: "per_transfer",
       env: { TEST: "Staging", PROD: "Production" },
-      note: "Paytm Payouts pays from a sub-wallet of the merchant's Paytm for Business account.",
+      note: "Paytm Payouts pays from a sub-wallet of the merchant's Paytm for Business account. Katana sends its callback URL with every transfer; nothing to set in Paytm.",
       fields: [
         { name: "mid", label: "MID", show: true },
         { name: "merchant_key", label: "Merchant Key", secret: true },

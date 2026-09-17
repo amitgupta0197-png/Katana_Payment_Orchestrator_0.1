@@ -28,9 +28,10 @@
 
 import { randomBytes, timingSafeEqual } from "crypto";
 import { getPayoutGateway, storePayoutGateway } from "@/lib/payout-gateway";
+import { payoutWebhookUrlFor, type PayoutRail } from "@/lib/payout-providers/types";
 
 export type PayuEnv = "TEST" | "PROD";
-export type PayoutRail = "IMPS" | "NEFT" | "RTGS" | "UPI";
+export type { PayoutRail };
 
 export interface PayuPayoutCreds {
   client_id: string;
@@ -281,8 +282,7 @@ export async function payuPayoutBalance(c: PayuPayoutCreds): Promise<PayuCall<{ 
 
 // ── Webhook registration ─────────────────────────────────────────────────────
 export function payoutWebhookUrl(): string {
-  const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
-  return `${base}/api/gateway/payu/payout-webhook`;
+  return payoutWebhookUrlFor("PAYU");
 }
 
 /** Register Katana's webhook as the account default, with a fresh shared token. */
