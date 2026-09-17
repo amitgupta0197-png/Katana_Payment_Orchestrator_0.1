@@ -11,7 +11,7 @@
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
 
-export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM";
+export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY";
 export type GatewayEnv = "TEST" | "PROD";
 
 export interface CredField {
@@ -38,13 +38,17 @@ export interface GatewayService {
 export interface GatewayDef {
   id: GatewayId;
   name: string;
+  /** Logo in /public/gateways, or null for a lettered tile. */
+  logo: string | null;
+  /** Brand colour for the lettered tile and accents. */
+  color: string;
   payin: GatewayService;
   payout: GatewayService | null;     // null: the gateway has no payout product we can connect
 }
 
 export const GATEWAYS: GatewayDef[] = [
   {
-    id: "PAYU", name: "PayU",
+    id: "PAYU", name: "PayU", logo: "/gateways/payu.png", color: "#A6C307",
     payin: {
       connector: true,
       env: { TEST: "Test (test.payu.in)", PROD: "Live (secure.payu.in)" },
@@ -66,7 +70,7 @@ export const GATEWAYS: GatewayDef[] = [
     },
   },
   {
-    id: "RAZORPAY", name: "Razorpay",
+    id: "RAZORPAY", name: "Razorpay", logo: "/gateways/razorpay.svg", color: "#0C2451",
     payin: {
       connector: true,
       env: { TEST: "Test mode (rzp_test_…)", PROD: "Live mode (rzp_live_…)" },
@@ -91,7 +95,7 @@ export const GATEWAYS: GatewayDef[] = [
     },
   },
   {
-    id: "CASHFREE", name: "Cashfree Payments",
+    id: "CASHFREE", name: "Cashfree Payments", logo: "/gateways/cashfree.svg", color: "#00AD5B",
     payin: {
       connector: true,
       env: { TEST: "Sandbox (sandbox.cashfree.com)", PROD: "Production (api.cashfree.com)" },
@@ -113,7 +117,7 @@ export const GATEWAYS: GatewayDef[] = [
     },
   },
   {
-    id: "CCAVENUE", name: "CCAvenue",
+    id: "CCAVENUE", name: "CCAvenue", logo: null, color: "#1F7EC2",
     payin: {
       connector: true,
       env: { TEST: "Test (test.ccavenue.com)", PROD: "Live (secure.ccavenue.com)" },
@@ -127,7 +131,7 @@ export const GATEWAYS: GatewayDef[] = [
     payout: null,
   },
   {
-    id: "PHONEPE", name: "PhonePe Payment Gateway",
+    id: "PHONEPE", name: "PhonePe Payment Gateway", logo: "/gateways/phonepe.svg", color: "#5F259F",
     payin: {
       connector: true,
       env: { TEST: "UAT (api-preprod.phonepe.com)", PROD: "Production (api.phonepe.com)" },
@@ -144,7 +148,7 @@ export const GATEWAYS: GatewayDef[] = [
     payout: null,
   },
   {
-    id: "PAYTM", name: "Paytm Payment Gateway",
+    id: "PAYTM", name: "Paytm Payment Gateway", logo: "/gateways/paytm.svg", color: "#00BAF2",
     payin: {
       connector: true,
       env: { TEST: "Staging (securegw-stage.paytm.in)", PROD: "Production (securegw.paytm.in)" },
@@ -163,6 +167,29 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "mid", label: "MID", show: true },
         { name: "merchant_key", label: "Merchant Key", secret: true },
         { name: "subwallet_guid", label: "Sub-wallet GUID" },
+      ],
+    },
+  },
+  {
+    id: "POOLPAY", name: "PoolPay", logo: null, color: "#0B5FFF",
+    // Pay-ins wait for PoolPay's pay-in API document; saved credentials aren't used until then.
+    payin: {
+      connector: false,
+      env: { TEST: "UAT", PROD: "Production (gateway.pp-007.com)" },
+      fields: [
+        { name: "key", label: "Pay ID", pattern: "^\\d{1,19}$" },
+        { name: "salt", label: "Secret key", secret: true },
+      ],
+    },
+    payout: {
+      connector: true, balance: true, webhook: "dashboard",
+      env: { TEST: "UAT (enter PoolPay's UAT URL below)", PROD: "Production (payout.pp-007.com)" },
+      note: "PoolPay pays on IMPS, RTGS and UPI (no NEFT) from the merchant's PoolPay payout wallet. PoolPay must whitelist Katana's server IP (72.61.227.233). Add Katana's webhook URL as the payout call-back URL in the PoolPay merchant portal.",
+      fields: [
+        { name: "pay_id", label: "Pay ID", placeholder: "16-digit Pay ID from PoolPay", pattern: "^\\d{1,19}$", show: true },
+        { name: "salt", label: "Salt (hash key)", secret: true },
+        { name: "default_mobile", label: "Contact mobile sent with payouts", placeholder: "10-digit mobile", pattern: "^[6-9]\\d{9}$", show: true },
+        { name: "api_base", label: "API base URL (required for UAT)", placeholder: "https://payout.pp-007.com", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true, show: true },
       ],
     },
   },

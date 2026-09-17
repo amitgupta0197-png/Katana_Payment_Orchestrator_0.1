@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
 import type { GatewayId } from "@/lib/pg-catalog";
 
@@ -69,7 +70,10 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
         ) : status?.configured ? (
           <div className="text-sm space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="brand">{status.gateway_name}</Badge>
+              <span className="inline-flex items-center gap-2 font-medium">
+                {status.gateway && <GatewayLogo id={status.gateway} size={24} />}
+                {status.gateway_name}
+              </span>
               <Badge variant={status.env === "PROD" ? "danger" : "default"}>{status.env_label}</Badge>
               {status.connector
                 ? <Badge variant="success">Connected</Badge>
@@ -90,7 +94,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
           </div>
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
-            No gateway connected. Choose PayU, Razorpay, Cashfree, CCAvenue, PhonePe or Paytm.
+            No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe, Paytm or PoolPay.
           </div>
         )}
       </CardContent>

@@ -12,6 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GATEWAYS, type GatewayEnv, type GatewayId, type GatewayService } from "@/lib/pg-catalog";
+import { GatewayLogo, shortGatewayName } from "@/components/merchant/gateway-logo";
+import { cn } from "@/lib/utils";
 
 export type GatewayKind = "payin" | "payout";
 export interface GatewayForm { gateway: GatewayId; env: GatewayEnv; fields: Record<string, string> }
@@ -56,7 +58,7 @@ export function GatewayCredentialsDialog({
           <KeyRound className="h-4 w-4" /> {configured ? "Change" : "Connect gateway"}
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{configured ? "Change" : "Connect"} {what} gateway</DialogTitle>
           <DialogDescription>
@@ -65,27 +67,46 @@ export function GatewayCredentialsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Gateway</Label>
-              <select className={selectCls} value={gateway} onChange={(e) => { setGateway(e.target.value as GatewayId); setFields({}); }}>
-                {GATEWAYS.map((g) => {
-                  const s = kind === "payin" ? g.payin : g.payout;
-                  return (
-                    <option key={g.id} value={g.id} disabled={!s}>
-                      {g.name}{!s ? " — no payouts" : !s.connector ? " — coming soon" : ""}
-                    </option>
-                  );
-                })}
-              </select>
+          <div className="space-y-1.5">
+            <Label id="gateway-pick">Gateway</Label>
+            <div role="radiogroup" aria-labelledby="gateway-pick" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {GATEWAYS.map((g) => {
+                const s = kind === "payin" ? g.payin : g.payout;
+                const selected = g.id === gateway;
+                const tag = !s ? "No payouts" : !s.connector ? "Coming soon" : null;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={!s}
+                    onClick={() => { setGateway(g.id); setFields({}); }}
+                    className={cn(
+                      "flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)]",
+                      selected
+                        ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)]"
+                        : "hover:bg-[color:var(--color-surface-muted)]",
+                      !s && "cursor-not-allowed opacity-45",
+                    )}
+                  >
+                    <GatewayLogo id={g.id} size={28} />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{shortGatewayName(g.name)}</span>
+                      {tag && <span className="block truncate text-[11px] text-[color:var(--color-text-muted)]">{tag}</span>}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="space-y-1.5">
-              <Label>Environment</Label>
-              <select className={selectCls} value={env} onChange={(e) => setEnv(e.target.value as GatewayEnv)}>
-                <option value="TEST">{svc?.env.TEST ?? "Test"}</option>
-                <option value="PROD">{svc?.env.PROD ?? "Live"}</option>
-              </select>
-            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="gateway-env">Environment</Label>
+            <select id="gateway-env" className={selectCls} value={env} onChange={(e) => setEnv(e.target.value as GatewayEnv)}>
+              <option value="TEST">{svc?.env.TEST ?? "Test"}</option>
+              <option value="PROD">{svc?.env.PROD ?? "Live"}</option>
+            </select>
           </div>
           {svc && !svc.connector && (
             <div className="rounded-md border border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)] px-3 py-2 text-xs text-[color:var(--color-warning)]">

@@ -6,6 +6,7 @@ import { payuConnector } from "@/lib/payout-providers/payu";
 import { razorpayConnector } from "@/lib/payout-providers/razorpay";
 import { cashfreeConnector } from "@/lib/payout-providers/cashfree";
 import { paytmConnector } from "@/lib/payout-providers/paytm";
+import { poolpayConnector } from "@/lib/payout-providers/poolpay";
 import type { PayoutConnector } from "@/lib/payout-providers/types";
 
 export type AnyConnector = PayoutConnector<{ env: GatewayEnv }>;
@@ -15,6 +16,7 @@ const CONNECTORS: Partial<Record<GatewayId, AnyConnector>> = {
   RAZORPAY: razorpayConnector as unknown as AnyConnector,
   CASHFREE: cashfreeConnector as unknown as AnyConnector,
   PAYTM: paytmConnector as unknown as AnyConnector,
+  POOLPAY: poolpayConnector as unknown as AnyConnector,
 };
 
 export const PAYOUT_PROVIDERS = Object.keys(CONNECTORS) as GatewayId[];
