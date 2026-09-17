@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     const own = await rows<{ id: string }>("vendorGateway", `
       SELECT id::text FROM vendor_payin_orders
        WHERE vendor = 'POOLPAY' AND merchant_id = $1 AND order_id = $2 AND livemode = $3
-         AND COALESCE(meta->'gateway'->>'provider', '') <> 'PAYU'   -- PayU orders are confirmed by PayU only
+         AND COALESCE(meta->'gateway'->>'provider', '') = ''   -- gateway orders (PayU, Razorpay, …) are confirmed by their gateway only
     `, [merchant.merchant_code, ref, livemode]);
     if (!own.length) return NextResponse.json({ error: "not found" }, { status: 404 });
 

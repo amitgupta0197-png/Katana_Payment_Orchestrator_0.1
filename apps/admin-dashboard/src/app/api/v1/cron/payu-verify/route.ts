@@ -1,4 +1,6 @@
-// GET/POST /api/v1/cron/payu-verify — reconcile PayU payments we never heard back about.
+// GET/POST /api/v1/cron/payu-verify — reconcile gateway payments we never heard back about.
+// (The path predates the other gateways; it now also asks Razorpay, Cashfree, CCAvenue, PhonePe
+// and Paytm about their orders, through lib/gateway-payin.)
 //
 // With UPI (Intent or Collect) the customer approves inside their UPI app and usually does
 // NOT return to the browser, so surl/furl never fires. The webhook can also be lost — a
@@ -17,6 +19,7 @@ import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 import { applyVerifiedPayuStatus, claimPayuPayinCheck, markPayuPayinFinal } from "@/lib/payu-result";
+import { checkGatewayPayin, payinConnector } from "@/lib/gateway-payin";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +44,10 @@ async function run() {
   // PayU pay-ins from the Katana Pay order flow (vendor_payin_orders, keyed by the PayU txnid).
   // EXPIRED is included on purpose: the pay page stops waiting after 15 minutes, but a customer
   // who approved late has still paid, and confirmPoolPayOrder revives an expired order on success.
-  const payins = await rows<{ txn_id: string; merchant_id: string }>("vendorGateway", `
-    SELECT vendor_txn_id AS txn_id, merchant_id
+  const payins = await rows<{ txn_id: string; merchant_id: string; provider: string }>("vendorGateway", `
+    SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider
       FROM vendor_payin_orders
-     WHERE vendor = 'POOLPAY' AND meta->'gateway'->>'provider' = 'PAYU'
+     WHERE vendor = 'POOLPAY' AND COALESCE(meta->'gateway'->>'provider', '') <> '
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND livemode = true
        -- No 2-minute grace here: with UPI intent the customer approves in their app within
@@ -69,11 +72,30 @@ async function run() {
   const unreachableReasons: Record<string, number> = {};
 
   const checks = [
-    ...pending.map((o) => ({ ...o, payin: false })),
+    ...pending.map((o) => ({ ...o, payin: false, provider: null as string | null })),
     ...payins.map((o) => ({ ...o, payin: true })),
   ];
   for (const o of checks) {
     const mid = await getGatewayMid(o.merchant_id);
+
+    // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm.
+    const other = payinConnector(o.provider ?? mid?.gateway);
+    if (other && (o.provider ?? mid?.gateway) !== "PAYU") {
+      const r = await checkGatewayPayin({
+        provider: other.id, txnid: o.txn_id, merchantCode: o.merchant_id, source: "verify_sweep",
+        throttleSec: o.payin ? 5 : undefined,
+      });
+      if (r.reason === "no_gateway_credentials") noCreds++;
+      else if (r.reason === "checked_recently") continue;
+      else if (r.lookupError) {
+        unreachable++;
+        const why = `${other.id}: ${r.lookupError}`.slice(0, 80);
+        unreachableReasons[why] = (unreachableReasons[why] ?? 0) + 1;
+      } else if (r.applied && r.status === "SUCCESS") confirmed++;
+      else if (r.applied && r.status === "FAILED") failed++;
+      else stillPending++;
+      continue;
+    }
     // No stored key+salt means we cannot authenticate a verify call for this merchant.
     // Leave the order pending — guessing would be worse than not knowing.
     if (!mid || mid.gateway !== "PAYU") { noCreds++; continue; }

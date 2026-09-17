@@ -19,6 +19,7 @@ import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
+import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
 
@@ -94,6 +95,34 @@ export async function POST(req: Request) {
     //     the merchant's stored gateway Key+Salt and hand the customer's browser
     //     off to PayU's hosted page. PayU posts the result to our return endpoint.
     const wantRedirect = body.redirect === true || body.redirect === "true" || body.redirect === "1";
+    const wantIntent = body.intent === true || body.intent === "true" || body.intent === "1";
+
+    // Razorpay, Cashfree, CCAvenue, PhonePe and Paytm (lib/gateway-payin). Their sandbox keys
+    // pair with a Katana test key, so these work for test orders too.
+    const other = wantRedirect || wantIntent ? await gatewayPayinFor(merchantCode) : null;
+    if (other) {
+      const currency = (body.currency ?? "INR").toUpperCase();
+      if (currency !== "INR") return NextResponse.json({ error: `${other.connector.name} payments are INR only here` }, { status: 400 });
+      const input = {
+        mid: other.mid, connector: other.connector, merchantCode, livemode,
+        txnid: body.txnid, amount: amountStr, currency,
+        method: (body.method ?? (wantIntent ? "UPI_INTENT" : "CARD")).toUpperCase(),
+        productinfo: body.productinfo ?? "Order", firstname: body.firstname ?? "Customer",
+        email: body.email ?? "", phone: body.phone ?? "9999999999",
+        clientSurl: body.surl ?? null, clientFurl: body.furl ?? null,
+        client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
+        actor: `merchant:${merchantCode}`,
+      };
+      if (wantIntent) {
+        const r = await issueGatewayIntent(input);
+        return NextResponse.json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
+          { status: r.httpStatus });
+      }
+      const r = await startGatewayCheckout(input);
+      if (r.html) return new NextResponse(r.html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+      return NextResponse.json(r.body, { status: r.httpStatus });
+    }
+
     if (wantRedirect) {
       // The hosted redirect sends the customer to the real PayU page on the merchant's MID.
       // There is no separate test MID, so a test key cannot use it.
@@ -101,7 +130,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "test keys cannot use the hosted gateway redirect" }, { status: 400 });
       const gwMid = await getGatewayMid(merchantCode);
       if (!gwMid || gwMid.gateway !== "PAYU") {
-        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();
       const amountMinor = toMinor(amountStr, currency);
@@ -136,14 +165,13 @@ export async function POST(req: Request) {
     // 2.6 UPI intent (real PayU, S2S): Katana asks PayU for the intent on the merchant's MID
     //     and returns deep links for the customer's UPI apps. Confirmed later by the PayU
     //     webhook / verify sweep, like the hosted redirect.
-    const wantIntent = body.intent === true || body.intent === "true" || body.intent === "1";
     if (wantIntent) {
       // Same rule as the redirect: the intent is issued on the real MID, so a test key cannot use it.
       if (!livemode)
         return NextResponse.json({ error: "test keys cannot use the PayU UPI intent" }, { status: 400 });
       const gwMid = await getGatewayMid(merchantCode);
       if (!gwMid || gwMid.gateway !== "PAYU") {
-        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();
       if (currency !== "INR") return NextResponse.json({ error: "UPI intent supports INR only" }, { status: 400 });

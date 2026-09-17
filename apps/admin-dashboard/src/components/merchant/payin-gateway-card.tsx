@@ -3,7 +3,9 @@
 // The merchant's pay-in gateway: which gateway takes their payments, with sealed credentials.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
@@ -24,11 +26,17 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       if (r.status === 403) return { restricted: true as const };
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
-      return d as { status: PayinStatus };
+      return d as { status: PayinStatus; webhook_url?: string | null };
     },
   });
   const restricted = (q.data as { restricted?: boolean })?.restricted;
   const status = (q.data as { status?: PayinStatus })?.status;
+  const webhookUrl = (q.data as { webhook_url?: string | null })?.webhook_url;
+  const copyEndpoint = async () => {
+    if (!webhookUrl) return;
+    try { await navigator.clipboard.writeText(webhookUrl); toast.success("Payment events URL copied", { description: webhookUrl }); }
+    catch { toast.error("Couldn't copy", { description: webhookUrl }); }
+  };
 
   const save = useMutation({
     mutationFn: async (form: GatewayForm) => {
@@ -69,6 +77,13 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
             </div>
             <div><span className="text-[color:var(--color-text-muted)]">Merchant ID:</span> <span className="font-mono">{status.mid_code}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">Key:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· secret sealed</span></div>
+            {status.connector && webhookUrl && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-[color:var(--color-text-muted)]">Payment events:</span>
+                <span className="min-w-0 truncate font-mono text-xs">{webhookUrl}</span>
+                <Button size="sm" variant="secondary" onClick={copyEndpoint}><Copy className="h-4 w-4" /> Copy</Button>
+              </div>
+            )}
             {!status.connector && (
               <div className="text-xs text-[color:var(--color-text-muted)]">Katana doesn’t route pay-ins through {status.gateway_name} yet, so this merchant’s payments keep using Katana’s current route.</div>
             )}

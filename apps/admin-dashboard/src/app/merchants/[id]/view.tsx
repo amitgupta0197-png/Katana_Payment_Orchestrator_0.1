@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText } from "lucide-react";
+import {
+  Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText,
+  LayoutGrid, ReceiptText, Smartphone, Landmark, Code2, UserCog,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { PinelabsConfigCard } from "@/components/pinelabs-config-card";
@@ -27,6 +30,8 @@ import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
 import { LiveActivationCard } from "@/components/merchant/live-activation-card";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
+import { JourneyBar, StatusLights } from "@/components/merchant/merchant-at-a-glance";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Merchant {
@@ -45,6 +50,15 @@ interface ApiKey {
   id: string; label: string; prefix: string; scopes: string[]; status: string;
   created_at: string; last_used_at?: string; revoked_at?: string;
 }
+
+const TAB_KEYS = ["overview", "payments", "collection", "gateways", "developer", "account"] as const;
+type TabKey = (typeof TAB_KEYS)[number];
+
+// PRIVATE_LIMITED -> Private limited
+const titleCase = (s: string) => {
+  const t = s.replace(/_/g, " ").toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 
 const STEPS = [
   { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic banker details captured." },
@@ -331,6 +345,20 @@ function ApiKeysCard({ merchant }: { merchant: Merchant }) {
 }
 
 function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
+  // Same query as the pay-in gateway card, so the buttons name the connected gateway.
+  const gw = useQuery({
+    queryKey: ["merchant", merchant.id, "gateway-mid"],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${merchant.id}/gateway-mid`);
+      if (r.status === 403) return { restricted: true as const };
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
+      return d as { status: { configured: boolean; gateway?: string; gateway_name?: string } };
+    },
+  });
+  const gwStatus = (gw.data as { status?: { configured: boolean; gateway?: string; gateway_name?: string } } | undefined)?.status;
+  const gwName = gwStatus?.configured ? gwStatus.gateway_name ?? "gateway" : "PayU";
+  const hasIntent = gwStatus?.gateway !== "CCAVENUE";
   const [amount, setAmount] = useState("100.00");
   const [email, setEmail] = useState("buyer@example.com");
   const [result, setResult] = useState<{ order?: { status?: string; txn_id?: string }; route?: { provider?: string }; charge?: { outcome?: string }; gateway?: { signed?: boolean } } | null>(null);
@@ -357,9 +385,15 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
-      return d as { payu_url: string; fields: Record<string, string> };
+      return d as { payu_url?: string; fields?: Record<string, string>; html?: string };
     },
     onSuccess: (d) => {
+      if (d.html) {
+        // Another gateway's checkout page (auto-submitting form or its SDK) replaces this one.
+        document.open(); document.write(d.html); document.close();
+        return;
+      }
+      if (!d.payu_url || !d.fields) return;
       const f = document.createElement("form");
       f.method = "post"; f.action = d.payu_url;
       for (const [k, v] of Object.entries(d.fields)) {
@@ -367,7 +401,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
       }
       document.body.appendChild(f); f.submit();   // navigate the browser to PayU
     },
-    onError: (e: Error) => toast.error("PayU redirect failed", { description: e.message }),
+    onError: (e: Error) => toast.error(`${gwName} checkout failed`, { description: e.message }),
   });
 
   const [intentLinks, setIntentLinks] = useState<{ txn: string; links: Record<string, string> } | null>(null);
@@ -381,8 +415,8 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
       if (!r.ok) throw new Error(d.error ?? "Failed");
       return d as { order: { txn_id: string }; deeplinks: Record<string, string> };
     },
-    onSuccess: (d) => { setIntentLinks({ txn: d.order.txn_id, links: d.deeplinks }); toast.success("UPI intent issued by PayU"); },
-    onError: (e: Error) => { setIntentLinks(null); toast.error("PayU UPI intent failed", { description: e.message }); },
+    onSuccess: (d) => { setIntentLinks({ txn: d.order.txn_id, links: d.deeplinks }); toast.success(`UPI intent issued by ${gwName}`); },
+    onError: (e: Error) => { setIntentLinks(null); toast.error(`${gwName} UPI intent failed`, { description: e.message }); },
   });
 
   return (
@@ -401,11 +435,13 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
             {sim.isPending ? "Running…" : "Run simulated payment"}
           </Button>
           <Button onClick={() => payu.mutate()} disabled={payu.isPending}>
-            <ArrowRight className="h-4 w-4" /> {payu.isPending ? "Redirecting…" : "Pay via PayU"}
+            <ArrowRight className="h-4 w-4" /> {payu.isPending ? "Redirecting…" : `Pay via ${gwName}`}
           </Button>
-          <Button variant="secondary" onClick={() => intent.mutate()} disabled={intent.isPending}>
-            {intent.isPending ? "Asking PayU…" : "PayU UPI intent"}
-          </Button>
+          {hasIntent && (
+            <Button variant="secondary" onClick={() => intent.mutate()} disabled={intent.isPending}>
+              {intent.isPending ? `Asking ${gwName}…` : `${gwName} UPI intent`}
+            </Button>
+          )}
         </div>
         {intentLinks && (
           <div className="rounded-md border p-3 text-sm space-y-1">
@@ -416,7 +452,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
                 <a href={href} className="font-mono text-xs break-all text-[color:var(--color-brand)] hover:underline">{href}</a>
               </div>
             ))}
-            <p className="text-xs text-[color:var(--color-text-muted)]">Open a link on a phone with that UPI app. The order confirms through the PayU webhook or the verify sweep.</p>
+            <p className="text-xs text-[color:var(--color-text-muted)]">Open a link on a phone with that UPI app. The order confirms through {gwName}’s webhook or Katana’s status check.</p>
           </div>
         )}
         {result && (
@@ -426,7 +462,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
             <div><span className="text-[color:var(--color-text-muted)]">Merchant:</span> {result.route?.provider ?? "—"} · <span className="text-[color:var(--color-text-muted)]">charge:</span> {result.charge?.outcome ?? "—"} · <span className="text-[color:var(--color-text-muted)]">gateway signed:</span> {result.gateway?.signed ? "yes" : "no"}</div>
           </div>
         )}
-        <p className="text-xs text-[color:var(--color-text-muted)]">“Simulated” runs Katana’s pipeline instantly (no PayU needed). “Pay via PayU” needs PayU creds set above and opens PayU’s hosted page.</p>
+        <p className="text-xs text-[color:var(--color-text-muted)]">“Simulated” runs Katana’s pipeline instantly, with no gateway. The other buttons use this banker’s pay-in gateway (Gateways &amp; payouts tab) with its sandbox credentials.</p>
       </CardContent>
     </Card>
   );
@@ -446,6 +482,19 @@ export default function MerchantDetailView({ id }: { id: string }) {
   });
 
   const merchant = merchantQ.data;
+  const [tab, setTabState] = useState<TabKey>("overview");
+  // The open tab lives in the URL (?tab=), so a reload or a shared link lands on it.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && (TAB_KEYS as readonly string[]).includes(t)) setTabState(t as TabKey);
+  }, []);
+  const setTab = (t: TabKey | string) => {
+    if (!(TAB_KEYS as readonly string[]).includes(t)) return;
+    setTabState(t as TabKey);
+    const u = new URL(window.location.href);
+    if (t === "overview") u.searchParams.delete("tab"); else u.searchParams.set("tab", t);
+    window.history.replaceState(null, "", u);
+  };
 
   if (merchantQ.isLoading) {
     return <Card><CardContent className="py-8 text-center text-sm text-[color:var(--color-text-muted)]">Loading…</CardContent></Card>;
@@ -472,127 +521,196 @@ export default function MerchantDetailView({ id }: { id: string }) {
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
 
+  const openTab = (t: string) => { setTab(t); window.scrollTo?.({ top: 0 }); };
+  const stopped = merchant.stage === "REJECTED" || merchant.stage === "TERMINATED";
+  const details: [string, React.ReactNode][] = [
+    ["Merchant code", <span key="c" className="font-mono">{merchant.merchant_code}</span>],
+    ["Legal name", merchant.legal_name],
+    ["Brand", merchant.brand_name || "—"],
+    ["Business type", merchant.business_type ? titleCase(merchant.business_type) : "—"],
+    ["MCC", merchant.category_mcc || "—"],
+    ["Risk tier", merchant.risk_tier ? <Badge key="r" variant={statusVariant(merchant.risk_tier)}>{merchant.risk_tier}</Badge> : "Not assessed"],
+    ["Contact email", merchant.contact_email],
+    ["Created", formatDateTime(merchant.created_at)],
+    ["Approved", merchant.approved_at ? `${formatDateTime(merchant.approved_at)}${merchant.approved_by ? ` by ${merchant.approved_by}` : ""}` : "Not yet"],
+  ];
+
+  const tabs: { key: TabKey; label: string; icon: typeof Store; count?: number }[] = [
+    { key: "overview", label: "Overview", icon: LayoutGrid },
+    { key: "payments", label: "Payments", icon: ReceiptText },
+    { key: "collection", label: "Collection", icon: Smartphone },
+    { key: "gateways", label: "Gateways & payouts", icon: Landmark },
+    { key: "developer", label: "Developer", icon: Code2 },
+    { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
+  ];
+
   return (
-    <>
-      <PageHeader
-        title={merchant.brand_name || merchant.legal_name}
-        description={`${merchant.merchant_code} · ${merchant.business_type ?? "—"} · MCC ${merchant.category_mcc ?? "—"} · created ${formatDateTime(merchant.created_at)}`}
-        icon={Store}
-        actions={
-          <div className="flex items-center gap-2">
-            <Badge variant={statusVariant(merchant.stage)}>{merchant.stage}</Badge>
-            {merchant.risk_tier && <Badge variant={statusVariant(merchant.risk_tier)}>{merchant.risk_tier}</Badge>}
-            <Link href="/merchants" className="text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-brand)] inline-flex items-center"><ChevronLeft className="h-3 w-3" /> back</Link>
+    <div className="mx-auto flex max-w-6xl flex-col gap-5">
+      {/* Who this is, and where onboarding stands */}
+      <section className="rounded-xl border bg-[color:var(--color-surface)] p-4 md:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[color:var(--color-brand-muted)] text-lg font-semibold text-[color:var(--color-brand)]" aria-hidden>
+              {(merchant.brand_name || merchant.legal_name).slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <Link href="/merchants" className="inline-flex items-center gap-0.5 text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-brand)]">
+                <ChevronLeft className="h-3 w-3" /> Bankers
+              </Link>
+              <h1 className="truncate text-xl font-semibold tracking-tight md:text-2xl">{merchant.brand_name || merchant.legal_name}</h1>
+              <p className="truncate text-sm text-[color:var(--color-text-muted)]">
+                <span className="font-mono">{merchant.merchant_code}</span>
+                {merchant.business_type && <>, {titleCase(merchant.business_type)}</>}
+                {merchant.category_mcc && <>, MCC {merchant.category_mcc}</>}
+              </p>
+            </div>
           </div>
-        }
-      />
+          <div className="flex items-center gap-2">
+            <Badge variant={statusVariant(merchant.stage)}>{titleCase(merchant.stage)}</Badge>
+            {merchant.risk_tier && <Badge variant={statusVariant(merchant.risk_tier)}>{titleCase(merchant.risk_tier)} risk</Badge>}
+          </div>
+        </div>
+        <div className="mt-4 border-t pt-4">
+          <JourneyBar
+            steps={STEPS.map((st, i) => ({ label: st.label, done: stepsDone[i] }))}
+            stage={merchant.stage}
+            action={nextStepIndex >= 0 && !stopped ? <AdvanceDialog merchant={merchant} stepIndex={nextStepIndex} /> : undefined}
+          />
+        </div>
+      </section>
 
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle className="text-base">Onboarding journey</CardTitle>
-          <CardDescription>6-step funnel per PRODUCT_VISION §2.2.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-3">
-            {STEPS.map((step, idx) => {
-              const done = stepsDone[idx];
-              const isNext = idx === nextStepIndex && merchant.stage !== "REJECTED" && merchant.stage !== "TERMINATED";
-              return (
-                <li key={step.key} className={`flex items-start gap-3 rounded-md border p-3 ${isNext ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)]" : ""}`}>
-                  <span className="mt-0.5">
-                    {done ? <CheckCircle2 className="h-5 w-5 text-[color:var(--color-success)]" /> : <Circle className="h-5 w-5 text-[color:var(--color-text-subtle)]" />}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{idx + 1}. {step.label}</div>
-                    <div className="text-xs text-[color:var(--color-text-muted)] mt-0.5">{step.description}</div>
+      {/* What this banker can do right now; each light opens its tab */}
+      <StatusLights merchantId={merchant.id} onOpen={openTab} />
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+        <div>
+          <TabsList className="h-auto w-full justify-start">
+            {tabs.map((t) => (
+              <TabsTrigger key={t.key} value={t.key} className="pb-2.5 pt-2">
+                <t.icon className="h-4 w-4" />
+                {t.label}
+                {t.count !== undefined && (
+                  <span className="rounded-full bg-[color:var(--color-surface)] px-1.5 text-xs font-normal tabular-nums">{t.count}</span>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        <TabsContent value="overview">
+          <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+            <div className="min-w-0 space-y-4">
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Details</CardTitle></CardHeader>
+                <CardContent>
+                  <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                    {details.map(([k, v]) => (
+                      <div key={k} className="min-w-0">
+                        <dt className="text-xs text-[color:var(--color-text-muted)]">{k}</dt>
+                        <dd className="mt-0.5 truncate">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+              <ProviderAttributionCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            </div>
+            <Card className="self-start">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Onboarding</CardTitle>
+                <CardDescription>What each step checks.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-2.5">
+                  {STEPS.map((step, idx) => {
+                    const done = stepsDone[idx];
+                    const isNext = idx === nextStepIndex && !stopped;
+                    return (
+                      <li key={step.key} className="flex gap-2.5">
+                        {done
+                          ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-success)]" />
+                          : <Circle className={`mt-0.5 h-4 w-4 shrink-0 ${isNext ? "text-[color:var(--color-brand)]" : "text-[color:var(--color-text-subtle)]"}`} />}
+                        <div className="min-w-0">
+                          <div className={`text-sm ${isNext ? "font-semibold" : done ? "" : "text-[color:var(--color-text-muted)]"}`}>{step.label}</div>
+                          <div className="text-xs text-[color:var(--color-text-muted)]">{step.description}</div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+                {merchant.stage === "REJECTED" && (
+                  <div className="mt-3 rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
+                    Onboarding was rejected. This banker can't be moved forward.
                   </div>
-                  {isNext && <AdvanceDialog merchant={merchant} stepIndex={idx} />}
-                  {done && <Badge variant="success" className="self-center">done</Badge>}
-                </li>
-              );
-            })}
-          </ol>
-          {nextStep === null && merchant.stage !== "REJECTED" && (
-            <div className="mt-4 rounded-md border border-[color:var(--color-success)]/30 bg-[color:var(--color-success-muted)] px-3 py-2 text-xs text-[color:var(--color-success)]">
-              All six onboarding steps complete. Banker is LIVE.
-            </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="payments">
+          <PayinOperationsCard merchantId={merchant.id} />
+          <MerchantTransactionsCard merchantId={merchant.id} />
+        </TabsContent>
+
+        <TabsContent value="collection">
+          <PaymentMethodsCard merchantId={merchant.id} />
+          <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+          <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
+            <PoolPayConfigCard merchantId={merchant.id} />
+            <PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="gateways">
+          <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">
+            <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            <PayoutGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+          </div>
+          <div className="mt-4">
+            <PayoutPolicyCard merchantId={merchant.id} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="developer">
+          {/* Live keys below stay locked until this is approved. */}
+          <LiveActivationCard merchantId={merchant.id} canDecide />
+          {/* Shared with the provider's merchant page, so both show the test and live pairs the same way. */}
+          <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+          <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+          <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
+            <ApiKeysCard merchant={merchant} />
+            <TestCheckoutCard merchant={merchant} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="account">
+          <SetLoginPasswordCard
+            email={merchant.contact_email}
+            kind="MERCHANT"
+            scopeId={merchant.merchant_code}
+            scopeLabel={`${merchant.merchant_code} — ${merchant.legal_name}`}
+            fullName={merchant.brand_name || merchant.legal_name}
+          />
+          <Card className="mb-4">
+            <CardHeader><CardTitle className="text-base">Sub-MIDs</CardTitle><CardDescription>Sub-merchant IDs set up for this banker.</CardDescription></CardHeader>
+            <CardContent>
+              <DataTable columns={subCols} rows={ownSubs} loading={subMidsQ.isLoading} rowKey={(r) => r.id} emptyState="No Sub-MIDs yet. Create them on the Sub-MIDs page once onboarding reaches Configuration." />
+            </CardContent>
+          </Card>
+          {!["LIVE", "REJECTED", "TERMINATED"].includes(merchant.stage) && (
+            <Card className="border-[color:var(--color-danger)]/40">
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Reject onboarding</CardTitle>
+                  <CardDescription>Stops onboarding for good. This banker can't be moved forward afterwards.</CardDescription>
+                </div>
+                <RejectButton merchant={merchant} />
+              </CardHeader>
+            </Card>
           )}
-          {merchant.stage === "REJECTED" && (
-            <div className="mt-4 rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
-              Banker onboarding was rejected. No further advancement possible.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mb-4">
-        <Card>
-          <CardHeader><CardTitle className="text-base">Identity</CardTitle></CardHeader>
-          <CardContent className="text-sm space-y-1">
-            <div><span className="text-[color:var(--color-text-muted)]">Code:</span> <span className="font-mono">{merchant.merchant_code}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Legal name:</span> {merchant.legal_name}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">Brand:</span> {merchant.brand_name ?? "—"}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">Business type:</span> {merchant.business_type ?? "—"}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">MCC:</span> {merchant.category_mcc ?? "—"}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">Risk tier:</span> {merchant.risk_tier ? <Badge variant={statusVariant(merchant.risk_tier)}>{merchant.risk_tier}</Badge> : "—"}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">Contact</CardTitle></CardHeader>
-          <CardContent className="text-sm space-y-1">
-            <div><span className="text-[color:var(--color-text-muted)]">Email:</span> {merchant.contact_email}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">Approved at:</span> {merchant.approved_at ? formatDateTime(merchant.approved_at) : "—"}</div>
-            <div><span className="text-[color:var(--color-text-muted)]">Approved by:</span> {merchant.approved_by || "—"}</div>
-            <div className="pt-3"><RejectButton merchant={merchant} /></div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <ProviderAttributionCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <PayinOperationsCard merchantId={merchant.id} />
-
-      <MerchantTransactionsCard merchantId={merchant.id} />
-
-      <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <PaymentMethodsCard merchantId={merchant.id} />
-
-      <PoolPayConfigCard merchantId={merchant.id} />
-      <div className="mb-4"><PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit /></div>
-
-      <SetLoginPasswordCard
-        email={merchant.contact_email}
-        kind="MERCHANT"
-        scopeId={merchant.merchant_code}
-        scopeLabel={`${merchant.merchant_code} — ${merchant.legal_name}`}
-        fullName={merchant.brand_name || merchant.legal_name}
-      />
-
-      <ApiKeysCard merchant={merchant} />
-
-      {/* Live keys below stay locked until this is approved. */}
-      <LiveActivationCard merchantId={merchant.id} canDecide />
-
-      {/* Shared with the provider's merchant page, so both show the test and live pairs the same way. */}
-      <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <PayoutGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-
-      <PayoutPolicyCard merchantId={merchant.id} />
-
-      <TestCheckoutCard merchant={merchant} />
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">Sub-MIDs ({ownSubs.length})</CardTitle><CardDescription>MID surface configured for this banker.</CardDescription></CardHeader>
-        <CardContent>
-          <DataTable columns={subCols} rows={ownSubs} loading={subMidsQ.isLoading} rowKey={(r) => r.id} emptyState="No Sub-MIDs yet. Create one at /sub-mids after CONFIG stage." />
-        </CardContent>
-      </Card>
-    </>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

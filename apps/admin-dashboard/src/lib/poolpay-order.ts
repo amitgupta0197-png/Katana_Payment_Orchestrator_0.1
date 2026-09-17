@@ -10,6 +10,9 @@ import { sendPayinCallback } from "@/lib/merchant-callback";
 import { assertLiveActivated } from "@/lib/live-activation";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
+import { gatewayPayinFor } from "@/lib/payin-providers";
+import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
+import { gatewayName } from "@/lib/pg-catalog";
 
 export interface CreatePoolPayInput {
   orderId: string;
@@ -28,9 +31,13 @@ export interface CreatePoolPayInput {
   client?: PayuIntentClient | null; // paying customer's IP + user-agent — PayU requires them
 }
 
-/** Set on meta.gateway when PayU issued the order's UPI intent. */
+/**
+ * Set on meta.gateway when a payment gateway (PayU, or Razorpay / Cashfree / PhonePe / Paytm
+ * through lib/payin-providers) issued the order's UPI intent. Such an order is confirmed by that
+ * gateway only; the bank-credit matcher leaves it alone.
+ */
 interface PayuGatewayMeta {
-  provider: "PAYU";
+  provider: string;
   txnid: string;                 // the txnid we sent PayU (also vendor_txn_id)
   payment_id: string | null;
   env: string;
@@ -135,6 +142,11 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   const payuMid = livemode && !goLive && input.merchantId
     ? await getGatewayMid(input.merchantId).then((m) => (m?.gateway === "PAYU" ? m : null)).catch(() => null)
     : null;
+  // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
+  // keep the direct UPI link.
+  const otherGw = livemode && !goLive && !payuMid && input.merchantId
+    ? await gatewayPayinFor(input.merchantId).then((g) => (g?.connector.upiIntent ? g : null)).catch(() => null)
+    : null;
   let gateway: PayuGatewayMeta | null = null;
 
   // Real PoolPay when the cascade resolves to a live (PROD + secret) config or the
@@ -171,6 +183,36 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       provider: "PAYU", txnid: vendorTxnId, payment_id: r.paymentId, env: payuMid.env ?? "TEST",
       payee_vpa: new URLSearchParams(r.intentQuery).get("pa"),
     };
+  } else if (otherGw) {
+    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+    if (prior) return prior;
+    const { mid, connector } = otherGw;
+    const name = gatewayName(mid.gateway);
+    // A live order must be paid on the merchant's live gateway account.
+    if (mid.env !== "PROD") throw new PayuIntentError(`this merchant's ${name} credentials are sandbox (TEST); live orders need live credentials`);
+    if (!payinProdEnabled(mid.gateway)) throw new PayuIntentError(`live ${name} payments are not switched on yet`);
+
+    vendorTxnId = shortId("kp");   // fits every gateway's order-id rules (letters, digits, _)
+    const r = await connector.upiIntent!(mid, {
+      txnid: vendorTxnId, amountMinor: BigInt(Math.round(input.amount * 100)), currency: input.currency,
+      productinfo: note, firstname: "Customer", email: "payments@katanapay.co",
+      phone: input.customerPhone?.trim() || "9999999999",
+      returnUrl: payinReturnUrl(connector.id, vendorTxnId), notifyUrl: payinWebhookUrl(connector.id),
+    }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
+    if (!r.ok) throw new PayuIntentError(r.error);
+
+    const links = {
+      upi: `upi://pay?${r.data.intentQuery}`,
+      paytm: `paytm://upi/pay?${r.data.intentQuery}`,
+      phonepe: `phonepe://upi/pay?${r.data.intentQuery}`,
+    };
+    payId = r.data.paymentId ?? shortId("pay");
+    deeplinks = links as DeepLinks;
+    upiIntent = links.upi;
+    gateway = {
+      provider: connector.id, txnid: vendorTxnId, payment_id: r.data.paymentId, env: mid.env ?? "TEST",
+      payee_vpa: new URLSearchParams(r.data.intentQuery).get("pa"),
+    };
   } else {
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
@@ -198,7 +240,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent
     integration: !livemode ? { source: "test", env: "SANDBOX", provider_id: null, live: false }
-      : gateway ? { source: "payu", env: gateway.env, provider_id: null, live: true } : cfg ? {
+      : gateway ? { source: gateway.provider.toLowerCase(), env: gateway.env, provider_id: null, live: true } : cfg ? {
       source: cfg.source,                  // merchant | provider | env
       env: cfg.env,                        // SANDBOX | PROD
       provider_id: cfg.providerId,

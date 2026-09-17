@@ -4,8 +4,9 @@
 // No secrets here. A merchant connects ONE gateway for pay-ins and ONE for payouts; they may
 // differ.
 //
-// `connector: true` means Katana actually routes money through that gateway today. Payout
-// connectors other than PayU run in PROD only once switched on (PAYOUT_CONNECTORS_PROD). The others
+// `connector: true` means Katana actually routes money through that gateway today. Connectors
+// other than PayU run in PROD only once switched on (PAYIN_CONNECTORS_PROD /
+// PAYOUT_CONNECTORS_PROD). The others
 // can be selected and their credentials saved, but the merchant keeps using Katana's current
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
@@ -67,8 +68,9 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "RAZORPAY", name: "Razorpay",
     payin: {
-      connector: false,
+      connector: true,
       env: { TEST: "Test mode (rzp_test_…)", PROD: "Live mode (rzp_live_…)" },
+      note: "Add Katana's payment events URL in Razorpay → Settings → Webhooks (events order.paid and payment.failed), with the same webhook secret as here. UPI intent needs S2S UPI enabled on the account.",
       fields: [
         { name: "key", label: "Key ID", placeholder: "rzp_test_…", pattern: "^rzp_(test|live)_[A-Za-z0-9]+$" },
         { name: "salt", label: "Key Secret", secret: true },
@@ -91,8 +93,9 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "CASHFREE", name: "Cashfree Payments",
     payin: {
-      connector: false,
+      connector: true,
       env: { TEST: "Sandbox (sandbox.cashfree.com)", PROD: "Production (api.cashfree.com)" },
+      note: "Katana sends its payment events URL with every order, so there is nothing to set up for webhooks.",
       fields: [
         { name: "key", label: "App ID (x-client-id)" },
         { name: "salt", label: "Secret Key (x-client-secret)", secret: true },
@@ -112,9 +115,9 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "CCAVENUE", name: "CCAvenue",
     payin: {
-      connector: false,
+      connector: true,
       env: { TEST: "Test (test.ccavenue.com)", PROD: "Live (secure.ccavenue.com)" },
-      note: "CCAvenue encrypts each request with the Working Key.",
+      note: "CCAvenue encrypts each request with the Working Key. Hosted checkout only: CCAvenue has no UPI intent API. Whitelist Katana's server IP for CCAvenue's status API.",
       fields: [
         { name: "mid_code", label: "Merchant ID", pattern: "^\\d{1,20}$" },
         { name: "key", label: "Access Code" },
@@ -126,13 +129,16 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PHONEPE", name: "PhonePe Payment Gateway",
     payin: {
-      connector: false,
+      connector: true,
       env: { TEST: "UAT (api-preprod.phonepe.com)", PROD: "Production (api.phonepe.com)" },
+      note: "For webhooks, add Katana's payment events URL in the PhonePe dashboard with a username and password, and enter the same two here.",
       fields: [
         { name: "key", label: "Client ID" },
         { name: "salt", label: "Client Secret", secret: true },
         { name: "client_version", label: "Client Version", placeholder: "e.g. 1", pattern: "^\\d{1,4}$" },
         { name: "mid_code", label: "Merchant ID", optional: true },
+        { name: "webhook_username", label: "Webhook username", optional: true },
+        { name: "webhook_password", label: "Webhook password", secret: true, optional: true },
       ],
     },
     payout: null,
@@ -140,8 +146,9 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PAYTM", name: "Paytm Payment Gateway",
     payin: {
-      connector: false,
+      connector: true,
       env: { TEST: "Staging (securegw-stage.paytm.in)", PROD: "Production (securegw.paytm.in)" },
+      note: "Optionally add Katana's payment events URL as the payment notification URL in the Paytm dashboard.",
       fields: [
         { name: "key", label: "MID" },
         { name: "salt", label: "Merchant Key", secret: true },

@@ -3,7 +3,10 @@
 // the integration without any external checkout page. Secrets stay server-side.
 //   redirect=false → runs the shared checkout pipeline, returns the JSON result.
 //   redirect=true  → returns { payu_url, fields } for the browser to auto-submit
-//                    to PayU's hosted page (uses the merchant's stored PayU creds).
+//                    to PayU's hosted page (uses the merchant's stored PayU creds), or
+//                    { html } that opens another gateway's hosted checkout.
+//   intent=true    → asks the merchant's gateway for a UPI intent.
+// Test payments use the gateway's sandbox credentials (TEST); live credentials are refused.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -14,6 +17,7 @@ import { runCheckout } from "@/lib/checkout-core";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { payuFields, payuPaymentUrl } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
+import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { toMinor, fromMinor } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +50,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const currency = body.currency.toUpperCase();
 
   try {
+    const other = body.intent || body.redirect ? await gatewayPayinFor(merchantCode) : null;
+    if (other) {
+      const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
+      const input = {
+        mid: other.mid, connector: other.connector, merchantCode, livemode: false,
+        txnid: "TEST-" + Date.now(), amount: amountStr, currency,
+        method: body.intent ? "UPI_INTENT" : body.method.toUpperCase(),
+        productinfo: body.productinfo, firstname: body.firstname, email: body.email, phone: body.phone,
+        clientSurl: `${base}/api/pay-result`, clientFurl: `${base}/api/pay-result`,
+        client: intentClientFrom(req),
+        actor: `test:${g.session.user_id}`,
+      };
+      if (body.intent) {
+        const r = await issueGatewayIntent(input);
+        return NextResponse.json({ mode: "intent", ...r.body }, { status: r.httpStatus });
+      }
+      const r = await startGatewayCheckout(input);
+      if (r.html) return NextResponse.json({ mode: "redirect", gateway: other.connector.id, html: r.html });
+      return NextResponse.json(r.body, { status: r.httpStatus });
+    }
+
     if (body.intent) {
       const gw = await getGatewayMid(merchantCode);
       if (!gw || gw.gateway !== "PAYU") {

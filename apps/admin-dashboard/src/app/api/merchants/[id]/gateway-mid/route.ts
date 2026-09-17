@@ -14,6 +14,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { wormAppend } from "@/lib/worm";
 import { storeGatewayMid, getGatewayMidStatus } from "@/lib/gateway-creds";
 import { GATEWAYS, gatewayDef, validateCredFields } from "@/lib/pg-catalog";
+import { payinProdEnabled, payinWebhookUrl } from "@/lib/payin-providers/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const code = await merchantCode(id);
   if (!code) return NextResponse.json({ error: "merchant not found" }, { status: 404 });
   try {
-    return NextResponse.json({ status: await getGatewayMidStatus(code) });
+    const status = await getGatewayMidStatus(code);
+    // Where the gateway should send payment events; not a secret.
+    return NextResponse.json({ status, webhook_url: status.configured ? payinWebhookUrl(status.gateway as never) : null });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
@@ -60,6 +63,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Razorpay keys say which mode they belong to; don't let a live key be saved as test.
   if (def.id === "RAZORPAY" && f.key.startsWith("rzp_live_") !== (body.env === "PROD"))
     return NextResponse.json({ error: "the Key ID's mode (rzp_test_ / rzp_live_) doesn't match the environment" }, { status: 400 });
+
+  // Live keys for a gateway whose connector hasn't been proven end to end would sit unusable
+  // (every live order refused); say so now rather than at the first payment.
+  if (body.env === "PROD" && !payinProdEnabled(def.id))
+    return NextResponse.json({ error: `live ${def.name} payments aren't switched on yet — connect its sandbox (TEST) account first` }, { status: 409 });
 
   const extra = Object.fromEntries(Object.entries(f).filter(([k]) => !CORE.has(k)));
   try {

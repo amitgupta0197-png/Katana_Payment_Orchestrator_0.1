@@ -14,6 +14,7 @@ import { rows, pgError } from "@/lib/pg";
 import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/poolpay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { checkPayuPayinNow } from "@/lib/payu-result";
+import { checkGatewayPayin } from "@/lib/gateway-payin";
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +56,13 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   // A PayU order is settled by PayU. Ask PayU directly (at most every 4s per order, however many
   // pages are polling) so the page flips within seconds of the customer approving in their UPI app,
   // instead of waiting for PayU's webhook or the sweep.
-  if (order.meta?.gateway?.provider === "PAYU" && order.livemode !== false && !POOLPAY_TERMINAL.has(order.status)) {
-    const r = await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }));
+  // Other gateways (Razorpay, Cashfree, PhonePe, Paytm) are asked the same way.
+  const provider = order.meta?.gateway?.provider;
+  if (provider && order.livemode !== false && !POOLPAY_TERMINAL.has(order.status)) {
+    const r = provider === "PAYU"
+      ? await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }))
+      : await checkGatewayPayin({ provider, txnid: order.vendor_txn_id, merchantCode: order.merchant_id, source: "pay_page", throttleSec: 4 })
+          .catch(() => ({ applied: false }));
     if (r.applied) return readOrderStatus(id);
   }
 

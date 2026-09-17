@@ -18,6 +18,7 @@ import { getLivemode } from "@/lib/mode";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
+import { payinConnector } from "@/lib/payin-providers";
 
 export const dynamic = "force-dynamic";
 
@@ -97,9 +98,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // A dashboard-created order follows the Test / Live switch (live by default). A test order
   // always pays the sandbox UPI ID, so it needs no receiver.
   const livemode = await getLivemode();
-  // A merchant with PayU Key + Salt is paid through PayU's collection account, so it needs no receiver.
-  const viaPayu = livemode && (await getGatewayMid(scope.code).catch(() => null))?.gateway === "PAYU";
-  if (!receiverVpas.length && livemode && !viaPayu)
+  // A merchant whose pay-in gateway issues UPI intents (PayU, Razorpay, Cashfree, PhonePe, Paytm)
+  // is paid through the gateway's collection account, so it needs no receiver.
+  const gw = livemode ? (await getGatewayMid(scope.code).catch(() => null))?.gateway : undefined;
+  const viaGateway = gw === "PAYU" || !!payinConnector(gw)?.upiIntent;
+  if (!receiverVpas.length && livemode && !viaGateway)
     return NextResponse.json({ error: "no receiver VPA — add one here or set a PoolPay settlement VPA in payment config" }, { status: 400 });
 
   try {
