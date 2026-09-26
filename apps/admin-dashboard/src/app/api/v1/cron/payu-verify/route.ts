@@ -16,10 +16,10 @@
 // untouched and reported as skipped.
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
-import { getGatewayMid } from "@/lib/gateway-creds";
+import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 import { applyVerifiedPayuStatus, claimPayuPayinCheck, markPayuPayinFinal } from "@/lib/payu-result";
-import { checkGatewayPayin, payinConnector } from "@/lib/gateway-payin";
+import { checkGatewayPayin, payinConnector, payinConnectorFor } from "@/lib/gateway-payin";
 
 export const dynamic = "force-dynamic";
 
@@ -78,9 +78,10 @@ async function run() {
   for (const o of checks) {
     const mid = await getGatewayMid(o.merchant_id);
 
-    // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm.
-    const other = payinConnector(o.provider ?? mid?.gateway);
-    if (other && (o.provider ?? mid?.gateway) !== "PAYU") {
+    // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, PoolPay, and PayU with a Client ID + Secret.
+    // A Katana Pay order names its provider; PAYU there is always a Key + Salt intent.
+    const other = o.provider ? (o.provider === "PAYU" ? null : payinConnector(o.provider)) : payinConnectorFor(mid);
+    if (other) {
       const r = await checkGatewayPayin({
         provider: other.id, txnid: o.txn_id, merchantCode: o.merchant_id, source: "verify_sweep",
         throttleSec: o.payin ? 5 : undefined,
@@ -98,11 +99,11 @@ async function run() {
     }
     // No stored key+salt means we cannot authenticate a verify call for this merchant.
     // Leave the order pending — guessing would be worse than not knowing.
-    if (!mid || mid.gateway !== "PAYU") { noCreds++; continue; }
+    if (!payuKeySalt(mid)) { noCreds++; continue; }
 
     // An open pay page may have asked PayU about this order moments ago (lib/payu-result).
     if (o.payin && !(await claimPayuPayinCheck(o.txn_id, 5))) continue;
-    const v = await verifyPayuTxn(mid, o.txn_id);
+    const v = await verifyPayuTxn(mid!, o.txn_id);
     if (o.payin && v.found && (v.status === "failure" || v.status === "failed")) await markPayuPayinFinal(o.txn_id, v.status);
     if (!v.found) {
       unreachable++;

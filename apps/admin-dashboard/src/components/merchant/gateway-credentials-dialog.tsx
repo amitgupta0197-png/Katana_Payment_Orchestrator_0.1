@@ -11,12 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GATEWAYS, type GatewayEnv, type GatewayId, type GatewayService } from "@/lib/pg-catalog";
+import { GATEWAYS, authFields, type AuthModeId, type GatewayEnv, type GatewayId, type GatewayService } from "@/lib/pg-catalog";
 import { GatewayLogo, shortGatewayName } from "@/components/merchant/gateway-logo";
 import { cn } from "@/lib/utils";
 
 export type GatewayKind = "payin" | "payout";
-export interface GatewayForm { gateway: GatewayId; env: GatewayEnv; fields: Record<string, string> }
+export interface GatewayForm { gateway: GatewayId; env: GatewayEnv; auth?: AuthModeId; fields: Record<string, string> }
 
 const selectCls = "flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]";
 
@@ -39,17 +39,22 @@ export function GatewayCredentialsDialog({
   const [gateway, setGateway] = useState<GatewayId>(current ?? "PAYU");
   const [env, setEnv] = useState<GatewayEnv>("TEST");
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [auth, setAuth] = useState<AuthModeId>("key_salt");
 
   // Start from the saved gateway each time the dialog opens; secrets are never prefilled.
-  useEffect(() => { if (open) { setGateway(current ?? "PAYU"); setEnv("TEST"); setFields({}); } }, [open, current]);
+  useEffect(() => { if (open) { setGateway(current ?? "PAYU"); setEnv("TEST"); setAuth("key_salt"); setFields({}); } }, [open, current]);
 
   const svc = serviceOf(gateway, kind);
-  const missing = !svc || svc.fields.some((f) => !f.optional && !(fields[f.name] ?? "").trim());
+  // The chosen sign-in mode, when the gateway offers more than one (PayU pay-ins).
+  const mode = svc?.altAuth?.find((m) => m.id === auth);
+  const shown = svc ? authFields(svc, mode?.id) : [];
+  const missing = !svc || shown.some((f) => !f.optional && !(fields[f.name] ?? "").trim());
   const what = kind === "payin" ? "pay-in" : "payout";
 
   const save = async () => {
-    try { await onSave({ gateway, env, fields }); setOpen(false); } catch { /* the caller shows the error */ }
+    try { await onSave({ gateway, env, ...(mode ? { auth: mode.id } : {}), fields }); setOpen(false); } catch { /* the caller shows the error */ }
   };
+  const pickAuth = (id: AuthModeId) => { setAuth(id); setFields({}); };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -81,7 +86,7 @@ export function GatewayCredentialsDialog({
                     role="radio"
                     aria-checked={selected}
                     disabled={!s}
-                    onClick={() => { setGateway(g.id); setFields({}); }}
+                    onClick={() => { setGateway(g.id); setAuth("key_salt"); setFields({}); }}
                     className={cn(
                       "flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)]",
@@ -104,8 +109,8 @@ export function GatewayCredentialsDialog({
           <div className="space-y-1.5">
             <Label htmlFor="gateway-env">Environment</Label>
             <select id="gateway-env" className={selectCls} value={env} onChange={(e) => setEnv(e.target.value as GatewayEnv)}>
-              <option value="TEST">{svc?.env.TEST ?? "Test"}</option>
-              <option value="PROD">{svc?.env.PROD ?? "Live"}</option>
+              <option value="TEST">{(mode?.env ?? svc?.env)?.TEST ?? "Test"}</option>
+              <option value="PROD">{(mode?.env ?? svc?.env)?.PROD ?? "Live"}</option>
             </select>
           </div>
           {svc && !svc.connector && (
@@ -113,12 +118,37 @@ export function GatewayCredentialsDialog({
               Katana can save these now, but it doesn’t send {what}s through this gateway yet. Until its connector ships, this merchant keeps using Katana’s current {what} route.
             </div>
           )}
-          {svc?.creds && (
-            <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">{svc.creds}</div>
+          {svc?.altAuth?.length ? (
+            <div className="space-y-1.5">
+              <Label id="gateway-auth">Credentials type</Label>
+              <div role="radiogroup" aria-labelledby="gateway-auth" className="grid grid-cols-2 gap-1 rounded-lg border p-1">
+                {[{ id: "key_salt" as AuthModeId, label: svc.defaultAuthLabel ?? "Default" }, ...svc.altAuth].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={auth === m.id}
+                    onClick={() => pickAuth(m.id)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)]",
+                      auth === m.id
+                        ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-text)]"
+                        : "text-[color:var(--color-text-muted)] hover:bg-[color:var(--color-surface-muted)]",
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {(mode?.creds ?? svc?.creds) && (
+            <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">{mode?.creds ?? svc?.creds}</div>
           )}
-          {svc?.note && <div className="text-xs text-[color:var(--color-text-muted)]">{svc.note}</div>}
-          {svc?.fields.map((f) => (
-            <div key={`${gateway}-${f.name}`} className="space-y-1.5">
+          {(mode?.note ?? svc?.note) && <div className="text-xs text-[color:var(--color-text-muted)]">{mode?.note ?? svc?.note}</div>}
+          {shown.map((f) => (
+            <div key={`${gateway}-${auth}-${f.name}`} className="space-y-1.5">
               <Label>{f.label}{f.optional && <span className="text-[color:var(--color-text-muted)]"> (optional)</span>}</Label>
               <Input
                 type={f.secret ? "password" : "text"} autoComplete="off" placeholder={f.placeholder}

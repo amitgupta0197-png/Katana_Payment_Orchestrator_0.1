@@ -18,7 +18,7 @@
 // still confirms the money.
 
 import { rows } from "@/lib/pg";
-import { getGatewayMid } from "@/lib/gateway-creds";
+import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
@@ -181,8 +181,8 @@ export async function markPayuPayinFinal(txnid: string, payuStatus: string): Pro
  */
 export async function checkPayuPayinNow(txnid: string, merchantId: string, minIntervalSec: number): Promise<{ applied: boolean }> {
   if (!(await claimPayuPayinCheck(txnid, minIntervalSec))) return { applied: false };
-  const mid = await getGatewayMid(merchantId);
-  if (!mid || mid.gateway !== "PAYU") return { applied: false };
+  const mid = payuKeySalt(await getGatewayMid(merchantId));
+  if (!mid) return { applied: false };
   const v = await verifyPayuTxn(mid, txnid);
   if (!v.found) return { applied: false };
   if (v.status === "failure" || v.status === "failed") await markPayuPayinFinal(txnid, v.status);
@@ -226,7 +226,7 @@ export async function applyPayuResult(
   if (!o) {
     const v = await findPayuPayin(txnid);
     if (!v) return { matched: false, txnid, status: "UNKNOWN", hashOk: false, dest: null, reason: "unknown_txn", applied: false };
-    const mid = await getGatewayMid(v.merchant_id).then((m) => (m?.gateway === "PAYU" ? m : null));
+    const mid = await getGatewayMid(v.merchant_id).then(payuKeySalt);
     const hashOk = !!mid && !!p.hash && payuResponseHash(mid, {
       status: p.status || "", email: p.email || "", firstname: p.firstname || "",
       productinfo: p.productinfo || "", amount: p.amount || "", txnid,
@@ -247,7 +247,13 @@ export async function applyPayuResult(
   // salt the hash can't be checked, so the payment is not treated as successful — we do
   // not take PayU's word for it unsigned.
   // Only PayU credentials can check a PayU hash; a merchant on another gateway has none.
-  const gwMid = await getGatewayMid(o.merchant_id).then((m) => (m?.gateway === "PAYU" ? m : null));
+  const saved = await getGatewayMid(o.merchant_id);
+  // A PayU Client ID merchant's payment is settled from the Payment Links API
+  // (lib/payin-providers/payu-links). Without a Salt this payload can't be checked, and it must
+  // not close the order as FAILED; the pay-in checks decide.
+  if (saved?.gateway === "PAYU" && !payuKeySalt(saved))
+    return { matched: true, txnid, status: "UNKNOWN", hashOk: false, dest: o.client_surl ?? o.client_furl, reason: "payu_client_id_mode", applied: false };
+  const gwMid = payuKeySalt(saved);
   const expected = gwMid ? payuResponseHash(gwMid, {
     status: p.status || "", email: p.email || "", firstname: p.firstname || "",
     productinfo: p.productinfo || "", amount: p.amount || "", txnid,

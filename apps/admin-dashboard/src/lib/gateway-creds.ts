@@ -14,7 +14,7 @@
 import { createHash, createHmac } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
 import { rows } from "@/lib/pg";
-import { gatewayDef, hint } from "@/lib/pg-catalog";
+import { gatewayDef, hint, type AuthModeId } from "@/lib/pg-catalog";
 
 export type SigningScheme = "PAYU_SHA512" | "HMAC_SHA256";
 export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
@@ -28,6 +28,11 @@ export interface GatewayMid {
   salt: string;         // the gateway's secret (PayU salt, Razorpay Key Secret, CCAvenue Working Key, …)
   scheme: SigningScheme;
   env?: "TEST" | "PROD";   // gateway environment. Default TEST.
+  /**
+   * How Katana signs in to the gateway (lib/pg-catalog altAuth). Absent = the gateway's default.
+   * PayU "client_credentials": key = Client ID, salt = Client Secret, Payment Links API only.
+   */
+  auth?: AuthModeId;
   /** Gateway-specific extras (Razorpay webhook secret, PhonePe client version, Paytm website, …). */
   extra?: Record<string, string>;
 }
@@ -50,12 +55,26 @@ export async function getGatewayMid(merchantCode: string): Promise<GatewayMid | 
   try { return JSON.parse(pt) as GatewayMid; } catch { return null; }
 }
 
+/**
+ * The merchant's PayU Key + Salt, or null. Everything in lib/payu-* signs with the Salt, so it
+ * must never be handed a PayU Client ID + Secret (Payment Links mode, lib/payin-providers/payu-links).
+ */
+export function payuKeySalt(mid: GatewayMid | null | undefined): GatewayMid | null {
+  return mid && mid.gateway === "PAYU" && (mid.auth ?? "key_salt") === "key_salt" ? mid : null;
+}
+
+/** The id live pay-ins are switched on under (PAYIN_CONNECTORS_PROD): PAYU_LINKS for PayU Client ID mode. */
+export function payinProdId(mid: Pick<GatewayMid, "gateway" | "auth">): string {
+  return mid.gateway === "PAYU" && mid.auth === "client_credentials" ? "PAYU_LINKS" : mid.gateway;
+}
+
 // Non-secret status for the operator UI — deliberately omits key + salt.
 export type GatewayMidStatus =
   | { configured: false }
   | {
       configured: true; gateway: string; gateway_name: string; connector: boolean;
       mid_code: string; scheme: SigningScheme; env: "TEST" | "PROD"; env_label: string; key_hint: string;
+      auth: AuthModeId; auth_label: string | null;
     };
 
 export async function getGatewayMidStatus(merchantCode: string): Promise<GatewayMidStatus> {
@@ -63,11 +82,14 @@ export async function getGatewayMidStatus(merchantCode: string): Promise<Gateway
   if (!mid) return { configured: false };
   const def = gatewayDef(mid.gateway);
   const env = mid.env ?? "TEST";
+  const alt = mid.auth ? def?.payin.altAuth?.find((m) => m.id === mid.auth) : undefined;
   return {
     configured: true, gateway: mid.gateway, gateway_name: def?.name ?? mid.gateway,
     connector: def?.payin.connector ?? false,
-    mid_code: mid.mid_code, scheme: mid.scheme, env, env_label: def?.payin.env[env] ?? env,
+    mid_code: mid.mid_code, scheme: mid.scheme, env, env_label: (alt?.env ?? def?.payin.env)?.[env] ?? env,
     key_hint: hint(mid.key),
+    auth: mid.auth ?? "key_salt",
+    auth_label: alt?.label ?? def?.payin.defaultAuthLabel ?? null,
   };
 }
 

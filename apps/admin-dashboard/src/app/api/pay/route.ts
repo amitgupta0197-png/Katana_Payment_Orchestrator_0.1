@@ -16,7 +16,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { toMinor, fromMinor } from "@/lib/money";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
-import { getGatewayMid } from "@/lib/gateway-creds";
+import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
@@ -128,8 +128,8 @@ export async function POST(req: Request) {
       // There is no separate test MID, so a test key cannot use it.
       if (!livemode)
         return NextResponse.json({ error: "test keys cannot use the hosted gateway redirect" }, { status: 400 });
-      const gwMid = await getGatewayMid(merchantCode);
-      if (!gwMid || gwMid.gateway !== "PAYU") {
+      const gwMid = payuKeySalt(await getGatewayMid(merchantCode));
+      if (!gwMid) {
         return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();
@@ -169,8 +169,8 @@ export async function POST(req: Request) {
       // Same rule as the redirect: the intent is issued on the real MID, so a test key cannot use it.
       if (!livemode)
         return NextResponse.json({ error: "test keys cannot use the PayU UPI intent" }, { status: 400 });
-      const gwMid = await getGatewayMid(merchantCode);
-      if (!gwMid || gwMid.gateway !== "PAYU") {
+      const gwMid = payuKeySalt(await getGatewayMid(merchantCode));
+      if (!gwMid) {
         return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();

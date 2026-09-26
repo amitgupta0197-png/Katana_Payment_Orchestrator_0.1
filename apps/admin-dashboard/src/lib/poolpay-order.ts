@@ -8,7 +8,7 @@ import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, 
 import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { assertLiveActivated } from "@/lib/live-activation";
-import { getGatewayMid } from "@/lib/gateway-creds";
+import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
@@ -140,7 +140,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // merchant's own UPI ID is exactly what UPI apps decline. PayU then confirms the order
   // (lib/payu-result); the bank-credit matcher leaves these orders alone.
   const payuMid = livemode && !goLive && input.merchantId
-    ? await getGatewayMid(input.merchantId).then((m) => (m?.gateway === "PAYU" ? m : null)).catch(() => null)
+    ? await getGatewayMid(input.merchantId).then(payuKeySalt).catch(() => null)
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.

@@ -15,6 +15,7 @@ import type { GatewayId } from "@/lib/pg-catalog";
 interface PayinStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
   mid_code?: string; env?: "TEST" | "PROD"; env_label?: string; key_hint?: string;
+  auth?: "key_salt" | "client_credentials"; auth_label?: string | null;
 }
 
 export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: string; merchantCode: string }) {
@@ -75,12 +76,13 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
                 {status.gateway_name}
               </span>
               <Badge variant={status.env === "PROD" ? "danger" : "default"}>{status.env_label}</Badge>
+              {status.auth_label && <Badge variant="default">{status.auth_label}</Badge>}
               {status.connector
                 ? <Badge variant="success">Connected</Badge>
                 : <Badge variant="warning">Saved — connector coming soon</Badge>}
             </div>
             <div><span className="text-[color:var(--color-text-muted)]">Merchant ID:</span> <span className="font-mono">{status.mid_code}</span></div>
-            <div><span className="text-[color:var(--color-text-muted)]">Key:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· secret sealed</span></div>
+            <div><span className="text-[color:var(--color-text-muted)]">{status.auth === "client_credentials" ? "Client ID" : "Key"}:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· secret sealed</span></div>
             {status.connector && webhookUrl && (
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <span className="text-[color:var(--color-text-muted)]">Payment events:</span>

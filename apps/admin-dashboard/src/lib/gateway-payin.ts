@@ -14,25 +14,25 @@
 
 import { rows } from "@/lib/pg";
 import { fromMinor, toMinor } from "@/lib/money";
-import type { GatewayMid } from "@/lib/gateway-creds";
+import { payinProdId, type GatewayMid } from "@/lib/gateway-creds";
 import { gatewayName } from "@/lib/pg-catalog";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
 import { confirmPoolPayOrder } from "@/lib/poolpay-order";
-import { gatewayPayinFor, payinConnector } from "@/lib/payin-providers";
+import { gatewayPayinFor, payinConnector, payinConnectorFor } from "@/lib/payin-providers";
 import {
   checkoutPage, payinProdEnabled, payinReturnUrl, payinWebhookUrl,
   type PayinClient, type PayinConnector, type PayinState,
 } from "@/lib/payin-providers/types";
 
-export { gatewayPayinFor, payinConnector };
+export { gatewayPayinFor, payinConnector, payinConnectorFor };
 
 /** Why this merchant can't take a real payment through the gateway right now, or null. */
 export function gatewayLiveBlocker(mid: GatewayMid, livemode: boolean): string | null {
   const name = gatewayName(mid.gateway);
   if (livemode && mid.env !== "PROD") return `this merchant's ${name} credentials are sandbox (TEST); live orders need live credentials`;
   if (!livemode && mid.env === "PROD") return `this merchant's ${name} credentials are live; a test order can't use them`;
-  if (mid.env === "PROD" && !payinProdEnabled(mid.gateway)) return `live ${name} payments are not switched on yet`;
+  if (mid.env === "PROD" && !payinProdEnabled(payinProdId(mid))) return `live ${name}${mid.auth === "client_credentials" ? " (Client ID)" : ""} payments are not switched on yet`;
   return null;
 }
 
@@ -227,7 +227,8 @@ function orderFor(input: GatewayOrderInput) {
   return {
     txnid: input.txnid, amountMinor: BigInt(toMinor(input.amount, input.currency)), currency: input.currency,
     productinfo: input.productinfo, firstname: input.firstname, email: input.email, phone: input.phone,
-    returnUrl: payinReturnUrl(input.connector.id, input.txnid), notifyUrl: payinWebhookUrl(input.connector.id),
+    returnUrl: payinReturnUrl(input.connector.path ?? input.connector.id, input.txnid),
+    notifyUrl: payinWebhookUrl(input.connector.path ?? input.connector.id),
   };
 }
 

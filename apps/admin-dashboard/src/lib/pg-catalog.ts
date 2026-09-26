@@ -24,8 +24,27 @@ export interface CredField {
   pattern?: string;      // regex the value must match (checked server-side too)
 }
 
+/**
+ * A second way to sign in to the same gateway, e.g. PayU pay-ins with a Client ID + Secret
+ * (Payment Links API) instead of the Key + Salt. Its fields replace `fields` when chosen, and it
+ * uses its own connector, so a saved mode always matches the code that will use it.
+ */
+export type AuthModeId = "key_salt" | "client_credentials";
+export interface AuthMode {
+  id: AuthModeId;
+  label: string;
+  fields: CredField[];
+  /** Environment labels, when this mode talks to different hosts. */
+  env?: Record<GatewayEnv, string>;
+  creds?: string;
+  note?: string;
+}
+
 export interface GatewayService {
   fields: CredField[];
+  /** Other sign-in modes. The default mode (`fields`) is labelled `defaultAuthLabel`. */
+  altAuth?: AuthMode[];
+  defaultAuthLabel?: string;
   connector: boolean;
   env: Record<GatewayEnv, string>;   // how each environment is labelled in the UI
   note?: string;
@@ -54,12 +73,23 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Test (test.payu.in)", PROD: "Live (secure.payu.in)" },
-      creds: "PayU pay-ins use the Merchant Key + Salt, not a Client ID / Secret. PayU's Client ID and Secret are for Payouts; enter those in the payout gateway instead.",
+      creds: "Hosted checkout and UPI intent, signed with the Merchant Key + Salt.",
+      defaultAuthLabel: "Key + Salt",
       fields: [
         { name: "mid_code", label: "Merchant ID (MID)", placeholder: "e.g. 8123456" },
         { name: "key", label: "Merchant Key", placeholder: "PayU key" },
         { name: "salt", label: "Salt", secret: true },
       ],
+      altAuth: [{
+        id: "client_credentials", label: "Client ID + Secret",
+        env: { TEST: "Test (uatoneapi.payu.in)", PROD: "Live (oneapi.payu.in)" },
+        creds: "PayU Payment Links: the customer pays on a PayU-hosted page (cards, UPI, netbanking). No UPI intent in this mode. The Client ID + Secret must have the create_payment_links scope (and read_payment_links, if PayU issues it separately).",
+        fields: [
+          { name: "mid_code", label: "Merchant ID (MID)", placeholder: "e.g. 8123456", pattern: "^\\d{1,20}$" },
+          { name: "key", label: "Client ID" },
+          { name: "salt", label: "Client Secret", secret: true },
+        ],
+      }],
     },
     payout: {
       connector: true, webhook: "api", balance: true,
@@ -209,14 +239,19 @@ export function gatewayDef(id: string): GatewayDef | undefined {
   return GATEWAYS.find((g) => g.id === id);
 }
 
+/** The fields a service asks for in the chosen sign-in mode (the default mode when unknown). */
+export function authFields(svc: GatewayService, auth?: string | null): CredField[] {
+  return svc.altAuth?.find((m) => m.id === auth)?.fields ?? svc.fields;
+}
+
 export function gatewayName(id: string | null | undefined): string {
   return (id && gatewayDef(id)?.name) || id || "—";
 }
 
 /** Check submitted values against a service's fields. Returns the cleaned values or an error. */
-export function validateCredFields(svc: GatewayService, input: Record<string, unknown>): { values?: Record<string, string>; error?: string } {
+export function validateCredFields(svc: GatewayService, input: Record<string, unknown>, auth?: string | null): { values?: Record<string, string>; error?: string } {
   const values: Record<string, string> = {};
-  for (const f of svc.fields) {
+  for (const f of authFields(svc, auth)) {
     const raw = input[f.name];
     const v = typeof raw === "string" ? raw.trim() : "";
     if (!v) {

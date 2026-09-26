@@ -57,6 +57,8 @@ export interface PayinState {
 export interface PayinConnector {
   id: GatewayId;
   name: string;
+  /** Route folder under /api/gateway when it isn't the lowercased id (PayU Client ID mode). */
+  path?: string;
   /** Start a hosted checkout. */
   checkout(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<CheckoutStart>>;
   /** Get a UPI intent server-to-server (no gateway page). Gateways without one omit it. */
@@ -69,9 +71,9 @@ export function publicBase(): string {
   return (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
 }
 
-export const payinReturnUrl = (id: GatewayId, txnid: string) =>
+export const payinReturnUrl = (id: GatewayId | string, txnid: string) =>
   `${publicBase()}/api/gateway/${id.toLowerCase()}/return?txnid=${encodeURIComponent(txnid)}`;
-export const payinWebhookUrl = (id: GatewayId) => `${publicBase()}/api/gateway/${id.toLowerCase()}/webhook`;
+export const payinWebhookUrl = (id: GatewayId | string) => `${publicBase()}/api/gateway/${id.toLowerCase()}/webhook`;
 
 export function rupees(minor: bigint): string {
   const neg = minor < 0n; const v = neg ? -minor : minor;

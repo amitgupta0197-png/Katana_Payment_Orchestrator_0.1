@@ -14,7 +14,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { runCheckout } from "@/lib/checkout-core";
-import { getGatewayMid } from "@/lib/gateway-creds";
+import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuFields, payuPaymentUrl } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
@@ -72,8 +72,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     if (body.intent) {
-      const gw = await getGatewayMid(merchantCode);
-      if (!gw || gw.gateway !== "PAYU") {
+      const gw = payuKeySalt(await getGatewayMid(merchantCode));
+      if (!gw) {
         return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
       }
       const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
@@ -89,8 +89,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     if (body.redirect) {
-      const gw = await getGatewayMid(merchantCode);
-      if (!gw || gw.gateway !== "PAYU") {
+      const gw = payuKeySalt(await getGatewayMid(merchantCode));
+      if (!gw) {
         return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
       }
       const amountMinor = toMinor(amountStr, currency);

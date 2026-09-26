@@ -1,7 +1,8 @@
 // Pay-in gateway credentials for a merchant (internal mapping).
 //   GET  /api/merchants/[id]/gateway-mid   — non-secret status (no secrets).
 //   POST /api/merchants/[id]/gateway-mid   — connect / rotate the merchant's pay-in gateway.
-//        body: { gateway, env, fields: { … per lib/pg-catalog … } }
+//        body: { gateway, env, auth?, fields: { … per lib/pg-catalog … } }
+//        auth: a sign-in mode from the gateway's altAuth (PayU: "client_credentials"); default otherwise.
 //
 // SUPER_ADMIN only: these are the gateway's secrets, which Katana holds on the merchant's
 // behalf and never exposes. Stored sealed in the credential vault. A merchant has ONE pay-in
@@ -12,7 +13,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { wormAppend } from "@/lib/worm";
-import { storeGatewayMid, getGatewayMidStatus } from "@/lib/gateway-creds";
+import { storeGatewayMid, getGatewayMidStatus, payinProdId } from "@/lib/gateway-creds";
 import { GATEWAYS, gatewayDef, validateCredFields } from "@/lib/pg-catalog";
 import { payinProdEnabled, payinWebhookUrl } from "@/lib/payin-providers/types";
 
@@ -32,13 +33,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const status = await getGatewayMidStatus(code);
     // Where the gateway should send payment events; not a secret.
-    return NextResponse.json({ status, webhook_url: status.configured ? payinWebhookUrl(status.gateway as never) : null });
+    // PayU Client ID mode has no webhook: its payments are confirmed from the Payment Links API.
+    const hook = status.configured && !(status.gateway === "PAYU" && status.auth === "client_credentials");
+    return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
 const schema = z.object({
   gateway: z.enum(GATEWAYS.map((x) => x.id) as [string, ...string[]]),
   env: z.enum(["TEST", "PROD"]).default("TEST"),
+  auth: z.enum(["key_salt", "client_credentials"]).optional(),
   fields: z.record(z.string()).default({}),
 });
 
@@ -57,7 +61,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   const def = gatewayDef(body.gateway)!;
-  const v = validateCredFields(def.payin, body.fields);
+  const alt = body.auth && body.auth !== "key_salt" ? def.payin.altAuth?.find((m) => m.id === body.auth) : undefined;
+  if (body.auth && body.auth !== "key_salt" && !alt)
+    return NextResponse.json({ error: `${def.name} pay-ins don't support that sign-in` }, { status: 400 });
+  const v = validateCredFields(def.payin, body.fields, alt?.id);
   if (!v.values) return NextResponse.json({ error: v.error }, { status: 400 });
   const f = v.values;
   // Razorpay keys say which mode they belong to; don't let a live key be saved as test.
@@ -66,8 +73,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Live keys for a gateway whose connector hasn't been proven end to end would sit unusable
   // (every live order refused); say so now rather than at the first payment.
-  if (body.env === "PROD" && !payinProdEnabled(def.id))
-    return NextResponse.json({ error: `live ${def.name} payments aren't switched on yet — connect its sandbox (TEST) account first` }, { status: 409 });
+  if (body.env === "PROD" && !payinProdEnabled(payinProdId({ gateway: def.id, auth: alt?.id })))
+    return NextResponse.json({ error: `live ${def.name}${alt ? ` (${alt.label})` : ""} payments aren't switched on yet — connect its sandbox (TEST) account first` }, { status: 409 });
 
   const extra = Object.fromEntries(Object.entries(f).filter(([k]) => !CORE.has(k)));
   try {
@@ -79,6 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       // PayU signs with its SHA-512 hash; the others get their own signing in their connector.
       scheme: def.id === "PAYU" ? "PAYU_SHA512" : "HMAC_SHA256",
       env: body.env,
+      ...(alt ? { auth: alt.id } : {}),
       extra: Object.keys(extra).length ? extra : undefined,
     });
     const after = await getGatewayMidStatus(code);
