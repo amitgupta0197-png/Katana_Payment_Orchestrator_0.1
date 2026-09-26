@@ -113,6 +113,9 @@ export function GatewayCredentialsDialog({
               Katana can save these now, but it doesn’t send {what}s through this gateway yet. Until its connector ships, this merchant keeps using Katana’s current {what} route.
             </div>
           )}
+          {svc?.creds && (
+            <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">{svc.creds}</div>
+          )}
           {svc?.note && <div className="text-xs text-[color:var(--color-text-muted)]">{svc.note}</div>}
           {svc?.fields.map((f) => (
             <div key={`${gateway}-${f.name}`} className="space-y-1.5">

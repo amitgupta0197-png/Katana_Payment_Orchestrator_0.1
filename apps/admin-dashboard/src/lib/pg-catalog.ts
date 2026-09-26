@@ -29,6 +29,8 @@ export interface GatewayService {
   connector: boolean;
   env: Record<GatewayEnv, string>;   // how each environment is labelled in the UI
   note?: string;
+  /** Pay-ins: which credentials the gateway issues, so a Client ID / Secret isn't misplaced. */
+  creds?: string;
   /** Payouts: how the gateway learns Katana's webhook URL. */
   webhook?: "api" | "dashboard" | "per_transfer";
   /** Payouts: Katana can read the account balance. */
@@ -52,6 +54,7 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Test (test.payu.in)", PROD: "Live (secure.payu.in)" },
+      creds: "PayU pay-ins use the Merchant Key + Salt, not a Client ID / Secret. PayU's Client ID and Secret are for Payouts; enter those in the payout gateway instead.",
       fields: [
         { name: "mid_code", label: "Merchant ID (MID)", placeholder: "e.g. 8123456" },
         { name: "key", label: "Merchant Key", placeholder: "PayU key" },
@@ -74,10 +77,11 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Test mode (rzp_test_…)", PROD: "Live mode (rzp_live_…)" },
+      creds: "Razorpay's Key ID and Key Secret are its Client ID and Client Secret.",
       note: "Add Katana's payment events URL in Razorpay → Settings → Webhooks (events order.paid and payment.failed), with the same webhook secret as here. UPI intent needs S2S UPI enabled on the account.",
       fields: [
-        { name: "key", label: "Key ID", placeholder: "rzp_test_…", pattern: "^rzp_(test|live)_[A-Za-z0-9]+$" },
-        { name: "salt", label: "Key Secret", secret: true },
+        { name: "key", label: "Client ID (Key ID)", placeholder: "rzp_test_…", pattern: "^rzp_(test|live)_[A-Za-z0-9]+$" },
+        { name: "salt", label: "Client Secret (Key Secret)", secret: true },
         { name: "webhook_secret", label: "Webhook Secret", secret: true, optional: true },
         { name: "mid_code", label: "Merchant ID", optional: true },
       ],
@@ -99,10 +103,11 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Sandbox (sandbox.cashfree.com)", PROD: "Production (api.cashfree.com)" },
+      creds: "Cashfree's App ID and Secret Key are its Client ID (x-client-id) and Client Secret (x-client-secret).",
       note: "Katana sends its payment events URL with every order, so there is nothing to set up for webhooks.",
       fields: [
-        { name: "key", label: "App ID (x-client-id)" },
-        { name: "salt", label: "Secret Key (x-client-secret)", secret: true },
+        { name: "key", label: "Client ID (App ID)" },
+        { name: "salt", label: "Client Secret (Secret Key)", secret: true },
         { name: "mid_code", label: "Merchant ID", optional: true },
       ],
     },
@@ -121,6 +126,7 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Test (test.ccavenue.com)", PROD: "Live (secure.ccavenue.com)" },
+      creds: "CCAvenue doesn't use a Client ID / Secret. Ask CCAvenue for the Access Code and Working Key.",
       note: "CCAvenue encrypts each request with the Working Key. Hosted checkout only: CCAvenue has no UPI intent API. Whitelist Katana's server IP for CCAvenue's status API.",
       fields: [
         { name: "mid_code", label: "Merchant ID", pattern: "^\\d{1,20}$" },
@@ -135,6 +141,7 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "UAT (api-preprod.phonepe.com)", PROD: "Production (api.phonepe.com)" },
+      creds: "Enter the Client ID, Client Secret and Client Version from the PhonePe dashboard.",
       note: "For webhooks, add Katana's payment events URL in the PhonePe dashboard with a username and password, and enter the same two here.",
       fields: [
         { name: "key", label: "Client ID" },
@@ -152,6 +159,7 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "Staging (securegw-stage.paytm.in)", PROD: "Production (securegw.paytm.in)" },
+      creds: "Paytm pay-ins don't use a Client ID / Secret. Ask Paytm for the MID and Merchant Key.",
       note: "Optionally add Katana's payment events URL as the payment notification URL in the Paytm dashboard.",
       fields: [
         { name: "key", label: "MID" },
@@ -175,6 +183,7 @@ export const GATEWAYS: GatewayDef[] = [
     payin: {
       connector: true,
       env: { TEST: "UAT (enter PoolPay's UAT URL below)", PROD: "Production (gateway.pp-007.com)" },
+      creds: "PoolPay doesn't use a Client ID / Secret. Ask PoolPay for the Pay ID and Secret key.",
       note: "Hosted checkout and UPI intent. PoolPay must whitelist Katana's server IP (72.61.227.233). PoolPay reports results to the return URL Katana sends with each order; optionally also add Katana's payment events URL in the PoolPay portal.",
       fields: [
         { name: "key", label: "Pay ID", placeholder: "16-digit Pay ID from PoolPay", pattern: "^\\d{1,19}$" },
