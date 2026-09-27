@@ -9,7 +9,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Check, ShieldCheck, Upload, Loader2, FileCheck2, ArrowRight, Share2, Smartphone, RefreshCw, X } from "lucide-react";
+import { Copy, Check, ShieldCheck, Upload, Loader2, FileCheck2, ArrowRight, Share2, Smartphone, RefreshCw, X, CreditCard, Landmark, Wallet, Lock } from "lucide-react";
 import { PaytmLogo, PhonePeLogo, GooglePayLogo } from "@/components/icons/upi-apps";
 import { openUpiApp } from "@/lib/upi";
 
@@ -89,11 +89,10 @@ function PaymentInner({ orderId }: { orderId: string }) {
 
   const d = q.data;
   const phase = phaseOf(d);
-  // A gateway-page order: send the customer to the gateway once. Coming back from it
-  // (?returned=1), wait here for the gateway's answer instead of going round again.
+  // A gateway-page order (PayU Client ID mode): this page shows the order and a Pay button that
+  // hands over to the gateway. Back from it (?returned=1), it waits for the gateway's answer.
   const returned = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("returned");
-  const toGateway = phase === "waiting" && !!d?.checkout_url && /^https?:\/\//i.test(d.checkout_url) && !returned;
-  useEffect(() => { if (toGateway && d?.checkout_url) window.location.replace(d.checkout_url); }, [toGateway, d?.checkout_url]);
+  const gatewayUrl = d?.checkout_url && /^https?:\/\//i.test(d.checkout_url) ? d.checkout_url : null;
   const merchant = d?.merchant_name?.trim() || null;
   const tone: Tone = phase === "loading" ? "waiting" : phase;
 
@@ -126,9 +125,9 @@ function PaymentInner({ orderId }: { orderId: string }) {
     <Screen tone={tone} merchant={merchant} test={d?.livemode === false}>
       <div aria-live="polite" className="flex flex-1 flex-col">
         {phase === "loading" && <LoadingBody />}
-        {phase === "waiting" && d && toGateway && <LoadingBody />}
-        {phase === "waiting" && d && !toGateway && d.checkout_url && <VerifyingBody key="verifying" d={d} />}
-        {phase === "waiting" && d && !d.checkout_url && <WaitingBody key="waiting" d={d} merchant={merchant} orderId={orderId} onProof={() => q.refetch()} />}
+        {phase === "waiting" && d && gatewayUrl && !returned && <GatewayBody key="gateway" d={d} merchant={merchant} url={gatewayUrl} />}
+        {phase === "waiting" && d && gatewayUrl && returned && <VerifyingBody key="verifying" d={d} />}
+        {phase === "waiting" && d && !gatewayUrl && <WaitingBody key="waiting" d={d} merchant={merchant} orderId={orderId} onProof={() => q.refetch()} />}
         {phase === "verifying" && d && <VerifyingBody key="verifying" d={d} />}
         {phase === "success" && d && <SuccessBody key="success" d={d} merchant={merchant} />}
         {(phase === "failed" || phase === "expired") && d && <FailedBody key={phase} d={d} phase={phase} merchant={merchant} />}
@@ -305,6 +304,56 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
   );
 }
 
+/** Katana's screen for an order paid on the gateway's own page: the order, what can be used to
+ *  pay, and one button that hands over to the gateway. */
+function GatewayBody({ d, merchant, url }: { d: PayStatus; merchant: string | null; url: string }) {
+  const [going, setGoing] = useState(false);
+  const methods = [
+    { label: "UPI", icon: <span className="flex -space-x-1.5"><GooglePayLogo /><PhonePeLogo /><PaytmLogo /></span> },
+    { label: "Credit & debit cards", icon: <CreditCard className="h-5 w-5" /> },
+    { label: "Net banking", icon: <Landmark className="h-5 w-5" /> },
+    { label: "Wallets", icon: <Wallet className="h-5 w-5" /> },
+  ];
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="kp-rise mt-8 text-center">
+        <div className="kp-dim text-[13px]">Amount to pay{merchant ? ` to ${merchant}` : ""}</div>
+        <div className="kp-amount mt-1">{money(d.amount, d.currency_code)}</div>
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full kp-glass px-3 py-1.5 text-xs">
+          <span className="kp-live" aria-hidden />
+          <span className="font-medium">Ready to pay</span>
+        </div>
+      </div>
+
+      <div className="kp-rise kp-glass mt-6 rounded-3xl px-2 py-2" style={{ animationDelay: "80ms" }}>
+        <div className="kp-dim px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider">Pay with</div>
+        {methods.map((m) => (
+          <div key={m.label} className="flex items-center justify-between gap-3 rounded-2xl px-3 py-3">
+            <span className="text-[14px] font-medium">{m.label}</span>
+            <span className="kp-dim flex h-6 items-center [&_svg]:h-6 [&_svg]:w-6">{m.icon}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="kp-rise kp-dim mt-4 flex items-start gap-2.5 px-1 text-xs leading-relaxed" style={{ animationDelay: "140ms" }}>
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>You&apos;ll pay on PayU&apos;s secure page and come back here automatically. This screen confirms the payment.</span>
+      </div>
+
+      <div className="mt-auto pt-6">
+        <button type="button" disabled={going}
+          onClick={() => { setGoing(true); window.location.assign(url); }}
+          className="kp-pill kp-pill-solid">
+          {going
+            ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening secure payment…</>
+            : <><Lock className="h-4 w-4" /> Pay {money(d.amount, d.currency_code)} securely <ArrowRight className="h-4 w-4" /></>}
+        </button>
+        <p className="kp-faint mt-2.5 text-center text-[11px]">Order {d.order_id} · secured by PayU</p>
+      </div>
+    </div>
+  );
+}
+
 function AppTile({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick}
@@ -332,6 +381,12 @@ function VerifyingBody({ d }: { d: PayStatus }) {
             : "Payments of this size get a quick manual check. This screen updates once it's confirmed."}
       </p>
       <p className="kp-faint mt-3 text-xs">Please don&apos;t pay again.</p>
+      {/* Back from the gateway without finishing: the same payment page can be opened again. */}
+      {d.checkout_url && /^https?:\/\//i.test(d.checkout_url) && (
+        <a href={d.checkout_url} className="kp-dim kp-rise mt-6 text-xs underline underline-offset-4">
+          Didn&apos;t finish paying? Open the payment page again
+        </a>
+      )}
     </div>
   );
 }

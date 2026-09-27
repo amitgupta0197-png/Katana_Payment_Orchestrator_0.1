@@ -157,6 +157,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   // customer pays on PayU's page (lib/payin-providers/payu-links). PayU's answer settles it.
   const linkGw = !otherGw && connected?.mid.gateway === "PAYU" && connected.mid.auth === "client_credentials" ? connected : null;
   let checkoutUrl: string | null = null;
+  let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
 
   // Real PoolPay when the cascade resolves to a live (PROD + secret) config or the
@@ -241,6 +242,10 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     if (r.data.kind !== "redirect") throw new PayuIntentError("PayU returned no payment link");
 
     checkoutUrl = r.data.url;
+    const who = await rows<{ n: string | null }>("merchant",
+      `SELECT COALESCE(NULLIF(brand_name, ''), legal_name) AS n FROM merchants WHERE merchant_code = $1`, [input.merchantId],
+    ).catch(() => []);
+    merchantName = who[0]?.n?.trim() || null;
     payId = shortId("pay");
     // No UPI app link: the customer pays on PayU's page.
     deeplinks = { upi: "", paytm: "", phonepe: "" };
@@ -272,6 +277,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     hold,                                  // high-amount → manual review
     hold_reason: hold ? `amount >= ${HIGH_AMOUNT_HOLD}` : null,
     return_url: input.returnUrl ?? null,   // browser redirect after pay
+    ...(merchantName ? { merchant_name: merchantName } : {}),   // shown on Katana's pay page
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent

@@ -92,7 +92,7 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   const held = autoResolvePaused(meta);
   const createdAt = order.created_at ? new Date(order.created_at) : null;
   return {
-    merchant_name: upiParam(meta.upi_intent, "pn"),
+    merchant_name: upiParam(meta.upi_intent, "pn") ?? (typeof meta.merchant_name === "string" ? meta.merchant_name : null),
     payee_vpa: upiParam(meta.upi_intent, "pa"),
     held,
     livemode: order.livemode !== false,
