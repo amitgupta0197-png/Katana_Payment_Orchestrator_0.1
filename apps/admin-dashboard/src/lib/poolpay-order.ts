@@ -8,7 +8,7 @@ import { buildUpiQuery, buildDeeplinks, poolpayLive, createOrderRemote, genRrn, 
 import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { assertLiveActivated } from "@/lib/live-activation";
-import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
+import { getGatewayMid, payinProdId, payuKeySalt } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
@@ -42,6 +42,9 @@ interface PayuGatewayMeta {
   payment_id: string | null;
   env: string;
   payee_vpa: string | null;      // PayU's collection VPA from the intent
+  /** PayU Client ID mode: how Katana signs in, and the PayU payment page the customer pays on. */
+  auth?: "client_credentials";
+  checkout_url?: string;
 }
 
 // Build the receiver-VPA pool with per-VPA health. The first READY VPA is active;
@@ -58,6 +61,8 @@ export interface CreatePoolPayResult {
   deeplinks: DeepLinks;
   upiIntent: string;
   reused: boolean; // true when an order with this (vendor, order_id) already existed
+  /** Set when the customer pays on the gateway's own page (PayU Client ID mode): send them here. */
+  checkoutUrl?: string | null;
 }
 
 function shortId(prefix: string) {
@@ -144,9 +149,14 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
-  const otherGw = livemode && !goLive && !payuMid && input.merchantId
-    ? await gatewayPayinFor(input.merchantId).then((g) => (g?.connector.upiIntent ? g : null)).catch(() => null)
+  const connected = livemode && !goLive && !payuMid && input.merchantId
+    ? await gatewayPayinFor(input.merchantId).catch(() => null)
     : null;
+  const otherGw = connected?.connector.upiIntent ? connected : null;
+  // PayU with a Client ID + Secret has no UPI intent: the order gets a PayU payment link and the
+  // customer pays on PayU's page (lib/payin-providers/payu-links). PayU's answer settles it.
+  const linkGw = !otherGw && connected?.mid.gateway === "PAYU" && connected.mid.auth === "client_credentials" ? connected : null;
+  let checkoutUrl: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
 
   // Real PoolPay when the cascade resolves to a live (PROD + secret) config or the
@@ -213,6 +223,32 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       provider: connector.id, txnid: vendorTxnId, payment_id: r.data.paymentId, env: mid.env ?? "TEST",
       payee_vpa: new URLSearchParams(r.data.intentQuery).get("pa"),
     };
+  } else if (linkGw) {
+    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+    if (prior) return prior;
+    const { mid, connector } = linkGw;
+    if (mid.env !== "PROD") throw new PayuIntentError("this merchant's PayU credentials are sandbox (TEST); live orders need live credentials");
+    if (!payinProdEnabled(payinProdId(mid))) throw new PayuIntentError("live PayU (Client ID) payments are not switched on yet");
+
+    vendorTxnId = shortId("kp");
+    const r = await connector.checkout(mid, {
+      txnid: vendorTxnId, amountMinor: BigInt(Math.round(input.amount * 100)), currency: input.currency,
+      productinfo: note, firstname: "Customer", email: "payments@katanapay.co",
+      phone: input.customerPhone?.trim() || "9999999999",
+      returnUrl: payinReturnUrl(connector.path ?? connector.id, vendorTxnId), notifyUrl: payinWebhookUrl(connector.path ?? connector.id),
+    }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
+    if (!r.ok) throw new PayuIntentError(r.error);
+    if (r.data.kind !== "redirect") throw new PayuIntentError("PayU returned no payment link");
+
+    checkoutUrl = r.data.url;
+    payId = shortId("pay");
+    // No UPI app link: the customer pays on PayU's page.
+    deeplinks = { upi: "", paytm: "", phonepe: "" };
+    upiIntent = "";
+    gateway = {
+      provider: "PAYU", txnid: vendorTxnId, payment_id: null, env: mid.env ?? "TEST", payee_vpa: null,
+      auth: "client_credentials", checkout_url: checkoutUrl,
+    };
   } else {
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
@@ -258,7 +294,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode]);
 
-  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false };
+  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl };
 
   const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
   // A conflict guarantees a row on this key, so an empty result means the row was
@@ -297,6 +333,7 @@ async function readExistingOrder(orderId: string, merchantId: string | null, liv
     deeplinks: storedMeta.deeplinks as DeepLinks,
     upiIntent: storedMeta.upi_intent as string,
     reused: true,
+    checkoutUrl: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url ?? null,
   };
 }
 

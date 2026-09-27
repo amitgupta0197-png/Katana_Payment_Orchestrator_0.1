@@ -79,8 +79,9 @@ async function run() {
     const mid = await getGatewayMid(o.merchant_id);
 
     // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, PoolPay, and PayU with a Client ID + Secret.
-    // A Katana Pay order names its provider; PAYU there is always a Key + Salt intent.
-    const other = o.provider ? (o.provider === "PAYU" ? null : payinConnector(o.provider)) : payinConnectorFor(mid);
+    // A Katana Pay order names its provider; for PAYU the merchant's sign-in mode picks the path
+    // (payinConnectorFor is null for Key + Salt, which is handled below).
+    const other = o.provider ? (o.provider === "PAYU" ? payinConnectorFor(mid) : payinConnector(o.provider)) : payinConnectorFor(mid);
     if (other) {
       const r = await checkGatewayPayin({
         provider: other.id, txnid: o.txn_id, merchantCode: o.merchant_id, source: "verify_sweep",

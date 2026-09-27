@@ -21,7 +21,7 @@ import { capturePaymentDetails } from "@/lib/payment-details";
 import { confirmPoolPayOrder } from "@/lib/poolpay-order";
 import { gatewayPayinFor, payinConnector, payinConnectorFor } from "@/lib/payin-providers";
 import {
-  checkoutPage, payinProdEnabled, payinReturnUrl, payinWebhookUrl,
+  checkoutPage, payinProdEnabled, publicBase, payinReturnUrl, payinWebhookUrl,
   type PayinClient, type PayinConnector, type PayinState,
 } from "@/lib/payin-providers/types";
 
@@ -174,7 +174,11 @@ export async function gatewayOrderOwner(provider: string, txnid: string): Promis
     `SELECT merchant_id, status, client_surl, client_furl FROM checkout_orders WHERE txn_id = $1 LIMIT 1`, [txnid]).catch(() => []))[0];
   if (c) return { merchantCode: c.merchant_id, kind: "checkout", dest: null };
   const v = await findGatewayPayin(provider, txnid);
-  if (v) return { merchantCode: v.merchant_id, kind: "payin", dest: typeof v.meta?.return_url === "string" ? v.meta.return_url : null };
+  // No return_url: back to the order's own pay page, which shows the result.
+  if (v) return {
+    merchantCode: v.merchant_id, kind: "payin",
+    dest: typeof v.meta?.return_url === "string" && v.meta.return_url ? v.meta.return_url : `${publicBase()}/pay/${v.id}?returned=1`,
+  };
   return null;
 }
 

@@ -97,16 +97,20 @@ export async function POST(req: Request) {
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
     const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
+    // PayU Client ID merchants pay on PayU's page: pay_url goes straight there, and there is no
+    // UPI app link or QR to show.
+    const hosted = !!r.checkoutUrl;
     return NextResponse.json({
       verified: true,
       merchant: merchantCode,
       livemode,
       reused: r.reused,
       order: r.order,
-      deeplinks: r.deeplinks,
-      upi_intent: r.upiIntent,
-      qr_payload: r.upiIntent,
-      pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
+      deeplinks: hosted ? null : r.deeplinks,
+      upi_intent: hosted ? null : r.upiIntent,
+      qr_payload: hosted ? null : r.upiIntent,
+      pay_url: r.checkoutUrl ?? `${base}/pay/${r.order.id}`,   // hand the customer's browser here
+      ...(hosted ? { gateway: "PAYU" } : {}),
     }, { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });

@@ -29,6 +29,7 @@ interface StatusPayload {
   merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
   livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
+  checkout_url: string | null;   // PayU Client ID orders: the PayU page the customer pays on
 }
 
 // The payee name (pn) and VPA (pa) are already public inside the UPI intent the
@@ -59,7 +60,9 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
   // Other gateways (Razorpay, Cashfree, PhonePe, Paytm) are asked the same way.
   const provider = order.meta?.gateway?.provider;
   if (provider && order.livemode !== false && !POOLPAY_TERMINAL.has(order.status)) {
-    const r = provider === "PAYU"
+    // PayU with a Client ID + Secret is asked through its connector, like the other gateways.
+    const payuKeySalt = provider === "PAYU" && order.meta?.gateway?.auth !== "client_credentials";
+    const r = payuKeySalt
       ? await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }))
       : await checkGatewayPayin({ provider, txnid: order.vendor_txn_id, merchantCode: order.merchant_id, source: "pay_page", throttleSec: 4 })
           .catch(() => ({ applied: false }));
@@ -108,6 +111,7 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
     deeplinks: meta.deeplinks ?? null,
     upi_intent: meta.upi_intent ?? null,
     return_url: meta.return_url ?? null,   // browser redirect target after payment
+    checkout_url: typeof meta.gateway?.checkout_url === "string" ? meta.gateway.checkout_url : null,
   };
 }
 

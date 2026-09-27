@@ -26,6 +26,7 @@ interface PayStatus {
   expires_at?: string | null;
   completed_at?: string | null;
   livemode?: boolean;   // false = a test order: labelled so nobody mistakes it for a real payment
+  checkout_url?: string | null;   // pay on the gateway's own page (PayU Client ID mode)
 }
 
 type Phase = "loading" | "waiting" | "verifying" | "success" | "failed" | "expired";
@@ -88,6 +89,11 @@ function PaymentInner({ orderId }: { orderId: string }) {
 
   const d = q.data;
   const phase = phaseOf(d);
+  // A gateway-page order: send the customer to the gateway once. Coming back from it
+  // (?returned=1), wait here for the gateway's answer instead of going round again.
+  const returned = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("returned");
+  const toGateway = phase === "waiting" && !!d?.checkout_url && /^https?:\/\//i.test(d.checkout_url) && !returned;
+  useEffect(() => { if (toGateway && d?.checkout_url) window.location.replace(d.checkout_url); }, [toGateway, d?.checkout_url]);
   const merchant = d?.merchant_name?.trim() || null;
   const tone: Tone = phase === "loading" ? "waiting" : phase;
 
@@ -120,7 +126,9 @@ function PaymentInner({ orderId }: { orderId: string }) {
     <Screen tone={tone} merchant={merchant} test={d?.livemode === false}>
       <div aria-live="polite" className="flex flex-1 flex-col">
         {phase === "loading" && <LoadingBody />}
-        {phase === "waiting" && d && <WaitingBody key="waiting" d={d} merchant={merchant} orderId={orderId} onProof={() => q.refetch()} />}
+        {phase === "waiting" && d && toGateway && <LoadingBody />}
+        {phase === "waiting" && d && !toGateway && d.checkout_url && <VerifyingBody key="verifying" d={d} />}
+        {phase === "waiting" && d && !d.checkout_url && <WaitingBody key="waiting" d={d} merchant={merchant} orderId={orderId} onProof={() => q.refetch()} />}
         {phase === "verifying" && d && <VerifyingBody key="verifying" d={d} />}
         {phase === "success" && d && <SuccessBody key="success" d={d} merchant={merchant} />}
         {(phase === "failed" || phase === "expired") && d && <FailedBody key={phase} d={d} phase={phase} merchant={merchant} />}
@@ -319,7 +327,9 @@ function VerifyingBody({ d }: { d: PayStatus }) {
       <p className="kp-dim kp-rise mt-3 max-w-[32ch] text-sm">
         {d.proof_submitted
           ? "We got your screenshot and are matching it with the credit. This screen updates once it's confirmed."
-          : "Payments of this size get a quick manual check. This screen updates once it's confirmed."}
+          : d.checkout_url
+            ? "We're confirming your payment with PayU. This screen updates as soon as it's confirmed."
+            : "Payments of this size get a quick manual check. This screen updates once it's confirmed."}
       </p>
       <p className="kp-faint mt-3 text-xs">Please don&apos;t pay again.</p>
     </div>
