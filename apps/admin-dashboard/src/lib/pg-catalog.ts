@@ -11,7 +11,7 @@
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
 
-export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY";
+export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY" | "RUBYVAULT";
 export type GatewayEnv = "TEST" | "PROD";
 
 export interface CredField {
@@ -232,6 +232,22 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "api_base", label: "API base URL (required for UAT)", placeholder: "https://payout.pp-007.com", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true, show: true },
       ],
     },
+  },
+  {
+    id: "RUBYVAULT", name: "RubyVault", logo: null, color: "#B0123A",
+    payin: {
+      connector: true,
+      env: { TEST: "Test (enter RubyVault's test URL below)", PROD: "Live (rubyvault.tech)" },
+      creds: "RubyVault doesn't use a Client ID / Secret. Ask RubyVault for the Account Code and Secret Key.",
+      note: "Hosted UPI QR checkout (no UPI intent). RubyVault's live minimum is ₹500. Give RubyVault Katana's payment events URL as the callback URL; it is set once at onboarding, not per order.",
+      fields: [
+        { name: "key", label: "Account Code", placeholder: "Account Code from RubyVault" },
+        { name: "salt", label: "Secret Key", secret: true },
+        { name: "api_base", label: "API base URL (required for Test)", placeholder: "https://rubyvault.tech", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true },
+      ],
+    },
+    // RubyVault's API document has no payout API yet.
+    payout: null,
   },
 ];
 

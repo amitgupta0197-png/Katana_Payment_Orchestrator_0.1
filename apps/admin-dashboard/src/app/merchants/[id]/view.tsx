@@ -358,7 +358,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
   });
   const gwStatus = (gw.data as { status?: { configured: boolean; gateway?: string; gateway_name?: string } } | undefined)?.status;
   const gwName = gwStatus?.configured ? gwStatus.gateway_name ?? "gateway" : "PayU";
-  const hasIntent = gwStatus?.gateway !== "CCAVENUE";
+  const hasIntent = gwStatus?.gateway !== "CCAVENUE" && gwStatus?.gateway !== "RUBYVAULT";
   const [amount, setAmount] = useState("100.00");
   const [email, setEmail] = useState("buyer@example.com");
   const [result, setResult] = useState<{ order?: { status?: string; txn_id?: string }; route?: { provider?: string }; charge?: { outcome?: string }; gateway?: { signed?: boolean } } | null>(null);

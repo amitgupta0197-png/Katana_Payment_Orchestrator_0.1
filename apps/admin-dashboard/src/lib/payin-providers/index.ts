@@ -9,6 +9,7 @@ import { phonepePayin } from "@/lib/payin-providers/phonepe";
 import { paytmPayin } from "@/lib/payin-providers/paytm";
 import { ccavenuePayin } from "@/lib/payin-providers/ccavenue";
 import { poolpayPayin } from "@/lib/payin-providers/poolpay";
+import { rubyvaultPayin } from "@/lib/payin-providers/rubyvault";
 import { payuLinksPayin } from "@/lib/payin-providers/payu-links";
 import type { PayinConnector } from "@/lib/payin-providers/types";
 
@@ -19,6 +20,7 @@ const CONNECTORS: Record<string, PayinConnector> = {
   PAYTM: paytmPayin,
   CCAVENUE: ccavenuePayin,
   POOLPAY: poolpayPayin,
+  RUBYVAULT: rubyvaultPayin,
 };
 
 export const PAYIN_GATEWAYS = Object.keys(CONNECTORS);
