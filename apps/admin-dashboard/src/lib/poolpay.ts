@@ -12,7 +12,7 @@
 
 import { signPoolPay } from "@/lib/provider-integration";
 
-const PAYEE_VPA = "poolpay.sandbox@upi"; // gateway collect VPA (payee)
+const PAYEE_VPA = "katana.sandbox@upi"; // sandbox payee for TEST orders — never a real account
 /** Every TEST order pays this — never a merchant's real UPI ID (lib/poolpay-order.ts). */
 export const SANDBOX_PAYEE_VPA = PAYEE_VPA;
 const PAYEE_NAME = "Katana Pay";
