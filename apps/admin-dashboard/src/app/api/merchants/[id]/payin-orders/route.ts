@@ -70,7 +70,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     `, [scope.code, livemode]).catch(() => []);
     const hosted = checkout.map((o: any) => ({
       id: o.id, order_id: o.txn_id, vendor: o.provider ?? "CHECKOUT", amount: o.amount, currency_code: o.currency,
-      status: o.status, rrn: o.bank_ref, sub_mid_code: "", created_at: o.created_at,
+      // A gateway can report a reference before the money lands; show it only once paid.
+      status: o.status, rrn: o.status === "SUCCESS" ? o.bank_ref : "", sub_mid_code: "", created_at: o.created_at,
       livemode: o.livemode !== false, mode: "HOSTED", active_vpa: null, vpa_total: 0, vpa_remaining: 0,
       hold: false, hold_reason: null, source: "checkout",
       terminal: ["SUCCESS", "FAILED"].includes(o.status),

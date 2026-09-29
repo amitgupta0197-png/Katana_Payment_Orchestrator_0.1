@@ -99,7 +99,8 @@ export async function POST(req: Request) {
       currency: o.currency,
       livemode: o.livemode,
       payment_id: d?.provider_payment_id ?? null,
-      bank_ref: d?.bank_ref_num ?? null,
+      // Some gateways report a reference while the payment is still open; it is only a UTR once paid.
+      bank_ref: o.status === "SUCCESS" ? d?.bank_ref_num ?? null : null,
     });
   } catch (err) {
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

@@ -8,7 +8,9 @@
 //             -> { status: false, status_code: "FAIL", errors }
 //             (amount ₹100 – ₹2,00,000)
 //   status    POST JSON {id: order_id} to /api/order/status
-//             -> { status: true, status_code, order_id, amount, pay_id (UTR), transaction_id }
+//             -> { status: true, status_code, order_id, amount (rupees), pay_id, transaction_id }
+//             pay_id is filled as soon as the customer starts paying, while the order is still
+//             PENDING; it is the UTR only once status_code is SUCCESS.
 //             -> { status: false }
 //   webhook   the same object, POSTed to the webhook_url sent with the order. Unsigned.
 //
@@ -76,7 +78,8 @@ export function ismartpayPayinState(t: Record<string, any>, expected?: bigint): 
     found: true, final,
     status: status || "UNKNOWN",
     paymentId: t?.transaction_id ? String(t.transaction_id) : undefined,
-    bankRef: t?.pay_id ? String(t.pay_id) : undefined,
+    // pay_id appears on PENDING orders too; it is a bank reference only on a SUCCESS.
+    bankRef: final === "SUCCESS" && t?.pay_id ? String(t.pay_id) : undefined,
     amountMinor: final === "SUCCESS" ? amountOf(t?.amount, expected) : undefined,
     error: final === "FAILED" ? String(t?.message || t?.errors || status) : undefined,
     raw: t,
