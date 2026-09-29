@@ -25,7 +25,7 @@ export function formatAmount(value: number | string | null | undefined, currency
 export type StatusVariant = "default" | "success" | "warning" | "danger" | "info" | "brand";
 
 const STATUS_MAP: Record<string, StatusVariant> = {
-  ACTIVE: "success", LIVE: "success", APPROVED: "success", SUCCEEDED: "success", SETTLED: "success",
+  ACTIVE: "success", LIVE: "success", APPROVED: "success", SUCCESS: "success", SUCCEEDED: "success", SETTLED: "success",
   COMPLETED: "success", RELEASED: "success", MATCHED: "success", WON: "success", CAPTURED: "success",
 
   PENDING: "warning", IN_REVIEW: "warning", DOCS_PENDING: "warning", PROCESSING: "warning",
