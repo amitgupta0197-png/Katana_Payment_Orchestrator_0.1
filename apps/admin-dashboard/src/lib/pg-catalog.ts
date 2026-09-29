@@ -11,7 +11,7 @@
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
 
-export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY" | "RUBYVAULT";
+export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY" | "RUBYVAULT" | "ISMARTPAY";
 export type GatewayEnv = "TEST" | "PROD";
 
 export interface CredField {
@@ -248,6 +248,31 @@ export const GATEWAYS: GatewayDef[] = [
     },
     // RubyVault's API document has no payout API yet.
     payout: null,
+  },
+  {
+    id: "ISMARTPAY", name: "iSmartPay", logo: null, color: "#1B7F5C",
+    payin: {
+      connector: true,
+      env: { TEST: "Test (enter iSmartPay's test URL below)", PROD: "Live (pay.ismartpay.co.in)" },
+      creds: "iSmartPay doesn't use a Client ID / Secret. iSmartPay support gives the MID; the API key is generated in the iSmartPay partner panel.",
+      note: "Hosted checkout (no UPI intent), ₹100 to ₹2,00,000 per payment. Katana sends its return and payment events URLs with every order; nothing to set in iSmartPay.",
+      fields: [
+        { name: "key", label: "MID", placeholder: "MID from iSmartPay support" },
+        { name: "salt", label: "API key", secret: true },
+        { name: "api_base", label: "API base URL (required for Test)", placeholder: "https://pay.ismartpay.co.in", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true },
+      ],
+    },
+    payout: {
+      connector: true, balance: true, webhook: "dashboard",
+      env: { TEST: "Test (enter iSmartPay's test URL below)", PROD: "Live (pay.ismartpay.co.in)" },
+      note: "iSmartPay pays on IMPS, NEFT and RTGS (no UPI) from the merchant's iSmartPay payout wallet. iSmartPay must whitelist Katana's server IP (72.61.227.233). Ask iSmartPay support to set Katana's webhook URL as the payout callback URL.",
+      fields: [
+        { name: "mid", label: "MID", placeholder: "MID from iSmartPay support", show: true },
+        { name: "api_key", label: "API key", secret: true },
+        { name: "default_mobile", label: "Contact mobile sent with payouts", placeholder: "10-digit mobile", pattern: "^[6-9]\\d{9}$", show: true },
+        { name: "api_base", label: "API base URL (required for Test)", placeholder: "https://pay.ismartpay.co.in", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true, show: true },
+      ],
+    },
   },
 ];
 
