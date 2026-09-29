@@ -278,7 +278,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
-    vendorTxnId = `${livemode ? "" : "test_"}${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("kpx")}`;
+    vendorTxnId = `${livemode ? "" : "test_"}${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("txn")}`;
     const query = buildUpiQuery({ payeeVpa: active || undefined, payeeName, orderId, amount: input.amount, note });
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;

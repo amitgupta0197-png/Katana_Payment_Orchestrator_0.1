@@ -12,7 +12,7 @@
 
 import { signPoolPay } from "@/lib/provider-integration";
 
-const PAYEE_VPA = "katana.sandbox@upi"; // sandbox payee for TEST orders — never a real account
+const PAYEE_VPA = "sandbox@test"; // sandbox payee for TEST orders: "@test" is no bank handle, so no UPI app can pay it
 /** Every TEST order pays this — never a merchant's real UPI ID (lib/poolpay-order.ts). */
 export const SANDBOX_PAYEE_VPA = PAYEE_VPA;
 const PAYEE_NAME = "Katana Pay";
