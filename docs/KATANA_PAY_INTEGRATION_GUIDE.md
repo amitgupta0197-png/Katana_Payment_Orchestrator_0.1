@@ -26,7 +26,7 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 |---|---|
 | `Key` | Public-ish identifier (`mk_test_…` / `mk_live_…`) sent with every request. |
 | `Salt` | **Secret.** Shown once at issue. Signs requests + verifies callbacks. Server-side only. |
-| `Scheme` | `HMAC_SHA256` (recommended) or `PAYU_SHA512`. |
+| `Scheme` | `HMAC_SHA256` for every new pair. Pairs issued earlier with `PAYU_SHA512` keep working until regenerated. |
 
 > Keep each Salt safe. Lost it → regenerate that pair, which **invalidates only that pair** (the other mode is untouched). One active Key per mode.
 
@@ -68,7 +68,9 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 ```
 `livemode` is `false` for an order created with a test Key. A `txnid` is unique per mode, so the same ref in test and live creates two separate orders.
 
-Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`.
+**Merchants paid on a gateway's payment page** (e.g. RubyVault, iSmartPay) get no UPI link: `deeplinks`, `upi_intent` and `qr_payload` are `null`, and the response adds `"gateway": "RUBYVAULT"` (whose page) and `"gateway_url"` (that page). Send the customer to `pay_url` as usual (it hands over to the gateway) or straight to `gateway_url`. The gateway's own limits apply, e.g. a minimum amount per payment.
+
+Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`, `409` (the account can't take live payments yet: no gateway or receiving UPI ID set up), `502` (the gateway refused the order, e.g. below its minimum; no order created, retry with the same `txnid`).
 
 ## 4. Sign the request
 
@@ -77,7 +79,7 @@ Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 inval
 message = txnid + "|" + amount + "|" + productinfo + "|" + email
 hash    = HMAC_SHA256(key = KEY + SALT, message)        // lowercase hex
 ```
-**PAYU_SHA512:**
+**PAYU_SHA512** (only pairs issued before HMAC_SHA256 became the only scheme):
 ```
 seq  = KEY|txnid|amount|productinfo|firstname|email|||||||||||SALT   // 5 udf + 5 reserved blanks
 hash = SHA512(seq)                                       // lowercase hex

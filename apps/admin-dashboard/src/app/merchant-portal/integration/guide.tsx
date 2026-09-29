@@ -70,7 +70,7 @@ export function IntegrationGuide({ base }: { base: string }) {
 message = txnid + "|" + amount + "|" + productinfo + "|" + email
 hash    = HMAC_SHA256( key = KEY + SALT, message )        // lowercase hex
 
-// Legacy SHA-512 format
+// Legacy SHA-512 format (only Keys issued before HMAC_SHA256 became the only scheme)
 seq  = KEY + "|" + txnid + "|" + amount + "|" + productinfo + "|" +
        firstname + "|" + email + "|||||||||||" + SALT     // 5 udf + 5 reserved blanks
 hash = SHA512(seq)                                        // lowercase hex`;

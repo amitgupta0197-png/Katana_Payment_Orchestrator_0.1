@@ -379,7 +379,7 @@ Content-Type: application/json
   <h4>Signing</h4>
 <pre><code>HMAC_SHA256   message = txnid|amount|productinfo|email
               hash    = HMAC_SHA256(key = KEY + SALT, message)          → lowercase hex
-PAYU_SHA512   hash    = SHA512(KEY|txnid|amount|productinfo|firstname|email|||||||||||SALT)</code></pre>
+PAYU_SHA512   hash    = SHA512(KEY|txnid|amount|productinfo|firstname|email|||||||||||SALT)   (older pairs only; new pairs are HMAC_SHA256)</code></pre>
 
   <h4>Status callback &amp; verification</h4>
 <pre><code>{ "ORDER_ID":"ORDER-1001", "AMOUNT":"100", "STATUS":"Captured", "RESPONSE_CODE":"000",

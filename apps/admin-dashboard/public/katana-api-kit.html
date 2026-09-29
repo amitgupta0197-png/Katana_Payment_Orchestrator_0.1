@@ -314,6 +314,11 @@ order instead of redirecting.</p>
   <tr><td><code>qr_payload</code></td><td>Render as a QR code for desktop checkout or a counter display.</td></tr>
   <tr><td><code>pay_url</code></td><td>The Katana hosted page, if you prefer not to build a payment screen at all.</td></tr>
 </table>
+<div class="note"><b>Merchants paid on a gateway's own page</b> (for example RubyVault or iSmartPay) get no deeplink
+or QR: <code>upi_intent</code>, <code>deeplinks</code> and <code>qr_payload</code> are <code>null</code>, and the
+response adds <code>gateway</code> (whose page) and <code>gateway_url</code> (that page). Send the customer to
+<code>pay_url</code>, which hands over to the gateway, or straight to <code>gateway_url</code>. The gateway's own
+limits apply, e.g. a minimum amount per payment (a refused order returns <code>502</code> with the reason).</div>
 <div class="note warnbox"><b>The customer usually does not come back.</b> On UPI the customer approves inside their
 banking application and frequently never returns to the browser, so the redirect alone must never be treated as
 confirmation. Rely on the callback (§8) and the status enquiry (§7).</div>
@@ -630,8 +635,8 @@ back to you in every callback, so both directions are verifiable.</p>
 <h3 id="s6-1">6.1. SHA256 signature</h3>
 <div class="note badbox"><b>Which scheme do I use?</b> Your account is issued with <b>one</b> of the two below, and it
 is shown next to your Key in your portal. Signing with the wrong one produces <code>401 signature mismatch</code> on
-every request. Accounts opened for you by a Katana operator are commonly issued <b>Scheme 1</b>; accounts
-self-provisioned in the portal default to <b>Scheme 2</b>. Confirm before you write any code.</div>
+every request. Every Key issued or regenerated now uses <b>Scheme 2</b> (HMAC-SHA256); <b>Scheme 1</b> applies only to
+Keys issued before that and keeps working until they are regenerated. Confirm before you write any code.</div>
 
 <h4>Scheme 1 — SHA-512, pipe-separated</h4>
 <pre>seq  = key|txnid|amount|productinfo|firstname|email|||||||||||salt

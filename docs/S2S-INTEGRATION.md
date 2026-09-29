@@ -26,7 +26,8 @@ leaves the other untouched. Available to:
 - **Super Admin** — on the merchant detail page.
 - **Provider** — on the provider portal's merchant detail page (mapped merchants only).
 
-Pick a signing scheme when generating: `PAYU_SHA512` (default) or `HMAC_SHA256`.
+Every new pair is signed with `HMAC_SHA256`. Pairs issued earlier with `PAYU_SHA512` keep
+working until they are regenerated.
 
 ---
 
@@ -38,7 +39,7 @@ canonical = `${txnid}|${amount}|${productinfo}|${email}`
 hash      = HMAC_SHA256(key + salt, canonical)        // lowercase hex
 ```
 
-**PAYU_SHA512**
+**PAYU_SHA512** (only pairs issued before HMAC_SHA256 became the only scheme)
 ```
 seq  = key|txnid|amount|productinfo|firstname|email|||||||||||salt
 hash = sha512(seq)                                    // lowercase hex
@@ -102,6 +103,16 @@ Also accepts `application/x-www-form-urlencoded` (same fields).
 | `400`  | Bad request / invalid amount |
 | `401`  | `invalid key` or `signature mismatch` |
 | `403`  | Merchant is blocked |
+| `409`  | The merchant can't take live payments yet: no pay-in gateway and no receiving UPI ID |
+| `502`  | The gateway refused the order (message says why, e.g. below its minimum); no order created |
+
+### Merchants paid on a gateway's payment page
+A merchant whose pay-in gateway takes payments on its own page (RubyVault, iSmartPay, or PayU with
+a Client ID + Secret) gets no UPI link: `deeplinks`, `upi_intent` and `qr_payload` are `null`, and
+the response adds `gateway` (e.g. `"RUBYVAULT"`) and `gateway_url` (the gateway's page). Send the
+buyer to `pay_url` (Katana's page, which hands over to the gateway) or straight to `gateway_url`.
+The gateway's limits apply (RubyVault: ₹500 minimum; iSmartPay: ₹100 – ₹2,00,000). A live order
+never gets a sandbox UPI link: with no gateway and no receiving UPI ID it is refused with `409`.
 
 ---
 
@@ -109,7 +120,7 @@ Also accepts `application/x-www-form-urlencoded` (same fields).
 
 Pick whichever fits your UX:
 - **Redirect** the buyer's browser to `pay_url` (hosted page: QR + Paytm/PhonePe/GPay buttons, live status).
-- **Render your own QR** from `qr_payload` / `upi_intent`.
+- **Render your own QR** from `qr_payload` / `upi_intent` (not for gateway-page merchants, above).
 - **Open an app** with `deeplinks.paytm` / `deeplinks.phonepe` / `deeplinks.upi` on mobile.
 
 ---

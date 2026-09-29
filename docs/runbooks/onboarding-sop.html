@@ -416,8 +416,8 @@ ul.check li::before{content:"";position:absolute;left:.4mm;top:1.3mm;width:2.8mm
   <div class="tbl"><table>
     <thead><tr><th>#</th><th>Step</th><th>Owner</th><th>TAT</th><th>Detail</th></tr></thead>
     <tbody>
-      <tr><td class="m">1</td><td class="k">Configure collection</td><td>Ops</td><td class="nw">0.25 BD</td><td>Set the merchant's collection UPI ID / VPA pool. Without it, orders return a valid-looking QR pointing at a default payee.</td></tr>
-      <tr><td class="m">2</td><td class="k">Issue Key + Salt</td><td>Tech</td><td class="nw">same day</td><td>Merchant → Integration → Generate Key + Salt. Salt shown <strong>once</strong>; regenerating invalidates the old pair. Record the scheme: operator-issued accounts are commonly Scheme 1 (SHA-512); portal self-issued default to Scheme 2 (HMAC-SHA256, recommended). Send Key and Salt through <strong>separate channels</strong>; never Telegram.</td></tr>
+      <tr><td class="m">1</td><td class="k">Configure collection</td><td>Ops</td><td class="nw">0.25 BD</td><td>Connect the merchant's pay-in gateway, or set its collection UPI ID / VPA pool. Without either, live orders are refused with <code>409</code> (they used to get a QR pointing at a sandbox payee). A gateway that takes payments on its own page (RubyVault, iSmartPay) returns no QR — the partner sends customers to <code>pay_url</code> / <code>gateway_url</code>, and the gateway's minimum applies (RubyVault ₹500).</td></tr>
+      <tr><td class="m">2</td><td class="k">Issue Key + Salt</td><td>Tech</td><td class="nw">same day</td><td>Merchant → Integration → Generate Key + Salt. Salt shown <strong>once</strong>; regenerating invalidates the old pair. Every new or regenerated pair is Scheme 2 (HMAC-SHA256); Scheme 1 (SHA-512) exists only on pairs issued earlier. Send Key and Salt through <strong>separate channels</strong>; never Telegram.</td></tr>
       <tr><td class="m">3</td><td class="k">Callback &amp; return URLs</td><td>Merchant → Ops</td><td class="nw">same day</td><td>HTTPS (policy; the API also accepts http, so Ops must check), publicly resolvable, not private / loopback / link-local. Saved on the merchant profile or passed per order. Ops also creates the merchant's webhook signing config (Admin → Webhooks); without it transport headers are signed with a placeholder secret. Merchants authenticate on body <code>HASH</code> only.</td></tr>
       <tr><td class="m">4</td><td class="k">Merchant builds</td><td>Merchant</td><td class="nw">merchant-dependent</td><td>Order create (§7.2), signing (§7.3), callback verify (§7.4), status enquiry (§7.5), daily recon sweep (§7.7).</td></tr>
       <tr><td class="m">5</td><td class="k">UAT</td><td>Tech</td><td class="nw">1–2 BD</td><td>Run the test matrix (§7.8) with the merchant's test Key + Salt (<code>mk_test_…</code>, forced-outcome amounts), then one small live payment with the live pair.</td></tr>
@@ -464,7 +464,7 @@ HTTP 201
   message = txnid|amount|productinfo|email
   hash    = HMAC_SHA256(key = KEY + SALT, message)                    → lowercase hex, 64 chars
 
-Scheme 1 · SHA-512
+Scheme 1 · SHA-512 (pairs issued before HMAC-SHA256 became the only scheme)
   seq  = key|txnid|amount|productinfo|firstname|email|||||||||||salt   (11 pipes between email and salt)
   hash = SHA512(seq)                                                  → lowercase hex, 128 chars
 
