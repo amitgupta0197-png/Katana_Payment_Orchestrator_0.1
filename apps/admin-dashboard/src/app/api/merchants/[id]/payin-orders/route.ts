@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if ("response" in scope) return scope.response;
 
   try {
+    const livemode = await getLivemode();
     const orders = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, vendor, amount::float AS amount, currency_code, status,
              COALESCE(rrn,'') AS rrn, COALESCE(sub_mid_code,'') AS sub_mid_code,
@@ -38,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
        WHERE merchant_id = $1
          AND livemode = $2   -- follows the dashboard's Test / Live switch
        ORDER BY created_at DESC LIMIT 100
-    `, [scope.code, await getLivemode()]).catch(() => []);
+    `, [scope.code, livemode]).catch(() => []);
 
     const shaped = orders.map((o: any) => {
       const m = o.meta ?? {};
@@ -56,8 +57,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         terminal: ["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"].includes(o.status),
       };
     });
+    // Hosted-checkout orders (POST /api/pay, e.g. a merchant's own shop) live in checkout_orders.
+    // They join the full history only: the operations actions above are Katana Pay's.
+    const checkout = await rows<any>("checkout", `
+      SELECT o.id::text, o.txn_id, o.amount::float AS amount, o.currency, o.status, o.created_at, o.livemode,
+             d.provider, COALESCE(d.bank_ref_num,'') AS bank_ref
+        FROM checkout_orders o
+        LEFT JOIN payment_details d ON d.order_id = o.id
+       WHERE o.merchant_id = $1
+         AND o.livemode = $2
+       ORDER BY o.created_at DESC LIMIT 100
+    `, [scope.code, livemode]).catch(() => []);
+    const hosted = checkout.map((o: any) => ({
+      id: o.id, order_id: o.txn_id, vendor: o.provider ?? "CHECKOUT", amount: o.amount, currency_code: o.currency,
+      status: o.status, rrn: o.bank_ref, sub_mid_code: "", created_at: o.created_at,
+      livemode: o.livemode !== false, mode: "HOSTED", active_vpa: null, vpa_total: 0, vpa_remaining: 0,
+      hold: false, hold_reason: null, source: "checkout",
+      terminal: ["SUCCESS", "FAILED"].includes(o.status),
+    }));
+
     const live = shaped.filter((o: any) => !o.terminal);
-    return NextResponse.json({ merchant_code: scope.code, live, all: shaped });
+    const all = [...shaped, ...hosted]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 100);
+    return NextResponse.json({ merchant_code: scope.code, live, all });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 

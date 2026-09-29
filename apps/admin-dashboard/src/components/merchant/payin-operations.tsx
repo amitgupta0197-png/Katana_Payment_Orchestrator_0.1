@@ -18,6 +18,8 @@ interface Order {
   id: string; order_id: string; vendor: string; amount: number; currency_code: string;
   status: string; mode: string; active_vpa: string | null; vpa_total: number; vpa_remaining: number;
   sub_mid_code: string; rrn?: string; hold?: boolean; hold_reason?: string | null; terminal: boolean; created_at: string;
+  /** "checkout": a hosted-checkout order (POST /api/pay), shown in the history only. */
+  source?: "checkout";
 }
 
 export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
@@ -179,7 +181,7 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     { key: "order_id", header: "Order", render: (o) => <span className="font-mono text-xs">{o.order_id}</span> },
     { key: "amount", header: "Amount", render: (o) => formatAmount(o.amount, o.currency_code) },
     { key: "status", header: "Status", render: (o) => <Badge variant={statusVariant(o.status)}>{o.status}</Badge> },
-    { key: "mode", header: "Mode", render: (o) => o.mode === "QR" ? "QR" : "deeplink" },
+    { key: "mode", header: "Mode", render: (o) => o.source === "checkout" ? `Hosted checkout${o.vendor !== "CHECKOUT" ? ` · ${railLabel(o.vendor)}` : ""}` : o.mode === "QR" ? "QR" : "deeplink" },
     { key: "active_vpa", header: "Payee VPA", render: (o) => o.active_vpa ? <span className="font-mono text-xs">{o.active_vpa}</span> : "—" },
     { key: "rrn", header: "UTR / RRN", render: (o) => o.rrn ? <span className="font-mono text-xs">{o.rrn}</span> : "—" },
     { key: "sub_mid_code", header: "Sub-MID", render: (o) => o.sub_mid_code || "—" },
@@ -191,7 +193,7 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Transactions</CardTitle>
-          <CardDescription>All pay-ins for this banker across every status, newest first.</CardDescription>
+          <CardDescription>All pay-ins for this banker across every status, newest first — Katana Pay orders and hosted checkouts.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="success" title="Total of successful pay-ins">{formatAmount(successAmount, "INR")} collected</Badge>
