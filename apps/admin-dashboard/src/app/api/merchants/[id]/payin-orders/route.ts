@@ -13,7 +13,7 @@ import { randomUUID } from "crypto";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
-import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
+import { createPoolPayOrder, MerchantBlockedError, PayinSetupError } from "@/lib/poolpay-order";
 import { getLivemode } from "@/lib/mode";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
@@ -150,7 +150,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (err) {
     if (err instanceof MerchantBlockedError)
       return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });
-    if (err instanceof PayuIntentError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: err.message }, { status: err.status });
     const a = activationErrorResponse(err);   // a live order before live mode is activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

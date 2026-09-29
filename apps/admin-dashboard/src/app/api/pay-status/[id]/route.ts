@@ -15,6 +15,7 @@ import { resolvePoolPay, genRrn, POOLPAY_TERMINAL, autoResolvePaused, PENDING_EX
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { checkPayuPayinNow } from "@/lib/payu-result";
 import { checkGatewayPayin } from "@/lib/gateway-payin";
+import { gatewayName } from "@/lib/pg-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,9 @@ interface StatusPayload {
   merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
   livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
-  checkout_url: string | null;   // PayU Client ID orders: the PayU page the customer pays on
+  checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): the page the customer pays on
+  gateway: string | null;        // whose page that is (PAYU, RUBYVAULT, ISMARTPAY)
+  gateway_name: string | null;   // its display name
 }
 
 // The payee name (pn) and VPA (pa) are already public inside the UPI intent the
@@ -112,6 +115,8 @@ async function readOrderStatus(id: string): Promise<StatusPayload | null> {
     upi_intent: meta.upi_intent ?? null,
     return_url: meta.return_url ?? null,   // browser redirect target after payment
     checkout_url: typeof meta.gateway?.checkout_url === "string" ? meta.gateway.checkout_url : null,
+    gateway: typeof meta.gateway?.checkout_url === "string" ? meta.gateway.provider ?? null : null,
+    gateway_name: typeof meta.gateway?.checkout_url === "string" && meta.gateway.provider ? gatewayName(meta.gateway.provider) : null,
   };
 }
 

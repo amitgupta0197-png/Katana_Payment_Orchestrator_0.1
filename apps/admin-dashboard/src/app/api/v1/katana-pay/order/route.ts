@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
-import { createPoolPayOrder, MerchantBlockedError } from "@/lib/poolpay-order";
+import { createPoolPayOrder, MerchantBlockedError, PayinSetupError } from "@/lib/poolpay-order";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 
@@ -97,8 +97,9 @@ export async function POST(req: Request) {
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
     const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
-    // PayU Client ID merchants pay on PayU's page. pay_url is still Katana's page, which shows the
-    // order and hands over to PayU; gateway_url is PayU's page itself. No UPI app link or QR.
+    // Merchants on a hosted-page gateway (PayU Client ID, RubyVault, iSmartPay) pay on that page.
+    // pay_url is still Katana's page, which shows the order and hands over to the gateway;
+    // gateway_url is the gateway's page itself. No UPI app link or QR.
     const hosted = !!r.checkoutUrl;
     return NextResponse.json({
       verified: true,
@@ -110,11 +111,11 @@ export async function POST(req: Request) {
       upi_intent: hosted ? null : r.upiIntent,
       qr_payload: hosted ? null : r.upiIntent,
       pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
-      ...(hosted ? { gateway: "PAYU", gateway_url: r.checkoutUrl } : {}),
+      ...(hosted ? { gateway: r.checkoutGateway ?? null, gateway_url: r.checkoutUrl } : {}),
     }, { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });
-    if (err instanceof PayuIntentError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: err.message }, { status: err.status });
     const a = activationErrorResponse(err);   // live key, live mode not activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

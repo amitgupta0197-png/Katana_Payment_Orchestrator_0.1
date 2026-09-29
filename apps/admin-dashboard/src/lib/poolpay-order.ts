@@ -36,6 +36,11 @@ export interface CreatePoolPayInput {
  * through lib/payin-providers) issued the order's UPI intent. Such an order is confirmed by that
  * gateway only; the bank-credit matcher leaves it alone.
  */
+/** A live order this merchant's setup can't take (no gateway page, no receiver UPI ID). Routes answer 409. */
+export class PayinSetupError extends Error {
+  readonly status = 409;
+}
+
 interface PayuGatewayMeta {
   provider: string;
   txnid: string;                 // the txnid we sent PayU (also vendor_txn_id)
@@ -61,8 +66,10 @@ export interface CreatePoolPayResult {
   deeplinks: DeepLinks;
   upiIntent: string;
   reused: boolean; // true when an order with this (vendor, order_id) already existed
-  /** Set when the customer pays on the gateway's own page (PayU Client ID mode): send them here. */
+  /** Set when the customer pays on the gateway's own page (PayU Client ID, RubyVault, iSmartPay). */
   checkoutUrl?: string | null;
+  /** The gateway whose page that is (PAYU, RUBYVAULT, ISMARTPAY). */
+  checkoutGateway?: string | null;
 }
 
 function shortId(prefix: string) {
@@ -153,9 +160,11 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     ? await gatewayPayinFor(input.merchantId).catch(() => null)
     : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
-  // PayU with a Client ID + Secret has no UPI intent: the order gets a PayU payment link and the
-  // customer pays on PayU's page (lib/payin-providers/payu-links). PayU's answer settles it.
-  const linkGw = !otherGw && connected?.mid.gateway === "PAYU" && connected.mid.auth === "client_credentials" ? connected : null;
+  // Gateways with no UPI intent take the payment on their own hosted page: PayU with a Client ID +
+  // Secret (payment links), RubyVault and iSmartPay. The order gets that page and the customer pays
+  // there; the gateway's answer settles it. CCAvenue has none either, but its merchants keep the
+  // direct UPI link to their own UPI ID.
+  const linkGw = !otherGw && connected && connected.mid.gateway !== "CCAVENUE" ? connected : null;
   let checkoutUrl: string | null = null;
   let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
@@ -228,8 +237,9 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
     if (prior) return prior;
     const { mid, connector } = linkGw;
-    if (mid.env !== "PROD") throw new PayuIntentError("this merchant's PayU credentials are sandbox (TEST); live orders need live credentials");
-    if (!payinProdEnabled(payinProdId(mid))) throw new PayuIntentError("live PayU (Client ID) payments are not switched on yet");
+    const name = gatewayName(mid.gateway);
+    if (mid.env !== "PROD") throw new PayuIntentError(`this merchant's ${name} credentials are sandbox (TEST); live orders need live credentials`);
+    if (!payinProdEnabled(payinProdId(mid))) throw new PayuIntentError(`live ${name}${mid.auth === "client_credentials" ? " (Client ID)" : ""} payments are not switched on yet`);
 
     vendorTxnId = shortId("kp");
     const r = await connector.checkout(mid, {
@@ -239,7 +249,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
       returnUrl: payinReturnUrl(connector.path ?? connector.id, vendorTxnId), notifyUrl: payinWebhookUrl(connector.path ?? connector.id),
     }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
     if (!r.ok) throw new PayuIntentError(r.error);
-    if (r.data.kind !== "redirect") throw new PayuIntentError("PayU returned no payment link");
+    if (r.data.kind !== "redirect") throw new PayuIntentError(`${name} returned no payment page`);
 
     checkoutUrl = r.data.url;
     const who = await rows<{ n: string | null }>("merchant",
@@ -247,14 +257,24 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     ).catch(() => []);
     merchantName = who[0]?.n?.trim() || null;
     payId = shortId("pay");
-    // No UPI app link: the customer pays on PayU's page.
+    // No UPI app link: the customer pays on the gateway's page.
     deeplinks = { upi: "", paytm: "", phonepe: "" };
     upiIntent = "";
     gateway = {
-      provider: "PAYU", txnid: vendorTxnId, payment_id: null, env: mid.env ?? "TEST", payee_vpa: null,
-      auth: "client_credentials", checkout_url: checkoutUrl,
+      // PayU Client ID orders stay under PAYU: the sweep and pay page pick the connector by auth.
+      provider: mid.gateway === "PAYU" ? "PAYU" : connector.id, txnid: vendorTxnId, payment_id: null,
+      env: mid.env ?? "TEST", payee_vpa: null,
+      ...(mid.auth === "client_credentials" ? { auth: "client_credentials" as const } : {}),
+      checkout_url: checkoutUrl,
     };
   } else {
+    // A live order must pay a real account. With no gateway that takes the payment and no
+    // receiver UPI ID, the only payee left is the sandbox one, which UPI apps refuse — so the
+    // order is refused here instead of handing the customer a link that can never be paid.
+    if (livemode && !active) {
+      throw new PayinSetupError(
+        `${input.merchantId ?? "this merchant"} has no way to take this payment: connect a pay-in gateway or set a settlement UPI ID`);
+    }
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
@@ -300,7 +320,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
   `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode]);
 
-  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl };
+  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null };
 
   const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
   // A conflict guarantees a row on this key, so an empty result means the row was
@@ -340,6 +360,8 @@ async function readExistingOrder(orderId: string, merchantId: string | null, liv
     upiIntent: storedMeta.upi_intent as string,
     reused: true,
     checkoutUrl: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url ?? null,
+    checkoutGateway: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url
+      ? (storedMeta.gateway as PayuGatewayMeta).provider : null,
   };
 }
 
