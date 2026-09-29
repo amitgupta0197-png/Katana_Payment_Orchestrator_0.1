@@ -32,6 +32,12 @@ const labelFor = (livemode: boolean) => (livemode ? "checkout_integration" : "ch
 
 export interface CheckoutCreds { key: string; salt: string; scheme: SigningScheme; }
 
+/**
+ * Schemes a NEW Key + Salt can be issued with. PayU-style SHA-512 is no longer offered; pairs
+ * already issued with it keep verifying (verifyCheckoutSignature follows the stored scheme).
+ */
+export const ISSUED_CHECKOUT_SCHEMES = ["HMAC_SHA256"] as const satisfies readonly SigningScheme[];
+
 /** The mode a presented key claims by its prefix. Legacy mk_<hex> keys are live. */
 export function keyLivemode(mkey: string): boolean {
   return !mkey.startsWith("mk_test_");

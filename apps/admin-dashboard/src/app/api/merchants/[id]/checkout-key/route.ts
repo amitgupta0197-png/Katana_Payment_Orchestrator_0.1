@@ -10,8 +10,7 @@ import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
-import { issueCheckoutCreds, getCheckoutCredsStatus } from "@/lib/merchant-checkout";
-import { SIGNING_SCHEMES } from "@/lib/gateway-creds";
+import { issueCheckoutCreds, getCheckoutCredsStatus, ISSUED_CHECKOUT_SCHEMES } from "@/lib/merchant-checkout";
 import { activationErrorResponse } from "@/lib/live-activation";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 const schema = z.object({
-  scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("PAYU_SHA512"),
+  scheme: z.enum(ISSUED_CHECKOUT_SCHEMES).default("HMAC_SHA256"),
   livemode: z.boolean().default(true),   // which pair to (re)generate; the other is untouched
 });
 
@@ -46,10 +45,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try { body = schema.parse(await req.json().catch(() => ({}))); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-  if (!SIGNING_SCHEMES.includes(body.scheme)) {
-    return NextResponse.json({ error: "unsupported signing scheme" }, { status: 400 });
-  }
-
   try {
     const creds = await issueCheckoutCreds(scope.code, body.scheme, body.livemode);
     // Key + Salt returned ONCE for the merchant to configure their checkout.

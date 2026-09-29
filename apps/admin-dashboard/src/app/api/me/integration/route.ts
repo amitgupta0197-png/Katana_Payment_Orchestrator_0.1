@@ -8,8 +8,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { issueCheckoutCreds, getCheckoutCredsStatus } from "@/lib/merchant-checkout";
-import { SIGNING_SCHEMES } from "@/lib/gateway-creds";
+import { issueCheckoutCreds, getCheckoutCredsStatus, ISSUED_CHECKOUT_SCHEMES } from "@/lib/merchant-checkout";
 import { ownMerchantCode } from "@/lib/merchant-keys";
 import { activationErrorResponse } from "@/lib/live-activation";
 
@@ -45,13 +44,13 @@ export async function GET() {
       webhook_url: m.webhook_url ?? "",
       return_url: m.return_url ?? "",
       endpoints: endpoints(),
-      schemes: SIGNING_SCHEMES,
+      schemes: ISSUED_CHECKOUT_SCHEMES,
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
 const schema = z.object({
-  scheme: z.enum(["PAYU_SHA512", "HMAC_SHA256"]).default("HMAC_SHA256"),
+  scheme: z.enum(ISSUED_CHECKOUT_SCHEMES).default("HMAC_SHA256"),
   livemode: z.boolean().default(true),   // which pair to (re)generate; the other is untouched
 });
 

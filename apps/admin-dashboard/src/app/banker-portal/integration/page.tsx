@@ -236,7 +236,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2">
-            {(d?.schemes ?? ["HMAC_SHA256", "PAYU_SHA512"]).map((s) => (
+            {(d?.schemes ?? ["HMAC_SHA256"]).map((s) => (
               <Button key={s} variant="secondary" disabled={regen.isPending || regenMode === null}
                 onClick={() => regenMode !== null && regen.mutate({ sch: s, livemode: regenMode })}>{schemeLabel(s)}</Button>
             ))}

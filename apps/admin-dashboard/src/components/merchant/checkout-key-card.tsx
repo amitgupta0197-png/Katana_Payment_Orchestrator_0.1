@@ -38,7 +38,7 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
   const qc = useQueryClient();
   // Which pair the dialog generates: false = test, true = live, null = closed.
   const [mode, setMode] = useState<boolean | null>(null);
-  const [scheme, setScheme] = useState("PAYU_SHA512");
+  const scheme = "HMAC_SHA256";   // the only scheme new pairs are issued with
   const [issued, setIssued] = useState<{ key: string; salt: string; scheme: string; livemode: boolean } | null>(null);
 
   const statusQ = useQuery({
@@ -144,12 +144,8 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
             </div>
           ) : (
             <div className="space-y-1.5">
-              <Label htmlFor="checkout-key-scheme">Signing scheme</Label>
-              <select id="checkout-key-scheme" className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-                value={scheme} onChange={(e) => setScheme(e.target.value)}>
-                <option value="PAYU_SHA512">PAYU_SHA512 (PayU-style checkout)</option>
-                <option value="HMAC_SHA256">HMAC_SHA256</option>
-              </select>
+              <div className={`text-xs ${MUTED}`}>Signing scheme</div>
+              <div className="font-mono text-sm">HMAC_SHA256</div>
             </div>
           )}
           <DialogFooter>
