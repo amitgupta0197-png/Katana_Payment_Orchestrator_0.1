@@ -78,7 +78,7 @@ export function MerchantPortalAgentCard() {
         {/* The install/use guide belongs next to the download — a merchant who has just taken
             the APK is exactly the person who needs it. */}
         <Button asChild variant="secondary" className="w-full">
-          <a href="/Katana-Agent-Guide.pdf" target="_blank" rel="noopener"><BookOpen className="h-4 w-4" /> Install &amp; user guide (PDF)</a>
+          <a href="/katana-agent-guide.html" target="_blank" rel="noopener"><BookOpen className="h-4 w-4" /> Install &amp; user guide</a>
         </Button>
 
         <div className="rounded-md border p-3 text-sm">

@@ -48,7 +48,7 @@
 </header>
 
 <div class="note">
-  <b>What this app is for:</b> money paid into your payment app (Paytm, Airtel, Google Pay, PhonePe, BharatPe)
+  <b>What this app is for:</b> money paid into your payment app (Paytm, Airtel, Google Pay, PhonePe)
   reaches your Katana dashboard on its own — but the <b>RRN / UTR</b>, the 12-digit reference that proves
   <i>which</i> payment it was, is only ever shown <b>on the payment app's own screen</b>. The Katana Agent runs on
   the phone, reads that reference off the screen, and sends it to your dashboard. No typing.
@@ -62,7 +62,7 @@
   <a href="#home">4. Reading the home screen</a>
   <a href="#daily">5. Daily use</a>
   <a href="#apps">6. Your payment app — what each one does</a>
-  <a href="#email">7. Email channel (BharatPe and emailed receipts)</a>
+  <a href="#email">7. Email channel setup (optional)</a>
   <a href="#getrrn">8. Filling one payment on demand ("Get RRN")</a>
   <a href="#trouble">9. Troubleshooting</a>
   <a href="#limits">10. Limits worth knowing</a>
@@ -178,19 +178,56 @@ A phone once idled an hour this way. Park it on the payment app.</div>
   <tr><td><b>Airtel Merchant</b></td><td>Full RRN read straight off the reports list.</td></tr>
   <tr><td><b>Google Pay Business</b></td><td>Full RRN read off the payment detail screen.</td></tr>
   <tr><td><b>PhonePe Business</b></td><td>UTR read straight off the History list — nothing is opened. <b>Pull the list down to refresh</b>; it is a snapshot until you do.</td></tr>
-  <tr><td><b>BharatPe</b></td><td>Captured from the <b>payment email</b> — this phone does nothing. See §7.</td></tr>
 </table>
 
-<h2 id="email">7. Email channel (BharatPe and emailed receipts)</h2>
-<p>Under <b>EMAIL CHANNEL (OPTIONAL)</b>, connect the Gmail that receives payment emails. <b>For BharatPe this is
-the only step</b> — the email carries the whole payment, so no screen reading is involved and the phone does not
-need to sit on the payment app.</p>
+<h2 id="email">7. Email channel setup (optional)</h2>
+<p>Paytm for Business and PhonePe for Business send a <b>"Payment Received" email</b> for every payment. Connecting
+the Gmail that gets those emails gives Katana a <b>backup record of each payment</b>, so a payment is still picked up
+when the phone's notification did not arrive. The email does not carry the RRN — the agent still reads that off the
+payment app's screen — so this adds to the phone, it does not replace it.</p>
+
+<h3>Before you start</h3>
+<ul>
+  <li>Your <b>merchant code</b> is saved and reads <b class="ok">✓ verified</b> (§3, step 1) — the connect buttons need it.</li>
+  <li>The Gmail account you connect is the one your payment app sends its payment emails to. Check the registered
+    email in the payment app's settings.</li>
+</ul>
+
+<h3>Option A — Sign in with Google (recommended)</h3>
 <ol>
-  <li>Set and save your <b>merchant code</b> first (§3) — the connect button needs it.</li>
-  <li>Tap <b>Connect Google</b>. Sign in, tap <b>Allow</b>, then come back to the app. The status reads
-    <b class="ok">✓ Connected</b>.</li>
-  <li>Alternatively, enter the Gmail address and a <b>16-character app password</b> and tap save (needs IMAP on).</li>
+  <li>In Katana Agent, scroll to <b>EMAIL CHANNEL (OPTIONAL)</b>.</li>
+  <li>Tap <b>Sign in with Google</b> and choose the Gmail account.</li>
+  <li>Tap <b>Allow</b> on Google's permission screen, then come back to Katana Agent.</li>
+  <li>The status line reads <b class="ok">✓ Connected: <i>your-address</i>@gmail.com</b>. Done.</li>
 </ol>
+
+<h3>Option B — Gmail app password</h3>
+<p>Use this if Google sign-in is not possible on the phone.</p>
+<ol>
+  <li><b>Turn on IMAP</b> in Gmail: on a computer, open Gmail → <b>Settings</b> (gear) → <b>See all settings</b> →
+    <b>Forwarding and POP/IMAP</b> → <b>Enable IMAP</b> → <b>Save changes</b>.</li>
+  <li><b>Turn on 2-Step Verification</b> for the Google account (Google Account → <b>Security</b>). App passwords
+    only exist once it is on.</li>
+  <li><b>Create an app password</b>: Google Account → <b>Security</b> → <b>App passwords</b>, name it
+    <code>Katana Agent</code>, and copy the <b>16-character</b> password Google shows.</li>
+  <li>In Katana Agent, under <b>EMAIL CHANNEL (OPTIONAL)</b>, enter the <b>Gmail address</b> and the
+    <b>app password</b>, then tap <b>Connect Gmail</b>.</li>
+  <li>The status line reads <b class="ok">✓ Connected: <i>your-address</i>@gmail.com</b>.</li>
+</ol>
+<div class="note warnbox"><b>Never enter your normal Gmail password.</b> Only a 16-character app password works
+here, and it can be revoked at any time from Google Account → Security → App passwords without changing your main
+password.</div>
+
+<h3>What the status line says</h3>
+<table>
+  <tr><th>Status</th><th>What it means / what to do</th></tr>
+  <tr><td class="ok">✓ Connected: <i>address</i></td><td>Working. Payment emails reaching this Gmail are sent to Katana.</td></tr>
+  <tr><td class="sub">Not connected</td><td>The email channel is off. Optional — capture from the phone still works.</td></tr>
+  <tr><td class="bad">✗ <i>reason</i></td><td>Connection failed. Check the address, create a fresh app password, and make sure IMAP is on (Option B), then try again.</td></tr>
+</table>
+<div class="note"><b>One Gmail per merchant code.</b> Payment emails are credited to the merchant code saved on
+this phone, so connect a Gmail that only this shop's payment emails go to. A Gmail stays linked to the first merchant
+code it was connected under — to move it to another shop, ask your Katana admin.</div>
 
 <h2 id="getrrn">8. Filling one payment on demand ("Get RRN")</h2>
 <p>On the dashboard, a payment still missing its reference has a <b>Get RRN</b> button. Press it and this phone —
@@ -215,7 +252,7 @@ you report a problem to your Katana admin.</p>
 <h2 id="limits">10. Limits worth knowing</h2>
 <ul>
   <li><b>The payment app must be open on screen</b> for RRN capture. This is how Android accessibility works, and it
-    is why a dedicated always-on phone is recommended. (BharatPe over email is the exception — §7.)</li>
+    is why a dedicated always-on phone is recommended.</li>
   <li>Only payments <b>visible on the list</b> can be read. Recent ones are captured automatically; a much older
     payment needs the list scrolled back to it — ask your Katana admin to run a deep sweep.</li>
   <li><b>One phone collects for one merchant code.</b> Two shops need two phones, or the payments land on the wrong

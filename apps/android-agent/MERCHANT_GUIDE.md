@@ -1,12 +1,9 @@
 # Katana Agent — Merchant Setup Guide
 
 > **The current, maintained guide is `apps/admin-dashboard/public/katana-agent-guide.html`**
-> (published at `https://katanapay.co/katana-agent-guide.html`, PDF at
-> `https://katanapay.co/Katana-Agent-Guide.pdf`). It covers every capture rail — Paytm, Airtel,
-> Google Pay, PhonePe and BharatPe-over-email — and the v3.x home screen.
->
-> Regenerate the PDF after editing the HTML:
-> `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=apps/admin-dashboard/public/Katana-Agent-Guide.pdf apps/admin-dashboard/public/katana-agent-guide.html`
+> (published at `https://katanapay.co/katana-agent-guide.html`; the old PDF link redirects there).
+> It covers every capture rail — Paytm, Airtel, Google Pay and PhonePe — the optional email
+> channel, and the v3.x home screen. There is no PDF any more: edit the HTML only.
 >
 > The notes below are the older Paytm-only version, kept for reference.
 
