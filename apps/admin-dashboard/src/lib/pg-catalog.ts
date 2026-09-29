@@ -265,7 +265,7 @@ export const GATEWAYS: GatewayDef[] = [
     payout: {
       connector: true, balance: true, webhook: "dashboard",
       env: { TEST: "Test (enter iSmartPay's test URL below)", PROD: "Live (pay.ismartpay.co.in)" },
-      note: "iSmartPay pays on IMPS, NEFT and RTGS (no UPI) from the merchant's iSmartPay payout wallet. iSmartPay must whitelist Katana's server IP (72.61.227.233). Ask iSmartPay support to set Katana's webhook URL as the payout callback URL.",
+      note: "iSmartPay pays on IMPS, NEFT and RTGS (no UPI) from the merchant's iSmartPay payout wallet, ₹500 minimum per payout. iSmartPay must whitelist Katana's server IP (72.61.227.233) on both its payout and pay hosts. Ask iSmartPay support to set Katana's webhook URL as the payout callback URL.",
       fields: [
         { name: "mid", label: "MID", placeholder: "MID from iSmartPay support", show: true },
         { name: "api_key", label: "API key", secret: true },

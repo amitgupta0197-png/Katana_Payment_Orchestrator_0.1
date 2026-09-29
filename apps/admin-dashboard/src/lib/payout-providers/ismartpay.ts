@@ -1,7 +1,9 @@
 // iSmartPay Payouts — money OUT from the merchant's iSmartPay payout wallet.
 //
-// Contract (docs.ismartpay.co.in/in/payout):
+// Contract (docs.ismartpay.co.in/in/payout, and iSmartPay support for the hosts):
 //   auth      headers `mid` and `key`; iSmartPay whitelists the caller's IP
+//   hosts     create on payout.ismartpay.co.in; status and balance on pay.ismartpay.co.in
+//   minimum   ₹500 per payout
 //   create    POST /api/create/payout
 //             { amount (number, rupees), currency, purpose, order_id, narration, phone_number,
 //               payment_details: { type: "NB", account_number, ifsc_code, beneficiary_name,
@@ -10,7 +12,7 @@
 //             -> { status: false, status_code: INVALID | DUPLICATE | UNAUTHORIZED | NON_WHITELISTED_IP, errors }
 //   status    GET /api/payout/status/{transaction_id}   (iSmartPay's id, not Katana's order_id)
 //             -> { status: true, status_code: "Success" | "PENDING" | "FAIL", message, bank_id (UTR), order_id, amount }
-//   balance   GET /api/payout/wallet/details -> { status: true, balance }
+//   balance   GET /api/payout/wallet/details -> { status: true, balance, available_balance, reserved_balance }
 //   callback  POSTed to the URL iSmartPay support sets up (not per transfer); same shape as status.
 //
 // status_code (any case): CREATED, PENDING -> in flight; SUCCESS -> paid; FAIL -> not paid.
@@ -25,30 +27,37 @@ export interface IsmartpayPayoutCreds {
   mid: string;
   api_key: string;
   api_base: string;
+  /** Where payouts are created. The same as api_base when a test host is set. */
+  create_base: string;
   /** Phone number sent with payouts (iSmartPay asks for one; beneficiaries may have none). */
   default_mobile: string;
 }
 
 const DEFAULT_BASE = "https://pay.ismartpay.co.in";
+/** iSmartPay takes payout creation on its own host; status and balance stay on DEFAULT_BASE. */
+const DEFAULT_CREATE_BASE = "https://payout.ismartpay.co.in";
+const MIN_MINOR = 50_000n;   // ₹500
 
 async function creds(merchantCode: string): Promise<IsmartpayPayoutCreds | null> {
   const g = await getPayoutGateway(merchantCode);
   if (!g || g.gateway !== "ISMARTPAY") return null;
   const { mid, api_key, api_base, default_mobile } = g.fields;
   if (!mid || !api_key) return null;
+  const base = (api_base || (g.env === "PROD" ? DEFAULT_BASE : "")).replace(/\/$/, "");
   return {
     env: g.env, mid, api_key,
-    // iSmartPay publishes only a production host. A TEST account must name its test host, so a
-    // sandbox payout can never reach production by default.
-    api_base: (api_base || (g.env === "PROD" ? DEFAULT_BASE : "")).replace(/\/$/, ""),
+    // iSmartPay publishes only production hosts. A TEST account must name its test host, so a
+    // sandbox payout can never reach production by default; that host then serves every call.
+    api_base: base,
+    create_base: api_base ? base : g.env === "PROD" ? DEFAULT_CREATE_BASE : "",
     default_mobile: default_mobile || "9999999999",
   };
 }
 
-async function call(c: IsmartpayPayoutCreds, method: "GET" | "POST", path: string, body?: unknown, timeoutMs = 15_000): Promise<ProviderCall<{ httpStatus: number; body: any }>> {
-  if (!c.api_base) return { ok: false, definite: true, error: "no iSmartPay test URL is set for this merchant's TEST account" };
+async function call(c: IsmartpayPayoutCreds, method: "GET" | "POST", path: string, body?: unknown, timeoutMs = 15_000, base = c.api_base): Promise<ProviderCall<{ httpStatus: number; body: any }>> {
+  if (!base) return { ok: false, definite: true, error: "no iSmartPay test URL is set for this merchant's TEST account" };
   try {
-    const res = await fetch(`${c.api_base}${path}`, {
+    const res = await fetch(`${base}${path}`, {
       method,
       headers: { mid: c.mid, key: c.api_key, "Content-Type": "application/json", Accept: "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -101,6 +110,7 @@ export const ismartpayConnector: PayoutConnector<IsmartpayPayoutCreds> = {
     if (!REF_OK.test(t.ref)) return { ok: false, definite: true, error: "order id has characters iSmartPay may not accept" };
     if (t.rail === "UPI") return { ok: false, definite: true, error: "iSmartPay pays to bank accounts only (no UPI)" };
     if (!t.accountNumber || !t.ifsc) return { ok: false, definite: true, error: "iSmartPay needs the account number and IFSC" };
+    if (t.amountMinor < MIN_MINOR) return { ok: false, definite: true, error: "iSmartPay's minimum payout is ₹500" };
     const r = await call(c, "POST", "/api/create/payout", {
       amount: Number(rupees(t.amountMinor)),
       currency: "INR",
@@ -115,7 +125,7 @@ export const ismartpayConnector: PayoutConnector<IsmartpayPayoutCreds> = {
         beneficiary_name: t.beneficiaryName.trim(),
         mode: t.rail,
       },
-    });
+    }, 15_000, c.create_base);
     if (!r.ok) return r;
     const { httpStatus, body: j } = r.data;
     const code = String(j?.status_code ?? "");
@@ -151,7 +161,8 @@ export const ismartpayConnector: PayoutConnector<IsmartpayPayoutCreds> = {
     const r = await call(c, "GET", "/api/payout/wallet/details", undefined, 8_000);
     if (!r.ok) return r;
     const { httpStatus, body: j } = r.data;
-    const bal = paiseFrom(j?.balance);
+    // available_balance is what can be paid out now (balance less what is reserved for payouts in flight).
+    const bal = paiseFrom(j?.available_balance ?? j?.balance);
     if (j?.status !== true || bal == null)
       return { ok: false, definite: false, error: `balance: ${String(j?.errors ?? j?.status_code ?? "http_" + httpStatus).slice(0, 160)}` };
     return { ok: true, data: { balanceMinor: bal, lowBalance: false } };
