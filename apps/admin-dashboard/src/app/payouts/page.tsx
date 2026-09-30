@@ -19,6 +19,7 @@ import { MoneyInput } from "@/components/world-class/money-input";
 import { useConfirm } from "@/components/world-class/confirm-dialog";
 import { QuickStartCard } from "@/components/world-class/quick-start";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { fromMinor } from "@/lib/money";
 
 interface Beneficiary {
   id: string; merchant_id: string; beneficiary_name: string; bank_name: string | null;
@@ -231,10 +232,11 @@ export default function PayoutsPage() {
             <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs">{o.order_ref}</span>
-                <span className="tabular-nums font-medium">{formatAmount(Number(o.amount_minor), o.currency)}</span>
+                <span className="tabular-nums font-medium">{formatAmount(fromMinor(o.amount_minor, o.currency ?? "INR"), o.currency)}</span>
                 <span className="text-xs text-[color:var(--color-text-muted)]">{o.merchant_id} · {o.settlement_mode}</span>
                 <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
                 {o.provider && <Badge variant="brand">{o.provider} · {o.payout_rail}{o.livemode === false ? " · test" : ""}</Badge>}
+                {o.provider_ref && <span className="font-mono text-xs text-[color:var(--color-text-muted)]" title={`${o.provider} transaction ID`}>{o.provider_ref}</span>}
                 {o.provider_status && o.provider_status !== o.status && <span className="text-xs text-[color:var(--color-text-muted)]">{o.provider} {o.provider_status}</span>}
                 {o.failure_reason && <span className="text-xs text-[color:var(--color-danger)]">{o.failure_reason}</span>}
                 {o.settlement_mode === "USDT" && o.usdt_amount && <Badge variant="info">{o.usdt_amount} USDT @ {o.usdt_rate} {o.usdt_network}</Badge>}
@@ -242,7 +244,8 @@ export default function PayoutsPage() {
                 {o.tx_hash && <span className="text-xs font-mono">tx {String(o.tx_hash).slice(0, 12)}…</span>}
               </div>
               <div className="flex items-center gap-2">
-                {o.provider && ["SUBMITTED", "COMPLETED"].includes(o.status) && (
+                {/* FAILED too: a gateway that later reports it paid raises a CRITICAL alert (the payout stays FAILED). */}
+                {o.provider && ["SUBMITTED", "COMPLETED", "FAILED"].includes(o.status) && (
                   <Button size="sm" variant="secondary" onClick={() => checkStatus.mutate(o.order_ref)} disabled={checkStatus.isPending}>Check status</Button>
                 )}
                 <span className="text-xs text-[color:var(--color-text-muted)]">{formatDateTime(o.created_at)}</span>
