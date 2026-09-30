@@ -78,7 +78,8 @@ export default function PayoutsPage() {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
   const createPayout = useMutation({
-    mutationFn: async () => jpost("/api/v1/payouts", { merchant_id: merchantId || undefined, beneficiary_id: payout.beneficiary_id, amount: payout.amount, rail: payout.rail || undefined, txnid: payout.txnid || undefined }),
+    // The payout belongs to the chosen beneficiary's merchant; the Context code is only a fallback.
+    mutationFn: async () => jpost("/api/v1/payouts", { merchant_id: bens.find((b) => b.id === payout.beneficiary_id)?.merchant_id || merchantId || undefined, beneficiary_id: payout.beneficiary_id, amount: payout.amount, rail: payout.rail || undefined, txnid: payout.txnid || undefined }),
     onSuccess: (d) => {
       const o = d.order ?? {};
       if (o.approval_required) toast.success("Payout created — awaiting maker-checker");
@@ -113,7 +114,7 @@ export default function PayoutsPage() {
       body: `Pay ₹${payout.amount} to ${b?.beneficiary_name ?? "beneficiary"} (${b?.merchant_id ?? merchantId}). High-value payouts route to maker-checker.` })) createPayout.mutate();
   };
   const confirmDecide = async (a: Approval, decision: "approve" | "reject") => {
-    const amt = a.amount_minor ? formatAmount(Number(a.amount_minor), a.currency ?? "INR") : "";
+    const amt = a.amount_minor ? formatAmount(fromMinor(a.amount_minor, a.currency ?? "INR"), a.currency ?? "INR") : "";
     if (await confirm({
       title: decision === "approve" ? "Approve this request?" : "Reject this request?",
       danger: decision === "reject",
@@ -167,7 +168,7 @@ export default function PayoutsPage() {
               {approved.map((b) => <option key={b.id} value={b.id}>{b.beneficiary_name} · {b.bank_name ?? b.network ?? "—"} ({b.merchant_id})</option>)}
             </select>
             <MoneyInput value={payout.amount} onChange={(v) => setPayout({ ...payout, amount: v })} required placeholder="Amount" />
-            <Input className="h-9" placeholder="Merchant reference (optional) — e.g. INV-1042; reusing it won't pay twice" value={payout.txnid}
+            <Input className="h-9" placeholder="Payout reference (optional) — e.g. INV-1042; reusing it won't pay twice" value={payout.txnid}
               onChange={(e) => setPayout({ ...payout, txnid: e.target.value.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) })} />
             <select className="h-9 w-full rounded-md border bg-transparent px-2 text-sm" value={payout.rail} onChange={(e) => setPayout({ ...payout, rail: e.target.value })}>
               <option value="">Rail: automatic (gateway payouts only)</option>
@@ -190,7 +191,7 @@ export default function PayoutsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="brand">{a.action_type}</Badge>
                 {a.order_ref && <span className="font-mono text-xs">{a.order_ref}</span>}
-                {a.amount_minor && <span className="tabular-nums font-medium">{formatAmount(Number(a.amount_minor), a.currency ?? "INR")}</span>}
+                {a.amount_minor && <span className="tabular-nums font-medium">{formatAmount(fromMinor(a.amount_minor, a.currency ?? "INR"), a.currency ?? "INR")}</span>}
                 <span className="text-xs text-[color:var(--color-text-muted)]">{a.detail} · maker {a.maker ?? "—"}</span>
               </div>
               <div className="flex items-center gap-2">
