@@ -141,6 +141,13 @@ async function claimCheck(orderId: string, minGapSeconds: number): Promise<boole
 
 /** Ask the gateway about one payout and apply the answer. `hint` is the webhook event, for the record only. */
 export async function syncProviderPayout(o: ProviderPayoutOrder, opts: { hint?: string; timeoutMs?: number; minGapSeconds?: number } = {}): Promise<{ outcome: SyncOutcome; detail?: string }> {
+  // A FAILED payout is final and stays FAILED. But when a webhook or an operator asks about it,
+  // look again: a gateway that now says it paid means the money may have gone out after all,
+  // and a merchant who trusts FAILED will pay the same person twice. That is for ops to settle.
+  if (o.status === "FAILED" && opts.hint && !opts.hint.startsWith("CREATE_")) {
+    await flagPaidAfterFailed(o, opts);
+    return { outcome: "final" };
+  }
   if (o.status !== "SUBMITTED" && o.status !== "COMPLETED") return { outcome: "final" };
   const active = await providerCreds(o.provider, o.merchant_id);
   if (!active) return { outcome: "no_creds" };
@@ -206,6 +213,38 @@ export async function syncProviderPayout(o: ProviderPayoutOrder, opts: { hint?: 
     await note(o, `${name} webhook reported ${opts.hint} but the status lookup says ${s.status}; left as is`, evidence);
   }
   return { outcome: "final" };
+}
+
+/**
+ * A payout Katana closed as FAILED that the gateway now reports as paid. The order is not
+ * reopened (FAILED is final, and the merchant was already told); one CRITICAL ops alert is
+ * raised instead, with the gateway's answer, so someone checks the bank before anyone pays again.
+ */
+async function flagPaidAfterFailed(o: ProviderPayoutOrder, opts: { hint?: string; timeoutMs?: number }): Promise<void> {
+  const active = await providerCreds(o.provider, o.merchant_id);
+  if (!active) return;
+  const r = await active.connector.status(active.creds, active.connector.providerRefFor(o.txn_ref), {
+    createdAt: new Date(o.created_at), providerRef: o.provider_ref, timeoutMs: opts.timeoutMs,
+  });
+  if (!r.ok || !r.data.found || r.data.final !== "SUCCESS") return;
+  const s = r.data;
+  const kind = `${o.provider}_PAYOUT_SUCCESS_AFTER_FAILED`;
+  const exists = (await rows<{ n: number }>("fifo", `
+    SELECT COUNT(*)::int AS n FROM fifo_fraud_alerts WHERE order_id=$1::uuid AND payload->>'kind'=$2
+  `, [o.id, kind]).catch(() => []))[0]?.n ?? 0;
+  if (exists) return;
+  const name = nameOf(o);
+  const evidence = {
+    kind, provider: o.provider, provider_status: s.status, provider_ref: s.providerRef, bank_ref: s.bankRef,
+    msg: s.msg, webhook_event: opts.hint, provider_raw: s.raw,
+  };
+  await note(o, `${name} now reports this payout as paid (${s.status}${s.bankRef ? `, UTR ${s.bankRef}` : ""}); it stays FAILED until ops confirm`, evidence);
+  await recordFraudAlert({
+    orderId: o.id, orderRef: o.order_ref, merchantId: o.merchant_id, type: "ANOMALY", severity: "CRITICAL",
+    detail: `${name} reports this FAILED payout as paid${s.bankRef ? ` (UTR ${s.bankRef})` : " (no UTR)"}${s.msg ? `: ${s.msg}` : ""}. `
+      + `Check the beneficiary's bank before paying again — paying now could pay twice.`,
+    payload: evidence,
+  });
 }
 
 /** Raise one ops alert for a payout the gateway still has no record of long after it was sent. */
