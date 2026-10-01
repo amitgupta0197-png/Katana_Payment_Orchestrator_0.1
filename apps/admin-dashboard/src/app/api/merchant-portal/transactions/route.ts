@@ -2,6 +2,9 @@
 // assigned merchants (for reimbursement). Unions checkout_orders (PayU / Cashfree
 // / Razorpay / … via selected_rail) and vendor_payin_orders (Katana Pay / vendor PG).
 //
+// Every row carries its pay-in channel (INTENT / P2P / UNCLASSIFIED, lib/payin-channel) and the
+// totals are also returned per channel; ?channel= narrows the whole response to one.
+//
 // Optional ?from=&to=&status= narrow it, on IST calendar days — the same window the CSV
 // export takes, built by the same helper so the two can never disagree. The window is
 // applied in SQL rather than after the fetch, so narrowing to a day reaches PAST the
@@ -14,13 +17,14 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
+import { CHECKOUT_ORDER_CHANNEL, PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
 
 export const dynamic = "force-dynamic";
 
 const SUCCESS = new Set(["SUCCESS", "SUCCEEDED"]);
 const FAILED = new Set(["FAILED", "EXPIRED"]);
 
-interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string }
+interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string; channel_type: PayinChannel }
 
 export async function GET(req: Request) {
   const g = await gateOrResponse(["PROVIDER", "SUPER_ADMIN"]);
@@ -33,44 +37,51 @@ export async function GET(req: Request) {
     // mapped merchants gets an empty dashboard rather than everyone's data.
     const scoped = s.persona === "PROVIDER";
     if (scoped && !codes.length) {
-      return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], recent: [], series: [] });
+      return NextResponse.json({ merchants: [], totals: empty(), by_merchant: [], by_channel: [], by_channel_type: emptyByChannelType(), recent: [], series: [] });
     }
 
     const window = txnWindowFromUrl(new URL(req.url), scoped ? codes : null, await getLivemode());
     const co = txnConditions("", window);
     // Unscoped (SUPER_ADMIN) pay-ins still exclude rows with no merchant at all, exactly as
     // before the filter existed — as an `extra` so a date can never displace it.
-    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"]);
+    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"], "channel_type");
 
-    const checkout = await rows<Txn>("checkout", `
+    // checkout_orders has no channel column: a gateway takes every one of them, so they are
+    // INTENT and are simply left out when another channel is asked for.
+    const checkout = window.channel && window.channel !== CHECKOUT_ORDER_CHANNEL ? [] : (await rows<Omit<Txn, "channel_type">>("checkout", `
       SELECT 'CHECKOUT' AS source, merchant_id,
              COALESCE(NULLIF(selected_rail,''),'DIRECT') AS channel,
              COALESCE(method,'') AS method, status, amount::float AS amount,
              id::text AS ref, created_at
         FROM checkout_orders ${co.where}
        ORDER BY created_at DESC LIMIT 500
-    `, co.args).catch(() => []);
+    `, co.args).catch(() => [])).map((r): Txn => ({ ...r, channel_type: CHECKOUT_ORDER_CHANNEL }));
 
-    const payin = await rows<Txn>("vendorGateway", `
+    const payin = (await rows<Txn>("vendorGateway", `
       SELECT 'PAYIN' AS source, merchant_id, vendor AS channel,
              COALESCE(channel,'') AS method, status, amount::float AS amount,
-             order_id AS ref, created_at
+             order_id AS ref, created_at, channel_type
         FROM vendor_payin_orders ${vp.where}
        ORDER BY created_at DESC LIMIT 500
-    `, vp.args).catch(() => []);
+    `, vp.args).catch(() => [])).map((r) => ({ ...r, channel_type: payinChannelOf(r.channel_type) }));
 
     const all = [...checkout, ...payin];
 
     const totals = empty();
     const byMerchant = new Map<string, { merchant_id: string; gross: number; count: number; success: number }>();
     const byChannel = new Map<string, { channel: string; gross: number; count: number }>();
+    // The same counters per pay-in channel. `totals` is their sum by construction: both are
+    // filled from the same row in the same pass.
+    const byChannelType = emptyByChannelType();
 
     for (const t of all) {
       const ok = SUCCESS.has(t.status);
-      totals.total_count++;
-      if (ok) { totals.success_count++; totals.gross += t.amount; }
-      else if (FAILED.has(t.status)) totals.failed_count++;
-      else totals.pending_count++;
+      for (const b of [totals, byChannelType[t.channel_type]]) {
+        b.total_count++;
+        if (ok) { b.success_count++; b.gross += t.amount; }
+        else if (FAILED.has(t.status)) b.failed_count++;
+        else b.pending_count++;
+      }
 
       const mk = t.merchant_id || "—";
       const m = byMerchant.get(mk) ?? { merchant_id: mk, gross: 0, count: 0, success: 0 };
@@ -92,6 +103,8 @@ export async function GET(req: Request) {
       totals,
       by_merchant: [...byMerchant.values()].sort((a, b) => b.gross - a.gross),
       by_channel: [...byChannel.values()].sort((a, b) => b.gross - a.gross),
+      by_channel_type: byChannelType,
+      channel: window.channel ?? null,
       recent,
       series: buildDaySeries(all),
     });
@@ -122,4 +135,8 @@ function buildDaySeries(all: Txn[], days = 14) {
 
 function empty() {
   return { gross: 0, success_count: 0, failed_count: 0, pending_count: 0, total_count: 0 };
+}
+
+function emptyByChannelType() {
+  return Object.fromEntries(PAYIN_CHANNELS.map((c) => [c, empty()])) as Record<PayinChannel, ReturnType<typeof empty>>;
 }

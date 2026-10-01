@@ -13,6 +13,7 @@ import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/l
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
 import { gatewayName } from "@/lib/pg-catalog";
+import { classifyPayinOrder } from "@/lib/payin-channel";
 
 export interface CreatePoolPayInput {
   orderId: string;
@@ -310,15 +311,22 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
     } : { source: "env", env: goLive ? "PROD" : "SANDBOX", provider_id: null, live: goLive },
   };
 
+  // The collection rail, fixed here for the life of the order (vendorGateway 0029). Routing is
+  // decided above, so the requested and the final channel are the same.
+  const payinChannel = classifyPayinOrder(gateway?.provider, goLive);
+
   const inserted = await rows<any>("vendorGateway", `
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
-       vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode)
-    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13)
+       vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode,
+       channel_type, channel_id, requested_channel)
+    VALUES ('tenant-default','POOLPAY',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14)
     ON CONFLICT (vendor, COALESCE(merchant_id, ''), livemode, order_id) DO NOTHING
-    RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode
+    RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode,
+              channel_type, channel_id
   `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
-      vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode]);
+      vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode,
+      payinChannel.type, payinChannel.id]);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null };
 
@@ -340,7 +348,7 @@ export async function createPoolPayOrder(input: CreatePoolPayInput): Promise<Cre
 async function readExistingOrder(orderId: string, merchantId: string | null, livemode: boolean): Promise<CreatePoolPayResult | null> {
   const existing = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
-           channel, status, created_at, livemode, meta
+           channel, status, created_at, livemode, channel_type, channel_id, meta
       FROM vendor_payin_orders
      WHERE vendor = 'POOLPAY'
        AND order_id = $1

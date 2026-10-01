@@ -12,6 +12,7 @@ import { rows } from "./pg";
 import { settlementVpasFor } from "./settlement-vpa";
 import { IS_COLLECTION } from "./settlement-credit";
 import type { StatementChannel, StatementRange, StatementRow } from "./statement";
+import { CHECKOUT_ORDER_CHANNEL, payinChannelOf } from "@/lib/payin-channel";
 
 export interface StatementQuery {
   channel: StatementChannel;
@@ -75,14 +76,14 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
   interface P {
     merchant_id: string | null; party: string | null; paid_via: string | null; type: string | null;
     created_at: string; txn_id: string | null; amount: number; status: string | null;
-    updated_at: string | null; rrn: string | null; order_id: string | null;
+    updated_at: string | null; rrn: string | null; order_id: string | null; channel_type: string | null;
   }
   const payin = await rows<P>("vendorGateway", `
     SELECT merchant_id, NULLIF(customer_vpa,'') AS party, vendor AS paid_via,
            COALESCE(NULLIF(channel,''), 'UPI')  AS type,
            created_at, COALESCE(NULLIF(vendor_txn_id,''), order_id) AS txn_id,
            amount::float AS amount, status, updated_at::text AS updated_at,
-           NULLIF(rrn,'') AS rrn, order_id
+           NULLIF(rrn,'') AS rrn, order_id, channel_type
       FROM vendor_payin_orders
      WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND livemode = true${payinScope}
      ORDER BY created_at DESC LIMIT ${MAX_ROWS}
@@ -100,6 +101,7 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
         net: r.settlement_amount != null ? Number(r.settlement_amount) : amount - fee,
         status: r.status, updated_at: r.updated_at, notes: r.notes,
         rrn: r.rrn, banker_code: r.merchant_id, order_id: r.order_id,
+        pay_channel: CHECKOUT_ORDER_CHANNEL,
       };
     }),
     // The vendor pay-in table carries no fee breakdown, so fee stays 0 and net equals the
@@ -109,6 +111,7 @@ async function checkoutRows(q: StatementQuery): Promise<StatementRow[]> {
       created_at: r.created_at, txn_id: r.txn_id, amount: Number(r.amount || 0),
       fee: 0, net: Number(r.amount || 0), status: r.status, updated_at: r.updated_at,
       notes: null, rrn: r.rrn, banker_code: r.merchant_id, order_id: r.order_id,
+      pay_channel: payinChannelOf(r.channel_type),
     })),
   ];
 }
@@ -195,6 +198,8 @@ async function vpaRows(q: StatementQuery): Promise<StatementRow[]> {
       rrn: r.utr,
       banker_code: r.merchant_id,
       order_id: r.matched_order_ref || r.order_ref,
+      // A credit captured on a banker's UPI ID is the P2P rail by definition.
+      pay_channel: "P2P",
     };
   });
 }

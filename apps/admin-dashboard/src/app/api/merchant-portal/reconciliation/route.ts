@@ -8,7 +8,9 @@
 // (genRrn), so it is always filled on a paid order and proves nothing.
 //
 // Optional ?from=&to= are IST calendar days, the same window the transactions page takes.
-// ?state= narrows the rows (not the totals) to one reconciliation state.
+// ?state= narrows the rows (not the totals) to one reconciliation state. ?channel= narrows
+// everything to one pay-in channel; `by_channel` always carries the per-channel totals of the
+// window, so the consolidated view can show which rail a variance belongs to.
 //
 // PROVIDER only (middleware restricts /api/merchant-portal/* to PROVIDER persona).
 
@@ -17,6 +19,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
+import { PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +38,7 @@ const PAID = `o.status IN ('SUCCESS','SUCCEEDED')`;
 const base = (where: string) => `
   WITH base AS (
     SELECT o.id, o.order_id, o.vendor_txn_id, o.merchant_id, o.amount::float AS amount, o.status,
-           o.channel, o.meta, o.created_at, o.updated_at,
+           o.channel, o.channel_type, o.channel_id, o.meta, o.created_at, o.updated_at,
            COALESCE(o.meta->'settlement'->>'status' = 'SETTLED', false) AS settled,
            CASE
              WHEN ${PAID} AND (COALESCE(o.meta->'confirmation'->>'utr','') <> '' OR a.matched_order_id IS NOT NULL) THEN 'RECONCILED'
@@ -78,8 +81,19 @@ export async function GET(req: Request) {
 
     // The reconciliation state is derived, not a column, so it is never passed as `status`.
     const window = { ...txnWindowFromUrl(url, scoped ? codes : null, await getLivemode()), status: null };
-    const { where, args } = txnConditions("o.", window,
-      ["o.vendor = 'POOLPAY'", ...(scoped ? [] : ["o.merchant_id IS NOT NULL"])]);
+    const extra = ["o.vendor = 'POOLPAY'", ...(scoped ? [] : ["o.merchant_id IS NOT NULL"])];
+    const { where, args } = txnConditions("o.", window, extra, "channel_type");
+
+    // Per-channel totals of the whole window, whatever channel is selected.
+    const all = txnConditions("o.", { ...window, channel: null }, extra);
+    const perChannel = await rows<{ channel_type: string; recon: ReconState; n: number; amount: number }>("vendorGateway", `
+      ${base(all.where)}
+      SELECT channel_type, recon, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amount
+        FROM base GROUP BY channel_type, recon
+    `, all.args);
+    const byChannel = Object.fromEntries(PAYIN_CHANNELS.map((c) => [c,
+      Object.fromEntries(STATES.map((k) => [k, { count: 0, amount: 0 }]))])) as Record<PayinChannel, Record<ReconState, Bucket>>;
+    for (const r of perChannel) byChannel[payinChannelOf(r.channel_type)][r.recon] = { count: r.n, amount: r.amount };
 
     const agg = await rows<{ recon: ReconState; n: number; amount: number; settled_n: number; settled_amount: number }>("vendorGateway", `
       ${base(where)}
@@ -101,7 +115,7 @@ export async function GET(req: Request) {
 
     const list = await rows<any>("vendorGateway", `
       ${base(where)}
-      SELECT id::text, order_id, vendor_txn_id, merchant_id, amount, status, channel, meta,
+      SELECT id::text, order_id, vendor_txn_id, merchant_id, amount, status, channel, channel_type, channel_id, meta,
              created_at, updated_at, settled, recon
         FROM base ${state ? `WHERE recon = $${args.length + 1}` : ""}
        ORDER BY created_at DESC LIMIT ${ROW_LIMIT}
@@ -168,6 +182,7 @@ export async function GET(req: Request) {
       return {
         id: o.id, order_id: o.order_id, txn_id: o.vendor_txn_id ?? null, merchant_id: o.merchant_id ?? null,
         amount: o.amount, status: o.status, gateway: meta.gateway?.provider ?? null,
+        channel_type: payinChannelOf(o.channel_type), channel_id: o.channel_id ?? null,
         recon: o.recon as ReconState, bank_ref: bankRef, evidence, settled: o.settled === true,
         created_at: new Date(o.created_at).toISOString(), timeline: events,
       };
@@ -182,6 +197,8 @@ export async function GET(req: Request) {
         { key: "settled", ...settled },
       ],
       states: by,
+      by_channel: byChannel,
+      channel: window.channel ?? null,
       state,
       orders,
       // True when the window holds more orders than the page shows; totals always cover all of it.
@@ -195,6 +212,7 @@ function emptyResponse() {
   return {
     stages: ["order", "gateway", "credit", "settled"].map((key) => ({ key, ...zero })),
     states: Object.fromEntries(STATES.map((k) => [k, zero])),
-    state: null, orders: [], truncated: false,
+    by_channel: Object.fromEntries(PAYIN_CHANNELS.map((c) => [c, Object.fromEntries(STATES.map((k) => [k, zero]))])),
+    channel: null, state: null, orders: [], truncated: false,
   };
 }

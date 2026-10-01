@@ -18,6 +18,8 @@
 // intended direction — interpret this wall-clock date AS Asia/Kolkata — and yields a real
 // timestamptz (2026-08-25 18:30+00 = midnight IST). Verified against prod, 2026-08-27.
 
+import { parsePayinChannel, type PayinChannel } from "@/lib/payin-channel";
+
 /** Midnight IST at the start of the given YYYY-MM-DD, as a timestamptz. */
 const IST_DAY_START = (p: string) => `(${p}::date)::timestamp AT TIME ZONE 'Asia/Kolkata'`;
 /** Midnight IST at the START OF THE NEXT DAY — so a `to` date is inclusive of its own day. */
@@ -31,6 +33,8 @@ export interface TxnWindow {
   status: string | null;
   /** true = live orders (the default); false = the dashboard is switched to test. */
   livemode: boolean;
+  /** Pay-in channel to narrow to, or null for all channels. */
+  channel?: PayinChannel | null;
 }
 
 // Anything that is not a plain calendar date is dropped rather than passed to the cast:
@@ -48,12 +52,13 @@ export function txnWindowFromUrl(url: URL, codes: string[] | null, livemode = tr
     from: readDate(url.searchParams.get("from")),
     to: readDate(url.searchParams.get("to")),
     status: url.searchParams.get("status"),
+    channel: parsePayinChannel(url.searchParams.get("channel")),
   };
 }
 
 /** True when the window actually narrows anything beyond the caller's own scoping. */
 export function txnWindowIsNarrowed(w: TxnWindow): boolean {
-  return !!(w.from || w.to || w.status);
+  return !!(w.from || w.to || w.status || w.channel);
 }
 
 /**
@@ -69,6 +74,8 @@ export function txnConditions(
   prefix: string,
   w: TxnWindow,
   extra: string[] = [],
+  /** The source's channel column, when it has one; the channel filter then applies to it. */
+  channelColumn?: string,
 ): { where: string; args: unknown[] } {
   const args: unknown[] = [];
   const cond: string[] = [];
@@ -76,6 +83,7 @@ export function txnConditions(
   if (w.from) { args.push(w.from); cond.push(`${prefix}created_at >= ${IST_DAY_START(`$${args.length}`)}`); }
   if (w.to) { args.push(w.to); cond.push(`${prefix}created_at < ${IST_DAY_END(`$${args.length}`)}`); }
   if (w.status) { args.push(w.status.toUpperCase()); cond.push(`${prefix}status = $${args.length}`); }
+  if (w.channel && channelColumn) { args.push(w.channel); cond.push(`${prefix}${channelColumn} = $${args.length}`); }
   // The mode ALWAYS applies: a list, a total or a CSV never mixes test and live orders.
   args.push(w.livemode); cond.push(`${prefix}livemode = $${args.length}`);
   cond.push(...extra);

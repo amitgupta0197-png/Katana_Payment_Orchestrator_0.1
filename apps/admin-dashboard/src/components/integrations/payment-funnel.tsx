@@ -40,17 +40,20 @@ const TONE: Record<string, string> = {
 
 export function PaymentFunnel({
   providerId, merchant, title = "Reconciliation funnel",
-  description = "Katana Pay pay-ins from created → reconciled.", refetchMs = 30_000,
+  description = "Katana Pay pay-ins from created → reconciled.", refetchMs = 30_000, channel,
 }: {
   providerId?: string; merchant?: string; title?: string; description?: string; refetchMs?: number;
+  /** Narrow to one pay-in channel (INTENT | P2P); omit for all. */
+  channel?: string;
 }) {
   const qs = new URLSearchParams();
   if (providerId) qs.set("provider", providerId);
   if (merchant) qs.set("merchant", merchant);
+  if (channel) qs.set("channel", channel);
   const suffix = qs.toString() ? `?${qs}` : "";
 
   const q = useQuery({
-    queryKey: ["poolpay-funnel", providerId ?? null, merchant ?? null],
+    queryKey: ["poolpay-funnel", providerId ?? null, merchant ?? null, channel ?? null],
     queryFn: async () => (await fetch(`/api/integrations/poolpay/funnel${suffix}`).then(async (r) => {
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || ("HTTP " + r.status));

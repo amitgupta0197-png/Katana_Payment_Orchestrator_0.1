@@ -20,6 +20,8 @@ import { Label } from "@/components/ui/label";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { cn, formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
+import type { PayinChannel } from "@/lib/payin-channel";
 
 // The server reads a date as an IST calendar day, so the presets are built in IST too.
 const istDay = (offsetDays = 0) =>
@@ -35,10 +37,12 @@ interface Order {
   id: string; order_id: string; txn_id: string | null; merchant_id: string | null; amount: number;
   status: string; gateway: string | null; recon: ReconState; bank_ref: string | null;
   evidence: string | null; settled: boolean; created_at: string; timeline: TimelineEvent[];
+  channel_type: PayinChannel; channel_id: string | null;
 }
 interface Data {
   stages: ({ key: StageKey } & Bucket)[];
   states: Record<ReconState, Bucket>;
+  by_channel?: Record<PayinChannel, Record<ReconState, Bucket>>;
   orders: Order[];
   truncated: boolean;
 }
@@ -77,6 +81,7 @@ export default function ProviderReconciliationPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [state, setState] = useState<ReconState | "">("");
+  const [channel, setChannel] = useState<ChannelFilter>("");
   const [stage, setStage] = useState<StageKey>("order");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -84,11 +89,12 @@ export default function ProviderReconciliationPage() {
   if (from) params.set("from", from);
   if (to) params.set("to", to);
   if (state) params.set("state", state);
+  if (channel) params.set("channel", channel);
   const qs = params.toString();
   const filtered = !!(from || to);
 
   const q = useQuery({
-    queryKey: ["pp:reconciliation", from, to, state],
+    queryKey: ["pp:reconciliation", from, to, state, channel],
     queryFn: async () => (await fetchJson(`/api/merchant-portal/reconciliation${qs ? `?${qs}` : ""}`)) as Data,
     refetchInterval: 30_000,
   });
@@ -111,6 +117,12 @@ export default function ProviderReconciliationPage() {
   const cols: Column<Order>[] = [
     { key: "txn_id", header: "Txn ID", render: (r) => <span className="font-mono text-xs">{r.txn_id ?? "—"}</span> },
     { key: "order_id", header: "Merchant order", render: (r) => <span className="font-mono text-xs">{r.order_id}</span> },
+    { key: "channel_type", header: "Channel", render: (r) => (
+        <span className="inline-flex items-center gap-1.5">
+          <ChannelBadge channel={r.channel_type} />
+          {r.channel_id && r.channel_type === "INTENT" && <span className="text-xs text-[color:var(--color-text-muted)]">{r.channel_id}</span>}
+        </span>
+      ) },
     { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id ?? "—"}</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
     { key: "status", header: "Gateway", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -132,8 +144,11 @@ export default function ProviderReconciliationPage() {
     { label: "Needs review (hold / payer proof)", value: st?.NEEDS_REVIEW.count ?? 0, tone: "text-[color:var(--color-warning)]", state: "NEEDS_REVIEW" },
     { label: "Pending", value: st?.PENDING.count ?? 0, state: "PENDING" },
     { label: "Failed / expired", value: st?.NOT_PAID.count ?? 0, tone: "text-[color:var(--color-danger)]", state: "NOT_PAID" },
-    { label: "VPA credits awaiting RRN", value: vpa.data?.totals?.awaitingRrn ?? 0, tone: "text-[color:var(--color-warning)]", href: "/merchant-portal" },
-    { label: "VPA mismatch", value: vpa.data?.totals?.vpaMismatch ?? 0, tone: "text-[color:var(--color-danger)]", href: "/merchant-portal" },
+    // Captured credits are the P2P rail, so they have no place in an INTENT-only view.
+    ...(channel === "INTENT" ? [] : [
+      { label: "P2P credits awaiting RRN", value: vpa.data?.totals?.awaitingRrn ?? 0, tone: "text-[color:var(--color-warning)]", href: "/merchant-portal" },
+      { label: "P2P VPA mismatch", value: vpa.data?.totals?.vpaMismatch ?? 0, tone: "text-[color:var(--color-danger)]", href: "/merchant-portal" },
+    ]),
   ];
 
   return (
@@ -147,6 +162,10 @@ export default function ProviderReconciliationPage() {
 
       <Card className="mb-6">
         <CardContent className="flex flex-wrap items-end gap-3 pt-6">
+          <div>
+            <Label className="text-xs">Pay-in channel</Label>
+            <div><ChannelSwitch value={channel} onChange={setChannel} /></div>
+          </div>
           <div className="min-w-[9rem] flex-1">
             <Label className="text-xs">From</Label>
             <Input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
@@ -180,6 +199,24 @@ export default function ProviderReconciliationPage() {
           variant={(st?.AWAITING_EVIDENCE.count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
         <KpiTile label="Settled" value={formatAmount(stageOf("settled").amount)} sublabel={`${stageOf("settled").count} settled to account`} loading={q.isLoading} />
       </div>
+
+      {/* Reconciliation is per channel first; these are each rail's own figures for the window. */}
+      {!channel && (
+        <ChannelCards loading={q.isLoading} cards={(["INTENT", "P2P", "UNCLASSIFIED"] as PayinChannel[]).map((c) => {
+          const b = d?.by_channel?.[c];
+          const n = (k: ReconState) => b?.[k]?.count ?? 0;
+          return {
+            channel: c, headline: (b?.RECONCILED.amount ?? 0) + (b?.AWAITING_EVIDENCE.amount ?? 0), headlineLabel: "Gross successful pay-in",
+            hidden: c === "UNCLASSIFIED" && !b?.RECONCILED.count && !b?.AWAITING_EVIDENCE.count && !b?.PENDING.count && !b?.NEEDS_REVIEW.count && !b?.NOT_PAID.count,
+            stats: [
+              { label: "Reconciled", value: n("RECONCILED") },
+              { label: "Awaiting evidence", value: n("AWAITING_EVIDENCE") },
+              { label: "Pending / review", value: n("PENDING") + n("NEEDS_REVIEW") },
+              { label: "Failed / expired", value: n("NOT_PAID") },
+            ],
+          };
+        })} />
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -284,7 +321,7 @@ export default function ProviderReconciliationPage() {
                 ))}
               </ol>
             )}
-            emptyState={state || filtered ? "No pay-ins match this filter." : "No Katana Pay pay-ins yet."}
+            emptyState={state || filtered || channel ? "No pay-ins match this filter." : "No Katana Pay pay-ins yet."}
           />
           {d?.truncated && (
             <p className="mt-2 text-center text-xs text-[color:var(--color-text-muted)]">

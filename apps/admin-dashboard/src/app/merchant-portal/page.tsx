@@ -23,6 +23,10 @@ import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detai
 import { verificationLabel, verificationVariant, type CreditVerification } from "@/lib/credit-verification";
 import { paymentAppOf, PAYMENT_APP_DOT, type PaymentAppInput } from "@/lib/payment-app";
 import { formatAmount, formatDateTime } from "@/lib/utils";
+import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
+import type { PayinChannel } from "@/lib/payin-channel";
+
+interface ChannelTotals { gross: number; success_count: number; failed_count: number; pending_count: number; total_count: number }
 
 interface MerchantRow { id: string; merchant_code: string; stage: string; legal_name?: string; created_at?: string }
 interface SubMidRow { id: string; sub_mid_code: string; kyc_status: string; settlement_enabled: boolean }
@@ -116,11 +120,15 @@ export default function ProviderDashboard() {
     },
     refetchInterval: 30_000,
   });
+  // All / INTENT / P2P. Every order figure below is recalculated from the selected channel's
+  // own population; captured VPA credits are the P2P rail, so they drop out of an INTENT view.
+  const [channel, setChannel] = useState<ChannelFilter>("");
   const txns = useQuery({
-    queryKey: ["pp:txns"],
-    queryFn: async () => (await fetch("/api/merchant-portal/transactions").then((r) => r.json())) as {
+    queryKey: ["pp:txns", channel],
+    queryFn: async () => (await fetch(`/api/merchant-portal/transactions${channel ? `?channel=${channel}` : ""}`).then((r) => r.json())) as {
       totals?: { gross: number; success_count: number; pending_count: number; total_count: number };
-      recent?: Array<{ merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string }>;
+      by_channel_type?: Record<PayinChannel, ChannelTotals>;
+      recent?: Array<{ merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string; channel_type?: PayinChannel }>;
     },
     refetchInterval: 30_000,
   });
@@ -183,6 +191,46 @@ export default function ProviderDashboard() {
         </div>
       )}
 
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Pay-in by channel</h2>
+        <ChannelSwitch value={channel} onChange={setChannel} />
+      </div>
+      {/* Each rail's own figures, side by side. P2P money is what landed on the bankers' UPI IDs;
+          its orders are listed beside it, not added to it — an order paid on that rail is the
+          same money as the credit that proves it. */}
+      {!channel && (() => {
+        const intent = txns.data?.by_channel_type?.INTENT;
+        const p2p = txns.data?.by_channel_type?.P2P;
+        const unc = txns.data?.by_channel_type?.UNCLASSIFIED;
+        const vt = vpaTxns.data?.totals;
+        const done = (intent?.success_count ?? 0) + (intent?.failed_count ?? 0);
+        return (
+          <ChannelCards loading={txns.isLoading || vpaTxns.isLoading} cards={[
+            { channel: "INTENT", headline: intent?.gross ?? 0, headlineLabel: "Gross successful pay-in (gateway)",
+              stats: [
+                { label: "Orders", value: intent?.total_count ?? 0 },
+                { label: "Successful", value: intent?.success_count ?? 0 },
+                { label: "Pending", value: intent?.pending_count ?? 0 },
+                { label: "Success rate", value: done > 0 ? `${Math.round(((intent?.success_count ?? 0) / done) * 100)}%` : "—" },
+              ] },
+            { channel: "P2P", headline: vt?.verifiedAmount ?? 0, headlineLabel: "Received on banker UPI IDs (RRN verified)",
+              stats: [
+                { label: "Credits proven", value: vt?.verified ?? 0 },
+                { label: "Awaiting RRN", value: formatAmount(vt?.awaitingAmount ?? 0) },
+                { label: "Orders", value: p2p?.total_count ?? 0 },
+                { label: "Orders pending", value: p2p?.pending_count ?? 0 },
+              ] },
+            { channel: "UNCLASSIFIED", headline: unc?.gross ?? 0, headlineLabel: "Gross successful pay-in (channel not recorded)",
+              hidden: !unc?.total_count,
+              stats: [
+                { label: "Orders", value: unc?.total_count ?? 0 },
+                { label: "Successful", value: unc?.success_count ?? 0 },
+                { label: "Pending", value: unc?.pending_count ?? 0 },
+              ] },
+          ]} />
+        );
+      })()}
+
       {/* DT position — only for merchants carrying a USDT advance. Katana advances USDT;
           this is how much of it has been repaid in incoming pay-in population. */}
       {pop && pop.allocated > 0 && (
@@ -232,7 +280,7 @@ export default function ProviderDashboard() {
       </div>
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
-          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>API order generation — latest collections across your branches (all channels).</CardDescription></div>
+          <div><CardTitle className="text-base">Recent transactions</CardTitle><CardDescription>API order generation — latest collections across your branches ({channel ? `${channel} only` : "all channels"}).</CardDescription></div>
           <Button variant="secondary" size="sm" asChild><Link href="/merchant-portal/transactions">View all <ChevronRight className="h-3.5 w-3.5" /></Link></Button>
         </CardHeader>
         <CardContent>
@@ -243,6 +291,7 @@ export default function ProviderDashboard() {
                 {(txns.data?.recent ?? []).slice(0, 10).map((r, i) => (
                   <li key={r.ref + i} className="flex items-center gap-3 rounded-md border px-3 py-2">
                     <Badge variant="brand">{r.merchant_id}</Badge>
+                    <ChannelBadge channel={r.channel_type} />
                     <span className="flex-1 truncate text-xs text-[color:var(--color-text-muted)]">{r.channel}{r.method ? ` · ${r.method}` : ""} · <span className="font-mono">{r.ref}</span></span>
                     <span className="tabular-nums font-medium">{formatAmount(r.amount)}</span>
                     <Badge variant={r.status === "SUCCESS" || r.status === "SUCCEEDED" ? "success" : r.status === "FAILED" || r.status === "EXPIRED" ? "danger" : "warning"}>{r.status}</Badge>
@@ -254,8 +303,10 @@ export default function ProviderDashboard() {
         </CardContent>
       </Card>
 
-      {/* Non-API flow — the payer pays a settlement VPA directly; the gateway hosts/reconciles the collection. */}
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Gateway Hosted Checkout</h2>
+      {/* Non-API flow — the payer pays a settlement VPA directly; the gateway hosts/reconciles the collection.
+          These credits are the P2P rail, so the whole block is left out of an INTENT-only view. */}
+      {channel !== "INTENT" && (<>
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Gateway Hosted Checkout <span className="normal-case text-[color:var(--color-text-subtle)]">· P2P</span></h2>
       {/* MONEY PROVEN, MONEY CLAIMED — reported side by side, never added together. A credit
           with no RRN is only a claim: the phone saw a notification, and the UPI network has not
           corroborated it yet. It used to be inside "Gross received", which presented unproven
@@ -461,8 +512,10 @@ export default function ProviderDashboard() {
         </Card>
       )}
 
+      </>)}
+
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Katana Pay reconciliation</h2>
-      <PaymentFunnel description="Live Katana Pay pay-ins across all your bankers — created → reconciled." />
+      <PaymentFunnel channel={channel || undefined} description={`Live Katana Pay pay-ins across all your bankers${channel ? ` · ${channel} only` : ""} — created → reconciled.`} />
 
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Insights</h2>
       <ProviderCharts />

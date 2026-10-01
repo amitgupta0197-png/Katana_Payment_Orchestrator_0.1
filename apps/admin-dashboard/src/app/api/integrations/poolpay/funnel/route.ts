@@ -20,6 +20,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { branchKeysForMerchant, branchKeysForProvider } from "@/lib/provider-integration";
 import { getLivemode } from "@/lib/mode";
+import { parsePayinChannel } from "@/lib/payin-channel";
 
 export const dynamic = "force-dynamic";
 
@@ -78,10 +79,13 @@ export async function GET(req: Request) {
 
   // Follows the dashboard's Test / Live switch: the funnel never mixes test and live orders.
   const livemode = await getLivemode();
-  const where = keys
+  // ?channel=INTENT|P2P narrows the funnel to one pay-in channel.
+  const channel = parsePayinChannel(url.searchParams.get("channel"));
+  const args: unknown[] = keys ? [keys, livemode] : [livemode];
+  const where = (keys
     ? "vendor = 'POOLPAY' AND merchant_id = ANY($1::text[]) AND livemode = $2"
-    : "vendor = 'POOLPAY' AND livemode = $1";
-  const args = keys ? [keys, livemode] : [livemode];
+    : "vendor = 'POOLPAY' AND livemode = $1")
+    + (channel ? ` AND channel_type = $${args.push(channel)}` : "");
 
   try {
     const agg = await rows<any>("vendorGateway", `

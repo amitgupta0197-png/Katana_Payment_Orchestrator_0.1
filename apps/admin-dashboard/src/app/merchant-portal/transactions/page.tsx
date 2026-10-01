@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
+import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
+import type { PayinChannel } from "@/lib/payin-channel";
 
 // The server reads a date as an IST calendar day, so the presets have to be built in IST
 // too — on a phone set to another zone, `new Date()` would otherwise offer "today" as a
@@ -29,24 +31,31 @@ const istDay = (offsetDays = 0) =>
 interface Totals { gross: number; success_count: number; failed_count: number; pending_count: number; total_count: number }
 interface ByMerchant { merchant_id: string; gross: number; count: number; success: number }
 interface ByChannel { channel: string; gross: number; count: number }
-interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string }
-interface Data { merchants: string[]; totals: Totals; by_merchant: ByMerchant[]; by_channel: ByChannel[]; recent: Txn[] }
+interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string; channel_type: PayinChannel }
+interface Data { merchants: string[]; totals: Totals; by_merchant: ByMerchant[]; by_channel: ByChannel[]; by_channel_type?: Record<PayinChannel, Totals>; recent: Txn[] }
+
+const successRate = (t?: Totals) => {
+  const done = (t?.success_count ?? 0) + (t?.failed_count ?? 0);
+  return done > 0 ? `${Math.round(((t?.success_count ?? 0) / done) * 100)}%` : "—";
+};
 
 export default function ProviderTransactionsPage() {
   const router = useRouter();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [channel, setChannel] = useState<ChannelFilter>("");
 
   // One query string drives the table, the tiles and the CSV, so the file a merchant
   // downloads always covers the window they were looking at.
   const params = new URLSearchParams();
   if (from) params.set("from", from);
   if (to) params.set("to", to);
+  if (channel) params.set("channel", channel);
   const qs = params.toString();
   const filtered = !!(from || to);
 
   const q = useQuery({
-    queryKey: ["pp:transactions", from, to],
+    queryKey: ["pp:transactions", from, to, channel],
     queryFn: async () => (await fetch(`/api/merchant-portal/transactions${qs ? `?${qs}` : ""}`).then(async (r) => {
       const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
     })) as Data,
@@ -73,7 +82,8 @@ export default function ProviderTransactionsPage() {
   const recentCols: Column<Txn>[] = [
     { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.created_at)}</span> },
     { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
-    { key: "channel", header: "Channel", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
+    { key: "channel_type", header: "Pay-in channel", render: (r) => <ChannelBadge channel={r.channel_type} /> },
+    { key: "channel", header: "Rail", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
@@ -94,6 +104,10 @@ export default function ProviderTransactionsPage() {
 
       <Card className="mb-6">
         <CardContent className="flex flex-wrap items-end gap-3 pt-6">
+          <div>
+            <Label className="text-xs">Pay-in channel</Label>
+            <div><ChannelSwitch value={channel} onChange={setChannel} /></div>
+          </div>
           <div className="min-w-[9rem] flex-1">
             <Label className="text-xs">From</Label>
             <Input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
@@ -121,6 +135,23 @@ export default function ProviderTransactionsPage() {
         <KpiTile label="Pending" value={t?.pending_count ?? 0} variant={(t?.pending_count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
         <KpiTile label="Bankers" value={d?.merchants.length ?? 0} icon={Store} loading={q.isLoading} />
       </div>
+
+      {/* Each rail's own figures, side by side, so the total above is never an unexplained pool. */}
+      {!channel && (
+        <ChannelCards loading={q.isLoading} cards={(["INTENT", "P2P", "UNCLASSIFIED"] as PayinChannel[]).map((c) => {
+          const b = d?.by_channel_type?.[c];
+          return {
+            channel: c, headline: b?.gross ?? 0, headlineLabel: "Gross successful pay-in",
+            hidden: c === "UNCLASSIFIED" && !(b?.total_count),
+            stats: [
+              { label: "Orders", value: b?.total_count ?? 0 },
+              { label: "Successful", value: b?.success_count ?? 0 },
+              { label: "Pending", value: b?.pending_count ?? 0 },
+              { label: "Success rate", value: successRate(b) },
+            ],
+          };
+        })} />
+      )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -169,7 +200,7 @@ export default function ProviderTransactionsPage() {
           {/* Say which window is on screen — every figure above is scoped to it too, so a
               filtered page that still claimed "across all channels" would misread. */}
           <CardDescription>
-            {filtered ? `Across all channels · ${windowLabel}` : "Across all channels, newest first."}
+            {`${channel ? `${channel} only` : "Across all channels"}${filtered ? ` · ${windowLabel}` : ", newest first."}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -177,7 +208,7 @@ export default function ProviderTransactionsPage() {
               vendor pay-ins live in another service and have no page to open. */}
           <DataTable columns={recentCols} rows={d?.recent ?? []} rowKey={(r) => `${r.source}:${r.ref}`} loading={q.isLoading}
             onRowClick={(r) => { if (r.source === "CHECKOUT") router.push(`/merchant-portal/transactions/${r.ref}`); }}
-            emptyState={filtered ? "No transactions in this date range." : "No transactions yet."} />
+            emptyState={filtered || channel ? "No transactions match this filter." : "No transactions yet."} />
         </CardContent>
       </Card>
     </>

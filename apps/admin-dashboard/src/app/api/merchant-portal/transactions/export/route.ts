@@ -2,7 +2,8 @@
 //
 // Same union and the same scoping as the list route, but enriched with the gateway
 // detail (payment id, bank reference, UPI handle) because that is what a merchant is
-// actually reconciling against a bank statement. Optional ?from=&to=&status= narrow it.
+// actually reconciling against a bank statement. Optional ?from=&to=&status=&channel= narrow
+// it, and every row states its pay-in channel.
 //
 // PROVIDER only, scoped to the provider's own merchants.
 
@@ -12,6 +13,7 @@ import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { toCsv, csvResponse, datedFilename, type CsvColumn } from "@/lib/csv";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
+import { CHECKOUT_ORDER_CHANNEL, payinChannelOf } from "@/lib/payin-channel";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,7 @@ interface Row {
   amount: number; ref: string; txn_id: string | null; created_at: string;
   provider_payment_id: string | null; bank_ref_num: string | null; vpa: string | null;
   payment_type: string | null; bank_name: string | null; customer_email: string | null;
+  channel_type?: string | null;
 }
 
 const COLUMNS: CsvColumn<Row>[] = [
@@ -27,6 +30,7 @@ const COLUMNS: CsvColumn<Row>[] = [
   { header: "Reference", value: (r) => r.txn_id ?? r.ref },
   { header: "Banker", value: (r) => r.merchant_id },
   { header: "Channel", value: (r) => r.channel },
+  { header: "Pay-in channel", value: (r) => payinChannelOf(r.channel_type) },
   { header: "Method", value: (r) => r.payment_type || r.method },
   { header: "Amount", value: (r) => r.amount },
   { header: "Status", value: (r) => r.status },
@@ -52,10 +56,10 @@ export async function GET(req: Request) {
     // Same mode as the screen it was downloaded from, so the file matches what was on screen.
     const window = txnWindowFromUrl(url, scoped ? codes : null, await getLivemode());
     const co = txnConditions("o.", window);
-    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"]);
+    const vp = txnConditions("", window, scoped ? [] : ["merchant_id IS NOT NULL"], "channel_type");
 
-    const checkout = await rows<Row>("checkout", `
-      SELECT 'CHECKOUT' AS source, o.merchant_id,
+    const checkout = window.channel && window.channel !== CHECKOUT_ORDER_CHANNEL ? [] : await rows<Row>("checkout", `
+      SELECT 'CHECKOUT' AS source, o.merchant_id, '${CHECKOUT_ORDER_CHANNEL}' AS channel_type,
              COALESCE(NULLIF(o.selected_rail,''),'DIRECT') AS channel,
              COALESCE(o.method,'') AS method, o.status, o.amount::float AS amount,
              o.id::text AS ref, o.txn_id, o.created_at, o.customer_email,
@@ -67,7 +71,7 @@ export async function GET(req: Request) {
     `, co.args).catch(() => []);
 
     const payin = await rows<Row>("vendorGateway", `
-      SELECT 'PAYIN' AS source, merchant_id, vendor AS channel,
+      SELECT 'PAYIN' AS source, merchant_id, vendor AS channel, channel_type,
              COALESCE(channel,'') AS method, status, amount::float AS amount,
              order_id AS ref, order_id AS txn_id, created_at,
              NULL::text AS customer_email, vendor_txn_id AS provider_payment_id,

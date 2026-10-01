@@ -179,6 +179,8 @@ export interface StatementRow {
   rrn: string | null;
   banker_code: string | null;
   order_id: string | null;
+  /** Pay-in channel: INTENT | P2P | UNCLASSIFIED (lib/payin-channel). */
+  pay_channel: string;
 }
 
 /** `2026-08-14 22:36:39` in IST — the format the GPay statement uses. */
@@ -216,6 +218,7 @@ export const STATEMENT_COLUMNS: CsvColumn<StatementRow>[] = [
   { header: "Banker code", value: (r) => r.banker_code },
   { header: "Order ID", value: (r) => r.order_id, ref: true },
   { header: "Source", value: (r) => CHANNEL_LABELS[r.channel] },
+  { header: "Pay-in channel", value: (r) => r.pay_channel },
 ];
 
 /** `Katana_Statement_20260803-20260809.csv` — period in the name, as GPay's export does. */
