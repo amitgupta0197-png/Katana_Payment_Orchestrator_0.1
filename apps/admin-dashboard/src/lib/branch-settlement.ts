@@ -25,7 +25,7 @@ export async function branchCollectedSuccess(merchantKey: string): Promise<numbe
   const r = await rows<{ total: number }>("vendorGateway", `
     SELECT COALESCE(SUM(amount),0)::float AS total
       FROM vendor_payin_orders
-     WHERE vendor = 'POOLPAY' AND merchant_id = ANY($1::text[])
+     WHERE vendor = 'KATANA' AND merchant_id = ANY($1::text[])
        AND status IN ('SUCCESS','SUCCEEDED')
        AND livemode = true   -- a test order never creates a settlement receivable
   `, [keys]).catch(() => [{ total: 0 }]);

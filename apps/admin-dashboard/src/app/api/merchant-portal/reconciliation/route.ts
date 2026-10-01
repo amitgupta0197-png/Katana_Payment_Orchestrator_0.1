@@ -1,6 +1,9 @@
 // GET /api/merchant-portal/reconciliation — the evidence chain behind each Katana Pay pay-in
 // for the provider's bankers: order → gateway result → bank evidence → settlement.
 //
+// SETTLED means the banker has settled the order to the merchant, on INTENT and P2P alike:
+// the banker's verified settlements cover it, oldest order first (lib/banker-settled).
+//
 // A pay-in is RECONCILED only when two things agree: the order is paid, and there is bank
 // evidence for it that Katana did not make up — a UTR/RRN stated by the gateway, ops or the
 // payer's proof, or a bank-credit alert matched to the order. `vendor_payin_orders.rrn` is
@@ -20,6 +23,9 @@ import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
+import { seesGatewayNames } from "@/lib/merchant-safe";
+import { bankerCoverage, coverageArgs, coverageCte, settlementCovering, COVERED_SQL } from "@/lib/banker-settled";
+import { formatAmount } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +40,14 @@ interface TimelineEvent { at: string; title: string; detail: string }
 const PAID = `o.status IN ('SUCCESS','SUCCEEDED')`;
 
 // One row per pay-in with its reconciliation state. The alert join is a single pass over the
-// matched credits rather than a lookup per order.
-const base = (where: string) => `
-  WITH base AS (
+// matched credits rather than a lookup per order. `coverAt` is the position of the banker
+// settlement parameters (coverageArgs); without it the query does not ask what is settled.
+const base = (where: string, coverAt?: number) => `
+  WITH ${coverAt ? `${coverageCte(coverAt).trim()},` : ""} base AS (
     SELECT o.id, o.order_id, o.vendor_txn_id, o.merchant_id, o.amount::float AS amount, o.status,
            o.channel, o.channel_type, o.channel_id, o.meta, o.created_at, o.updated_at,
-           COALESCE(o.meta->'settlement'->>'status' = 'SETTLED', false) AS settled,
+           ${coverAt ? COVERED_SQL : "false"} AS settled,
+           ${coverAt ? "c.cum" : "NULL::float"} AS settle_cum,
            CASE
              WHEN ${PAID} AND (COALESCE(o.meta->'confirmation'->>'utr','') <> '' OR a.matched_order_id IS NOT NULL) THEN 'RECONCILED'
              WHEN ${PAID} THEN 'AWAITING_EVIDENCE'
@@ -52,6 +60,7 @@ const base = (where: string) => `
         SELECT DISTINCT matched_order_id FROM vendor_txn_alerts
          WHERE outcome = 'CONFIRMED' AND matched_order_id IS NOT NULL
       ) a ON a.matched_order_id = o.id
+      ${coverAt ? "LEFT JOIN cover c ON c.id = o.id" : ""}
       ${where}
   )`;
 
@@ -73,6 +82,8 @@ export async function GET(req: Request) {
   try {
     const codes = await resolveProviderMerchants(s);
     const scoped = s.persona === "PROVIDER";
+    // A provider never sees which gateway took a payment (lib/merchant-safe).
+    const named = seesGatewayNames(s.persona);
     if (scoped && !codes.length) return NextResponse.json(emptyResponse());
 
     const url = new URL(req.url);
@@ -81,7 +92,7 @@ export async function GET(req: Request) {
 
     // The reconciliation state is derived, not a column, so it is never passed as `status`.
     const window = { ...txnWindowFromUrl(url, scoped ? codes : null, await getLivemode()), status: null };
-    const extra = ["o.vendor = 'POOLPAY'", ...(scoped ? [] : ["o.merchant_id IS NOT NULL"])];
+    const extra = ["o.vendor = 'KATANA'", ...(scoped ? [] : ["o.merchant_id IS NOT NULL"])];
     const { where, args } = txnConditions("o.", window, extra, "channel_type");
 
     // Per-channel totals of the whole window, whatever channel is selected.
@@ -95,13 +106,18 @@ export async function GET(req: Request) {
       Object.fromEntries(STATES.map((k) => [k, { count: 0, amount: 0 }]))])) as Record<PayinChannel, Record<ReconState, Bucket>>;
     for (const r of perChannel) byChannel[payinChannelOf(r.channel_type)][r.recon] = { count: r.n, amount: r.amount };
 
+    // What each banker has settled to the merchant; a provider sees its own settlements only.
+    const cover = await bankerCoverage(scoped ? s.scope_id ?? null : null, scoped ? codes : null);
+    const coverAt = args.length + 1;
+    const withCover = [...args, ...coverageArgs(cover)];
+
     const agg = await rows<{ recon: ReconState; n: number; amount: number; settled_n: number; settled_amount: number }>("vendorGateway", `
-      ${base(where)}
+      ${base(where, coverAt)}
       SELECT recon, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amount,
              COUNT(*) FILTER (WHERE settled)::int AS settled_n,
              COALESCE(SUM(amount) FILTER (WHERE settled),0)::float AS settled_amount
         FROM base GROUP BY recon
-    `, args);
+    `, withCover);
 
     const by = Object.fromEntries(STATES.map((k) => [k, { count: 0, amount: 0 }])) as Record<ReconState, Bucket>;
     const settled: Bucket = { count: 0, amount: 0 };
@@ -114,12 +130,12 @@ export async function GET(req: Request) {
       { count: 0, amount: 0 });
 
     const list = await rows<any>("vendorGateway", `
-      ${base(where)}
+      ${base(where, coverAt)}
       SELECT id::text, order_id, vendor_txn_id, merchant_id, amount, status, channel, channel_type, channel_id, meta,
-             created_at, updated_at, settled, recon
-        FROM base ${state ? `WHERE recon = $${args.length + 1}` : ""}
+             created_at, updated_at, settled, settle_cum, recon
+        FROM base ${state ? `WHERE recon = $${withCover.length + 1}` : ""}
        ORDER BY created_at DESC LIMIT ${ROW_LIMIT}
-    `, state ? [...args, state] : args);
+    `, state ? [...withCover, state] : withCover);
 
     // The bank-credit alerts matched to the orders on this page — the independent evidence.
     const alerts = list.length ? await rows<any>("vendorGateway", `
@@ -154,7 +170,7 @@ export async function GET(req: Request) {
       if (isIso(conf?.at)) events.push({
         at: conf.at, title: o.recon === "NOT_PAID" ? "Marked not paid" : "Payment confirmed",
         detail: `Confirmed by ${actorLabel(conf.by)}${conf.evidence ? ` (${String(conf.evidence).toLowerCase()})` : ""}`
-          + `${meta.gateway?.provider ? ` · gateway ${meta.gateway.provider}` : ""}`
+          + `${meta.gateway?.provider && named ? ` · gateway ${meta.gateway.provider}` : ""}`
           + `${conf.utr ? ` · reference ${conf.utr}` : " · no bank reference stated"}`,
       });
       if (isIso(meta.revived_from_expired?.at)) events.push({
@@ -174,15 +190,21 @@ export async function GET(req: Request) {
         detail: `No status callback sent: ${meta.callback.skipped}.`,
       });
       if (isIso(meta.settlement?.at)) events.push({
-        at: meta.settlement.at, title: "Settled",
-        detail: "The gateway reported the payment settled to the receiving account.",
+        at: meta.settlement.at, title: "Paid out to banker",
+        detail: "The gateway reported the payment paid out to the banker's receiving account.",
+      });
+      const paidBy = o.settled === true ? settlementCovering(cover, o.merchant_id, o.settle_cum) : null;
+      if (paidBy) events.push({
+        at: paidBy.at, title: "Settled by banker",
+        detail: `Covered by the banker's verified settlement of ${formatAmount(paidBy.amount)}`
+          + `${paidBy.utr ? ` · UTR ${paidBy.utr}` : ""}. Settlements are applied to the banker's paid orders oldest first.`,
       });
       events.sort((a, b) => a.at.localeCompare(b.at));
 
       return {
         id: o.id, order_id: o.order_id, txn_id: o.vendor_txn_id ?? null, merchant_id: o.merchant_id ?? null,
-        amount: o.amount, status: o.status, gateway: meta.gateway?.provider ?? null,
-        channel_type: payinChannelOf(o.channel_type), channel_id: o.channel_id ?? null,
+        amount: o.amount, status: o.status, gateway: named ? meta.gateway?.provider ?? null : null,
+        channel_type: payinChannelOf(o.channel_type), channel_id: named ? o.channel_id ?? null : null,
         recon: o.recon as ReconState, bank_ref: bankRef, evidence, settled: o.settled === true,
         created_at: new Date(o.created_at).toISOString(), timeline: events,
       };

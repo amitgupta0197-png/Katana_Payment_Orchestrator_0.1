@@ -22,7 +22,7 @@
 
 import { createHash } from "crypto";
 import { rows } from "@/lib/pg";
-import { confirmPoolPayOrder, type ConfirmPoolPayResult } from "@/lib/poolpay-order";
+import { confirmKatanaOrder, type ConfirmKatanaOrderResult } from "@/lib/katana-order";
 import { processPayin } from "@/lib/dt-payin";
 import { isSettlementCredit, SETTLEMENT_TXN_TYPE } from "@/lib/settlement-credit";
 
@@ -76,7 +76,7 @@ export interface TxnAlertResult {
   manual_case_id?: string;
   security_alert_id?: string;
   detail: string;
-  confirm?: ConfirmPoolPayResult;
+  confirm?: ConfirmKatanaOrderResult;
 }
 
 interface Cand { id: string; order_id: string; status: string; receiver_vpa: string; created_at: string; amount: number }
@@ -535,7 +535,7 @@ export async function ingestTxnAlert(
   if (orderRef) {
     const byRef = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
-        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND order_id = $1
+        FROM vendor_payin_orders WHERE vendor = 'KATANA' AND order_id = $1
          AND COALESCE(meta->'gateway'->>'provider', '') = ''   -- gateway orders (PayU, Razorpay, …) are confirmed by their gateway only
          AND channel_type = 'P2P'   -- a captured credit is P2P evidence; it never settles an INTENT order
          AND ($2::text IS NULL OR merchant_id = $2)
@@ -557,7 +557,7 @@ export async function ingestTxnAlert(
   if (utr && !order) {
     const byUtr = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
-        FROM vendor_payin_orders WHERE vendor = 'POOLPAY' AND rrn = $1
+        FROM vendor_payin_orders WHERE vendor = 'KATANA' AND rrn = $1
          AND COALESCE(meta->'gateway'->>'provider', '') = ''
          AND channel_type = 'P2P'
          AND ($2::text IS NULL OR merchant_id = $2)
@@ -578,7 +578,7 @@ export async function ingestTxnAlert(
     const cands = await rows<Cand>("vendorGateway", `
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders
-       WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
+       WHERE vendor = 'KATANA' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
          -- A PayU order is paid to PayU, never to the merchant's account, so a credit the
          -- merchant's device sees can never be its payment — even at the same amount.
          AND COALESCE(meta->'gateway'->>'provider', '') = ''
@@ -590,7 +590,7 @@ export async function ingestTxnAlert(
     `, [amount.toFixed(2), String(MATCH_WINDOW_MIN), scopeMerchant, alertLivemode]).catch(() => []);
     // Prefer still-live orders; only fall back to an EXPIRED one when nothing live
     // matches the amount. A confident match on an expired order REVIVES it to SUCCESS
-    // (see confirmPoolPayOrder soft-terminal rule) instead of leaving the credit unmatched.
+    // (see confirmKatanaOrder soft-terminal rule) instead of leaving the credit unmatched.
     const live = cands.filter((o) => o.status !== "EXPIRED");
     const base = live.length ? live : cands;
     let pool = base, vpaMatched = false;
@@ -837,9 +837,9 @@ export async function ingestTxnAlert(
   }
 
   // Apply confirmation when policy is satisfied.
-  let confirm: ConfirmPoolPayResult | undefined;
+  let confirm: ConfirmKatanaOrderResult | undefined;
   if (outcome === "CONFIRMED" && order) {
-    confirm = await confirmPoolPayOrder({
+    confirm = await confirmKatanaOrder({
       id: order.id, outcome: "SUCCESS", utr: storedRef, evidence: source === "EMAIL" ? "EMAIL" : "DEVICE", actor,
       livemode: alertLivemode,
       settlementStatus: "SETTLED", note: `${source === "EMAIL" ? "email" : "bank"} credit alert${input.bank ? ` (${input.bank})` : ""}`,

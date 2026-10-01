@@ -4,7 +4,7 @@
 // printed before the account was switched, a personal handle used while the business one
 // was being approved). Reconciliation has to recognise every one of them, but a payment
 // REQUEST still has exactly one payee — so the config keeps one PRIMARY
-// (`poolpay.settlement_vpa`) and a list of ADDITIONAL ones (`poolpay.settlement_vpas`):
+// (`katana_pay.settlement_vpa`) and a list of ADDITIONAL ones (`katana_pay.settlement_vpas`):
 //
 //   settlement_vpa   — where Katana Pay orders are paid TO. Exactly one, always.
 //   settlement_vpas  — extra IDs this banker also receives on. Recognised when attributing
@@ -28,9 +28,9 @@ function normalise(v: unknown): string | null {
   return s || null;
 }
 
-/** Primary + additional VPAs held in one `poolpay` config blob, deduped. */
-export function vpasFromConfig(poolpay: unknown): string[] {
-  const p = (poolpay ?? {}) as { settlement_vpa?: unknown; settlement_vpas?: unknown };
+/** Primary + additional VPAs held in one `katana_pay` config blob, deduped. */
+export function vpasFromConfig(config: unknown): string[] {
+  const p = (config ?? {}) as { settlement_vpa?: unknown; settlement_vpas?: unknown };
   const out = new Set<string>();
   const primary = normalise(p.settlement_vpa);
   if (primary) out.add(primary);
@@ -46,12 +46,12 @@ export function vpasFromConfig(poolpay: unknown): string[] {
 /** Every settlement VPA configured for these banker codes, primary and additional alike. */
 export async function settlementVpasFor(codes: string[]): Promise<string[]> {
   if (!codes.length) return [];
-  const res = await rows<{ poolpay: unknown }>(
+  const res = await rows<{ katana_pay: unknown }>(
     "merchant",
-    `SELECT poolpay FROM merchant_payment_config WHERE merchant_code = ANY($1::text[])`,
+    `SELECT katana_pay FROM merchant_payment_config WHERE merchant_code = ANY($1::text[])`,
     [codes],
   ).catch(() => []);
   const out = new Set<string>();
-  for (const r of res) for (const v of vpasFromConfig(r.poolpay)) out.add(v);
+  for (const r of res) for (const v of vpasFromConfig(r.katana_pay)) out.add(v);
   return [...out];
 }

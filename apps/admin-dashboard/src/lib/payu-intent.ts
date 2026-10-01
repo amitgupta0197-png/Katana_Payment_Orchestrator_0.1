@@ -116,6 +116,12 @@ export async function createPayuUpiIntent(
   const text = await res.text();
   let j: any;
   try { j = JSON.parse(text); } catch {
+    // PayU's rate limiter answers in plain text ("…Too many Requests. Please try after 60
+    // seconds…"). That is not a credentials problem, so say what PayU said.
+    if (res.status === 429) {
+      const said = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+      return { ok: false, error: `PayU is rate-limiting this request (HTTP 429)${said ? `: ${said}` : ""}` };
+    }
     // PayU answers an invalid request (bad hash, S2S not enabled on the MID) with an HTML page.
     return { ok: false, error: `PayU returned a non-JSON reply (HTTP ${res.status}) — check the MID has UPI Intent S2S enabled and the Key + Salt are right` };
   }

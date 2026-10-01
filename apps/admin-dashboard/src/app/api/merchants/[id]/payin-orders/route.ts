@@ -1,8 +1,8 @@
-// A merchant's PoolPay pay-in orders for the merchant-module operations view:
+// A merchant's Katana Pay pay-in orders for the merchant-module operations view:
 // which payments are currently active, their mode (QR/non-QR), active receiver
 // VPA and backup-pool health. SUPER_ADMIN/PROVIDER (scoped)/MERCHANT (own).
 //   GET  — list this merchant's pay-in orders (operations view).
-//   POST — create a PoolPay S2S pay-in order FOR this merchant (the merchant-scoped
+//   POST — create a Katana Pay S2S pay-in order FOR this merchant (the merchant-scoped
 //          equivalent of the cockpit's "Create S2S order"; tagged with merchant_id
 //          so it routes through the merchant's sub-MID, honours block/high-amount
 //          risk rules, and shows up in the operations list above).
@@ -13,12 +13,13 @@ import { randomUUID } from "crypto";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
-import { createPoolPayOrder, MerchantBlockedError, PayinSetupError } from "@/lib/poolpay-order";
+import { createKatanaOrder, MerchantBlockedError, PayinSetupError } from "@/lib/katana-order";
 import { getLivemode } from "@/lib/mode";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 import { payinConnectorFor } from "@/lib/payin-providers";
+import { merchantSafeChannel, merchantSafeError, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       terminal: ["SUCCESS", "FAILED"].includes(o.status),
     }));
 
+    // A provider or merchant never sees which gateway took a payment (lib/merchant-safe).
+    if (!seesGatewayNames(g.session.persona))
+      for (const o of [...shaped, ...hosted] as { vendor: string }[]) o.vendor = merchantSafeChannel(o.vendor);
+
     const live = shaped.filter((o: any) => !o.terminal);
     const all = [...shaped, ...hosted]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -107,13 +112,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
 
-  // Default the receiver VPA pool to the merchant's configured PoolPay settlement
+  // Default the receiver VPA pool to the merchant's configured Katana Pay settlement
   // VPA when the caller didn't supply one, so an operator can create an order with
   // just an amount.
   let receiverVpas = body.receiver_vpas?.map((v) => v.trim()).filter(Boolean) ?? [];
   if (!receiverVpas.length) {
     const cfg = await rows<{ settlement_vpa: string | null }>(
-      "merchant", `SELECT poolpay->>'settlement_vpa' AS settlement_vpa FROM merchant_payment_config WHERE merchant_code = $1`,
+      "merchant", `SELECT katana_pay->>'settlement_vpa' AS settlement_vpa FROM merchant_payment_config WHERE merchant_code = $1`,
       [scope.code],
     ).catch(() => []);
     const v = cfg[0]?.settlement_vpa?.trim();
@@ -127,12 +132,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const gw = livemode ? await getGatewayMid(scope.code).catch(() => null) : null;
   const viaGateway = !!payuKeySalt(gw) || !!payinConnectorFor(gw)?.upiIntent;
   if (!receiverVpas.length && livemode && !viaGateway)
-    return NextResponse.json({ error: "no receiver VPA — add one here or set a PoolPay settlement VPA in payment config" }, { status: 400 });
+    return NextResponse.json({ error: "no receiver VPA — add one here or set a settlement VPA in payment config" }, { status: 400 });
 
   try {
     const orderId = body.order_ref?.trim()
       || `KP-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`;
-    const r = await createPoolPayOrder({
+    const r = await createKatanaOrder({
       orderId,
       amount: body.amount,
       currency: body.currency,
@@ -150,7 +155,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (err) {
     if (err instanceof MerchantBlockedError)
       return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });
-    if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: err.message }, { status: err.status });
+    if (err instanceof PayuIntentError || err instanceof PayinSetupError) {
+      // Operators get the gateway's own words; a provider or merchant gets the scrubbed text.
+      const error = seesGatewayNames(g.session.persona) ? err.message : merchantSafeError(err.message, "api/merchants/payin-orders");
+      return NextResponse.json({ error }, { status: err.status });
+    }
     const a = activationErrorResponse(err);   // a live order before live mode is activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });

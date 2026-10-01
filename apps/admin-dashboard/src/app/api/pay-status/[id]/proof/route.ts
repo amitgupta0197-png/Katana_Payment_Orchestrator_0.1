@@ -5,7 +5,7 @@
 // The sender, after paying by UPI, uploads a screenshot of the payment so the
 // receiver can verify the credit. A screenshot is self-asserted, low-trust evidence,
 // so this only parks the order in PROOF_SUBMITTED (it does NOT mark it paid) — ops
-// reviews the proof and confirms it via /api/vendors/poolpay/order/:id/confirm.
+// reviews the proof and confirms it via /api/vendors/katana/order/:id/confirm.
 // Hardened like the KYB / FIFO proof uploads: type allow-list, size cap, magic-byte
 // content scan, SHA-256 hash, file stored outside the public web root.
 
@@ -14,8 +14,8 @@ import { rows, pgError } from "@/lib/pg";
 import { createHash, randomBytes } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { attachPayinProof } from "@/lib/poolpay-order";
-import { POOLPAY_TERMINAL } from "@/lib/poolpay";
+import { attachPayinProof } from "@/lib/katana-order";
+import { KATANA_TERMINAL } from "@/lib/katana-pay";
 
 export const dynamic = "force-dynamic";
 
@@ -47,10 +47,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const found = await rows<{ id: string; order_id: string; status: string }>("vendorGateway",
-      `SELECT id::text, order_id, status FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
+      `SELECT id::text, order_id, status FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
     if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = found[0];
-    if (POOLPAY_TERMINAL.has(order.status))
+    if (KATANA_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status} — proof not needed` }, { status: 409 });
 
     const buf = Buffer.from(await file.arrayBuffer());

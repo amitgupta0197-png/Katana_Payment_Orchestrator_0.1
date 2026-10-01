@@ -1,9 +1,9 @@
 // Outbound merchant STATUS CALLBACK for Katana Pay pay-ins.
 //
-// When a pay-in reaches a terminal status we POST a PoolPay-style status callback
+// When a pay-in reaches a terminal status we POST a Katana status callback
 // to the merchant's server so any-language website can reconcile the order. The
 // body carries a HASH the merchant verifies with their checkout SALT (the same
-// Key+Salt they already use to sign requests) — see signPoolPay. The merchant
+// Key+Salt they already use to sign requests) — see signKatanaHash. The merchant
 // should respond HTTP 200.
 //
 // Target precedence: the per-order notify_url (passed at order creation) → the
@@ -13,12 +13,12 @@
 
 import { rows } from "@/lib/pg";
 import { getCheckoutCreds } from "@/lib/merchant-checkout";
-import { signPoolPay } from "@/lib/provider-integration";
+import { signKatanaHash } from "@/lib/katana-pay";
 import { enqueue, dispatchPending } from "@/lib/webhook-outbox";
-import { POOLPAY_TERMINAL } from "@/lib/poolpay";
+import { KATANA_TERMINAL } from "@/lib/katana-pay";
 
-// Map our internal status → PoolPay-style (STATUS, RESPONSE_CODE) for the callback.
-function poolpayStatus(status: string): { STATUS: string; RESPONSE_CODE: string } {
+// Map our internal status → Katana (STATUS, RESPONSE_CODE) for the callback.
+function callbackStatus(status: string): { STATUS: string; RESPONSE_CODE: string } {
   switch (status) {
     case "SUCCESS": case "SUCCEEDED": return { STATUS: "Captured", RESPONSE_CODE: "000" };
     case "FAILED": return { STATUS: "Failed", RESPONSE_CODE: "004" };
@@ -41,10 +41,10 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   const cur = (await rows<any>("vendorGateway", `
     SELECT id::text, order_id, merchant_id, pay_id, vendor_txn_id, amount::float AS amount,
            currency_code, status, COALESCE(rrn,'') AS rrn, meta, livemode
-      FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'
+      FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'
   `, [orderRowId]).catch(() => []))[0];
   if (!cur) return { sent: false, reason: "not found" };
-  if (!POOLPAY_TERMINAL.has(cur.status)) return { sent: false, reason: "not terminal" };
+  if (!KATANA_TERMINAL.has(cur.status)) return { sent: false, reason: "not terminal" };
 
   const meta = cur.meta ?? {};
   if (meta.callback?.sent_at) return { sent: false, reason: "already sent" };       // idempotent
@@ -59,8 +59,8 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
     return { sent: false, reason: "no target" };
   }
 
-  const st = poolpayStatus(cur.status);
-  // PoolPay-style payload. Keys are uppercase so the SHA256 sort matches the doc.
+  const st = callbackStatus(cur.status);
+  // Katana payload. Keys are uppercase so the SHA256 sort matches the doc.
   const payload: Record<string, string> = {
     PAY_ID: String(cur.pay_id ?? ""),
     ORDER_ID: String(cur.order_id),
@@ -81,7 +81,7 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   let hash = "";
   try {
     const creds = await getCheckoutCreds(merchantCode, livemode);   // the salt of the order's own mode
-    if (creds?.salt) hash = signPoolPay(payload, creds.salt);
+    if (creds?.salt) hash = signKatanaHash(payload, creds.salt);
   } catch { /* handled below */ }
   if (!hash) {
     // Never deliver an UNSIGNED status callback (audit M5) — a merchant can't distinguish it

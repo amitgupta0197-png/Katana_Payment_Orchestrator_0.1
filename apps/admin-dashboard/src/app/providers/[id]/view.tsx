@@ -41,6 +41,7 @@ import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { useCan } from "@/lib/use-access";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { PayinFlowCard } from "@/components/payin/flow";
 
 interface Provider {
   id: string; code: string; legal_name: string; contact_email: string; contact_phone: string;
@@ -303,6 +304,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   const tabs = [
     { key: "overview", label: "Overview", icon: UserPlus, content: (
       <div className="space-y-4">
+      <PayinFlowCard target={{ kind: "merchant", id: provider.id, name: provider.legal_name }} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Identity & bank</CardTitle></CardHeader>

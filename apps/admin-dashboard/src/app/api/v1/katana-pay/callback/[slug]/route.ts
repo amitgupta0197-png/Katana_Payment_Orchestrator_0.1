@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { payloadHash, verifySignature } from "@/lib/webhooks";
-import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 import { merchantByWebhookSlug, readWebhookSecret } from "@/lib/merchant-webhook";
 
 export const dynamic = "force-dynamic";
@@ -67,12 +67,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   try {
     const own = await rows<{ id: string }>("vendorGateway", `
       SELECT id::text FROM vendor_payin_orders
-       WHERE vendor = 'POOLPAY' AND merchant_id = $1 AND order_id = $2 AND livemode = $3
+       WHERE vendor = 'KATANA' AND merchant_id = $1 AND order_id = $2 AND livemode = $3
          AND COALESCE(meta->'gateway'->>'provider', '') = ''   -- gateway orders (PayU, Razorpay, …) are confirmed by their gateway only
     `, [merchant.merchant_code, ref, livemode]);
     if (!own.length) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-    const r = await confirmPoolPayOrder({
+    const r = await confirmKatanaOrder({
       id: own[0].id,
       livemode,                 // the mode the verifying secret proved
       outcome: body.status,

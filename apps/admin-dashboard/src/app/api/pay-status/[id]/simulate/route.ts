@@ -6,15 +6,15 @@
 // order — one that pays a sandbox UPI ID and moves no money — and only once: a pending test order
 // becomes SUCCESS or FAILED, and the final-status lock refuses everything after that.
 //
-// It confirms through confirmPoolPayOrder exactly as a real payment does, so the merchant's status
+// It confirms through confirmKatanaOrder exactly as a real payment does, so the merchant's status
 // callback fires (signed with the test Salt, carrying LIVEMODE=false) and their integration can be
 // tested end to end.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
-import { genRrn, POOLPAY_TERMINAL } from "@/lib/poolpay";
-import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { genRrn, KATANA_TERMINAL } from "@/lib/katana-pay";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 
 export const dynamic = "force-dynamic";
 
@@ -51,16 +51,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const found = await rows<{ id: string; status: string; livemode: boolean }>("vendorGateway",
-      `SELECT id::text, status, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'POOLPAY'`, [id]);
+      `SELECT id::text, status, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
     if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = found[0];
     // The whole safety of a public endpoint rests on this line: a live order is never simulated.
     if (order.livemode !== false)
       return NextResponse.json({ error: "only test orders can be simulated" }, { status: 403 });
-    if (POOLPAY_TERMINAL.has(order.status))
+    if (KATANA_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });
 
-    const r = await confirmPoolPayOrder({
+    const r = await confirmKatanaOrder({
       id: order.id,
       livemode: false,
       outcome: body.outcome,

@@ -1,6 +1,22 @@
 // OpenAPI 3.0 spec for the public Katana Pay integration API. Single source of
 // truth — served as JSON at /api/openapi and rendered as Swagger UI at /developers.
 
+// The P2P and Intent order APIs: the general order operation, for one flow by name.
+function flowOrderOp(flow: string, how: string) {
+  return {
+    tags: ["Pay-in"],
+    summary: `Create a ${flow} pay-in order`,
+    description: `Same request, signature and response as \`POST /api/v1/katana-pay/order\`; the order always takes the ${flow} flow (${how}). Refused with \`409\` and a \`code\` (\`FLOW_NOT_ENABLED\`, \`FLOW_NOT_SELECTED\`, \`FLOW_NOT_READY\`) when the account is not set up for it.`,
+    requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/CreateOrderRequest" } } } },
+    responses: {
+      "201": { description: "Order created", content: { "application/json": { schema: { $ref: "#/components/schemas/CreateOrderResponse" } } } },
+      "200": { description: "The same `txnid` was sent again: the existing order" },
+      "401": { description: "Invalid key or signature mismatch" },
+      "409": { description: "The account is not set up for this flow" },
+    },
+  };
+}
+
 export const openapiSpec = {
   openapi: "3.0.3",
   info: {
@@ -14,14 +30,21 @@ export const openapiSpec = {
       "(issued in the Katana dashboard). You send the public **Key** and a **signature**",
       "(`hash`) of the order fields; the **Salt** stays on your server and is never sent.",
       "",
-      "**Signature** — every new Key + Salt uses `HMAC_SHA256`; pairs issued earlier with `PAYU_SHA512` keep working until regenerated:",
+      "**Signature** — every new Key + Salt uses `HMAC_SHA256`; pairs issued earlier with the legacy SHA-512 scheme keep working until regenerated:",
       "- `HMAC_SHA256`: `HMAC_SHA256(key + salt, \"txnid|amount|productinfo|email\")` (hex)",
-      "- `PAYU_SHA512` (older pairs only): `sha512(\"key|txnid|amount|productinfo|firstname|email|||||||||||salt\")` (hex)",
+      "- Legacy SHA-512 (older pairs only): `sha512(\"key|txnid|amount|productinfo|firstname|email|||||||||||salt\")` (hex)",
+      "",
+      "## Pay-in flows",
+      "An account is set up for **P2P**, **Intent** or **Both**. `POST /api/v1/p2p/order` and `POST /api/v1/intent/order`",
+      "take the same request and return the same response as `POST /api/v1/katana-pay/order`, for that flow by name;",
+      "the general API uses the flow selected for the account. A flow the account is not set up for is refused with",
+      "`409` and `code` `FLOW_NOT_ENABLED`, `FLOW_NOT_SELECTED` or `FLOW_NOT_READY`. Status per flow:",
+      "`GET /api/v1/p2p/order/{id}` and `GET /api/v1/intent/order/{id}` (`id` or the `P2P-…` / `INT-…` reference).",
       "",
       "## Flow",
       "1. `POST /api/v1/katana-pay/order` with the signed order → get QR / deeplinks / `pay_url`.",
       "2. Show the customer the QR or redirect them to `pay_url`. A merchant paid on a gateway's own page",
-      "   (RubyVault, iSmartPay) gets no QR or deeplinks — send the customer to `pay_url` or `gateway_url`.",
+      "   gets no QR or deeplinks — send the customer to `pay_url` or `gateway_url`.",
       "3. Receive the result via **webhook** (configured in the dashboard) or by polling",
       "   `GET /api/pay-status/{id}` until `terminal: true`.",
       "",
@@ -34,7 +57,7 @@ export const openapiSpec = {
       "## Payouts",
       "Payout requests use the same Key + Salt with a payout-specific signed string (same scheme as above,",
       "different fields, joined with `|`):",
-      "- `PAYU_SHA512`: `sha512(\"key|f1|f2|…|salt\")` · `HMAC_SHA256`: `HMAC_SHA256(key + salt, \"f1|f2|…\")`",
+      "- Legacy SHA-512: `sha512(\"key|f1|f2|…|salt\")` · `HMAC_SHA256`: `HMAC_SHA256(key + salt, \"f1|f2|…\")`",
       "- register beneficiary: `beneficiary_ref|name|account_number|ifsc|upi_id`",
       "- create payout: `txnid|amount|beneficiary|rail|purpose` (`beneficiary` = the `beneficiary_ref` or `beneficiary_id` you send)",
       "- payout status: `txnid` (or `payout_id`)",
@@ -101,6 +124,8 @@ export const openapiSpec = {
         },
       },
     },
+    "/api/v1/p2p/order": { post: flowOrderOp("P2P", "a UPI link or QR that pays the receiving UPI ID directly, confirmed by the bank credit") },
+    "/api/v1/intent/order": { post: flowOrderOp("Intent", "issued and confirmed by the payment gateway") },
     "/api/pay-status/{id}": {
       get: {
         tags: ["Pay-in"],
@@ -188,7 +213,7 @@ export const openapiSpec = {
           amount: { type: "string", description: "Major-unit amount as a string.", example: "499.00" },
           hash: { type: "string", description: "Signature over the order (see Authentication)." },
           productinfo: { type: "string", description: "Order description (must match what you signed).", example: "Order 1001" },
-          firstname: { type: "string", description: "Customer name (also part of the PAYU signature).", example: "Asha Kumar" },
+          firstname: { type: "string", description: "Customer name (also part of the legacy SHA-512 signature).", example: "Asha Kumar" },
           email: { type: "string", description: "Customer email (must match what you signed).", example: "buyer@example.com" },
           phone: { type: "string", description: "Customer mobile number.", example: "9999999999" },
           customer_vpa: { type: "string", description: "Payer (sender) UPI VPA.", example: "buyer@upi" },
@@ -218,7 +243,6 @@ export const openapiSpec = {
           },
           upi_intent: { type: "string", nullable: true, description: "null for a merchant paid on a gateway's page.", example: "upi://pay?pa=...&am=499.00..." },
           qr_payload: { type: "string", nullable: true, description: "Render this string as a QR code. null for a merchant paid on a gateway's page.", example: "upi://pay?pa=...&am=499.00..." },
-          gateway: { type: "string", description: "Only for a merchant paid on a gateway's own page: whose page takes the payment.", example: "RUBYVAULT" },
           gateway_url: { type: "string", description: "Only for a merchant paid on a gateway's own page: that page. `pay_url` hands over to it too.", example: "https://…" },
           pay_url: { type: "string", description: "Hosted pay page — redirect the customer here.", example: "https://katanapay.co/pay/<uuid>" },
         },

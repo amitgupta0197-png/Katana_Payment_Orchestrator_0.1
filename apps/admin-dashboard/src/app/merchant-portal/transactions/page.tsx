@@ -167,7 +167,7 @@ export default function ProviderTransactionsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Gross by channel</CardTitle>
-            <CardDescription>Katana Pay · PayU · Cashfree · Razorpay …</CardDescription>
+            <CardDescription>Katana Pay and gateway payments</CardDescription>
           </CardHeader>
           <CardContent>
             {(d?.by_channel ?? []).length === 0 ? (
@@ -204,7 +204,7 @@ export default function ProviderTransactionsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Only CHECKOUT rows have a detail view — their ref is the order id. PoolPay /
+          {/* Only CHECKOUT rows have a detail view — their ref is the order id. Katana Pay /
               vendor pay-ins live in another service and have no page to open. */}
           <DataTable columns={recentCols} rows={d?.recent ?? []} rowKey={(r) => `${r.source}:${r.ref}`} loading={q.isLoading}
             onRowClick={(r) => { if (r.source === "CHECKOUT") router.push(`/merchant-portal/transactions/${r.ref}`); }}

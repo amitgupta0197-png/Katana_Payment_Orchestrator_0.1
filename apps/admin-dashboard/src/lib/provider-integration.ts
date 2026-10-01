@@ -1,11 +1,11 @@
-// Provider-level PoolPay (Katana Pay) integration: storage, cascade resolution,
-// and the SHA256 request signature defined in the PoolPay AUTO Integration Guide.
+// Provider-level integration with the PoolPay upstream gateway (internal; never named to a
+// merchant): storage and cascade resolution. Katana's own order core is lib/katana-pay.
 //
 // THE MODEL
 //   An admin configures a PG integration ONCE on a provider. Every merchant
 //   (branch) mapped under that provider inherits it automatically. When a branch
 //   creates a pay-in, resolvePoolPayConfig() walks:
-//       merchant override (merchant_payment_config.poolpay)
+//       merchant override (merchant_payment_config.katana_pay)
 //         > provider config (provider_integration_config)
 //           > global env defaults (POOLPAY_* env)
 //   so a single provider-level change "auto-integrates" all of its branches.
@@ -221,9 +221,9 @@ export async function resolvePoolPayConfig(merchantKey: string): Promise<Effecti
 
   // 3) merchant override (most specific)
   const mk = await rows<any>("merchant", `
-    SELECT poolpay FROM merchant_payment_config WHERE merchant_code = $1
+    SELECT katana_pay FROM merchant_payment_config WHERE merchant_code = $1
   `, [merchantKey]).catch(() => []);
-  const ov = mk[0]?.poolpay;
+  const ov = mk[0]?.katana_pay;
   if (ov && typeof ov === "object") {
     if (typeof ov.enabled === "boolean") { cfg.enabled = ov.enabled; cfg.source = "merchant"; }
     if (ov.env === "PROD" || ov.env === "SANDBOX") cfg.env = ov.env;
@@ -233,44 +233,4 @@ export async function resolvePoolPayConfig(merchantKey: string): Promise<Effecti
   // Live only when explicitly PROD AND we have a base URL + secret to sign with.
   cfg.live = cfg.enabled && cfg.env === "PROD" && !!cfg.baseUrl && !!cfg.secret;
   return cfg;
-}
-
-// ── PoolPay SHA256 request signature (per the AUTO Integration Guide) ───────────
-//
-//   1. take the request name/value pairs (excluding HASH)
-//   2. sort keys ascending, join as KEY=value with "~" as separator
-//   3. append the SECRET_KEY directly to the end of the string (no separator)
-//   4. SHA256 the string, hex-encode, UPPERCASE
-//
-// Empty values are kept as KEY= (the guide signs CUST_STREET_ADDRESS1= for blanks).
-export function buildPoolPaySignString(params: Record<string, unknown>): string {
-  // Code-unit (ASCII) sort — NOT localeCompare. The guide's param names are
-  // uppercase ASCII and the gateway sorts by raw byte order; localeCompare could
-  // reorder underscores vs letters and break the hash.
-  const keys = Object.keys(params)
-    .filter((k) => k.toUpperCase() !== "HASH")
-    .sort();
-  return keys.map((k) => {
-    const v = params[k];
-    return `${k}=${v === null || v === undefined ? "" : String(v)}`;
-  }).join("~");
-}
-
-export function signPoolPay(params: Record<string, unknown>, secret: string): string {
-  const base = buildPoolPaySignString(params) + secret;
-  return createHash("sha256").update(base, "utf8").digest("hex").toUpperCase();
-}
-
-export function verifyPoolPayHash(
-  params: Record<string, unknown>,
-  secret: string,
-  providedHash: string,
-): boolean {
-  const expected = signPoolPay(params, secret);
-  const got = (providedHash ?? "").toUpperCase();
-  // length-guarded constant-ish compare
-  if (expected.length !== got.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ got.charCodeAt(i);
-  return diff === 0;
 }

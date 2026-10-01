@@ -1,141 +1,9 @@
-// PoolPay S2S pay-in — sandbox dispatcher.
-//
-// Flow modelled: order create -> deeplink response (Paytm / PhonePe / generic UPI
-// + QR) -> customer pays -> status enquiry / callback -> final status.
-//
-// This is the SANDBOX implementation: createPoolPayOrder() synthesises a
-// deterministic deeplink response and enquirePoolPayStatus() advances the order
-// over time so the end-to-end flow is demoable without live PoolPay credentials.
-// For the real integration, replace the bodies with signed HTTP calls to
-// PoolPay's S2S /order/create and /order/status endpoints and parse their
-// deeplink payload — the shapes below already match that contract.
+// PoolPay — an UPSTREAM GATEWAY Katana can route a live pay-in through (internal; never named to
+// a merchant, lib/merchant-safe). This is its server-to-server client. Katana's own order core
+// is lib/katana-pay; this file is only reached when the upstream integration is live
+// (POOLPAY_MODE=live, or a provider integration configured PROD with a secret).
 
-import { signPoolPay } from "@/lib/provider-integration";
-
-const PAYEE_VPA = "sandbox@test"; // sandbox payee for TEST orders: "@test" is no bank handle, so no UPI app can pay it
-/** Every TEST order pays this — never a merchant's real UPI ID (lib/poolpay-order.ts). */
-export const SANDBOX_PAYEE_VPA = PAYEE_VPA;
-const PAYEE_NAME = "Katana Pay";
-
-export interface DeepLinks {
-  paytm: string;
-  phonepe: string;
-  upi: string; // generic UPI intent (also used as the QR payload)
-}
-
-// Build the UPI parameter string shared by every app deeplink and the QR.
-//
-// A MERCHANT'S OWN UPI ID IS NOT OUR COLLECT VPA, AND THE LINK MUST NOT PRETEND IT IS.
-// UPI apps (Google Pay first) risk-score a payment link against the payee's registered
-// account and decline the ones that look forged: "Payment to this receiver was declined".
-// For a merchant-supplied payee (typically a static BharatPe / Paytm QR ID) that means:
-//   pn  only the name registered with the bank (poolpay.payee_name), else left out — never
-//       our brand, which the app sees as a mismatch against the verified banking name.
-//   tr  left out — a transaction reference on a static-QR payee is the acquirer's to issue,
-//       and an outsider's value is a forgery signal. Nothing reads it back: the reconciler
-//       matches on the order id in the note, the bank UTR, or amount + payee VPA.
-// The sandbox collect VPA keeps pn + tr as before. Values are percent-encoded (%20, not +):
-// Google Pay prints a '+' in the note literally.
-export function buildUpiQuery(opts: { payeeVpa?: string; payeeName?: string | null; orderId: string; amount: number; note?: string }): string {
-  const merchantPayee = !!opts.payeeVpa && opts.payeeVpa !== PAYEE_VPA;
-  const name = merchantPayee ? opts.payeeName?.trim() || null : PAYEE_NAME;
-  const params: [string, string | null][] = [
-    ["pa", opts.payeeVpa ?? PAYEE_VPA],
-    ["pn", name],
-    ["tr", merchantPayee ? null : opts.orderId],
-    ["am", opts.amount.toFixed(2)],
-    ["cu", "INR"],
-    ["tn", opts.note ?? `Order ${opts.orderId}`],
-  ];
-  return params
-    .filter((p): p is [string, string] => !!p[1])
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join("&");
-}
-
-export function buildDeeplinks(query: string): DeepLinks {
-  return {
-    paytm: `paytmmp://pay?${query}`,
-    phonepe: `phonepe://pay?${query}`,
-    upi: `upi://pay?${query}`,
-  };
-}
-
-// Sandbox status decision. An S2S order does NOT settle on its own — like the real
-// flow, it stays PENDING until the payer pays and a webhook/UTR confirms it (the
-// /confirm endpoint or the vendor callback). Only the pending-expiry rule and the
-// amount-forced test outcomes change status automatically:
-//   ...13  -> FAILED  (customer declined / U30)
-//   ...11  -> EXPIRED (collect request lapsed / U69)
-//   ...99  -> SUCCESS (forced success, ~8s — for testing the happy path)
-//   else   -> PENDING (awaits confirmation / webhook / pending-expiry)
-//
-// CRITICAL: these amount-based outcomes are TEST hooks only. On real merchant
-// traffic they would auto-FAIL / auto-EXPIRE / auto-SUCCEED any order whose amount
-// happens to end in .13 / .11 / .99 paise — with NO payment ever made.
-//
-// THE ORDER'S MODE DECIDES, NOT AN ENVIRONMENT FLAG. They used to switch on for EVERY order
-// when POOLPAY_SANDBOX_OUTCOMES=1, so setting it on a production server would have auto-settled
-// a real ₹499.99 order. They now apply to TEST orders only — always, so testers can use them on
-// production — and never to a live order, whatever the environment says. The flag is retired.
-// A live order stays PENDING until a REAL confirmation (agent bank-credit alert, vendor webhook,
-// or manual ops) or the pending-expiry timeout — it never changes state on its own.
-export function decidePoolPayStatus(
-  amountMinor: number,
-  ageSeconds: number,
-  livemode = true,
-): { status: "PENDING" | "SUCCESS" | "FAILED" | "EXPIRED"; response_code: string } {
-  if (!livemode) {
-    if (amountMinor % 100 === 13) return { status: "FAILED", response_code: "U30" };
-    if (amountMinor % 100 === 11) return { status: "EXPIRED", response_code: "U69" };
-    if (amountMinor % 100 === 99 && ageSeconds >= 8) return { status: "SUCCESS", response_code: "00" }; // forced test success
-  }
-  return { status: "PENDING", response_code: "U17" }; // default: awaits real confirmation
-}
-
-export const POOLPAY_TERMINAL = new Set(["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"]);
-
-// Auto-resolution pause. The status enquiry / poller normally advances a PENDING
-// order over time (sandbox amount rule + pending-expiry). It must NOT do so while
-// the order is parked for a human decision: a high-amount hold (meta.hold) or a
-// sender payment proof awaiting ops verification (meta.review === 'PROOF_SUBMITTED').
-// Pausing here stops a proof-bearing order from silently expiring before review.
-export function autoResolvePaused(meta: { hold?: boolean; review?: string } | null | undefined): boolean {
-  return meta?.hold === true || meta?.review === "PROOF_SUBMITTED";
-}
-
-// Stable 12-digit RRN derived from the order id (so repeated enquiries match).
-export function genRrn(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 1_000_000_000_000;
-  return h.toString().padStart(12, "0");
-}
-
-// Status-intelligence rules ------------------------------------------------
-// Pending-expiry: a pay-in still PENDING past this age is force-EXPIRED so it
-// never hangs forever (sandbox 15 min; tune per provider SLA when live).
-export const PENDING_EXPIRY_SECONDS = 900;
-
-// Single source of truth for resolving a PoolPay order's status. Enforces the
-// final-status lock (terminal never re-resolves), then the deterministic sandbox
-// decision, then the pending-expiry rule. Used by the status enquiry, the cron
-// sweep poller, and the force-refresh action so they can never disagree.
-export function resolvePoolPay(
-  currentStatus: string,
-  amountMinor: number,
-  ageSeconds: number,
-  livemode = true,
-): { status: string; response_code: string; changed: boolean } {
-  if (POOLPAY_TERMINAL.has(currentStatus)) {
-    return { status: currentStatus, response_code: "", changed: false }; // final-status lock
-  }
-  const d = decidePoolPayStatus(amountMinor, ageSeconds, livemode);
-  let status = d.status, code = d.response_code;
-  if (status === "PENDING" && ageSeconds >= PENDING_EXPIRY_SECONDS) {
-    status = "EXPIRED"; code = "U69"; // pending-expiry
-  }
-  return { status, response_code: code, changed: status !== currentStatus };
-}
+import { signKatanaHash, type DeepLinks } from "@/lib/katana-pay";
 
 // ---------------------------------------------------------------------------
 // REAL PoolPay S2S integration point (scaffold).
@@ -205,7 +73,7 @@ export async function createOrderRemote(input: RemoteOrderInput, ov?: RemoteOver
       CURRENCY_CODE: input.currency === "INR" ? "356" : input.currency,
       ORDER_DESC: input.note ?? `Order ${input.orderId}`,
     };
-    const HASH = signPoolPay(params, ov.secret);
+    const HASH = signKatanaHash(params, ov.secret);
     const res = await fetch(`${base}/api/v1/payin/paymentrequest`, {
       method: "POST",
       headers: poolpayHeaders(ov),

@@ -54,8 +54,8 @@ const STAGES: { key: StageKey; label: string; hint: string; explain: string }[] 
     explain: "Proves what the payment system reported: the order reached SUCCESS, by a gateway webhook, a status enquiry or an operator's confirmation." },
   { key: "credit", label: "Bank evidence", hint: "UTR / RRN / credit",
     explain: "Proves the money actually landed: a UTR or RRN stated for the payment, or a bank-credit alert matched to the order. A paid order without it is awaiting evidence." },
-  { key: "settled", label: "Settled", hint: "Receiving account",
-    explain: "Proves the payment was settled to the receiving account, as reported by the gateway." },
+  { key: "settled", label: "Settled", hint: "By the banker",
+    explain: "Proves the banker has settled the payment to you, on INTENT and P2P alike: the banker's verified settlements cover the order. Settlements are lump sums, so they are applied to each banker's paid orders oldest first." },
 ];
 
 const RECON: Record<ReconState, { label: string; variant: "success" | "warning" | "danger" | "info" | "default" }> = {
@@ -197,7 +197,7 @@ export default function ProviderReconciliationPage() {
         <KpiTile label="Reconciled" value={formatAmount(st?.RECONCILED.amount ?? 0)} sublabel={`${st?.RECONCILED.count ?? 0} with bank evidence`} variant="success" loading={q.isLoading} />
         <KpiTile label="Awaiting evidence" value={formatAmount(st?.AWAITING_EVIDENCE.amount ?? 0)} sublabel={`${st?.AWAITING_EVIDENCE.count ?? 0} paid, no bank reference`}
           variant={(st?.AWAITING_EVIDENCE.count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Settled" value={formatAmount(stageOf("settled").amount)} sublabel={`${stageOf("settled").count} settled to account`} loading={q.isLoading} />
+        <KpiTile label="Settled" value={formatAmount(stageOf("settled").amount)} sublabel={`${stageOf("settled").count} settled by banker`} loading={q.isLoading} />
       </div>
 
       {/* Reconciliation is per channel first; these are each rail's own figures for the window. */}

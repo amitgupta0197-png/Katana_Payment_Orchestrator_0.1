@@ -67,7 +67,7 @@ export default function TransactionsPage() {
     queryFn: async () => (await fetch("/api/checkout").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { orders: Order[] },
   });
 
-  // Katana Pay (PoolPay) pay-ins for this merchant.
+  // Katana Pay pay-ins for this merchant.
   const payinQ = useQuery({
     queryKey: ["mp:payins", meId],
     enabled: !!meId,

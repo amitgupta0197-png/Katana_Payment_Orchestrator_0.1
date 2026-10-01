@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 
 export const dynamic = "force-dynamic";
 const ROLES = ["SUPER_ADMIN", "ADMIN", "OPERATOR", "FINANCE"] as const;
@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     let confirmResult: any = null;
     if (body.action === "CONFIRM") {
       if (!cur.order_id) return NextResponse.json({ error: "case has no linked order to confirm" }, { status: 400 });
-      confirmResult = await confirmPoolPayOrder({
+      confirmResult = await confirmKatanaOrder({
         id: cur.order_id, outcome: "SUCCESS", utr: body.utr ?? null,
         evidence: "MANUAL", actor: g.session.email, note: body.note ?? "manual case resolved",
       });

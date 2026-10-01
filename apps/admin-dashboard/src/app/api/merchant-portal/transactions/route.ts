@@ -18,6 +18,7 @@ import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { CHECKOUT_ORDER_CHANNEL, PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
+import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,8 @@ export async function GET(req: Request) {
     `, vp.args).catch(() => [])).map((r) => ({ ...r, channel_type: payinChannelOf(r.channel_type) }));
 
     const all = [...checkout, ...payin];
+    // A provider never sees which gateway took a payment (lib/merchant-safe).
+    if (!seesGatewayNames(s.persona)) for (const t of all) t.channel = merchantSafeChannel(t.channel);
 
     const totals = empty();
     const byMerchant = new Map<string, { merchant_id: string; gross: number; count: number; success: number }>();

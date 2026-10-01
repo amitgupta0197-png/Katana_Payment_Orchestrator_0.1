@@ -121,7 +121,7 @@ dedicated mailbox where possible. One mailbox → one merchant for now.
 
 ## 6. End-to-end test
 
-1. In the dashboard, create a **PoolPay S2S order** with a **real** receiver UPI ID
+1. In the dashboard, create a **Katana Pay S2S order** with a **real** receiver UPI ID
    (the merchant's Business VPA).
 2. From a UPI app, **pay that amount** to the QR.
 3. Within seconds (push/SMS) or ~1 minute (email), the credit is captured → the order

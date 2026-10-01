@@ -101,7 +101,7 @@ export default function ProviderHelpPage() {
           <CardDescription>Gross collected across your bankers.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Open <strong>Transactions</strong> to see gross value across all channels (Katana Pay, PayU, Cashfree, Razorpay, …) for your mapped branches, broken down <strong>by banker</strong> and <strong>by channel</strong>, plus recent activity.</p>
+          <p>Open <strong>Transactions</strong> to see gross value across all channels for your mapped branches, broken down <strong>by banker</strong> and <strong>by channel</strong>, plus recent activity.</p>
           <p className="text-xs text-[color:var(--color-text-muted)]"><strong>Gross</strong> counts successful collections only — this is the reimbursable value your commission is based on.</p>
         </CardContent>
       </Card>

@@ -43,11 +43,11 @@ async function run() {
 
   // PayU pay-ins from the Katana Pay order flow (vendor_payin_orders, keyed by the PayU txnid).
   // EXPIRED is included on purpose: the pay page stops waiting after 15 minutes, but a customer
-  // who approved late has still paid, and confirmPoolPayOrder revives an expired order on success.
+  // who approved late has still paid, and confirmKatanaOrder revives an expired order on success.
   const payins = await rows<{ txn_id: string; merchant_id: string; provider: string }>("vendorGateway", `
     SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider
       FROM vendor_payin_orders
-     WHERE vendor = 'POOLPAY' AND COALESCE(meta->'gateway'->>'provider', '') <> '
+     WHERE vendor = 'KATANA' AND COALESCE(meta->'gateway'->>'provider', '') <> '
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND livemode = true
        -- No 2-minute grace here: with UPI intent the customer approves in their app within

@@ -19,9 +19,15 @@ import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuAutoSubmitForm } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
+import { merchantSafeBody } from "@/lib/merchant-safe";
+import { getMerchantFlow } from "@/lib/payin-flow-store";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
+
+// Everything this route answers goes to a merchant, so no gateway is ever named (lib/merchant-safe).
+const json = (body: Record<string, unknown> | undefined, init?: ResponseInit) =>
+  NextResponse.json(body && merchantSafeBody(body, "api/pay"), init);
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +71,7 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
 export async function POST(req: Request) {
   let body;
   try { body = schema.parse(await parseBody(req)); } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    return json({ error: (e as Error).message }, { status: 400 });
   }
 
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
@@ -73,12 +79,12 @@ export async function POST(req: Request) {
   try {
     // 1. key -> merchant + mode (the key's prefix decides; a legacy mk_<hex> key is live)
     const resolved = await resolveCheckoutKey(body.key);
-    if (!resolved) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+    if (!resolved) return json({ error: "invalid key" }, { status: 401 });
     const { merchantCode, livemode } = resolved;
 
     const creds = await getCheckoutCreds(merchantCode, livemode);
     if (!creds || creds.key !== body.key) {
-      return NextResponse.json({ error: "invalid key" }, { status: 401 });
+      return json({ error: "invalid key" }, { status: 401 });
     }
 
     // 2. verify the merchant's signature over the order
@@ -86,10 +92,15 @@ export async function POST(req: Request) {
       txnId: body.txnid, amount: amountStr,
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
-    if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+    if (!ok) return json({ error: "signature mismatch" }, { status: 401 });
 
     // A live order — either branch below — needs live mode activated for this merchant.
     if (livemode) await assertLiveActivated(merchantCode);
+
+    // This is the gateway checkout: every payment it starts is taken by a gateway. A merchant
+    // on the P2P flow (lib/payin-flow) is never sent to one, so it is pointed at the P2P API.
+    if ((await getMerchantFlow(merchantCode)).flow === "P2P")
+      return json({ error: "this merchant is on the P2P flow; create P2P orders with POST /api/v1/p2p/order", code: "FLOW_NOT_ENABLED" }, { status: 409 });
 
     // 2.5 Hosted-gateway redirect (real PayU): build a signed PayU request with
     //     the merchant's stored gateway Key+Salt and hand the customer's browser
@@ -102,7 +113,7 @@ export async function POST(req: Request) {
     const other = wantRedirect || wantIntent ? await gatewayPayinFor(merchantCode) : null;
     if (other) {
       const currency = (body.currency ?? "INR").toUpperCase();
-      if (currency !== "INR") return NextResponse.json({ error: `${other.connector.name} payments are INR only here` }, { status: 400 });
+      if (currency !== "INR") return json({ error: `${other.connector.name} payments are INR only here` }, { status: 400 });
       const input = {
         mid: other.mid, connector: other.connector, merchantCode, livemode,
         txnid: body.txnid, amount: amountStr, currency,
@@ -115,22 +126,22 @@ export async function POST(req: Request) {
       };
       if (wantIntent) {
         const r = await issueGatewayIntent(input);
-        return NextResponse.json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
+        return json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
           { status: r.httpStatus });
       }
       const r = await startGatewayCheckout(input);
       if (r.html) return new NextResponse(r.html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
-      return NextResponse.json(r.body, { status: r.httpStatus });
+      return json(r.body, { status: r.httpStatus });
     }
 
     if (wantRedirect) {
       // The hosted redirect sends the customer to the real PayU page on the merchant's MID.
       // There is no separate test MID, so a test key cannot use it.
       if (!livemode)
-        return NextResponse.json({ error: "test keys cannot use the hosted gateway redirect" }, { status: 400 });
+        return json({ error: "test keys cannot use the hosted gateway redirect" }, { status: 400 });
       const gwMid = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gwMid) {
-        return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
+        return json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();
       const amountMinor = toMinor(amountStr, currency);
@@ -168,13 +179,13 @@ export async function POST(req: Request) {
     if (wantIntent) {
       // Same rule as the redirect: the intent is issued on the real MID, so a test key cannot use it.
       if (!livemode)
-        return NextResponse.json({ error: "test keys cannot use the PayU UPI intent" }, { status: 400 });
+        return json({ error: "test keys cannot use the gateway UPI intent" }, { status: 400 });
       const gwMid = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gwMid) {
-        return NextResponse.json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
+        return json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const currency = (body.currency ?? "INR").toUpperCase();
-      if (currency !== "INR") return NextResponse.json({ error: "UPI intent supports INR only" }, { status: 400 });
+      if (currency !== "INR") return json({ error: "UPI intent supports INR only" }, { status: 400 });
 
       const r = await issuePayuIntent({
         mid: gwMid, merchantCode, livemode,
@@ -185,14 +196,14 @@ export async function POST(req: Request) {
         client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
         actor: `merchant:${merchantCode}`,
       });
-      return NextResponse.json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
+      return json(r.httpStatus < 300 ? { verified: true, merchant: merchantCode, livemode, ...r.body } : r.body,
         { status: r.httpStatus });
     }
 
     // 3. map to the checkout pipeline. method must be one Katana supports.
     const method = (body.method ?? "UPI_INTENT").toUpperCase();
     if (!ALLOWED_METHODS.includes(method)) {
-      return NextResponse.json({ error: `unsupported method '${method}'`, allowed: ALLOWED_METHODS }, { status: 400 });
+      return json({ error: `unsupported method '${method}'`, allowed: ALLOWED_METHODS }, { status: 400 });
     }
 
     const r = await runCheckout({
@@ -208,10 +219,10 @@ export async function POST(req: Request) {
         idempotency_key: body.txnid,  // merchant txnid is the natural idempotency key
       },
     });
-    return NextResponse.json({ verified: true, merchant: merchantCode, ...r.body }, { status: r.httpStatus });
+    return json({ verified: true, merchant: merchantCode, ...r.body }, { status: r.httpStatus });
   } catch (err) {
     const a = activationErrorResponse(err);
-    if (a) return NextResponse.json(a.body, { status: a.status });
-    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+    if (a) return json(a.body, { status: a.status });
+    const e = pgError(err); return json(e.body, { status: e.status });
   }
 }

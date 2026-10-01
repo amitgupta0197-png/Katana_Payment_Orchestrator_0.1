@@ -17,6 +17,7 @@ import { runCheckout } from "@/lib/checkout-core";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuFields, payuPaymentUrl } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
+import { merchantSafeBody, seesGatewayNames } from "@/lib/merchant-safe";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { toMinor, fromMinor } from "@/lib/money";
 
@@ -41,10 +42,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const scope = await resolveMerchantScope(id, g.session);
   if ("response" in scope) return scope.response;
   const merchantCode = scope.code;
+  // Operators get the gateway's name and its own words; a provider gets the scrubbed body.
+  const json = (body: Record<string, unknown> | undefined, init?: ResponseInit) =>
+    NextResponse.json(body && !seesGatewayNames(g.session.persona) ? merchantSafeBody(body, "api/merchants/test-pay") : body, init);
 
   let body;
   try { body = schema.parse(await req.json().catch(() => ({}))); } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+    return json({ error: (e as Error).message }, { status: 400 });
   }
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
   const currency = body.currency.toUpperCase();
@@ -64,17 +68,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       };
       if (body.intent) {
         const r = await issueGatewayIntent(input);
-        return NextResponse.json({ mode: "intent", ...r.body }, { status: r.httpStatus });
+        return json({ mode: "intent", ...r.body }, { status: r.httpStatus });
       }
       const r = await startGatewayCheckout(input);
-      if (r.html) return NextResponse.json({ mode: "redirect", gateway: other.connector.id, html: r.html });
-      return NextResponse.json(r.body, { status: r.httpStatus });
+      if (r.html) return json({ mode: "redirect", gateway: other.connector.id, html: r.html });
+      return json(r.body, { status: r.httpStatus });
     }
 
     if (body.intent) {
       const gw = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gw) {
-        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
       }
       const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
       const r = await issuePayuIntent({
@@ -85,13 +89,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         client: intentClientFrom(req),   // the operator's own browser is the "customer" here
         actor: `test:${g.session.user_id}`,
       });
-      return NextResponse.json({ mode: "intent", ...r.body }, { status: r.httpStatus });
+      return json({ mode: "intent", ...r.body }, { status: r.httpStatus });
     }
 
     if (body.redirect) {
       const gw = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gw) {
-        return NextResponse.json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
       }
       const amountMinor = toMinor(amountStr, currency);
       const txnid = "TEST-" + Date.now();
@@ -111,7 +115,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         firstname: body.firstname, email: body.email, phone: body.phone,
         surl: ret, furl: ret,
       });
-      return NextResponse.json({ mode: "redirect", payu_url: payuPaymentUrl(gw.env), fields });
+      return json({ mode: "redirect", payu_url: payuPaymentUrl(gw.env), fields });
     }
 
     // simulated: a test run must never post ledger, commission or reserve rows, or send the
@@ -125,6 +129,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         idempotency_key: "TEST-" + Date.now(),
       },
     });
-    return NextResponse.json({ mode: "simulated", ...r.body }, { status: r.httpStatus });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+    return json({ mode: "simulated", ...r.body }, { status: r.httpStatus });
+  } catch (err) { const e = pgError(err); return json(e.body, { status: e.status }); }
 }

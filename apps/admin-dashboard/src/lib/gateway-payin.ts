@@ -6,7 +6,7 @@
 //   checkGatewayPayin      ask the gateway about one order and apply the answer. The webhooks,
 //                          the browser returns, the verify sweep and the pay page all end here.
 //
-// Katana Pay orders (lib/poolpay-order) also take their UPI intent from these connectors; they
+// Katana Pay orders (lib/katana-order) also take their UPI intent from these connectors; they
 // carry meta.gateway.provider = <gateway id>, which keeps the bank-credit matcher away from them.
 //
 // The gateway's status API is the only thing that settles an order. A SUCCESS whose amount
@@ -18,7 +18,7 @@ import { payinProdId, type GatewayMid } from "@/lib/gateway-creds";
 import { gatewayName } from "@/lib/pg-catalog";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
-import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 import { gatewayPayinFor, payinConnector, payinConnectorFor } from "@/lib/payin-providers";
 import {
   checkoutPage, payinProdEnabled, publicBase, payinReturnUrl, payinWebhookUrl,
@@ -49,7 +49,7 @@ export interface ApplyResult { applied: boolean; status: "SUCCESS" | "FAILED" | 
 async function findGatewayPayin(provider: string, txnid: string) {
   return (await rows<{ id: string; merchant_id: string; amount: string; status: string; meta: any }>("vendorGateway", `
     SELECT id::text, merchant_id, amount::text, status, meta FROM vendor_payin_orders
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = $2
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = $2
      LIMIT 1
   `, [txnid, provider]).catch(() => []))[0] ?? null;
 }
@@ -70,7 +70,7 @@ export async function applyGatewayPayinState(provider: string, txnid: string, s:
     if (s.final === "SUCCESS" && s.amountMinor != null && s.amountMinor !== BigInt(Math.round(Number(v.amount) * 100)))
       return { applied: false, status: "UNKNOWN", reason: `amount mismatch: ${name} ${s.amountMinor}, order ${v.amount}` };
     if (s.final === "FAILED") await markGatewayPayinFinal(provider, txnid, s.status ?? "FAILED");
-    const r = await confirmPoolPayOrder({
+    const r = await confirmKatanaOrder({
       id: v.id, livemode: true, outcome: s.final,
       utr: s.bankRef?.trim() || null, evidence: "WEBHOOK", actor: `gateway:${provider.toLowerCase()}`,
       note: `${name} ${source}${s.paymentId ? ` (payment ${s.paymentId})` : ""}`,
@@ -124,7 +124,7 @@ export async function claimGatewayPayinCheck(provider: string, txnid: string, mi
     UPDATE vendor_payin_orders
        SET meta = jsonb_set(meta, '{gateway,checked_at}',
                             to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1
        AND meta->'gateway'->>'provider' = $3
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND COALESCE(meta->'gateway'->>'final', '') = ''
@@ -139,7 +139,7 @@ export async function claimGatewayPayinCheck(provider: string, txnid: string, mi
 export async function markGatewayPayinFinal(provider: string, txnid: string, status: string): Promise<void> {
   await rows("vendorGateway", `
     UPDATE vendor_payin_orders SET meta = jsonb_set(meta, '{gateway,final}', to_jsonb($2::text))
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = $3
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = $3
   `, [txnid, status, provider]).catch(() => {});
 }
 

@@ -73,7 +73,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
     onSuccess: () => {
       toast.success("Integration saved", { description: "Cascaded to all bankers under this merchant." });
       qc.invalidateQueries({ queryKey: ["merchant-integration", providerId] });
-      qc.invalidateQueries({ queryKey: ["poolpay-funnel", providerId] });
+      qc.invalidateQueries({ queryKey: ["katana-funnel", providerId] });
     },
     onError: (e: Error) => toast.error("Couldn’t save", { description: e.message }),
   });
@@ -86,7 +86,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <div>
-            <CardTitle className="text-base inline-flex items-center gap-2"><Plug className="h-4 w-4" /> Katana Pay (PoolPay) integration</CardTitle>
+            <CardTitle className="text-base inline-flex items-center gap-2"><Plug className="h-4 w-4" /> Katana Pay integration</CardTitle>
             <CardDescription>Configure once here — it auto-applies to every banker under this merchant.</CardDescription>
           </div>
           <div className="flex items-center gap-1.5">
@@ -135,7 +135,7 @@ export function IntegrationConfigCard({ providerId, canEdit }: { providerId: str
                   onChange={(e) => set("return_url")(e.target.value)} />
               </Field>
               <Field label="Callback URL" icon={Webhook}>
-                <Input value={form.callback_url} disabled={!canEdit} placeholder="https://katanapay.co/api/vendors/poolpay/callback"
+                <Input value={form.callback_url} disabled={!canEdit} placeholder="https://katanapay.co/api/vendors/katana/callback"
                   onChange={(e) => set("callback_url")(e.target.value)} />
               </Field>
               <Field label="Client ID (optional)">

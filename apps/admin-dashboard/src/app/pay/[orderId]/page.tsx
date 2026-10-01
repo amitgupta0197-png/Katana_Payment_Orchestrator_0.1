@@ -1,6 +1,6 @@
 "use client";
 
-// PUBLIC customer-facing PoolPay payment page. Standalone chrome (no admin
+// PUBLIC customer-facing Katana Pay payment page. Standalone chrome (no admin
 // sidebar/header — /pay is in STANDALONE_PREFIXES and whitelisted in middleware).
 // Full-bleed, mobile-first screen whose background gradient takes the tone of the
 // order's state: waiting (blue) → success (green) / failed (red) / expired (amber).
@@ -27,8 +27,7 @@ interface PayStatus {
   completed_at?: string | null;
   livemode?: boolean;   // false = a test order: labelled so nobody mistakes it for a real payment
   checkout_url?: string | null;   // pay on the gateway's own page (PayU Client ID, RubyVault, iSmartPay)
-  gateway?: string | null;        // whose page that is
-  gateway_name?: string | null;
+  checkout_methods?: "ALL" | "UPI" | null;   // what that page takes; the gateway itself is never named
 }
 
 type Phase = "loading" | "waiting" | "verifying" | "success" | "failed" | "expired";
@@ -310,10 +309,9 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
  *  pay, and one button that hands over to the gateway. */
 function GatewayBody({ d, merchant, url }: { d: PayStatus; merchant: string | null; url: string }) {
   const [going, setGoing] = useState(false);
-  const gw = d.gateway_name || "the gateway";
   const upi = { label: "UPI", icon: <span className="flex -space-x-1.5"><GooglePayLogo /><PhonePeLogo /><PaytmLogo /></span> };
-  // PayU's page takes cards, net banking and wallets too; the other hosted pages are UPI.
-  const methods = d.gateway === "PAYU" ? [
+  // Some hosted pages take cards, net banking and wallets too; the others are UPI.
+  const methods = d.checkout_methods === "ALL" ? [
     upi,
     { label: "Credit & debit cards", icon: <CreditCard className="h-5 w-5" /> },
     { label: "Net banking", icon: <Landmark className="h-5 w-5" /> },
@@ -342,7 +340,7 @@ function GatewayBody({ d, merchant, url }: { d: PayStatus; merchant: string | nu
 
       <div className="kp-rise kp-dim mt-4 flex items-start gap-2.5 px-1 text-xs leading-relaxed" style={{ animationDelay: "140ms" }}>
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>You&apos;ll pay on {gw}&apos;s secure page. Come back to this screen afterwards — it confirms the payment.</span>
+        <span>You&apos;ll pay on a secure payment page. Come back to this screen afterwards — it confirms the payment.</span>
       </div>
 
       <div className="mt-auto pt-6">
@@ -353,7 +351,7 @@ function GatewayBody({ d, merchant, url }: { d: PayStatus; merchant: string | nu
             ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening secure payment…</>
             : <><Lock className="h-4 w-4" /> Pay {money(d.amount, d.currency_code)} securely <ArrowRight className="h-4 w-4" /></>}
         </button>
-        <p className="kp-faint mt-2.5 text-center text-[11px]">Order {d.order_id} · secured by {gw}</p>
+        <p className="kp-faint mt-2.5 text-center text-[11px]">Order {d.order_id} · secured payment</p>
       </div>
     </div>
   );
@@ -382,7 +380,7 @@ function VerifyingBody({ d }: { d: PayStatus }) {
         {d.proof_submitted
           ? "We got your screenshot and are matching it with the credit. This screen updates once it's confirmed."
           : d.checkout_url
-            ? `We're confirming your payment with ${d.gateway_name || "the gateway"}. This screen updates as soon as it's confirmed.`
+            ? "We're confirming your payment. This screen updates as soon as it's confirmed."
             : "Payments of this size get a quick manual check. This screen updates once it's confirmed."}
       </p>
       <p className="kp-faint mt-3 text-xs">Please don&apos;t pay again.</p>

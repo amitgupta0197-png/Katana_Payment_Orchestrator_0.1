@@ -45,7 +45,7 @@ export default function MerchantDashboard() {
     queryFn: async () => (await fetch("/api/checkout").then((r) => r.json())) as { orders: Order[] },
     refetchInterval: 30_000,
   });
-  // Katana Pay (PoolPay) pay-ins for this merchant — merged into the figures below
+  // Katana Pay pay-ins for this merchant — merged into the figures below
   // so QR/S2S collections show up alongside checkout-gateway orders.
   const payins = useQuery({
     queryKey: ["mp:payins", meId],

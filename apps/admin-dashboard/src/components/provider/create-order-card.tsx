@@ -1,7 +1,7 @@
 "use client";
 
 // Provider-side "Create S2S order" — lets a provider generate a QR / S2S pay-in on
-// behalf of one of their mapped merchants. Reuses PoolPayCreateOrder, pointing it at
+// behalf of one of their mapped merchants. Reuses KatanaCreateOrder, pointing it at
 // the merchant-scoped endpoint (which enforces sub-MID routing + risk rules and is
 // allowed for the PROVIDER persona when the merchant is mapped to them).
 
@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { PoolPayCreateOrder } from "@/components/vendors/poolpay-create-order";
+import { KatanaCreateOrder } from "@/components/vendors/katana-create-order";
 
 interface MerchantRow { id: string; merchant_code: string; legal_name: string; brand_name?: string; stage: string }
 
@@ -53,7 +53,7 @@ export function ProviderCreateOrderCard() {
                   ))}
                 </select>
               </div>
-              <PoolPayCreateOrder
+              <KatanaCreateOrder
                 key={selectedId}
                 endpoint={`/api/merchants/${selectedId}/payin-orders`}
                 receiverPlaceholder={"leave blank to use the merchant's settlement VPA\nor add a payee pool, one per line"}

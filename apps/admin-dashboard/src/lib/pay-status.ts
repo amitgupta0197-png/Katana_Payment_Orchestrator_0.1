@@ -1,0 +1,107 @@
+// The public status of a Katana pay-in order: what the hosted pay page polls and what a
+// merchant reads back. Shared by GET /api/pay-status/{id} and the per-flow status endpoints
+// (GET /api/v1/p2p/order/{id}, GET /api/v1/intent/order/{id}).
+
+import { rows, pgError } from "@/lib/pg";
+import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/katana-pay";
+import { sendPayinCallback } from "@/lib/merchant-callback";
+import { checkPayuPayinNow } from "@/lib/payu-result";
+import { checkGatewayPayin } from "@/lib/gateway-payin";
+
+export interface PayStatusPayload {
+  order_id: string; amount: number; currency_code: string; status: string;
+  terminal: boolean; proof_submitted: boolean; rrn: string | null;
+  mode: string; deeplinks: unknown; upi_intent: unknown; return_url: string | null;
+  merchant_name: string | null; payee_vpa: string | null;
+  held: boolean; expires_at: string | null; completed_at: string | null;
+  livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
+  checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): the page the customer pays on
+  checkout_methods: "ALL" | "UPI" | null;   // what that page takes: UPI only, or cards / net banking / wallets too
+}
+
+// The payee name (pn) and VPA (pa) are already public inside the UPI intent the
+// customer is shown; surface them as fields so the page can say who is being paid.
+function upiParam(intent: unknown, key: string): string | null {
+  if (typeof intent !== "string" || !intent.includes("?")) return null;
+  try { return new URLSearchParams(intent.split("?").slice(1).join("?")).get(key) || null; }
+  catch { return null; }
+}
+
+// Read the order's current public status, running the same age-based auto-resolution
+// (pending-expiry) the poll has always done. Returns null when the order is absent.
+export async function readOrderStatus(id: string): Promise<PayStatusPayload | null> {
+  const found = await rows<any>("vendorGateway", `
+    SELECT id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn,
+           status, meta, created_at, updated_at, livemode, vendor_txn_id, merchant_id,
+           EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
+      FROM vendor_payin_orders
+     WHERE id = $1::uuid AND vendor = 'KATANA'
+  `, [id]);
+  if (!found.length) return null;
+
+  let order = found[0];
+
+  // A PayU order is settled by PayU. Ask PayU directly (at most every 4s per order, however many
+  // pages are polling) so the page flips within seconds of the customer approving in their UPI app,
+  // instead of waiting for PayU's webhook or the sweep.
+  // Other gateways (Razorpay, Cashfree, PhonePe, Paytm) are asked the same way.
+  const provider = order.meta?.gateway?.provider;
+  if (provider && order.livemode !== false && !KATANA_TERMINAL.has(order.status)) {
+    // PayU with a Client ID + Secret is asked through its connector, like the other gateways.
+    const payuKeySalt = provider === "PAYU" && order.meta?.gateway?.auth !== "client_credentials";
+    const r = payuKeySalt
+      ? await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }))
+      : await checkGatewayPayin({ provider, txnid: order.vendor_txn_id, merchantCode: order.merchant_id, source: "pay_page", throttleSec: 4 })
+          .catch(() => ({ applied: false }));
+    if (r.applied) return readOrderStatus(id);
+  }
+
+  if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
+    const amountMinor = Math.round(Number(order.amount) * 100);
+    const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, order.livemode !== false);
+    if (decision.changed) {
+      const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
+      const upd = await rows<any>("vendorGateway", `
+        UPDATE vendor_payin_orders
+           SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
+         WHERE id = $1::uuid
+        RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta, created_at, updated_at, livemode
+      `, [order.id, decision.status, decision.response_code, rrn]);
+      order = upd[0];
+      // Auto-resolution just flipped this order terminal — fire the merchant
+      // status callback (idempotent; no-op if already sent or no target).
+      if (KATANA_TERMINAL.has(order.status)) sendPayinCallback(order.id).catch(() => {});
+    }
+  }
+
+  const meta = order.meta ?? {};
+  const terminal = KATANA_TERMINAL.has(order.status);
+  const held = autoResolvePaused(meta);
+  const createdAt = order.created_at ? new Date(order.created_at) : null;
+  return {
+    merchant_name: upiParam(meta.upi_intent, "pn") ?? (typeof meta.merchant_name === "string" ? meta.merchant_name : null),
+    payee_vpa: upiParam(meta.upi_intent, "pa"),
+    held,
+    livemode: order.livemode !== false,
+    // Held orders wait for an operator and never expire, so they get no countdown.
+    expires_at: !terminal && !held && createdAt
+      ? new Date(createdAt.getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null,
+    completed_at: terminal && order.updated_at ? new Date(order.updated_at).toISOString() : null,
+    order_id: order.order_id,
+    amount: Number(order.amount),
+    currency_code: order.currency_code,
+    status: order.status,
+    terminal: KATANA_TERMINAL.has(order.status),
+    proof_submitted: meta.review === "PROOF_SUBMITTED",
+    rrn: order.rrn || null,
+    mode: meta.mode ?? "QR",
+    deeplinks: meta.deeplinks ?? null,
+    upi_intent: meta.upi_intent ?? null,
+    return_url: meta.return_url ?? null,   // browser redirect target after payment
+    checkout_url: typeof meta.gateway?.checkout_url === "string" ? meta.gateway.checkout_url : null,
+    // This response is public (the customer's pay page and the merchant's status polling), so
+    // it never names the gateway (lib/merchant-safe): only what its page can be paid with.
+    checkout_methods: typeof meta.gateway?.checkout_url === "string" ? (meta.gateway.provider === "PAYU" ? "ALL" : "UPI") : null,
+  };
+}
+

@@ -20,7 +20,7 @@ export interface Integration {
 
 export const INTEGRATIONS: Integration[] = [
   // PG / payin
-  { code: "POOLPAY",   name: "Katana Pay",     category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://poolpay/live/secret", webhook_url: "/api/vendors/poolpay/callback" },
+  { code: "POOLPAY",   name: "Katana Pay",     category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://poolpay/live/secret", webhook_url: "/api/vendors/katana/callback" },
   { code: "QUICKPAY",  name: "Vendor PG",      category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://quickpay/live/secret", webhook_url: "/api/vendors/quickpay/callback" },
   { code: "RAZORPAY",  name: "Razorpay",       category: "PG (Pay-in)", status: "scaffold" },
   { code: "PAYU",      name: "PayU",           category: "PG (Pay-in)", status: "scaffold" },

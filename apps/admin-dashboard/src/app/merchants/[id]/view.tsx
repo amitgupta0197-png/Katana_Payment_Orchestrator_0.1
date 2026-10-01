@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
-import { PaymentMethodsCard, PoolPayConfigCard } from "@/components/merchant/payment-config";
+import { PaymentMethodsCard, KatanaPayConfigCard } from "@/components/merchant/payment-config";
 import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merchant/payin-operations";
 import { MerchantAgentCard } from "@/components/merchant/agent-permission";
 import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
@@ -33,6 +33,7 @@ import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { JourneyBar, StatusLights } from "@/components/merchant/merchant-at-a-glance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime, statusVariant } from "@/lib/utils";
+import { PayinFlowCard } from "@/components/payin/flow";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -654,10 +655,11 @@ export default function MerchantDetailView({ id }: { id: string }) {
         </TabsContent>
 
         <TabsContent value="collection">
+          <PayinFlowCard target={{ kind: "banker", id: merchant.id, name: merchant.brand_name || merchant.legal_name }} />
           <PaymentMethodsCard merchantId={merchant.id} />
           <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
           <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
-            <PoolPayConfigCard merchantId={merchant.id} />
+            <KatanaPayConfigCard merchantId={merchant.id} />
             <PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit />
           </div>
         </TabsContent>

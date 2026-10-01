@@ -1,5 +1,5 @@
 // Status-intelligence background poller. A scheduler (systemd timer / cron) hits
-// this every ~15s with the shared x-cron-key. It sweeps every non-terminal PoolPay
+// this every ~15s with the shared x-cron-key. It sweeps every non-terminal Katana Pay
 // pay-in, applies the shared resolver (final-status lock + sandbox decision +
 // pending-expiry), and persists any status change. This is the automated
 // equivalent of the per-order status enquiry, so orders settle/expire without a
@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
-import { resolvePoolPay, genRrn } from "@/lib/poolpay";
+import { resolveKatanaStatus, genRrn } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       SELECT id::text, amount, status, livemode,
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
-       WHERE vendor = 'POOLPAY' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
+       WHERE vendor = 'KATANA' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
          AND COALESCE((meta->>'hold')::boolean, false) = false   -- held orders need manual confirm
        ORDER BY created_at ASC LIMIT 1000
     `).catch(() => []);
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     for (const o of pending) {
       const amountMinor = Math.round(Number(o.amount) * 100);
       // Sandbox amount rules apply to test orders only; a live order only ever expires here.
-      const d = resolvePoolPay(o.status, amountMinor, o.age_seconds, o.livemode !== false);
+      const d = resolveKatanaStatus(o.status, amountMinor, o.age_seconds, o.livemode !== false);
       if (!d.changed) continue;
       const rrn = d.status === "SUCCESS" ? genRrn(o.id) : null;
       await rows("vendorGateway", `

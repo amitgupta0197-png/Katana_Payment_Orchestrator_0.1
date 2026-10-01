@@ -100,6 +100,22 @@ merchants, and every order and callback is bound to the pair that signed it.</p>
 </table>
 <div class="note warnbox"><b>Your Key + Salt is the only credential on these endpoints.</b> Treat Salt disclosure as a full compromise of your integration: regenerate immediately and reconcile every order created in the interim.</div>
 
+<h3 id="flows">Pay-in flows: P2P and Intent</h3>
+<p>Katana takes pay-ins on two flows, and your account is set up for <b>P2P</b>, <b>Intent</b> or <b>Both</b>:</p>
+<table>
+  <tr><th>Flow</th><th>How the customer pays</th><th>Order API</th><th>Status</th></tr>
+  <tr><td><b>P2P</b></td><td>A UPI link or QR that pays the receiving UPI ID directly. Confirmed by the bank credit.</td><td><code>POST /api/v1/p2p/order</code></td><td><code>GET /api/v1/p2p/order/{id}</code></td></tr>
+  <tr><td><b>Intent</b></td><td>The payment is issued and confirmed by the payment gateway.</td><td><code>POST /api/v1/intent/order</code></td><td><code>GET /api/v1/intent/order/{id}</code></td></tr>
+</table>
+<p>All three order APIs take the <b>same request</b>, the <b>same signature</b> and return the <b>same response</b>. The general
+<code>/api/v1/katana-pay/order</code> uses the flow selected for your account, so an existing integration keeps working
+unchanged. Call a flow's own API when you want that flow by name. The response says which flow the order took in
+<code>"flow"</code> (<code>P2P</code> or <code>INTENT</code>).</p>
+<p>A flow your account is not set up for is refused with HTTP <code>409</code> and a <code>code</code>:
+<code>FLOW_NOT_ENABLED</code> (your account is on the other flow), <code>FLOW_NOT_SELECTED</code> (no flow has been
+selected yet) or <code>FLOW_NOT_READY</code> (the flow is selected but its setup is not complete). No order is created.</p>
+<p>The flow status APIs accept the order <code>id</code> or the flow reference (<code>P2P-000000123</code> /
+<code>INT-000000123</code>) and add <code>flow</code> and that reference to the usual status fields.</p>
 <h2 id="create">3. Create an order</h2>
 <p><code>POST /api/v1/katana-pay/order</code> with a JSON body (form-encoded is also accepted). <b>Idempotent on
 <code>txnid</code></b> — re-sending the same <code>txnid</code> returns the existing order rather than creating a
@@ -136,15 +152,13 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
 <p>Take <code>pay_url</code> and send the browser there. If you are building your own payment screen instead, use
 <code>qr_payload</code> (render as a QR) or <code>upi_intent</code> (an app deeplink).</p>
 <h3>Merchants paid on a gateway's payment page</h3>
-<p>Some merchants collect through a gateway that takes the payment on its own secure page (for example RubyVault
-or iSmartPay). Their orders have <b>no UPI link</b>: <code>deeplinks</code>, <code>upi_intent</code> and
-<code>qr_payload</code> are <code>null</code>, and two fields are added:</p>
+<p>Some merchants collect through a gateway that takes the payment on its own secure page. Their orders have <b>no UPI link</b>: <code>deeplinks</code>, <code>upi_intent</code> and
+<code>qr_payload</code> are <code>null</code>, and one field is added:</p>
 <pre>{
   …,
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // still the page to send the customer to
   "deeplinks": null, "upi_intent": null, "qr_payload": null,
-  "gateway": "RUBYVAULT",                             // whose page takes the payment
-  "gateway_url": "https://…"                          // that gateway's page, if you'd rather skip ours
+  "gateway_url": "https://…"                          // the gateway's page, if you'd rather skip ours
 }</pre>
 <p>Send the customer to <code>pay_url</code> as usual — it shows the order and hands over to the gateway — or
 straight to <code>gateway_url</code>. The result reaches you the same way (callback, status enquiry). The gateway's

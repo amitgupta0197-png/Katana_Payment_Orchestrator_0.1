@@ -14,6 +14,7 @@ import { toCsv, csvResponse, datedFilename, type CsvColumn } from "@/lib/csv";
 import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { CHECKOUT_ORDER_CHANNEL, payinChannelOf } from "@/lib/payin-channel";
+import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,8 @@ export async function GET(req: Request) {
 
     const all = [...checkout, ...payin]
       .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+    // A provider never sees which gateway took a payment (lib/merchant-safe).
+    if (!seesGatewayNames(s.persona)) for (const r of all as { channel?: string | null }[]) r.channel = merchantSafeChannel(r.channel);
 
     return csvResponse(datedFilename("transactions"), toCsv(COLUMNS, all));
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

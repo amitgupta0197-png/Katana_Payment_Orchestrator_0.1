@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
-import { PoolPayCreateOrder } from "@/components/vendors/poolpay-create-order";
+import { KatanaCreateOrder } from "@/components/vendors/katana-create-order";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
 
 interface Order {
@@ -36,7 +36,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
 
   const advance = useMutation({
     mutationFn: async (orderId: string) => {
-      const r = await fetch(`/api/vendors/poolpay/order/${orderId}/advance-vpa`, { method: "POST" });
+      const r = await fetch(`/api/vendors/katana/order/${orderId}/advance-vpa`, { method: "POST" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return r.json() as Promise<{ active_vpa: string; remaining: number }>;
     },
@@ -48,7 +48,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
   // dependence on phone notification capture. SUPER_ADMIN only (endpoint-gated).
   const confirmReceived = useMutation({
     mutationFn: async ({ id, utr }: { id: string; utr: string }) => {
-      const r = await fetch(`/api/vendors/poolpay/order/${id}/confirm`, {
+      const r = await fetch(`/api/vendors/katana/order/${id}/confirm`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outcome: "SUCCESS", utr, evidence: "UTR" }),
       });
@@ -61,7 +61,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
 
   const refresh = useMutation({
     mutationFn: async (orderId: string) => {
-      const r = await fetch(`/api/vendors/poolpay/order/${orderId}/refresh`, { method: "POST" });
+      const r = await fetch(`/api/vendors/katana/order/${orderId}/refresh`, { method: "POST" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return r.json() as Promise<{ status: string; changed: boolean }>;
     },
@@ -73,7 +73,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
   // order so the reconciler matches and confirms it.
   const simCredit = useMutation({
     mutationFn: async (orderId: string) => {
-      const r = await fetch(`/api/vendors/poolpay/order/${orderId}/simulate-credit`, { method: "POST" });
+      const r = await fetch(`/api/vendors/katana/order/${orderId}/simulate-credit`, { method: "POST" });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
       return d as { outcome: string; detail?: string };
@@ -98,7 +98,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={live.length ? "success" : "default"}>{live.length} active</Badge>
-          <PoolPayCreateOrder
+          <KatanaCreateOrder
             endpoint={`/api/merchants/${merchantId}/payin-orders`}
             receiverPlaceholder={"leave blank to use the merchant's settlement VPA\nor add a payee pool, one per line"}
             onChange={() => qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] })}

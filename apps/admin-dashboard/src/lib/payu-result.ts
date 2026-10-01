@@ -22,17 +22,17 @@ import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
-import { confirmPoolPayOrder } from "@/lib/poolpay-order";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 
-// PayU pay-ins created through the Katana Pay order flow (lib/poolpay-order) live in
+// PayU pay-ins created through the Katana Pay order flow (lib/katana-order) live in
 // vendor_payin_orders, not checkout_orders, keyed by the PayU txnid Katana generated. They
-// are settled through confirmPoolPayOrder so the pay page, the merchant's status callback
+// are settled through confirmKatanaOrder so the pay page, the merchant's status callback
 // and the reports see the payment exactly as they see any other pay-in.
 async function findPayuPayin(txnid: string): Promise<{ id: string; merchant_id: string; meta: any } | null> {
   return (await rows<{ id: string; merchant_id: string; meta: any }>("vendorGateway", `
     SELECT id::text, merchant_id, meta FROM vendor_payin_orders
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
      LIMIT 1
   `, [txnid]).catch(() => []))[0] ?? null;
 }
@@ -41,7 +41,7 @@ async function settlePayuPayin(
   orderId: string, outcome: "SUCCESS" | "FAILED",
   detail: { utr?: string; mihpayid?: string; source: string },
 ): Promise<{ applied: boolean; reason?: string }> {
-  const r = await confirmPoolPayOrder({
+  const r = await confirmKatanaOrder({
     id: orderId,
     livemode: true,               // PayU intents are only ever issued for live orders
     outcome,
@@ -154,7 +154,7 @@ export async function claimPayuPayinCheck(txnid: string, minIntervalSec: number)
     UPDATE vendor_payin_orders
        SET meta = jsonb_set(meta, '{gateway,checked_at}',
                             to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1
        AND meta->'gateway'->>'provider' = 'PAYU'
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND COALESCE(meta->'gateway'->>'final', '') = ''
@@ -170,7 +170,7 @@ export async function markPayuPayinFinal(txnid: string, payuStatus: string): Pro
   await rows("vendorGateway", `
     UPDATE vendor_payin_orders
        SET meta = jsonb_set(meta, '{gateway,final}', to_jsonb($2::text))
-     WHERE vendor = 'POOLPAY' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
+     WHERE vendor = 'KATANA' AND vendor_txn_id = $1 AND meta->'gateway'->>'provider' = 'PAYU'
   `, [txnid, payuStatus]).catch(() => {});
 }
 

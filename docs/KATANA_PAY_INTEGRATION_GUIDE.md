@@ -26,7 +26,7 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 |---|---|
 | `Key` | Public-ish identifier (`mk_test_…` / `mk_live_…`) sent with every request. |
 | `Salt` | **Secret.** Shown once at issue. Signs requests + verifies callbacks. Server-side only. |
-| `Scheme` | `HMAC_SHA256` for every new pair. Pairs issued earlier with `PAYU_SHA512` keep working until regenerated. |
+| `Scheme` | `HMAC_SHA256` for every new pair. Pairs issued earlier with the legacy `SHA512` scheme keep working until regenerated. |
 
 > Keep each Salt safe. Lost it → regenerate that pair, which **invalidates only that pair** (the other mode is untouched). One active Key per mode.
 
@@ -40,6 +40,21 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 
 > **Your Key + Salt is the only credential on these endpoints.** Treat Salt disclosure as a full compromise: regenerate immediately and reconcile every order created in the interim.
 
+### Pay-in flows: P2P and Intent
+
+Katana takes pay-ins on two flows, and your account is set up for **P2P**, **Intent** or **Both**:
+
+| Flow | How the customer pays | Order API | Status |
+|---|---|---|---|
+| **P2P** | A UPI link or QR that pays the receiving UPI ID directly. Confirmed by the bank credit. | `POST /api/v1/p2p/order` | `GET /api/v1/p2p/order/{id}` |
+| **Intent** | The payment is issued and confirmed by the payment gateway. | `POST /api/v1/intent/order` | `GET /api/v1/intent/order/{id}` |
+
+All three order APIs take the **same request**, the **same signature** and return the **same response**. The general `/api/v1/katana-pay/order` uses the flow selected for your account, so an existing integration keeps working unchanged. Call a flow's own API when you want that flow by name. The response says which flow the order took in `"flow"` (`P2P` or `INTENT`).
+
+A flow your account is not set up for is refused with HTTP `409` and a `code`: `FLOW_NOT_ENABLED` (your account is on the other flow), `FLOW_NOT_SELECTED` (no flow has been selected yet) or `FLOW_NOT_READY` (the flow is selected but its setup is not complete). No order is created.
+
+The flow status APIs accept the order `id` or the flow reference (`P2P-000000123` / `INT-000000123`) and add `flow` and that reference to the usual status fields.
+
 ## 3. Create an order
 
 `POST /api/v1/katana-pay/order` with JSON. Idempotent on `txnid`.
@@ -51,7 +66,7 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 | `amount` | yes | Rupees, e.g. `"100"` / `"100.50"`. |
 | `hash` | yes | Signature (see §4). |
 | `productinfo` | no | Order description (signed). |
-| `firstname` | no | Customer name (PAYU signature). |
+| `firstname` | no | Customer name (legacy SHA512 signature). |
 | `email` | no | Customer email (signed). |
 | `phone` | no | Customer phone. |
 | `return_url` | no | Browser redirect after payment. |
@@ -68,7 +83,7 @@ The Key you sign with decides the mode — there is no mode field to send. Keys 
 ```
 `livemode` is `false` for an order created with a test Key. A `txnid` is unique per mode, so the same ref in test and live creates two separate orders.
 
-**Merchants paid on a gateway's payment page** (e.g. RubyVault, iSmartPay) get no UPI link: `deeplinks`, `upi_intent` and `qr_payload` are `null`, and the response adds `"gateway": "RUBYVAULT"` (whose page) and `"gateway_url"` (that page). Send the customer to `pay_url` as usual (it hands over to the gateway) or straight to `gateway_url`. The gateway's own limits apply, e.g. a minimum amount per payment.
+**Merchants paid on a gateway's payment page** get no UPI link: `deeplinks`, `upi_intent` and `qr_payload` are `null`, and the response adds `"gateway_url"` (the gateway's page). Send the customer to `pay_url` as usual (it hands over to the gateway) or straight to `gateway_url`. The gateway's own limits apply, e.g. a minimum amount per payment.
 
 Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`, `409` (the account can't take live payments yet: no gateway or receiving UPI ID set up), `502` (the gateway refused the order, e.g. below its minimum; no order created, retry with the same `txnid`).
 
@@ -79,7 +94,7 @@ Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 inval
 message = txnid + "|" + amount + "|" + productinfo + "|" + email
 hash    = HMAC_SHA256(key = KEY + SALT, message)        // lowercase hex
 ```
-**PAYU_SHA512** (only pairs issued before HMAC_SHA256 became the only scheme):
+**Legacy SHA512** (only pairs issued before HMAC_SHA256 became the only scheme):
 ```
 seq  = KEY|txnid|amount|productinfo|firstname|email|||||||||||SALT   // 5 udf + 5 reserved blanks
 hash = SHA512(seq)                                       // lowercase hex

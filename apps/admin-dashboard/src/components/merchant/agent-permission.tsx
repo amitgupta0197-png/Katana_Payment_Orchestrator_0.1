@@ -52,24 +52,24 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
     queryFn: async () => {
       const r = await fetch(`/api/merchants/${merchantId}/payment-config`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return (await r.json()) as { poolpay?: {
+      return (await r.json()) as { katana_pay?: {
         settlement_vpa?: string | null;
         settlement_vpas?: string[] | null;
       } };
     },
   });
   const [vpa, setVpa] = useState<string | null>(null);
-  const savedVpa = cfg.data?.poolpay?.settlement_vpa ?? "";
+  const savedVpa = cfg.data?.katana_pay?.settlement_vpa ?? "";
   const vpaValue = vpa ?? savedVpa;
-  const extraVpas = cfg.data?.poolpay?.settlement_vpas ?? [];
+  const extraVpas = cfg.data?.katana_pay?.settlement_vpas ?? [];
   const saveVpa = useMutation({
     mutationFn: async (next: string) => {
       const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        // settlement_vpa is nested under poolpay in the PATCH contract, and the schema is
+        // settlement_vpa is nested under katana_pay in the PATCH contract, and the schema is
         // .strict() — a flat field is rejected outright.
-        body: JSON.stringify({ poolpay: { settlement_vpa: next.trim() } }),
+        body: JSON.stringify({ katana_pay: { settlement_vpa: next.trim() } }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);
@@ -83,7 +83,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
     onError: (e: Error) => toast.error("Could not save VPA", { description: e.message }),
   });
 
-  // Additional VPAs. The whole list is sent on every change (the PATCH merges `poolpay`
+  // Additional VPAs. The whole list is sent on every change (the PATCH merges `katana_pay`
   // key by key, so a partial list would replace rather than extend it).
   const [newVpa, setNewVpa] = useState("");
   const [extraError, setExtraError] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
       const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ poolpay: { settlement_vpas: next } }),
+        body: JSON.stringify({ katana_pay: { settlement_vpas: next } }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);

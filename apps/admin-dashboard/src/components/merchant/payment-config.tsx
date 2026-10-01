@@ -2,7 +2,7 @@
 
 // Per-merchant payment config cards for the merchant window:
 //   - PaymentMethodsCard: toggle which collection methods the merchant may use
-//   - PoolPayConfigCard:  PoolPay (PG pay-in) settings for the merchant
+//   - KatanaPayConfigCard:  Katana Pay (PG pay-in) settings for the merchant
 // Both read/write /api/merchants/[id]/payment-config and share a query cache.
 
 import { useEffect, useState } from "react";
@@ -16,8 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-interface PoolPay { enabled?: boolean; pay_id?: string; settlement_vpa?: string; payee_name?: string; env?: string; notes?: string }
-interface Config { methods: string[]; enabled_methods: string[]; poolpay: PoolPay; blocked?: boolean }
+interface KatanaPayConfig { enabled?: boolean; pay_id?: string; settlement_vpa?: string; payee_name?: string; env?: string; notes?: string }
+interface Config { methods: string[]; enabled_methods: string[]; katana_pay: KatanaPayConfig; blocked?: boolean }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
 const METHOD_META: Record<string, { label: string; Icon: LucideIcon }> = {
@@ -121,14 +121,14 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
   );
 }
 
-export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
+export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
   const qc = useQueryClient();
   const q = useConfig(merchantId);
   const [form, setForm] = useState({ enabled: false, pay_id: "", settlement_vpa: "", payee_name: "", env: "SANDBOX", notes: "" });
 
   // Hydrate the form once config loads.
   useEffect(() => {
-    const pp = q.data?.poolpay;
+    const pp = q.data?.katana_pay;
     if (pp) setForm({
       enabled: !!pp.enabled, pay_id: pp.pay_id ?? "", settlement_vpa: pp.settlement_vpa ?? "", payee_name: pp.payee_name ?? "",
       env: pp.env ?? "SANDBOX", notes: pp.notes ?? "",
@@ -139,7 +139,7 @@ export function PoolPayConfigCard({ merchantId }: { merchantId: string }) {
     mutationFn: async () => {
       const r = await fetch(`/api/merchants/${merchantId}/payment-config`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poolpay: form }),
+        body: JSON.stringify({ katana_pay: form }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return (await r.json()) as Config;

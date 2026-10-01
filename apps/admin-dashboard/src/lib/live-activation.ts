@@ -4,7 +4,7 @@
 // ACTIVATED: an automatic checklist goes green, the banker requests activation, and a Super Admin
 // approves it. Until then nothing live can be created for that banker:
 //   - no live Checkout Key + Salt (issueCheckoutCreds) and no live TSP secret (rotateWebhookSecret)
-//   - no live order, from a key or from the dashboard (createPoolPayOrder, /api/pay, /api/checkout)
+//   - no live order, from a key or from the dashboard (createKatanaOrder, /api/pay, /api/checkout)
 //
 // GRANDFATHERED. A banker that already holds a live credential or has ever had a live order was
 // taking real payments before this existed. The first time such a banker is checked it is recorded
@@ -131,7 +131,7 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
     rows<{ stage: string; webhook_url: string | null }>("merchant",
       `SELECT stage, webhook_url FROM merchants WHERE merchant_code = $1`, [code]).catch(() => []),
     rows<{ vpa: string | null; vpas: unknown }>("merchant",
-      `SELECT poolpay->>'settlement_vpa' AS vpa, poolpay->'settlement_vpas' AS vpas
+      `SELECT katana_pay->>'settlement_vpa' AS vpa, katana_pay->'settlement_vpas' AS vpas
          FROM merchant_payment_config WHERE merchant_code = $1`, [code]).catch(() => []),
     rows("vendorGateway", `
       SELECT 1 FROM vendor_payin_orders

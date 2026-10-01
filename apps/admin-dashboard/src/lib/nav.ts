@@ -33,6 +33,9 @@ import {
   Briefcase,
   FileSpreadsheet,
   QrCode,
+  ArrowLeftRight,
+  Smartphone,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -98,6 +101,10 @@ export const navItems: NavItem[] = [
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
   { href: "/merchants",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
   { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
+  // Pay-in flows: the P2P / Intent / Both bifurcation, and one sub-module per flow.
+  { href: "/payin-flows",        label: "Pay-in Flows",    icon: ArrowLeftRight, status: "live", group: "Payment Management" },
+  { href: "/payin-flows/p2p",    label: "P2P Pay-ins",     icon: Smartphone,     status: "live", group: "Payment Management" },
+  { href: "/payin-flows/intent", label: "Intent Pay-ins",  icon: Building2,      status: "live", group: "Payment Management" },
   { href: "/qr-switch",        label: "QR Operations",   icon: QrCode,   status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR"] },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   // Personas match the /api/statements gate — a link to an endpoint the viewer is refused by
@@ -122,7 +129,7 @@ export const navItems: NavItem[] = [
   { href: "/pg-adapter", label: "PG Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/bank-adapter", label: "Bank Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/crypto-rail", label: "Crypto Rails", icon: Coins, status: "live", group: "Money Movement" },
-  { href: "/vendors/poolpay", label: "Katana Pay", icon: CreditCard, status: "live", group: "Money Movement" },
+  { href: "/vendors/katana", label: "Katana Pay", icon: CreditCard, status: "live", group: "Money Movement" },
   // Display name only — the rail code stays QUICKPAY in the DB, adapters and routes.
   { href: "/vendors/quickpay", label: "Vendor PG", icon: CreditCard, status: "live", group: "Money Movement" },
 

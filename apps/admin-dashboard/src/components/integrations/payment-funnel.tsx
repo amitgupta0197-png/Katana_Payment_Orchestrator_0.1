@@ -1,8 +1,8 @@
 "use client";
 
-// Shared PoolPay (Katana Pay) reconciliation funnel. One component renders the
+// Shared Katana Pay reconciliation funnel. One component renders the
 // same pipeline on the provider dashboard, the branch dashboard, and the admin
-// provider-detail Integration tab — all reading /api/integrations/poolpay/funnel.
+// provider-detail Integration tab — all reading /api/integrations/katana/funnel.
 //
 // Pass a scope:
 //   <PaymentFunnel />                        // caller's own scope (provider/branch/global)
@@ -53,8 +53,8 @@ export function PaymentFunnel({
   const suffix = qs.toString() ? `?${qs}` : "";
 
   const q = useQuery({
-    queryKey: ["poolpay-funnel", providerId ?? null, merchant ?? null, channel ?? null],
-    queryFn: async () => (await fetch(`/api/integrations/poolpay/funnel${suffix}`).then(async (r) => {
+    queryKey: ["katana-funnel", providerId ?? null, merchant ?? null, channel ?? null],
+    queryFn: async () => (await fetch(`/api/integrations/katana/funnel${suffix}`).then(async (r) => {
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || ("HTTP " + r.status));
       return d;

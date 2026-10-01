@@ -1,6 +1,6 @@
 // Per-merchant payment collection config:
 //   enabled_methods — which collection methods this merchant may use
-//   poolpay         — PoolPay (PG pay-in) settings for this merchant
+//   katana_pay      — Katana Pay settings for this banker (settlement UPI IDs, payee name, upstream override)
 //
 //   SUPER_ADMIN / PROVIDER — read + edit (PROVIDER scoped to mapped merchants)
 //   MERCHANT               — read own
@@ -19,7 +19,7 @@ const DEFAULT_METHODS: string[] = [...METHODS];
 const patchSchema = z.object({
   enabled_methods: z.array(z.enum(["UPI_INTENT", "UPI_COLLECT", "CARD", "NETBANKING", "WALLET", "QR", "CRYPTO"])).optional(),
   blocked: z.boolean().optional(),
-  poolpay: z.object({
+  katana_pay: z.object({
     enabled: z.boolean().optional(),
     pay_id: z.string().max(120).optional(),
     // The single payee a Katana Pay order is paid TO.
@@ -67,9 +67,9 @@ function bindPayeeName(cur: Record<string, unknown>, patch: Record<string, unkno
 
 async function readConfig(code: string) {
   const r = await rows<any>("merchant",
-    `SELECT enabled_methods, poolpay, COALESCE(blocked,false) AS blocked FROM merchant_payment_config WHERE merchant_code = $1`, [code]);
-  if (!r.length) return { enabled_methods: DEFAULT_METHODS, poolpay: { enabled: false } as Record<string, unknown>, blocked: false };
-  return { enabled_methods: r[0].enabled_methods ?? DEFAULT_METHODS, poolpay: r[0].poolpay ?? {}, blocked: r[0].blocked === true };
+    `SELECT enabled_methods, katana_pay, COALESCE(blocked,false) AS blocked FROM merchant_payment_config WHERE merchant_code = $1`, [code]);
+  if (!r.length) return { enabled_methods: DEFAULT_METHODS, katana_pay: { enabled: false } as Record<string, unknown>, blocked: false };
+  return { enabled_methods: r[0].enabled_methods ?? DEFAULT_METHODS, katana_pay: r[0].katana_pay ?? {}, blocked: r[0].blocked === true };
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -97,15 +97,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const cur = await readConfig(scope.code);
     const enabled_methods = body.enabled_methods ?? cur.enabled_methods;
-    const poolpay = body.poolpay ? bindPayeeName(cur.poolpay, body.poolpay) : cur.poolpay;
+    const katanaPay = body.katana_pay ? bindPayeeName(cur.katana_pay, body.katana_pay) : cur.katana_pay;
     const blocked = body.blocked ?? cur.blocked;
     await rows("merchant", `
-      INSERT INTO merchant_payment_config (merchant_code, enabled_methods, poolpay, blocked, updated_by, updated_at)
+      INSERT INTO merchant_payment_config (merchant_code, enabled_methods, katana_pay, blocked, updated_by, updated_at)
       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, now())
       ON CONFLICT (merchant_code) DO UPDATE
-        SET enabled_methods = EXCLUDED.enabled_methods, poolpay = EXCLUDED.poolpay,
+        SET enabled_methods = EXCLUDED.enabled_methods, katana_pay = EXCLUDED.katana_pay,
             blocked = EXCLUDED.blocked, updated_by = EXCLUDED.updated_by, updated_at = now()
-    `, [scope.code, JSON.stringify(enabled_methods), JSON.stringify(poolpay), blocked, g.session.email]);
-    return NextResponse.json({ methods: METHODS, enabled_methods, poolpay, blocked });
+    `, [scope.code, JSON.stringify(enabled_methods), JSON.stringify(katanaPay), blocked, g.session.email]);
+    return NextResponse.json({ methods: METHODS, enabled_methods, katana_pay: katanaPay, blocked });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

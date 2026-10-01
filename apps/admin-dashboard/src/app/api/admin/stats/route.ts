@@ -44,7 +44,7 @@ export async function GET() {
       `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM checkout_orders WHERE created_at >= $1 AND livemode = $2`, [todayIso, livemode]), [{ n: 0, gross: 0 }]),
     safe(rows<{ n: number }>("checkout",
       `SELECT COUNT(*)::int AS n FROM checkout_orders WHERE created_at >= $1 AND status IN ('FAILED','EXPIRED') AND livemode = $2`, [todayIso, livemode]), [{ n: 0 }]),
-    // Katana Pay (PoolPay) pay-ins are tracked in vendor_payin_orders — include them
+    // Katana Pay pay-ins are tracked in vendor_payin_orders — include them
     // so the "today" KPIs reflect S2S/QR pay-ins, not just checkout-gateway orders.
     safe(rows<{ n: number; gross: number }>("vendorGateway",
       `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount)::float,0) AS gross FROM vendor_payin_orders WHERE created_at >= $1 AND livemode = $2`, [todayIso, livemode]), [{ n: 0, gross: 0 }]),

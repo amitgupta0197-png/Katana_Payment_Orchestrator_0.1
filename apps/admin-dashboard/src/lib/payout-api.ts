@@ -26,7 +26,7 @@ import { recordEvent } from "@/lib/fifo";
 import { fromMinor } from "@/lib/money";
 import { resolveCheckoutKey, getCheckoutCreds, type CheckoutCreds } from "@/lib/merchant-checkout";
 import { isLiveActivated } from "@/lib/live-activation";
-import { signPoolPay } from "@/lib/provider-integration";
+import { signKatanaHash } from "@/lib/katana-pay";
 import { enqueue, dispatchPending } from "@/lib/webhook-outbox";
 
 export function payoutSignature(creds: CheckoutCreds, fields: (string | null | undefined)[]): string {
@@ -161,7 +161,7 @@ export async function sendPayoutCallback(orderId: string): Promise<{ sent: boole
     RESPONSE_DATE_TIME: new Date().toISOString(),
   };
   if (!view.livemode) payload.LIVEMODE = "false";
-  const body = { ...payload, HASH: signPoolPay(payload, creds.salt) };
+  const body = { ...payload, HASH: signKatanaHash(payload, creds.salt) };
 
   try {
     const outboxId = await enqueue({

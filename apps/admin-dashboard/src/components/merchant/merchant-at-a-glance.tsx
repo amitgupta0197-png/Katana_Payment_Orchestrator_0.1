@@ -119,7 +119,7 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
     queryFn: async () => {
       const r = await fetch(`/api/merchants/${merchantId}/payment-config`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return (await r.json()) as { poolpay?: { settlement_vpa?: string | null } };
+      return (await r.json()) as { katana_pay?: { settlement_vpa?: string | null } };
     },
   });
   const live = useLiveActivation(merchantId);
@@ -140,7 +140,7 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
 
   const devs = devices.data?.devices ?? [];
   const onlineDevs = devs.filter((d) => d.online && d.permitted).length;
-  const vpa = config.data?.poolpay?.settlement_vpa;
+  const vpa = config.data?.katana_pay?.settlement_vpa;
   const liveStatus = live.data?.status;
 
   const lights: Light[] = [

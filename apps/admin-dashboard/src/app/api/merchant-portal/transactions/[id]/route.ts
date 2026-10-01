@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { merchantSafeChannel, seesGatewayNames, stripGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
        WHERE order_id = $1::uuid
        ORDER BY occurred_at ASC
     `, [order.id]).catch(() => []);
+
+    // A provider never sees which gateway took a payment, nor the gateway's own words
+    // (lib/merchant-safe): names become labels and the raw gateway payloads stay with operators.
+    if (!seesGatewayNames(s.persona)) {
+      if (order.selected_rail) order.selected_rail = merchantSafeChannel(order.selected_rail);
+      if (detail) {
+        detail.provider = merchantSafeChannel(detail.provider);
+        if (typeof detail.error_message === "string") detail.error_message = stripGatewayNames(detail.error_message);
+        detail.udf = null;
+      }
+      for (const t of timeline) {
+        if (typeof t.reason === "string") t.reason = stripGatewayNames(t.reason);
+        t.payload = null;
+      }
+    }
 
     return NextResponse.json({ order, detail, timeline });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
