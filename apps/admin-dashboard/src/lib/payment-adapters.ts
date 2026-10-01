@@ -65,7 +65,7 @@ export interface PaymentAdapter {
 // This lets us drive every BRD state without a real provider.
 function sandboxOutcome(provider: string, req: ChargeRequest): ChargeResult {
   const slot = Number(req.amountMinor % 100n);
-  const baseLatency = provider === "POOLPAY" ? 230 : provider === "QUICKPAY" ? 410 : 200;
+  const baseLatency = provider === "KATANA" ? 230 : provider === "QUICKPAY" ? 410 : 200;
   const responseTimeMs = baseLatency + (slot % 50);
   const providerTxnId = `${provider.toLowerCase()}_${req.txnId.slice(-12)}`;
 
@@ -116,7 +116,7 @@ function makeAdapter(code: string): PaymentAdapter {
 }
 
 const ADAPTERS = new Map<string, PaymentAdapter>([
-  ["POOLPAY",  makeAdapter("POOLPAY")],
+  ["KATANA",   makeAdapter("KATANA")],
   ["QUICKPAY", makeAdapter("QUICKPAY")],
   ["CASHFREE", makeAdapter("CASHFREE")],
   ["PAYU",     makeAdapter("PAYU")],

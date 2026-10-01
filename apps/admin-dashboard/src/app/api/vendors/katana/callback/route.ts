@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const sig = req.headers.get("x-signature");
     if (!ts || !sig)
       return NextResponse.json({ error: "missing x-timestamp / x-signature headers" }, { status: 401 });
-    const check = verifySignature({ secret: vendorSecret(process.env.VENDOR_SECRET_KATANA ? "katana" : "poolpay"), hash: payloadHash(raw), timestamp: ts, signature: sig });
+    const check = verifySignature({ secret: vendorSecret("katana"), hash: payloadHash(raw), timestamp: ts, signature: sig });
     if (!check.ok)
       return NextResponse.json({ error: "callback rejected", reason: check.reason }, { status: 401 });
   }
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     const r = await confirmKatanaOrder({
       orderRef: ref,
       merchantId: body.merchant_code ?? null,
-      // VENDOR_SECRET_POOLPAY is a live gateway secret: this callback may only confirm live orders.
+      // VENDOR_SECRET_KATANA is a live secret: this callback may only confirm live orders.
       livemode: true,
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,

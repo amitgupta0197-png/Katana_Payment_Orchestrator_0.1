@@ -49,8 +49,7 @@ Katana takes pay-ins on two flows, and every merchant is explicitly on one: P2P 
 
 ## Naming: the pay-in product is Katana Pay
 Katana's own pay-in product is **Katana Pay**: `vendor = 'KATANA'` on `vendor_payin_orders`, `merchant_payment_config.katana_pay`, `lib/katana-pay.ts` (order core), `lib/katana-order.ts` (create / confirm), `/api/vendors/katana/*`, `/vendors/katana`. "PoolPay" was a name carried over from the BRD; do not use it for anything new.
-- The PoolPay upstream integration and its gateway connectors were removed on 2026-10-01 (never used in production).
-- Two leftovers still carry the old name and need a data migration to change: the routing engine's `poolpay` rail rows with their `POOLPAY` adapter code and `*.poolpay` ledger accounts, and the server setting `VENDOR_SECRET_POOLPAY`.
+- The upstream integration and gateway connectors that carried the old name were removed on 2026-10-01 (never used in production), and the routing rail, its adapter code and ledger accounts are `katana` / `KATANA`. The callback secret setting is `VENDOR_SECRET_KATANA`.
 
 ## Testing
 - Unit tests: `go test ./...` per service, `pnpm test` for Node.js

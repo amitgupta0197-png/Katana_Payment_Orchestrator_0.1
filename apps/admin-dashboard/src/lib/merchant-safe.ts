@@ -109,8 +109,7 @@ export function seesGatewayNames(persona: string | null | undefined): boolean {
 export function merchantSafeChannel(channel: string | null | undefined): string {
   const c = (channel ?? "").trim();
   if (!c || c === "—") return "—";
-  // Katana's own rail. POOLPAY is the code the routing engine's rails still carry for it.
-  if (c.toUpperCase() === "KATANA" || c.toUpperCase() === "POOLPAY") return "Katana Pay";
+  if (c.toUpperCase() === "KATANA") return "Katana Pay";   // Katana's own rail
   if (c.toUpperCase() === "DIRECT") return "Direct";
   return namesGateway(c) ? "Gateway" : c;
 }

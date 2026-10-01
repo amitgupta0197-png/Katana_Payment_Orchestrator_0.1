@@ -20,7 +20,7 @@ export interface Integration {
 
 export const INTEGRATIONS: Integration[] = [
   // PG / payin
-  { code: "POOLPAY",   name: "Katana Pay",     category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://poolpay/live/secret", webhook_url: "/api/vendors/katana/callback" },
+  { code: "KATANA",    name: "Katana Pay",     category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://katana/live/secret", webhook_url: "/api/vendors/katana/callback" },
   { code: "QUICKPAY",  name: "Vendor PG",      category: "PG (Pay-in)", status: "implemented", secret_ref: "vault://quickpay/live/secret", webhook_url: "/api/vendors/quickpay/callback" },
   { code: "RAZORPAY",  name: "Razorpay",       category: "PG (Pay-in)", status: "scaffold" },
   { code: "PAYU",      name: "PayU",           category: "PG (Pay-in)", status: "scaffold" },
@@ -30,7 +30,7 @@ export const INTEGRATIONS: Integration[] = [
   { code: "RZPX",      name: "RazorpayX Payouts",   category: "Bank Payout", status: "scaffold" },
   { code: "CF_PO",     name: "Cashfree Payouts",    category: "Bank Payout", status: "scaffold" },
   { code: "ICICI_CEC", name: "ICICI CE-Connect",    category: "Bank Payout", status: "not_started" },
-  { code: "POOLPAY_PO",name: "Katana Pay Payout",   category: "Bank Payout", status: "implemented" },
+  { code: "KATANA_PO", name: "Katana Pay Payout",   category: "Bank Payout", status: "implemented" },
   { code: "QUICKPAY_PO",name:"Vendor PG Payout",    category: "Bank Payout", status: "implemented" },
 
   // Crypto VASPs
