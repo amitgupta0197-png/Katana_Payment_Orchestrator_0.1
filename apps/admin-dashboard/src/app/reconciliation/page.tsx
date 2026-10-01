@@ -13,7 +13,7 @@ import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 
 interface Break {
   id: string; run_id: string; reference: string; break_type: string;
-  sources_present: string[]; amount: number; currency: string; delta: number;
+  sources_present: string | null; amount: number; currency: string; delta: number;
   status: string; assignee: string; opened_at: string; resolved_at?: string;
 }
 
@@ -28,7 +28,7 @@ export default function ReconciliationPage() {
   const cols: Column<Break>[] = [
     { key: "reference", header: "Ref", render: (r) => <span className="font-mono text-xs">{r.reference}</span> },
     { key: "break_type", header: "Type", render: (r) => <Badge variant="warning">{r.break_type}</Badge> },
-    { key: "sources_present", header: "Sources", render: (r) => <span className="text-xs">{(r.sources_present ?? []).join(", ") || "—"}</span> },
+    { key: "sources_present", header: "Sources", render: (r) => <span className="text-xs">{r.sources_present || "—"}</span> },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount, r.currency)}</span> },
     { key: "delta", header: "Δ", render: (r) => <span className="tabular-nums font-medium">{formatAmount(r.delta, r.currency)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
