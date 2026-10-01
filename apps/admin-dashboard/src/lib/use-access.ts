@@ -7,6 +7,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { Rights, Op } from "./access";
 import type { Persona } from "./auth";
+import { seesGatewayNames } from "@/lib/merchant-safe";
 
 interface AccessResponse { persona: Persona; rights: Record<string, Rights> }
 
@@ -32,6 +33,14 @@ const COL_FOR: Record<Op, keyof Rights> = {
 // SUPER_ADMIN bypass: if the persona is SUPER_ADMIN and the module isn't in
 // the matrix yet (e.g. a new feature ships before the matrix row is seeded),
 // default to true. Mirrors the server-side bypass in lib/access.ts → can().
+/**
+ * True for Katana staff, who see gateway names; false for a provider, merchant or banker
+ * session and while the session is still loading (lib/merchant-safe).
+ */
+export function useSeesGatewayNames(): boolean {
+  return seesGatewayNames(useAccess().data?.persona);
+}
+
 export function useCan(moduleCode: string, op: Op): boolean {
   const q = useAccess();
   if (!q.data) return false;

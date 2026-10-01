@@ -8,7 +8,6 @@ import { cashfreePayin } from "@/lib/payin-providers/cashfree";
 import { phonepePayin } from "@/lib/payin-providers/phonepe";
 import { paytmPayin } from "@/lib/payin-providers/paytm";
 import { ccavenuePayin } from "@/lib/payin-providers/ccavenue";
-import { poolpayPayin } from "@/lib/payin-providers/poolpay";
 import { rubyvaultPayin } from "@/lib/payin-providers/rubyvault";
 import { ismartpayPayin } from "@/lib/payin-providers/ismartpay";
 import { payuLinksPayin } from "@/lib/payin-providers/payu-links";
@@ -20,7 +19,6 @@ const CONNECTORS: Record<string, PayinConnector> = {
   PHONEPE: phonepePayin,
   PAYTM: paytmPayin,
   CCAVENUE: ccavenuePayin,
-  POOLPAY: poolpayPayin,
   RUBYVAULT: rubyvaultPayin,
   ISMARTPAY: ismartpayPayin,
 };

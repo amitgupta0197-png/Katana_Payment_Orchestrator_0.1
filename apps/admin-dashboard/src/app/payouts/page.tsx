@@ -161,7 +161,7 @@ export default function PayoutsPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4" /> Raise payout</CardTitle><CardDescription>Whitelisted beneficiary only. High-value goes to maker-checker. Merchants with a connected payout gateway (PayU, RazorpayX, Cashfree, Paytm) are paid through it.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4" /> Raise payout</CardTitle><CardDescription>Whitelisted beneficiary only. High-value goes to maker-checker. Merchants with a connected payout gateway are paid through it.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             <select className="h-9 w-full rounded-md border bg-transparent px-2 text-sm" value={payout.beneficiary_id} onChange={(e) => setPayout({ ...payout, beneficiary_id: e.target.value })}>
               <option value="">Select whitelisted beneficiary…</option>

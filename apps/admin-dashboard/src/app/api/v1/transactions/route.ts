@@ -2,13 +2,14 @@
 // (checkout_orders + vendor_payin_orders) in the canonical §4 shape.
 //   SUPER_ADMIN — all; PROVIDER — scoped to mapped merchants; MERCHANT — own.
 //
-// Query params: ?status=SUCCESS&provider=POOLPAY&merchant=M-KUSH&q=<search>
+// Query params: ?status=SUCCESS&provider=KATANA&merchant=M-KUSH&q=<search>
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { checkoutToUniversal, payinToUniversal, normalizeStatus, type UniversalTxn } from "@/lib/universal-txn";
 import { getLivemode } from "@/lib/mode";
+import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,8 @@ export async function GET(req: Request) {
     if (fStatus) { const want = normalizeStatus(fStatus); txns = txns.filter((t) => t.status === want); }
     if (fProvider) txns = txns.filter((t) => t.provider.toUpperCase() === fProvider.toUpperCase());
     if (fMerchant) txns = txns.filter((t) => t.merchant_id === fMerchant);
+    // A provider or merchant never sees which gateway took a payment (lib/merchant-safe).
+    if (!seesGatewayNames(s.persona)) for (const t of txns) t.provider = merchantSafeChannel(t.provider);
     if (q) txns = txns.filter((t) =>
       t.katana_order_id.toLowerCase().includes(q) || (t.provider_txn_id || "").toLowerCase().includes(q) ||
       (t.utr || "").toLowerCase().includes(q) || t.merchant_id.toLowerCase().includes(q) ||

@@ -14,6 +14,7 @@ import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { runCheckout } from "@/lib/checkout-core";
 import { getLivemode } from "@/lib/mode";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
+import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,8 @@ export async function GET(req: Request) {
        WHERE ${where}
        ORDER BY created_at DESC LIMIT ${limit}
     `, params);
+    // A provider or merchant never sees which gateway took a payment (lib/merchant-safe).
+    if (!seesGatewayNames(s.persona)) for (const o of orders) if (o.selected_rail) o.selected_rail = merchantSafeChannel(o.selected_rail);
     return NextResponse.json({ orders });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

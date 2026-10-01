@@ -9,7 +9,7 @@
 // (txn-alert, heartbeat, capture-rrn, email-config, agent-debug) using `x-sandbox: 1` — it
 // does NOT yet sign its requests. So we split the gate in two:
 //
-//   • CALLBACK routes (real PoolPay / vendor gateways) always send a real signature; only
+//   • CALLBACK routes (vendor gateways) always send a real signature; only
 //     the in-house tester ever used x-sandbox. `sandboxAllowed()` closes the bypass in
 //     production unconditionally — safe to deploy now.
 //

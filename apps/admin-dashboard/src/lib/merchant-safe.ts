@@ -1,6 +1,6 @@
 // RULE: a merchant never learns which payment gateway sits behind Katana.
 //
-// PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, PoolPay, RubyVault, iSmartPay and any
+// PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, RubyVault, iSmartPay and any
 // gateway added later are Katana's own business. Their names, their error text, their support
 // addresses and their ids must not reach a merchant: not in an API response, not in a callback,
 // not on the hosted pay page, not in the provider or branch portal, not in the public guides.
@@ -23,7 +23,7 @@ import { GATEWAYS } from "@/lib/pg-catalog";
 // "Cashfree Payments" is replaced whole, not left as "payment processor Payments".
 const NAMES = [...new Set([
   ...GATEWAYS.flatMap((g) => [g.name, g.name.split(" ")[0], g.id]),
-  "Airpay",
+  "Airpay", "Paytech",
 ])].sort((a, b) => b.length - a.length);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const NAME_SRC = NAMES.map(esc).join("|");
@@ -89,6 +89,14 @@ export function merchantSafeBody(body: Record<string, unknown>, where: string): 
   return out;
 }
 
+/**
+ * The signing scheme as a merchant sees it. The stored id of the older scheme is named after
+ * a gateway; a merchant gets a neutral id, and merchantSchemeIn maps it back.
+ */
+export function merchantSafeScheme<T extends string | null | undefined>(scheme: T): T | "SHA512_LEGACY" {
+  return scheme === "PAYU_SHA512" ? "SHA512_LEGACY" : scheme;
+}
+
 /** Staff see gateway names; every other persona is a merchant for the purposes of this rule. */
 export function seesGatewayNames(persona: string | null | undefined): boolean {
   return !!persona && !["PROVIDER", "MERCHANT", "BANKER"].includes(persona);
@@ -101,7 +109,7 @@ export function seesGatewayNames(persona: string | null | undefined): boolean {
 export function merchantSafeChannel(channel: string | null | undefined): string {
   const c = (channel ?? "").trim();
   if (!c || c === "—") return "—";
-  // Katana's own rail. POOLPAY is its stored name before vendorGateway 0031.
+  // Katana's own rail. POOLPAY is the code the routing engine's rails still carry for it.
   if (c.toUpperCase() === "KATANA" || c.toUpperCase() === "POOLPAY") return "Katana Pay";
   if (c.toUpperCase() === "DIRECT") return "Direct";
   return namesGateway(c) ? "Gateway" : c;

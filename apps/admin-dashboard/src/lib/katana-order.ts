@@ -5,8 +5,6 @@
 import { randomUUID } from "crypto";
 import { rows } from "@/lib/pg";
 import { buildUpiQuery, buildDeeplinks, genRrn, KATANA_TERMINAL, SANDBOX_PAYEE_VPA, type DeepLinks } from "@/lib/katana-pay";
-import { poolpayLive, createOrderRemote } from "@/lib/poolpay";
-import { resolvePoolPayConfig } from "@/lib/provider-integration";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { assertLiveActivated } from "@/lib/live-activation";
 import { getGatewayMid, payinProdId, payuKeySalt } from "@/lib/gateway-creds";
@@ -160,23 +158,16 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     ? saved?.name?.trim() || null : null;
   const mode = input.mode === "INTENT" ? "INTENT" : "QR";
 
-  // Cascade: resolve the effective upstream-gateway config for this branch — merchant
-  // override > provider integration config > env defaults. A provider configured
-  // (and PROD + secret) "auto-integrates" all of its branches: their orders sign
-  // and route with the provider's credentials with no per-branch setup.
-  const cfg = input.merchantId && livemode ? await resolvePoolPayConfig(input.merchantId).catch(() => null) : null;
-  const goLive = livemode && gatewayAllowed && (cfg?.live === true || poolpayLive());
-
   // PayU: a live order for a merchant with PayU Key + Salt gets its UPI intent from PayU, so the
   // customer pays PayU's collection account on the merchant's MID. A link built locally to the
   // merchant's own UPI ID is exactly what UPI apps decline. PayU then confirms the order
   // (lib/payu-result); the bank-credit matcher leaves these orders alone.
-  const payuMid = livemode && gatewayAllowed && !goLive && input.merchantId
+  const payuMid = livemode && gatewayAllowed && input.merchantId
     ? await getGatewayMid(input.merchantId).then(payuKeySalt).catch(() => null)
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
-  const connected = livemode && gatewayAllowed && !goLive && !payuMid && input.merchantId
+  const connected = livemode && gatewayAllowed && !payuMid && input.merchantId
     ? await gatewayPayinFor(input.merchantId).catch(() => null)
     : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
@@ -189,19 +180,9 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
 
-  // The upstream gateway when the cascade resolves to a live (PROD + secret) config or the
-  // global POOLPAY_MODE=live env is set; deterministic sandbox otherwise.
-  let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string, status = "PENDING";
-  if (goLive) {
-    const r = await createOrderRemote({
-      orderId, amount: input.amount, currency: input.currency,
-      customerVpa: input.customerVpa ?? undefined, customerPhone: input.customerPhone ?? undefined, note,
-    }, cfg ? {
-      baseUrl: cfg.baseUrl, secret: cfg.secret, payId: cfg.payId,
-      clientId: cfg.clientId, apiKey: cfg.apiKey, returnUrl: cfg.returnUrl,
-    } : undefined);
-    payId = r.payId; vendorTxnId = r.vendorTxnId; deeplinks = r.deeplinks; upiIntent = r.upiIntent; status = r.status || "PENDING";
-  } else if (payuMid) {
+  let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string;
+  const status = "PENDING";
+  if (payuMid) {
     // PayU refuses a reused txnid, so a replayed order ref must not reach PayU again.
     const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
     if (prior) return prior;
@@ -330,18 +311,14 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent
-    integration: !livemode ? { source: "test", env: "SANDBOX", provider_id: null, live: false }
-      : gateway ? { source: gateway.provider.toLowerCase(), env: gateway.env, provider_id: null, live: true } : cfg ? {
-      source: cfg.source,                  // merchant | provider | env
-      env: cfg.env,                        // SANDBOX | PROD
-      provider_id: cfg.providerId,
-      live: goLive,
-    } : { source: "env", env: goLive ? "PROD" : "SANDBOX", provider_id: null, live: goLive },
+    integration: !livemode ? { source: "test", env: "SANDBOX", live: false }
+      : gateway ? { source: gateway.provider.toLowerCase(), env: gateway.env, live: true }
+      : { source: "direct", env: "PROD", live: false },
   };
 
   // The collection rail, fixed here for the life of the order (vendorGateway 0029). Routing is
   // decided above, so the requested and the final channel are the same.
-  const payinChannel = classifyPayinOrder(gateway?.provider, goLive);
+  const payinChannel = classifyPayinOrder(gateway?.provider);
 
   const inserted = await rows<any>("vendorGateway", `
     INSERT INTO vendor_payin_orders
@@ -425,7 +402,7 @@ export interface ConfirmKatanaOrderInput {
   utr?: string | null;         // UTR/RRN from bank / scrape / screenshot / gateway
   note?: string | null;
   evidence: KatanaEvidence;
-  actor: string;               // ops email or "gateway:poolpay"
+  actor: string;               // ops email, or what confirmed it ("gateway:webhook", "device:…")
   settlementStatus?: string | null; // gateway settlement state, e.g. "SETTLED"
 }
 

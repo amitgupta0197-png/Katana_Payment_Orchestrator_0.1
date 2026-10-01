@@ -54,7 +54,8 @@ function CodeBlock({ children }: { children: string }) {
  * white-labelled, so the acquirer whose legacy hash format we reuse must not be named on a
  * merchant-facing screen. Never send this string anywhere — send the raw scheme.
  */
-const schemeLabel = (s: string) => (s === "PAYU_SHA512" ? "SHA-512 (legacy)" : s);
+const isLegacyScheme = (s: string) => s === "SHA512_LEGACY" || s === "PAYU_SHA512";
+const schemeLabel = (s: string) => (isLegacyScheme(s) ? "SHA-512 (legacy)" : s);
 
 export default function IntegrationPage() {
   const qc = useQueryClient();
@@ -105,7 +106,7 @@ export default function IntegrationPage() {
 # Response → { "pay_url": "${ep?.base_url ?? ""}/pay/<id>", ... }
 # Redirect the customer's browser to pay_url.`;
 
-  const signing = scheme === "PAYU_SHA512"
+  const signing = isLegacyScheme(scheme)
     ? `// Legacy SHA-512 format  (your scheme)
 hash = SHA512( key + "|" + txnid + "|" + amount + "|" + productinfo + "|" +
                firstname + "|" + email + "|||||||||||" + salt )   // lowercase hex`

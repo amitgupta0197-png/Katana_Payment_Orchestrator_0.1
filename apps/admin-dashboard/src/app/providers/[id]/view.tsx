@@ -35,7 +35,6 @@ import { InlineEdit } from "@/components/world-class/inline-edit";
 import { RowActions, ACT } from "@/components/world-class/row-actions";
 import { EmptyState } from "@/components/world-class/empty-state";
 import { ProviderOnboardMerchant } from "@/components/merchant/provider-onboard-merchant";
-import { IntegrationConfigCard } from "@/components/provider/integration-config-card";
 import { ProviderKycDocsCard } from "@/components/provider/kyc-docs-card";
 import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
@@ -420,9 +419,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
     )},
-    { key: "integration", label: "Integration", icon: Plug, content: (
+    { key: "integration", label: "Pay-in funnel", icon: Plug, content: (
       <div className="space-y-4">
-        <IntegrationConfigCard providerId={id} canEdit={canAdmin} />
         <PaymentFunnel
           providerId={id}
           title="Banker reconciliation funnel"

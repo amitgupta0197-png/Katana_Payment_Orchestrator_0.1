@@ -1,6 +1,6 @@
 // Per-merchant payment collection config:
 //   enabled_methods — which collection methods this merchant may use
-//   katana_pay      — Katana Pay settings for this banker (settlement UPI IDs, payee name, upstream override)
+//   katana_pay      — Katana Pay settings for this banker (settlement UPI IDs, payee name)
 //
 //   SUPER_ADMIN / PROVIDER — read + edit (PROVIDER scoped to mapped merchants)
 //   MERCHANT               — read own
@@ -20,8 +20,6 @@ const patchSchema = z.object({
   enabled_methods: z.array(z.enum(["UPI_INTENT", "UPI_COLLECT", "CARD", "NETBANKING", "WALLET", "QR", "CRYPTO"])).optional(),
   blocked: z.boolean().optional(),
   katana_pay: z.object({
-    enabled: z.boolean().optional(),
-    pay_id: z.string().max(120).optional(),
     // The single payee a Katana Pay order is paid TO.
     settlement_vpa: z.string().max(120).optional(),
     // The settlement VPA's name EXACTLY as registered with the bank (what a UPI app shows as
@@ -32,7 +30,6 @@ const patchSchema = z.object({
     // here so every reader can compare them directly against a captured payee_vpa.
     settlement_vpas: z.array(z.string().max(120)).max(20).optional()
       .transform((v) => v && [...new Set(v.map((s) => s.trim().toLowerCase()).filter(Boolean))]),
-    env: z.enum(["SANDBOX", "PROD"]).optional(),
     notes: z.string().max(500).optional(),
   }).strict().optional(),
 });
@@ -68,7 +65,7 @@ function bindPayeeName(cur: Record<string, unknown>, patch: Record<string, unkno
 async function readConfig(code: string) {
   const r = await rows<any>("merchant",
     `SELECT enabled_methods, katana_pay, COALESCE(blocked,false) AS blocked FROM merchant_payment_config WHERE merchant_code = $1`, [code]);
-  if (!r.length) return { enabled_methods: DEFAULT_METHODS, katana_pay: { enabled: false } as Record<string, unknown>, blocked: false };
+  if (!r.length) return { enabled_methods: DEFAULT_METHODS, katana_pay: {} as Record<string, unknown>, blocked: false };
   return { enabled_methods: r[0].enabled_methods ?? DEFAULT_METHODS, katana_pay: r[0].katana_pay ?? {}, blocked: r[0].blocked === true };
 }
 

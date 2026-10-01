@@ -2,7 +2,7 @@
 
 // Per-merchant payment config cards for the merchant window:
 //   - PaymentMethodsCard: toggle which collection methods the merchant may use
-//   - KatanaPayConfigCard:  Katana Pay (PG pay-in) settings for the merchant
+//   - KatanaPayConfigCard:  the banker's settlement UPI ID and payee name
 // Both read/write /api/merchants/[id]/payment-config and share a query cache.
 
 import { useEffect, useState } from "react";
@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-interface KatanaPayConfig { enabled?: boolean; pay_id?: string; settlement_vpa?: string; payee_name?: string; env?: string; notes?: string }
+interface KatanaPayConfig { settlement_vpa?: string; payee_name?: string; notes?: string }
 interface Config { methods: string[]; enabled_methods: string[]; katana_pay: KatanaPayConfig; blocked?: boolean }
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -124,15 +124,12 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
 export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
   const qc = useQueryClient();
   const q = useConfig(merchantId);
-  const [form, setForm] = useState({ enabled: false, pay_id: "", settlement_vpa: "", payee_name: "", env: "SANDBOX", notes: "" });
+  const [form, setForm] = useState({ settlement_vpa: "", payee_name: "", notes: "" });
 
   // Hydrate the form once config loads.
   useEffect(() => {
     const pp = q.data?.katana_pay;
-    if (pp) setForm({
-      enabled: !!pp.enabled, pay_id: pp.pay_id ?? "", settlement_vpa: pp.settlement_vpa ?? "", payee_name: pp.payee_name ?? "",
-      env: pp.env ?? "SANDBOX", notes: pp.notes ?? "",
-    });
+    if (pp) setForm({ settlement_vpa: pp.settlement_vpa ?? "", payee_name: pp.payee_name ?? "", notes: pp.notes ?? "" });
   }, [q.data]);
 
   const m = useMutation({
@@ -153,20 +150,11 @@ export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
           <CardTitle className="text-base">Katana Pay configuration</CardTitle>
-          <CardDescription>PG pay-in (UPI) settings for this branch.</CardDescription>
+          <CardDescription>The UPI ID this banker is paid on for P2P pay-ins.</CardDescription>
         </div>
-        <Badge variant={form.enabled ? "success" : "default"}>{form.enabled ? "enabled" : "disabled"}</Badge>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-          Enable Katana Pay collection for this banker
-        </label>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Katana Pay ID</Label>
-            <Input value={form.pay_id} onChange={(e) => setForm({ ...form, pay_id: e.target.value })} placeholder="pay_…" />
-          </div>
           <div className="space-y-1.5">
             <Label>Settlement VPA</Label>
             <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="banker@upi" />
@@ -177,17 +165,6 @@ export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
                 don't match, so it must be the bank's name for the Settlement VPA — not a brand. */}
             <Input value={form.payee_name} onChange={(e) => setForm({ ...form, payee_name: e.target.value })} placeholder="exactly as your UPI app shows it" />
             <p className="text-xs text-[color:var(--color-text-muted)]">Cleared automatically if the Settlement VPA changes.</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Environment</Label>
-            <select
-              className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-              value={form.env}
-              onChange={(e) => setForm({ ...form, env: e.target.value })}
-            >
-              <option value="SANDBOX">SANDBOX</option>
-              <option value="PROD">PROD</option>
-            </select>
           </div>
           <div className="space-y-1.5">
             <Label>Notes <span className={`font-normal ${MUTED}`}>(optional)</span></Label>

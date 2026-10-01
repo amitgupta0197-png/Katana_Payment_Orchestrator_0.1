@@ -33,7 +33,7 @@ Katana is a payment orchestration platform built on a microservices architecture
 - Git strategy: trunk-based development with short-lived feature branches
 
 ## Hard rule: never name a payment gateway to a merchant
-The gateways behind Katana (PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, PoolPay, RubyVault, iSmartPay, and any added later) are internal. Their names, ids, error text and support addresses must never reach a merchant.
+The gateways behind Katana (PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, RubyVault, iSmartPay, and any added later) are internal. Their names, ids, error text and support addresses must never reach a merchant.
 - "Merchant" means everyone who is not Katana staff: any request signed with a merchant Key + Salt, PROVIDER / MERCHANT / BANKER sessions, the customer on the hosted pay page, callbacks, exports, and the public guides and API docs.
 - Super Admin and other staff screens keep the real names; operators need them.
 - Keep internal messages precise. Scrub at the boundary with `apps/admin-dashboard/src/lib/merchant-safe.ts`: `merchantSafeBody` / `merchantSafeError` for API responses, `merchantSafeChannel` / `stripGatewayNames` for labels, `seesGatewayNames(persona)` to tell staff from merchants.
@@ -47,13 +47,14 @@ Katana takes pay-ins on two flows, and every merchant is explicitly on one: P2P 
 - Tables: `vendor_payin_orders` is the shared core; `katana_p2p_orders` (`P2P-…`) and `katana_intent_orders` (`INT-…`) hold each flow's own columns and are maintained by a trigger, never by application writes.
 - Admin UI: Payment Management → Pay-in Flows, P2P Pay-ins, Intent Pay-ins.
 
-## Naming: Katana Pay is ours, PoolPay is a gateway
-Katana's own pay-in product is **Katana Pay**: `vendor = 'KATANA'` on `vendor_payin_orders`, `merchant_payment_config.katana_pay`, `lib/katana-pay.ts` (order core), `lib/katana-order.ts` (create / confirm), `/api/vendors/katana/*`, `/vendors/katana`. Never call it PoolPay.
-- "PoolPay" now means only the upstream gateway of that name (`lib/poolpay.ts`, `lib/payin-providers/poolpay.ts`, `lib/payout-providers/poolpay.ts`, `/api/gateway/poolpay/*`, the `POOLPAY_*` and `VENDOR_SECRET_POOLPAY` environment names, the routing engine's `POOLPAY` rail codes). Like every gateway it is never named to a merchant.
-- `/api/v1/poolpay/order` and `/api/vendors/poolpay/callback` are kept as aliases for existing integrations; do not add to them.
+## Naming: the pay-in product is Katana Pay
+Katana's own pay-in product is **Katana Pay**: `vendor = 'KATANA'` on `vendor_payin_orders`, `merchant_payment_config.katana_pay`, `lib/katana-pay.ts` (order core), `lib/katana-order.ts` (create / confirm), `/api/vendors/katana/*`, `/vendors/katana`. "PoolPay" was a name carried over from the BRD; do not use it for anything new.
+- The PoolPay upstream integration and its gateway connectors were removed on 2026-10-01 (never used in production).
+- Two leftovers still carry the old name and need a data migration to change: the routing engine's `poolpay` rail rows with their `POOLPAY` adapter code and `*.poolpay` ledger accounts, and the server setting `VENDOR_SECRET_POOLPAY`.
 
 ## Testing
 - Unit tests: `go test ./...` per service, `pnpm test` for Node.js
+- Admin dashboard: `pnpm test` (pure rules, `src/lib/__tests__`) and `pnpm test:integration` (`tests/integration`, writes to the database in `.env.local` and refuses to run unless it is local)
 - Integration tests: `go test -tags=integration ./...` (requires Docker deps)
 - Proto linting: `buf lint` in proto/ directory
 - Breaking change detection: `buf breaking` against main branch

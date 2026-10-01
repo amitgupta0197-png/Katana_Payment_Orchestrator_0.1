@@ -46,7 +46,7 @@ export function statusVariant(status: string | null | undefined): StatusVariant 
 }
 
 // Display label for a payment rail / vendor code. Katana's own pay-in is stored as "KATANA"
-// (vendorGateway 0031); the routing engine's rail codes still read POOLPAY / POOLPAY_PO.
+// (vendorGateway 0031); the routing engine's rail rows still carry POOLPAY / POOLPAY_PO.
 // Unknown codes pass through.
 // Display names for rail codes. The code is the contract (stored in rows, sent to
 // vendors); this map is the only place the customer-facing name is decided, so a

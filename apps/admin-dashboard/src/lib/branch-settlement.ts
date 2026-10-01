@@ -8,7 +8,7 @@ import { branchKeysForMerchant } from "@/lib/provider-integration";
 export const SETTLEMENT_STATUSES = ["REQUESTED", "UTR_SUBMITTED", "VERIFIED", "REJECTED", "REVIEW", "CANCELLED"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
 
-// PoolPay purpose codes by amount range (Withdrawal guide annexure). Used to
+// Payout purpose codes by amount range. Used to
 // default the settlement purpose; the provider can override.
 export function purposeForAmount(amount: number): string {
   if (amount > 30000) return "VendorPayouts";
@@ -32,12 +32,13 @@ export async function branchCollectedSuccess(merchantKey: string): Promise<numbe
   return r[0]?.total ?? 0;
 }
 
-// Sum of already-VERIFIED settlements for a (provider, branch) pair.
+// Sum of settlements the provider has confirmed receiving for a (provider, branch) pair.
+// RECONCILED is the step after VERIFIED, so it counts too (as it does in lib/banker-settled).
 export async function branchVerifiedSettled(providerId: string, merchantKey: string): Promise<number> {
   const r = await rows<{ total: number }>("provider", `
     SELECT COALESCE(SUM(amount),0)::float AS total
       FROM provider_branch_settlements
-     WHERE provider_id = $1::uuid AND merchant_key = $2 AND status = 'VERIFIED'
+     WHERE provider_id = $1::uuid AND merchant_key = $2 AND status IN ('VERIFIED','RECONCILED')
   `, [providerId, merchantKey]).catch(() => [{ total: 0 }]);
   return r[0]?.total ?? 0;
 }

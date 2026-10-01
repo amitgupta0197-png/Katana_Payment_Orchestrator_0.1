@@ -2,7 +2,7 @@
 // PROVIDER-mapped). Runs a payment for this merchant so an operator can verify
 // the integration without any external checkout page. Secrets stay server-side.
 //   redirect=false → runs the shared checkout pipeline, returns the JSON result.
-//   redirect=true  → returns { payu_url, fields } for the browser to auto-submit
+//   redirect=true  → returns { form_url, fields } for the browser to auto-submit
 //                    to PayU's hosted page (uses the merchant's stored PayU creds), or
 //                    { html } that opens another gateway's hosted checkout.
 //   intent=true    → asks the merchant's gateway for a UPI intent.
@@ -78,7 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (body.intent) {
       const gw = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gw) {
-        return json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
       const r = await issuePayuIntent({
@@ -95,7 +95,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (body.redirect) {
       const gw = payuKeySalt(await getGatewayMid(merchantCode));
       if (!gw) {
-        return json({ error: "PayU gateway credentials not configured for this merchant" }, { status: 400 });
+        return json({ error: "no pay-in gateway is connected for this merchant" }, { status: 400 });
       }
       const amountMinor = toMinor(amountStr, currency);
       const txnid = "TEST-" + Date.now();
@@ -115,7 +115,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         firstname: body.firstname, email: body.email, phone: body.phone,
         surl: ret, furl: ret,
       });
-      return json({ mode: "redirect", payu_url: payuPaymentUrl(gw.env), fields });
+      return json({ mode: "redirect", form_url: payuPaymentUrl(gw.env), fields });
     }
 
     // simulated: a test run must never post ledger, commission or reserve rows, or send the

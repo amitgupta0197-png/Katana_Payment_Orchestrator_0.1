@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { merchantSafeChannel, seesGatewayNames, stripGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         FROM routing_decisions WHERE order_id = $1::uuid OR txn_id = $2
         ORDER BY decided_at DESC LIMIT 1
     `, [order[0].id, order[0].txn_id]).catch(() => []);
+
+    // A provider or merchant never sees which gateway took a payment, nor its own words
+    // (lib/merchant-safe): names become labels and the routing decision stays with operators.
+    if (!seesGatewayNames(s.persona)) {
+      if (order[0].selected_rail) order[0].selected_rail = merchantSafeChannel(order[0].selected_rail);
+      for (const c of callbacks) { c.vendor = merchantSafeChannel(c.vendor); c.process_error = stripGatewayNames(c.process_error ?? ""); }
+      for (const a of attempts) { a.provider = merchantSafeChannel(a.provider); a.error_message = stripGatewayNames(a.error_message ?? ""); }
+      for (const t of transitions) t.reason = stripGatewayNames(t.reason ?? "");
+      return NextResponse.json({ order: order[0], events, callbacks, journals, attempts, transitions, route: null });
+    }
 
     return NextResponse.json({
       order: order[0], events, callbacks, journals,

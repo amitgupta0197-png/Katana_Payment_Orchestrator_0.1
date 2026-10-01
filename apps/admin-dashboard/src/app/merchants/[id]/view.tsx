@@ -34,6 +34,7 @@ import { JourneyBar, StatusLights } from "@/components/merchant/merchant-at-a-gl
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 import { PayinFlowCard } from "@/components/payin/flow";
+import { useSeesGatewayNames } from "@/lib/use-access";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -358,7 +359,9 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
     },
   });
   const gwStatus = (gw.data as { status?: { configured: boolean; gateway?: string; gateway_name?: string } } | undefined)?.status;
-  const gwName = gwStatus?.configured ? gwStatus.gateway_name ?? "gateway" : "PayU";
+  // Only staff are told which gateway it is (lib/merchant-safe); a provider sees "the gateway".
+  const named = useSeesGatewayNames();
+  const gwName = !named ? "the gateway" : gwStatus?.configured ? gwStatus.gateway_name ?? "gateway" : "PayU";
   const hasIntent = gwStatus?.gateway !== "CCAVENUE" && gwStatus?.gateway !== "RUBYVAULT" && gwStatus?.gateway !== "ISMARTPAY";
   const [amount, setAmount] = useState("100.00");
   const [email, setEmail] = useState("buyer@example.com");
@@ -386,7 +389,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Failed");
-      return d as { payu_url?: string; fields?: Record<string, string>; html?: string };
+      return d as { form_url?: string; fields?: Record<string, string>; html?: string };
     },
     onSuccess: (d) => {
       if (d.html) {
@@ -394,9 +397,9 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
         document.open(); document.write(d.html); document.close();
         return;
       }
-      if (!d.payu_url || !d.fields) return;
+      if (!d.form_url || !d.fields) return;
       const f = document.createElement("form");
-      f.method = "post"; f.action = d.payu_url;
+      f.method = "post"; f.action = d.form_url;
       for (const [k, v] of Object.entries(d.fields)) {
         const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i);
       }
@@ -470,6 +473,7 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
 }
 
 export default function MerchantDetailView({ id }: { id: string }) {
+  const named = useSeesGatewayNames();
   const merchantQ = useQuery({
     queryKey: ["merchant", id],
     queryFn: async () => {
@@ -540,7 +544,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
     { key: "overview", label: "Overview", icon: LayoutGrid },
     { key: "payments", label: "Payments", icon: ReceiptText },
     { key: "collection", label: "Collection", icon: Smartphone },
-    { key: "gateways", label: "Gateways & payouts", icon: Landmark },
+    // Which gateways a banker is connected to is for Katana staff only (lib/merchant-safe).
+    ...(named ? [{ key: "gateways" as const, label: "Gateways & payouts", icon: Landmark }] : []),
     { key: "developer", label: "Developer", icon: Code2 },
     { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
   ];
@@ -664,7 +669,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="gateways">
+        {named && <TabsContent value="gateways">
           <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">
             <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             <PayoutGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
@@ -672,7 +677,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
           <div className="mt-4">
             <PayoutPolicyCard merchantId={merchant.id} />
           </div>
-        </TabsContent>
+        </TabsContent>}
 
         <TabsContent value="developer">
           {/* Live keys below stay locked until this is approved. */}

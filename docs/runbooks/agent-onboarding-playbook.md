@@ -188,9 +188,6 @@ Manual cases** — an operator can **Confirm** the order there by hand.
 - [ ] A real test payment auto-closes the QR end-to-end.
 - [ ] Amounts are clean (whole rupees recommended).
 - [ ] Expiry window (15 min) acceptable; late payments auto-revive.
-- [ ] (When connecting the real PoolPay gateway) set `POOLPAY_MODE=live` +
-      credentials and complete the `TODO(poolpay)` API mapping in `lib/poolpay.ts`.
-      Until then the gateway is a self-reconciled sandbox (real money, own capture).
 
 ---
 

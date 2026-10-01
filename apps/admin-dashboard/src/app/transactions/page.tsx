@@ -44,7 +44,7 @@ export default function TransactionsPage() {
     <>
       <PageHeader
         title="Transactions (universal)"
-        description="One normalized view across all channels — Katana Pay, PayU, Cashfree, Razorpay. Canonical katana_order_id · provider · UTR · status."
+        description="One normalized view across all channels. Canonical katana_order_id · provider · UTR · status."
         icon={Receipt}
       />
       <DataView

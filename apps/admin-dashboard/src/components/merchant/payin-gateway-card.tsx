@@ -96,7 +96,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
           </div>
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
-            No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe, Paytm or PoolPay.
+            No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe or Paytm.
           </div>
         )}
       </CardContent>

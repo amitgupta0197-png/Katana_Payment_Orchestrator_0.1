@@ -8,6 +8,7 @@ import { pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { toMinor } from "@/lib/money";
 import { createPayout } from "@/lib/fifo-payout";
+import { merchantSafeError, seesGatewayNames } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,8 @@ export async function POST(req: Request) {
       settlementMode: body.settlement_mode, purpose: body.purpose, actor: s.email,
       rail: body.rail, merchantTxnId: body.txnid,
     });
-    if (r.error) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
+    if (r.error) return NextResponse.json(
+      { error: seesGatewayNames(s.persona) ? r.error : merchantSafeError(r.error, "api/v1/payouts") }, { status: r.status ?? 400 });
     return NextResponse.json({ order: r.order }, { status: r.order?.idempotent ? 200 : 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

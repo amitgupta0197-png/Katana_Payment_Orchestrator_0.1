@@ -35,12 +35,11 @@ export function payinChannelOf(v: unknown): PayinChannel {
 export const P2P_CHANNEL_ID = "UPI_DIRECT";
 
 /**
- * The channel of a new Katana Pay order: INTENT when a gateway (or the live PoolPay vendor)
- * takes the payment, P2P when the customer is sent to the banker's own UPI ID.
+ * The channel of a new Katana Pay order: INTENT when a gateway takes the payment, P2P when the
+ * customer is sent to the banker's own UPI ID.
  */
-export function classifyPayinOrder(gatewayProvider: string | null | undefined, vendorLive: boolean): { type: PayinChannel; id: string } {
+export function classifyPayinOrder(gatewayProvider: string | null | undefined): { type: PayinChannel; id: string } {
   if (gatewayProvider) return { type: "INTENT", id: gatewayProvider };
-  if (vendorLive) return { type: "INTENT", id: "POOLPAY" };
   return { type: "P2P", id: P2P_CHANNEL_ID };
 }
 

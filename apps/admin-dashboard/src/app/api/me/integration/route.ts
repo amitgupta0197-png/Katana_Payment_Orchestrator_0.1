@@ -11,6 +11,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { issueCheckoutCreds, getCheckoutCredsStatus, ISSUED_CHECKOUT_SCHEMES } from "@/lib/merchant-checkout";
 import { ownMerchantCode } from "@/lib/merchant-keys";
 import { activationErrorResponse } from "@/lib/live-activation";
+import { merchantSafeScheme } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,12 @@ function endpoints() {
     pay_page: `${BASE}/pay/{order_id}`,
     status_enquiry: `${BASE}/api/pay-status/{order_id}`,
   };
+}
+
+// The older scheme's stored id names a gateway; a merchant is shown the neutral id (lib/merchant-safe).
+function safeScheme<T>(v: T): T {
+  if (v && typeof v === "object" && "scheme" in v) return { ...v, scheme: merchantSafeScheme((v as { scheme?: string }).scheme) };
+  return v;
 }
 
 export async function GET() {
@@ -39,8 +46,9 @@ export async function GET() {
       `SELECT COALESCE(webhook_url,'') AS webhook_url, COALESCE(return_url,'') AS return_url FROM merchants WHERE merchant_code = $1`, [code]).catch(() => []))[0] ?? {};
     return NextResponse.json({
       merchant_code: code,
-      credentials: status,                  // live: { configured, key, scheme, salt_hint }
-      test_credentials: testStatus,         // test: same shape
+      // { configured, key, scheme, salt_hint }; the scheme id is the merchant-facing one.
+      credentials: safeScheme(status),
+      test_credentials: safeScheme(testStatus),
       webhook_url: m.webhook_url ?? "",
       return_url: m.return_url ?? "",
       endpoints: endpoints(),
@@ -65,7 +73,7 @@ export async function POST(req: Request) {
   }
   try {
     const creds = await issueCheckoutCreds(code, body.scheme, body.livemode); // key + salt ONCE
-    return NextResponse.json({ creds, livemode: body.livemode }, { status: 201 });
+    return NextResponse.json({ creds: safeScheme(creds), livemode: body.livemode }, { status: 201 });
   } catch (err) {
     const a = activationErrorResponse(err);   // a live pair before live mode is activated
     if (a) return NextResponse.json(a.body, { status: a.status });

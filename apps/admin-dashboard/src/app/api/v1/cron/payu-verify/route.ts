@@ -47,7 +47,7 @@ async function run() {
   const payins = await rows<{ txn_id: string; merchant_id: string; provider: string }>("vendorGateway", `
     SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider
       FROM vendor_payin_orders
-     WHERE vendor = 'KATANA' AND COALESCE(meta->'gateway'->>'provider', '') <> '
+     WHERE vendor = 'KATANA' AND COALESCE(meta->'gateway'->>'provider', '') <> ''
        AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
        AND livemode = true
        -- No 2-minute grace here: with UPI intent the customer approves in their app within
@@ -65,7 +65,11 @@ async function run() {
                  ELSE interval '10 minutes' END)
      ORDER BY created_at DESC
      LIMIT ${BATCH}
-  `, [String(MAX_AGE_HOURS)]).catch(() => []);
+  `, [String(MAX_AGE_HOURS)]).catch((e) => {
+    // Never silent: a query that fails here means no pay-in is ever asked about.
+    console.error(`[payu-verify] pay-in query failed: ${e instanceof Error ? e.message : e}`);
+    return [];
+  });
 
   let confirmed = 0, failed = 0, stillPending = 0, unreachable = 0, noCreds = 0;
   // Why PayU gave no usable answer, e.g. "Invalid Hash." (a wrong Salt) — counted, never secret.
@@ -78,7 +82,7 @@ async function run() {
   for (const o of checks) {
     const mid = await getGatewayMid(o.merchant_id);
 
-    // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, PoolPay, and PayU with a Client ID + Secret.
+    // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, and PayU with a Client ID + Secret.
     // A Katana Pay order names its provider; for PAYU the merchant's sign-in mode picks the path
     // (payinConnectorFor is null for Key + Salt, which is handled below).
     const other = o.provider ? (o.provider === "PAYU" ? payinConnectorFor(mid) : payinConnector(o.provider)) : payinConnectorFor(mid);

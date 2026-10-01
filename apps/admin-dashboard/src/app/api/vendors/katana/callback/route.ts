@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       outcome: body.status,
       utr: body.utr ?? body.rrn ?? null,
       evidence: "WEBHOOK",
-      actor: "gateway:poolpay",
+      actor: "gateway:webhook",
       settlementStatus: body.settlement_status ?? null,
       note: body.note ?? `gateway webhook${body.provider_txn_id ? ` (${body.provider_txn_id})` : ""}`,
     });

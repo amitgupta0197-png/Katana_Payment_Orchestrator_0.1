@@ -134,8 +134,7 @@ export function resolveKatanaStatus(
 // ── The Katana hash: SHA256 over the sorted fields ──────────────────────────────
 //
 // Signs the status callback Katana sends a merchant (lib/merchant-callback) and the payout
-// callbacks (lib/payout-api); a merchant verifies it with their Salt. The upstream gateway
-// integration (lib/poolpay) signs its requests the same way.
+// callbacks (lib/payout-api); a merchant verifies it with their Salt.
 //
 //   1. take the request name/value pairs (excluding HASH)
 //   2. sort keys ascending, join as KEY=value with "~" as separator

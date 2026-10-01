@@ -11,7 +11,7 @@
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
 
-export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "POOLPAY" | "RUBYVAULT" | "ISMARTPAY";
+export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "RUBYVAULT" | "ISMARTPAY";
 export type GatewayEnv = "TEST" | "PROD";
 
 export interface CredField {
@@ -205,31 +205,6 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "mid", label: "MID", show: true },
         { name: "merchant_key", label: "Merchant Key", secret: true },
         { name: "subwallet_guid", label: "Sub-wallet GUID" },
-      ],
-    },
-  },
-  {
-    id: "POOLPAY", name: "PoolPay", logo: null, color: "#0B5FFF",
-    payin: {
-      connector: true,
-      env: { TEST: "UAT (enter PoolPay's UAT URL below)", PROD: "Production (gateway.pp-007.com)" },
-      creds: "PoolPay doesn't use a Client ID / Secret. Ask PoolPay for the Pay ID and Secret key.",
-      note: "Hosted checkout and UPI intent. PoolPay must whitelist Katana's server IP (72.61.227.233). PoolPay reports results to the return URL Katana sends with each order; optionally also add Katana's payment events URL in the PoolPay portal.",
-      fields: [
-        { name: "key", label: "Pay ID", placeholder: "16-digit Pay ID from PoolPay", pattern: "^\\d{1,19}$" },
-        { name: "salt", label: "Secret key", secret: true },
-        { name: "api_base", label: "API base URL (required for UAT)", placeholder: "https://gateway.pp-007.com", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true },
-      ],
-    },
-    payout: {
-      connector: true, balance: true, webhook: "dashboard",
-      env: { TEST: "UAT (enter PoolPay's UAT URL below)", PROD: "Production (payout.pp-007.com)" },
-      note: "PoolPay pays on IMPS, RTGS and UPI (no NEFT) from the merchant's PoolPay payout wallet. PoolPay must whitelist Katana's server IP (72.61.227.233). Add Katana's webhook URL as the payout call-back URL in the PoolPay merchant portal.",
-      fields: [
-        { name: "pay_id", label: "Pay ID", placeholder: "16-digit Pay ID from PoolPay", pattern: "^\\d{1,19}$", show: true },
-        { name: "salt", label: "Salt (hash key)", secret: true },
-        { name: "default_mobile", label: "Contact mobile sent with payouts", placeholder: "10-digit mobile", pattern: "^[6-9]\\d{9}$", show: true },
-        { name: "api_base", label: "API base URL (required for UAT)", placeholder: "https://payout.pp-007.com", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true, show: true },
       ],
     },
   },

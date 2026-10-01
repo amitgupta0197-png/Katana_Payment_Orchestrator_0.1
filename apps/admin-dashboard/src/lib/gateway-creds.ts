@@ -22,7 +22,7 @@ export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
 const VAULT_LABEL = "gateway_mid";
 
 export interface GatewayMid {
-  gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM, POOLPAY, RUBYVAULT, ISMARTPAY
+  gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM, RUBYVAULT, ISMARTPAY
   mid_code: string;     // the merchant's id at the gateway
   key: string;          // the gateway's public credential (PayU key, Razorpay Key ID, Cashfree App ID, …)
   salt: string;         // the gateway's secret (PayU salt, Razorpay Key Secret, CCAvenue Working Key, …)
