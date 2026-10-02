@@ -4,6 +4,7 @@
 //   MERCHANT    — U contact + webhook URL only (subset).
 
 import { NextResponse } from "next/server";
+import { revokeSessions } from "@/lib/session-security";
 import { aadhaarLast4Problem, gstinProblem, panProblem, tidyId } from "@/lib/kyc-validators";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
@@ -222,6 +223,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       `, [code]);
       personasRevoked = revoked.length;
       for (const { user_id } of revoked) {
+        // The role is gone, but a session cookie issued earlier still carries it. End this
+        // user's sessions now, whether or not the login itself survives with another role.
+        const who = await rows<{ email: string }>("auth", `SELECT email::text FROM users WHERE id = $1::uuid`, [user_id]).catch(() => []);
+        if (who[0]?.email) await revokeSessions(who[0].email);
         const left = await rows<{ n: string }>("iam",
           `SELECT COUNT(*)::text AS n FROM user_personas WHERE user_id = $1::uuid`, [user_id]).catch(() => [{ n: "1" }]);
         if (Number(left[0]?.n ?? 1) > 0) continue;         // still has another role — leave it alone

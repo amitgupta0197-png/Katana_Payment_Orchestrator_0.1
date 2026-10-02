@@ -10,7 +10,7 @@ import { setSessionCookie } from "@/lib/auth";
 import { verifyPassword, isRealHash } from "@/lib/password";
 import { publish } from "@/lib/events";
 import { getMfa, checkLoginCode, deviceHash, recordDevice, isSensitiveRole, MFA_ENFORCED } from "@/lib/fifo-mfa";
-import { loginLock, recordLoginFailure, clearLoginFailures, currentEpoch } from "@/lib/session-security";
+import { loginLock, recordLoginFailure, clearLoginFailures, currentEpoch, clientIp } from "@/lib/session-security";
 
 const schema = z.object({
   email: z.string().email(),
@@ -23,10 +23,11 @@ export async function POST(req: Request) {
   try { body = schema.parse(await req.json()); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
-  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
+  const ip = clientIp(req);
 
-  // Rate-limit / lockout (M4): too many recent failures for this email → refuse early.
-  const lock = await loginLock(body.email);
+  // Rate-limit / lockout (M4): too many recent failures for this email, or from this address
+  // across emails → refuse early.
+  const lock = await loginLock(body.email, ip);
   if (lock.locked)
     return NextResponse.json(
       { error: "too many failed attempts; try again later" },

@@ -14,14 +14,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { hashPassword, generatePassword } from "@/lib/password";
+import { hashPassword, generatePassword, MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { revokeSessions } from "@/lib/session-security";
 
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
   email: z.string().email(),
-  password: z.string().min(6, "password must be at least 6 characters").max(100).optional(),
+  password: z.string().min(MIN_PASSWORD_LENGTH, `password must be at least ${MIN_PASSWORD_LENGTH} characters`).max(100).optional(),
   kind: z.enum(["MERCHANT", "PROVIDER"]).optional(),
   scope_id: z.string().optional(),
   scope_label: z.string().optional(),

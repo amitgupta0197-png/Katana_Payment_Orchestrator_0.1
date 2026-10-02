@@ -55,6 +55,11 @@ function hotp(secret: string, counter: number): string {
   return (code % 1_000_000).toString().padStart(6, "0");
 }
 
+/** The code an authenticator shows for `secret` right now. */
+export function totpNow(secret: string, nowMs: number = Date.now()): string {
+  return hotp(secret, Math.floor(nowMs / 1000 / 30));
+}
+
 // Verify a 6-digit code allowing ±`window` time steps (default ±1 = 90s tolerance).
 export function verifyTotp(secret: string, token: string, window = 1, nowMs?: number): boolean {
   const t = (token ?? "").replace(/\s/g, "");

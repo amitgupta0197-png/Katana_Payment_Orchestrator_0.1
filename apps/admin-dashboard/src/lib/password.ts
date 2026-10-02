@@ -28,7 +28,10 @@ export function verifyPassword(password: string, stored: string | null | undefin
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+/** The shortest password a user or an admin may set. Logging in with an older, shorter one still works. */
+export const MIN_PASSWORD_LENGTH = 12;
+
 // A readable one-time initial password an admin shares with a new merchant.
 export function generatePassword(): string {
-  return `Ktn-${randomBytes(4).toString("hex")}`;
+  return `Ktn-${randomBytes(8).toString("hex")}`;
 }

@@ -127,7 +127,7 @@ function ChangePasswordCard() {
         <div className="pt-2">
           <Button
             onClick={() => change.mutate()}
-            disabled={change.isPending || !pw.current_password || pw.new_password.length < 6 || !pw.confirm}
+            disabled={change.isPending || !pw.current_password || pw.new_password.length < 12 || !pw.confirm}
           >
             {change.isPending ? "Changing…" : "Change password"}
           </Button>

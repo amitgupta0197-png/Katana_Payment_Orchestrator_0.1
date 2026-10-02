@@ -65,7 +65,7 @@ export function SetLoginPasswordCard({ email, kind, scopeId, scopeLabel, fullNam
             <Label>New password</Label>
             <Input type="text" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="type a password (min 6 chars)" />
           </div>
-          <Button onClick={() => m.mutate(false)} disabled={m.isPending || password.length < 6}>
+          <Button onClick={() => m.mutate(false)} disabled={m.isPending || password.length < 12}>
             {m.isPending ? "Saving…" : "Set password"}
           </Button>
           <Button variant="secondary" onClick={() => m.mutate(true)} disabled={m.isPending} title="Generate a random password">

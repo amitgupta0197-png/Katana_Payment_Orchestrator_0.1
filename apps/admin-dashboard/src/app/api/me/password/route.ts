@@ -6,14 +6,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession, setSessionCookie } from "@/lib/auth";
 import { rows, pgError } from "@/lib/pg";
-import { hashPassword, verifyPassword, isRealHash } from "@/lib/password";
+import { hashPassword, verifyPassword, isRealHash, MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { revokeSessions, currentEpoch } from "@/lib/session-security";
 
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
   current_password: z.string().min(1),
-  new_password: z.string().min(6, "new password must be at least 6 characters").max(100),
+  new_password: z.string().min(MIN_PASSWORD_LENGTH, `new password must be at least ${MIN_PASSWORD_LENGTH} characters`).max(100),
 });
 
 export async function POST(req: Request) {
@@ -31,9 +31,13 @@ export async function POST(req: Request) {
     if (!u.length) return NextResponse.json({ error: "user not found" }, { status: 404 });
 
     const stored = u[0].password_hash;
+    // The shared demo password stands in for a missing one only where the login route accepts
+    // it: never in production. There, an account with no real password cannot change it here;
+    // an admin sets one.
+    const allowDemo = process.env.NODE_ENV !== "production" || process.env.ALLOW_DEMO_LOGIN === "1";
     const currentOk = isRealHash(stored)
       ? verifyPassword(body.current_password, stored)
-      : body.current_password === (process.env.DEMO_PASSWORD ?? "demo");
+      : allowDemo && body.current_password === (process.env.DEMO_PASSWORD ?? "demo");
     if (!currentOk) return NextResponse.json({ error: "current password is incorrect" }, { status: 400 });
 
     await rows("auth", `UPDATE users SET password_hash = $2, updated_at = now() WHERE email = $1`,

@@ -17,14 +17,29 @@ export function isSensitiveRole(p: Persona): boolean { return SENSITIVE_ROLES.in
 export interface MfaRow { email: string; enabled: boolean; totp_secret: string }
 
 export async function getMfa(email: string): Promise<MfaRow | null> {
-  const m = (await rows<MfaRow>("fifo", `SELECT email, enabled, totp_secret FROM fifo_user_mfa WHERE email=$1`, [email]).catch(() => []))[0];
+  // A database that cannot be read must not read as "this user has no two-factor": that
+  // would let a login through without its code. Only a missing table (nobody has enrolled
+  // on this database yet) answers "none"; any other failure is the caller's to refuse on.
+  const m = (await rows<MfaRow>("fifo", `SELECT email, enabled, totp_secret FROM fifo_user_mfa WHERE email=$1`, [email])
+    .catch((err) => { if ((err as { code?: string }).code === "42P01") return [] as MfaRow[]; throw err; }))[0];
   // The secret is sealed at rest (lib/sealed-text); callers get the secret itself.
   return m ? { ...m, totp_secret: openText(m.totp_secret) } : null;
 }
 
+/** Enrolment refused: two-factor is already on and no valid current code came with the request. */
+export class MfaCodeRequired extends Error {}
+
 // Begin enrolment — (re)generates a secret in disabled state and returns the
 // otpauth URI the user adds to their authenticator. Verifying activates it.
-export async function enrollMfa(email: string, userId?: string | null): Promise<{ secret: string; otpauth: string }> {
+//
+// Starting again REPLACES the secret and switches two-factor off until the new one is
+// verified. On an account that already has it on, that is switching it off, so it takes a
+// valid current code — the same proof disableMfa asks for. Without this a stolen session
+// could re-enrol and be rid of the second factor.
+export async function enrollMfa(email: string, userId?: string | null, currentToken?: string | null): Promise<{ secret: string; otpauth: string }> {
+  const existing = await getMfa(email);
+  if (existing?.enabled && !(currentToken && verifyTotp(existing.totp_secret, currentToken)))
+    throw new MfaCodeRequired("two-factor is already on: send a current code to replace it");
   const secret = generateSecret();
   await rows("fifo", `
     INSERT INTO fifo_user_mfa (email, user_id, totp_secret, enabled, created_at)

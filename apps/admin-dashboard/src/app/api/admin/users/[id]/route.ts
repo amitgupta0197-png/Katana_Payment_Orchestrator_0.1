@@ -5,6 +5,7 @@
 // SUPER_ADMIN only — invite/disable/impersonate paths flow through here.
 
 import { NextResponse } from "next/server";
+import { revokeSessions } from "@/lib/session-security";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
@@ -69,6 +70,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       RETURNING id::text, email::text, status, full_name, updated_at
     `, args);
     if (!r.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // A session cookie is valid until it expires, whatever the user's status: ending the
+    // sessions is what makes a suspension take effect now and not in eight hours.
+    if (body.status && body.status !== "active") await revokeSessions(r[0].email);
     await wormAppend({
       actorId: s.user_id, actorEmail: s.email,
       action: "user.update",
