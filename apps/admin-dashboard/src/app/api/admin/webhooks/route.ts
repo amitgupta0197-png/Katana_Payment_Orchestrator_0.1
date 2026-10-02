@@ -5,6 +5,7 @@
 // DELETE /api/admin/webhooks?config_id=… — remove a config row.
 
 import { NextResponse } from "next/server";
+import { sealText } from "@/lib/sealed-text";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { rows, pgError } from "@/lib/pg";
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
          enabled    = EXCLUDED.enabled,
          updated_at = now()
        RETURNING config_id::text, merchant_id, target_url, enabled`,
-      [body.merchant_id, body.target_url, secret, body.enabled ?? true],
+      [body.merchant_id, body.target_url, sealText(secret), body.enabled ?? true],
     );
     await wormAppend({
       actorId: s.user_id, actorEmail: s.email,

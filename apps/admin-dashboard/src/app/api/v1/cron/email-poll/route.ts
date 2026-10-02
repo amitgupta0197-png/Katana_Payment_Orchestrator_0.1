@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { pollAllInboxes, debugEmail, startWatchAll } from "@/lib/email-ingest";
+import { runJob } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     const sp = new URL(req.url).searchParams;
     if (sp.get("debug") === "1") return NextResponse.json(await debugEmail());
     if (sp.get("watch") === "1") return NextResponse.json(await startWatchAll()); // renew Gmail push watches
-    const r = await pollAllInboxes();
+    const r = await runJob("email-poll", 60, pollAllInboxes);
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

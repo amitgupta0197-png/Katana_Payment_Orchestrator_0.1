@@ -3,11 +3,17 @@
 // SUPER_ADMIN can advance any stage. PROVIDER can advance APPLICATION + DOCS_PENDING
 // + BANK_VERIFY (the steps the provider drives, per §2.2). Each transition flips one
 // step boolean and updates `stage`; rejection sets stage='REJECTED'.
+//
+// The system's own checks for the step run first (lib/onboarding-gates) and are recorded. A
+// gate that FAILS refuses the step with 409 `GATE_FAILED`; a Super Admin can send
+// `override: true` with a note to let it through, which is recorded against the gate.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
+import { blockingGates, recordGates, runStepGates, SUBJECT_COLS, type OnboardingSubject } from "@/lib/onboarding-gates";
+import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +31,7 @@ const schema = z.object({
   risk_tier: z.enum(["LOW","MEDIUM","HIGH"]).optional(),
   notes: z.string().optional().default(""),
   reject: z.boolean().optional(),
+  override: z.boolean().optional(),
 }).refine((d) => d.step || d.reject, { message: "step or reject required" });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -74,6 +81,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (cur[0].stage !== transition.from)
       return NextResponse.json({ error: `cannot advance ${step} from stage ${cur[0].stage}` }, { status: 409 });
 
+    // The system's checks for this step. Recorded whatever they answer.
+    const subject = (await rows<OnboardingSubject>("merchant", `SELECT ${SUBJECT_COLS} FROM merchants WHERE id = $1::uuid`, [id]))[0];
+    const gates = await runStepGates(step, subject);
+    const blocking = blockingGates(gates);
+    const overriding = blocking.length > 0 && body.override === true && s.persona === "SUPER_ADMIN";
+    if (overriding && body.notes.trim().length < 5)
+      return NextResponse.json({ error: "an override needs a note saying why" }, { status: 400 });
+    await recordGates(id, gates, overriding ? s.email : null);
+    if (blocking.length && !overriding)
+      return NextResponse.json({
+        error: `${blocking.map((b) => `${b.gate}: ${b.summary}`).join("; ")}`,
+        code: "GATE_FAILED", gates, can_override: s.persona === "SUPER_ADMIN",
+      }, { status: 409 });
+    if (overriding)
+      await wormAppend({
+        actorId: s.user_id, actorEmail: s.email, action: "merchant.onboarding.gate_override",
+        resourceType: "merchant", resourceId: id,
+        after: { step, gates: blocking.map((b) => ({ gate: b.gate, result: b.result, summary: b.summary })) }, notes: body.notes,
+      }).catch(() => {});
+
     const setFragments: string[] = [`${step} = true`, `stage = $2`, `updated_at = now()`];
     const args: unknown[] = [id, transition.to];
     if (step === "step_screening" && body.risk_tier) {
@@ -93,8 +120,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, $2, $3, $4::jsonb)
-    `, [id, `ADVANCE_${step.toUpperCase()}`, s.email, JSON.stringify({ from: cur[0].stage, to: transition.to, notes: body.notes })]).catch(() => {});
+    `, [id, `ADVANCE_${step.toUpperCase()}`, s.email, JSON.stringify({ from: cur[0].stage, to: transition.to, notes: body.notes,
+          gates: gates.map((x) => ({ gate: x.gate, result: x.result })), ...(overriding ? { override: true } : {}) })]).catch(() => {});
 
-    return NextResponse.json(res[0]);
+    return NextResponse.json({ ...res[0], gates });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

@@ -12,7 +12,15 @@
 // Signature (the same scheme as /api/pay):
 //   HMAC_SHA256: HMAC-SHA256(key+salt, txnid|amount|productinfo|email)
 //   PAYU_SHA512: sha512(key|txnid|amount|productinfo|firstname|email|udf1..5||||||salt)   (older pairs)
+//
+// Refusals a merchant can act on carry a `code`: the flow codes above, LIVE_MODE_NOT_ACTIVATED,
+// MERCHANT_BLOCKED / MERCHANT_SUSPENDED (403), and the limit codes of lib/payin-limits — 422
+// with `field`, `limit` and `actual`, or 429 RATE_LIMITED with a Retry-After header.
+//
+// Every answer carries an X-Request-Id header: the caller's own when it sent one, else one made
+// here. It is kept on the order and in its status history, so one id follows the payment.
 
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
@@ -22,6 +30,7 @@ import type { OrderFlow } from "@/lib/payin-flow";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody, merchantSafeError } from "@/lib/merchant-safe";
+import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
 
 const schema = z.object({
   key: z.string().min(1),
@@ -64,7 +73,20 @@ export interface KatanaOrderApi {
   where: string;
 }
 
+/** The caller's X-Request-Id when it is a plain token, else a new id. */
+export function requestIdFrom(req: Request): string {
+  const sent = req.headers.get("x-request-id")?.trim() ?? "";
+  return /^[A-Za-z0-9._:-]{8,64}$/.test(sent) ? sent : randomUUID();
+}
+
 export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promise<NextResponse> {
+  const requestId = requestIdFrom(req);
+  const res = await handle(req, api, requestId);
+  res.headers.set("x-request-id", requestId);
+  return res;
+}
+
+async function handle(req: Request, api: KatanaOrderApi, requestId: string): Promise<NextResponse> {
   const WHERE = api.where;
   let body;
   try { body = schema.parse(await parseBody(req)); } catch (e) {
@@ -107,6 +129,7 @@ export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promis
       notifyUrl: body.notify_url ?? null,
       client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
       flow: api.flow,           // null: the merchant's selected flow decides
+      requestId,
     });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
@@ -132,7 +155,12 @@ export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promis
       ...(hosted ? { gateway_url: `${base}/pay/${r.order.id}/go` } : {}),
     }, WHERE), { status: r.reused ? 200 : 201 });
   } catch (err) {
-    if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });
+    if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message, code: err.code }, { status: 403 });
+    // A limit refused the order: which one, on which field, and the limit itself.
+    if (err instanceof PayinLimitError)
+      return NextResponse.json(payinLimitBody(err.breach), {
+        status: err.status, headers: err.status === 429 ? { "retry-after": "1" } : undefined,
+      });
     // The merchant's flow does not allow this order: say which rule, so an integration can tell
     // "not enabled for you" from a payment failure.
     if (err instanceof PayinFlowError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });

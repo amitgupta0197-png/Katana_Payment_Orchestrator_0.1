@@ -7,12 +7,14 @@
 
 import { NextResponse } from "next/server";
 import { telegramConfigured, verifyWebhookSecret, isAdminChat, sendMessage } from "@/lib/telegram";
-import { collectionsToday, collectionsYesterday, captureHealth, settlementsSummary, partnerInquiries, fullReport } from "@/lib/reports";
+import { collectionsToday, collectionsYesterday, captureHealth, settlementsSummary, partnerInquiries, fullReport, platformToday, gatewayLeague } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
 const HELP = [
   "<b>Katana admin bot</b>",
+  "/stats — the platform's day: pay-ins, payouts, what is waiting",
+  "/mids — each gateway's success rate, last 24h",
   "/today — today's collections",
   "/yesterday — yesterday's collections",
   "/captures — RRN capture health",
@@ -57,6 +59,8 @@ export async function POST(req: Request) {
 
   try {
     switch (cmd) {
+      case "/stats":       await sendMessage(chatId, await platformToday()); break;
+      case "/mids":        await sendMessage(chatId, await gatewayLeague()); break;
       case "/today":       await sendMessage(chatId, await collectionsToday()); break;
       case "/yesterday":   await sendMessage(chatId, await collectionsYesterday()); break;
       case "/captures":    await sendMessage(chatId, await captureHealth()); break;

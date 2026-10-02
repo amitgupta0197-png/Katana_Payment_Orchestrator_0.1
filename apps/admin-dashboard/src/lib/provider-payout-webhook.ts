@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import type { GatewayId } from "@/lib/pg-catalog";
 import { payoutConnector, providerCreds, type ActivePayout } from "@/lib/payout-providers";
 import { loadProviderPayout, syncProviderPayout } from "@/lib/provider-payout-order";
+import { recordSecurityEvent } from "@/lib/security-event";
 
 export async function readWebhookBody(req: Request): Promise<{ raw: string; json: Record<string, any> | null; form: Record<string, string> | null }> {
   const raw = await req.text().catch(() => "");
@@ -41,8 +42,10 @@ export async function handleProviderPayoutWebhook(input: {
 
   const active = await providerCreds(provider, order.merchant_id);
   if (!active) return NextResponse.json({ ok: true, ignored: "no payout credentials for this gateway", event });
-  if (input.verify(active) === false)
+  if (input.verify(active) === false) {
+    await recordSecurityEvent({ risk: "BAD_SIGNATURE", detail: `payout webhook from ${provider} for ${order.merchant_id}, payout ${order.order_ref}` });
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
 
   const r = await syncProviderPayout(order, { hint: event || "WEBHOOK", timeoutMs: 6_000, minGapSeconds: 0 });
   return NextResponse.json({ ok: true, event, order_ref: order.order_ref, outcome: r.outcome });

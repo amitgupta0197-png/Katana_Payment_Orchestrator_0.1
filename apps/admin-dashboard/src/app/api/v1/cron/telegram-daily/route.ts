@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { telegramConfigured, broadcastToAdmins } from "@/lib/telegram";
 import { fullReport } from "@/lib/reports";
+import { runJob } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,6 @@ export async function POST(req: Request) {
   if (req.headers.get("x-cron-key") !== key) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!telegramConfigured()) return NextResponse.json({ error: "telegram not configured" }, { status: 503 });
 
-  const text = await fullReport();
-  const sent = await broadcastToAdmins(text);
+  const sent = await runJob("telegram-daily", 86_400, async () => broadcastToAdmins(await fullReport()));
   return NextResponse.json({ ok: true, sent });
 }

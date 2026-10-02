@@ -47,6 +47,23 @@ Katana takes pay-ins on two flows, and every merchant is explicitly on one: P2P 
 - Tables: `vendor_payin_orders` is the shared core; `katana_p2p_orders` (`P2P-…`) and `katana_intent_orders` (`INT-…`) hold each flow's own columns and are maintained by a trigger, never by application writes.
 - Admin UI: Payment Management → Pay-in Flows, P2P Pay-ins, Intent Pay-ins.
 
+## Pay-in limits, status history and ops automation
+- Limits are checked in `createKatanaOrder` before any gateway is asked: rate, min / max ticket, the UPI ceiling and the day's total (India time). Rules in `lib/payin-limits.ts` (pure), storage in `payin-limits-store.ts`; a banker's own (`merchant_payment_config.payin_*`, rupees) win over the platform defaults (`PAYIN_*` env). Refusals are `422` / `429` with `code`, `field`, `limit`, `actual`. A replayed `txnid` is answered before the limits and is never refused by them.
+- A blocked, suspended or terminated banker (or one whose merchant is) takes no orders: `403`, `MERCHANT_BLOCKED` / `MERCHANT_SUSPENDED`.
+- `vendor_payin_status_history` records every status change of a pay-in. It is written by a trigger and is append-only; never write to it from application code.
+- Scheduled work is HTTP cron routes under `/api/v1/cron/*` called by the server's crontab, not a queue. New ones use `cronGate` + `runJob` from `lib/jobs.ts` so they leave a heartbeat (`job_heartbeats`); `/api/health?deep=1` and `/api/metrics` report stale ones.
+- Compliance flags (`lib/payin-compliance.ts`, `payin_compliance_flags`): the monitor scans live, paid pay-ins for structuring, volume spikes, new-merchant volume, round amounts and the CTR threshold. A flag is a prompt for a person; review goes through `/api/risk/payin-flags`. Staff only.
+- Merchants pull their own report from `POST /api/v1/reports/payins` (`lib/payin-report.ts`), signed with Key + Salt over `from|to`.
+- `runCheckout` (`lib/checkout-core.ts`) refuses a live, non-simulated run (`LIVE_CHECKOUT_UNAVAILABLE`): its adapters are sandboxes. Do not route live money through it.
+- Onboarding gates (`lib/onboarding-gates.ts`, identifier checks in `lib/kyc-validators.ts`) run when a step is advanced and are recorded in `merchant_onboarding_gates`. They check form and Katana's own lists only; nothing is verified with a registry yet. `merchant_status_history` is trigger-written and append-only.
+- Secrets kept in an ordinary text column are sealed with `sealText` and read with `openText` (`lib/sealed-text.ts`): webhook signing secrets, mailbox passwords and tokens, TOTP secrets. `openText` also reads the plaintext rows from before; `POST /api/admin/secrets/seal` seals those. A new secret column goes in `SEALED_COLUMNS`.
+- Gateway performance (`lib/gateway-performance.ts`) is computed from real order outcomes and is staff-only. An unhealthy gateway raises an alert; no traffic is moved, because a merchant has one pay-in gateway. The router and circuit breaker (`lib/routing.ts`, `lib/circuit-breaker.ts`) still serve only the sandbox checkout pipeline.
+- When a query selects `id::text` (aliased `id`), `ORDER BY id` sorts by that text ("9" after "12"). Qualify the column: `ORDER BY t.id`.
+- A failed webhook signature goes through `recordSecurityEvent` (`lib/security-event.ts`).
+- Bank statements (MT940, camt.053) are read by `lib/bank-statement.ts` and imported through `POST /api/v1/bank-feeds/{bank_code}`. Credits go to the reconciler as `BANK_STATEMENT`, a source that never auto-confirms an order: a statement line has a date, not a time. Do not change it to `BANK_API`.
+- Live activation: `LIVE_MIN_TEST_PAYMENTS` sets how many test payments the checklist asks for; `LIVE_AUTO_ACTIVATE=1` approves a complete request without a second person. Both default to the old behaviour.
+- Anything that needs a person goes through `raiseAlert` / `setAlert` (`lib/ops-alert.ts`): one Telegram message per condition to the admin chats, repeated only after a quiet period. Scheduled checks live in `lib/ops-monitor.ts`.
+
 ## Naming: the pay-in product is Katana Pay
 Katana's own pay-in product is **Katana Pay**: `vendor = 'KATANA'` on `vendor_payin_orders`, `merchant_payment_config.katana_pay`, `lib/katana-pay.ts` (order core), `lib/katana-order.ts` (create / confirm), `/api/vendors/katana/*`, `/vendors/katana`. "PoolPay" was a name carried over from the BRD; do not use it for anything new.
 - The upstream integration and gateway connectors that carried the old name were removed on 2026-10-01 (never used in production), and the routing rail, its adapter code and ledger accounts are `katana` / `KATANA`. The callback secret setting is `VENDOR_SECRET_KATANA`.

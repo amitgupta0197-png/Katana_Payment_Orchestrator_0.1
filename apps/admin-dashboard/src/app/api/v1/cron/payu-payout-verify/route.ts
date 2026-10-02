@@ -16,6 +16,7 @@
 //   * * * * * curl -s -H "x-cron-key: $FIFO_CRON_KEY" http://127.0.0.1:3100/api/v1/cron/payu-payout-verify
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
+import { runJob } from "@/lib/jobs";
 import {
   flagPayoutMissingAtProvider, PROVIDER_ORDER_COLS, syncProviderPayout, type ProviderPayoutOrder,
 } from "@/lib/provider-payout-order";
@@ -73,8 +74,8 @@ function guard(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await runJob("payu-payout-verify", 60, run)) });
 }
 export async function POST(req: Request) {
-  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await runJob("payu-payout-verify", 60, run)) });
 }

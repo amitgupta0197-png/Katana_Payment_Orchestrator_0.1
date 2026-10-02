@@ -14,6 +14,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { createKatanaOrder, MerchantBlockedError, PayinSetupError } from "@/lib/katana-order";
+import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
 import { getLivemode } from "@/lib/mode";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
@@ -154,7 +155,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ order: r.order, livemode, deeplinks: r.deeplinks, upi_intent: r.upiIntent, qr_payload: r.upiIntent });
   } catch (err) {
     if (err instanceof MerchantBlockedError)
-      return NextResponse.json({ error: "merchant is blocked — new pay-ins rejected" }, { status: 403 });
+      return NextResponse.json({ error: `${err.message} — new pay-ins rejected`, code: err.code }, { status: 403 });
+    if (err instanceof PayinLimitError) return NextResponse.json(payinLimitBody(err.breach), { status: err.status });
     if (err instanceof PayuIntentError || err instanceof PayinSetupError) {
       // Operators get the gateway's own words; a provider or merchant gets the scrubbed text.
       const error = seesGatewayNames(g.session.persona) ? err.message : merchantSafeError(err.message, "api/merchants/payin-orders");

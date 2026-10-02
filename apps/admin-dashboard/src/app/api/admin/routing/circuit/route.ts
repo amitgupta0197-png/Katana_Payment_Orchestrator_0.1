@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { resetCircuit } from "@/lib/circuit-breaker";
+import { resetCircuit, logCircuitEvent } from "@/lib/circuit-breaker";
 import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
@@ -27,23 +27,24 @@ export async function POST(req: Request) {
   const provider = body.provider.toUpperCase();
   try {
     const before = (await rows<any>("routingEngine",
-      "SELECT circuit_state, consecutive_failures FROM provider_health_snapshot WHERE provider_code=$1",
+      "SELECT circuit_state, consecutive_failures FROM provider_health_snapshot WHERE upper(provider_code)=$1",
       [provider]))[0];
     if (!before) return NextResponse.json({ error: "merchant not found in health snapshot" }, { status: 404 });
 
     if (body.action === "reset") {
-      await resetCircuit(provider);
+      await resetCircuit(provider, s.email);
     } else {
       await rows("routingEngine", `
         UPDATE provider_health_snapshot
            SET circuit_state='OPEN', circuit_opened_at=now(),
                consecutive_failures = GREATEST(consecutive_failures, 999),
                updated_at=now()
-         WHERE provider_code=$1
+         WHERE upper(provider_code)=$1
       `, [provider]);
+      await logCircuitEvent({ provider, event: "TRIPPED", from: before.circuit_state, to: "OPEN", failures: before.consecutive_failures, actor: s.email });
     }
     const after = (await rows<any>("routingEngine",
-      "SELECT circuit_state, consecutive_failures FROM provider_health_snapshot WHERE provider_code=$1",
+      "SELECT circuit_state, consecutive_failures FROM provider_health_snapshot WHERE upper(provider_code)=$1",
       [provider]))[0];
 
     await wormAppend({

@@ -16,6 +16,7 @@
 // untouched and reported as skipped.
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
+import { runJob } from "@/lib/jobs";
 import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
@@ -141,8 +142,8 @@ function guard(req: Request) {
 }
 
 export async function GET(req: Request) {
-  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await runJob("payu-verify", 60, run)) });
 }
 export async function POST(req: Request) {
-  return guard(req) ?? NextResponse.json({ ok: true, ...(await run()) });
+  return guard(req) ?? NextResponse.json({ ok: true, ...(await runJob("payu-verify", 60, run)) });
 }

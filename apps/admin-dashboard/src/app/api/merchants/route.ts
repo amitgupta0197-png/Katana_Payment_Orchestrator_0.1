@@ -4,6 +4,7 @@
 //   MERCHANT    — read own only (single row).
 
 import { NextResponse } from "next/server";
+import { aadhaarLast4Problem, gstinProblem, panProblem, tidyId } from "@/lib/kyc-validators";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
@@ -63,6 +64,14 @@ const createSchema = z.object({
   // Optional: map this merchant under a provider at onboarding time.
   // PROVIDER persona ignores this (auto-mapped to itself below); SUPER_ADMIN may pick any provider.
   provider_id: z.string().uuid().optional(),
+  // KYB identifiers (merchant 0013). Checked for form here; lib/onboarding-gates checks them
+  // against each other when the application step is advanced.
+  gstin: z.string().trim().refine((v) => !v || !gstinProblem(v), (v) => ({ message: `gstin: ${gstinProblem(v)}` })).optional(),
+  business_pan: z.string().trim().refine((v) => !v || !panProblem(v), (v) => ({ message: `business_pan: ${panProblem(v)}` })).optional(),
+  director_name: z.string().trim().max(200).optional(),
+  director_pan: z.string().trim().refine((v) => !v || !panProblem(v), (v) => ({ message: `director_pan: ${panProblem(v)}` })).optional(),
+  director_aadhaar_last4: z.string().trim().refine((v) => !v || !aadhaarLast4Problem(v), (v) => ({ message: `director_aadhaar_last4: ${aadhaarLast4Problem(v)}` })).optional(),
+  est_monthly_volume: z.coerce.number().positive().max(1e12).optional(),
 });
 
 export async function POST(req: Request) {
@@ -83,12 +92,15 @@ export async function POST(req: Request) {
     const res = await rows<any>("merchant", `
       INSERT INTO merchants (tenant_id, merchant_code, legal_name, brand_name, business_type,
                              category_mcc, contact_email, contact_phone, website, registered_address,
-                             stage)
-      VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'APPLICATION')
+                             stage, gstin, business_pan, director_name, director_pan,
+                             director_aadhaar_last4, est_monthly_volume)
+      VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, $8, $9, 'APPLICATION', $10, $11, $12, $13, $14, $15)
       RETURNING id, merchant_code, stage
     `, [body.merchant_code, body.legal_name, body.brand_name ?? null, body.business_type ?? null,
         body.category_mcc ?? null, body.contact_email, body.contact_phone ?? null,
-        body.website ?? null, body.registered_address ?? null]);
+        body.website ?? null, body.registered_address ?? null,
+        tidyId(body.gstin) || null, tidyId(body.business_pan) || null, body.director_name || null,
+        tidyId(body.director_pan) || null, body.director_aadhaar_last4 || null, body.est_monthly_volume ?? null]);
     await rows("merchant", `
       INSERT INTO merchant_activity (merchant_id, action, actor, payload)
       VALUES ($1::uuid, 'APPLICATION_SUBMITTED', $2, $3::jsonb)

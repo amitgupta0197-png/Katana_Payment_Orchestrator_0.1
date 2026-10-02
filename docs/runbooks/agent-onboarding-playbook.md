@@ -174,6 +174,14 @@ Manual cases** — an operator can **Confirm** the order there by hand.
   katana-agent.apk`, redeploy. Same signing key → installs as an update.
 - **Crons (every-minute / daily):** `crontab -l` — `status-sweep`, `email-poll`,
   `daily`, authenticated by `x-cron-key` (`FIFO_CRON_KEY`).
+- **Crons added 2026-10-02** (same header, `POST`): `monitor` every 5 minutes (ops alerts
+  to the admin Telegram chats), `reserve-release` hourly. Every job records a heartbeat;
+  `GET /api/health?deep=1` answers `503` when the database is unreachable or a job has
+  stopped being called, so point the uptime check there.
+  ```
+  */5 * * * * curl -s -X POST -H "x-cron-key: $FIFO_CRON_KEY" http://127.0.0.1:3100/api/v1/cron/monitor
+  0 * * * *   curl -s -X POST -H "x-cron-key: $FIFO_CRON_KEY" http://127.0.0.1:3100/api/v1/cron/reserve-release
+  ```
 - **DB:** `vendorgatewayservice_db` — `vendor_payin_orders` (orders),
   `vendor_txn_alerts` (captured credits), `vendor_devices` (forwarders),
   `vendor_manual_cases`, `vendor_security_alerts`.

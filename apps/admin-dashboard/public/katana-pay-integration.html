@@ -168,11 +168,25 @@ gateway's reason.</p>
   <tr><th>Error</th><th>Meaning</th></tr>
   <tr><td><code>401 invalid key</code></td><td>Unknown Key.</td></tr>
   <tr><td><code>401 signature mismatch</code></td><td>Hash didn't match — check your signing string.</td></tr>
-  <tr><td><code>403</code></td><td>Account blocked.</td></tr>
+  <tr><td><code>403</code></td><td>Account blocked or suspended (<code>code</code> <code>MERCHANT_BLOCKED</code> / <code>MERCHANT_SUSPENDED</code>).</td></tr>
   <tr><td><code>400 invalid amount</code></td><td>Amount missing / not positive.</td></tr>
   <tr><td><code>409</code></td><td>This account can't take live payments yet (no payment gateway or receiving UPI ID is set up). Contact your Katana account manager.</td></tr>
   <tr><td><code>502</code></td><td>The payment gateway refused the order — the message gives its reason (for example, below its minimum amount). No order was created; fix and retry with the same <code>txnid</code>.</td></tr>
+  <tr><td><code>422</code></td><td>The order is outside your account's limits. No order was created. The body carries <code>code</code>, <code>field</code>, <code>limit</code> and <code>actual</code> — see below.</td></tr>
+  <tr><td><code>429 RATE_LIMITED</code></td><td>Too many orders in one second. Send it again after the <code>Retry-After</code> header (1 second).</td></tr>
 </table>
+<p><b>Limits.</b> A live order outside your account's limits is refused with <code>422</code>:</p>
+<pre>{ "error": "amount is above the maximum of ₹5,000", "code": "AMOUNT_ABOVE_MAX", "field": "amount", "limit": 5000, "actual": 5000.01 }</pre>
+<table>
+  <tr><th><code>code</code></th><th>Meaning</th></tr>
+  <tr><td><code>AMOUNT_BELOW_MIN</code></td><td>The amount is under the minimum for one order.</td></tr>
+  <tr><td><code>AMOUNT_ABOVE_MAX</code></td><td>The amount is over your account's maximum for one order.</td></tr>
+  <tr><td><code>UPI_LIMIT_EXCEEDED</code></td><td>The amount is over what one UPI payment can carry (₹1,00,000 unless your account has a higher maximum).</td></tr>
+  <tr><td><code>DAILY_LIMIT_EXCEEDED</code></td><td>Today's orders plus this one would pass your daily limit; <code>actual</code> is the total it would reach. The day is the calendar day in India, and an order that fails or expires gives its amount back.</td></tr>
+</table>
+<p>Repeating a <code>txnid</code> you already created is never limited: you get the original order back.</p>
+<p><b>Request id.</b> Every response carries an <code>X-Request-Id</code> header. Send your own (8 to 64 letters, digits,
+<code>.</code>, <code>_</code>, <code>:</code> or <code>-</code>) and it is echoed and kept with the order; otherwise one is generated. Quote it when you contact support.</p>
 
 <h2 id="sign">4. Sign the request</h2>
 <p>Compute <code>hash</code> with the <b>scheme configured on your account</b> (shown next to your Key in the
@@ -240,6 +254,23 @@ second of the money landing, without polling in a tight loop.</p>
 <pre>GET https://katanapay.co/api/pay-status/8d20c0b6-…?wait=1</pre>
 <p>Use plain enquiry (no <code>wait</code>) for reconciliation sweeps, and <code>wait=1</code> only where a person is
 watching a screen. Either way, enquiry is the <b>fallback if a callback was missed</b> — it always reflects the truth.</p>
+
+<h3 id="report">Pay-in report</h3>
+<p><code>POST /api/v1/reports/payins</code> returns your own orders for a date range, with totals.</p>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td><code>key</code></td><td>Your Key. A test Key reports test orders, a live Key live ones.</td></tr>
+  <tr><td><code>from</code>, <code>to</code></td><td>Calendar days in India, <code>YYYY-MM-DD</code>. At most 31 days.</td></tr>
+  <tr><td><code>format</code></td><td><code>json</code> (default) or <code>csv</code>.</td></tr>
+  <tr><td><code>hash</code></td><td>Signed like an order, over the string <code>from|to</code>.</td></tr>
+</table>
+<p>The JSON carries <code>summary</code> (orders, paid orders, paid amount, failed, expired, pending, success rate),
+<code>by_day</code>, <code>by_flow</code> and <code>orders</code> (your <code>txnid</code>, the order <code>id</code>, <code>amount</code>,
+<code>status</code>, <code>flow</code>, <code>utr</code>, <code>created_at</code>, <code>paid_at</code>). <code>status</code> is the same word your
+callback carries: <code>Captured</code>, <code>Failed</code>, <code>Expired</code>, or <code>Pending</code>. A report holds up to 10,000 orders;
+<code>truncated: true</code> means the range has more, and the totals still cover all of them.</p>
+<p>Every report carries an <code>X-Report-Hash</code> header, the SHA-256 of its content (the JSON repeats it as
+<code>report_hash</code>). Keep it with the file: a copy that has been edited no longer matches.</p>
 
 <h2 id="codes">8. Status &amp; response codes</h2>
 <table>

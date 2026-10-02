@@ -118,8 +118,10 @@ export const openapiSpec = {
           "200": { description: "Existing order returned (same txnid)", content: { "application/json": { schema: { $ref: "#/components/schemas/CreateOrderResponse" } } } },
           "400": { description: "Invalid request / amount", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "401": { description: "invalid key or signature mismatch", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-          "403": { description: "Banker is blocked, or a live Key was used before live mode is activated (`code: LIVE_MODE_NOT_ACTIVATED`)", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "The account is blocked or suspended (`code: MERCHANT_BLOCKED` / `MERCHANT_SUSPENDED`), or a live Key was used before live mode is activated (`code: LIVE_MODE_NOT_ACTIVATED`)", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "409": { description: "The merchant can't take live payments yet: no pay-in gateway and no receiving UPI ID", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "422": { description: "The order is outside the account's limits; no order was created. `code` is `AMOUNT_BELOW_MIN`, `AMOUNT_ABOVE_MAX`, `UPI_LIMIT_EXCEEDED` or `DAILY_LIMIT_EXCEEDED`. A repeated `txnid` is never limited.", content: { "application/json": { schema: { $ref: "#/components/schemas/LimitError" } } } },
+          "429": { description: "Too many orders in one second (`code: RATE_LIMITED`). Retry after the `Retry-After` header.", content: { "application/json": { schema: { $ref: "#/components/schemas/LimitError" } } } },
           "502": { description: "The gateway refused the order (e.g. below its minimum amount); no order was created", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         },
       },
@@ -182,6 +184,29 @@ export const openapiSpec = {
           "403": { description: "Live Key before live mode is activated (`code: LIVE_MODE_NOT_ACTIVATED`)", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "404": { description: "Beneficiary not found", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           "409": { description: "Beneficiary not approved, insufficient payout balance, rail not possible for this amount or beneficiary, txnid reused with different values, or test/live mismatch", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+    "/api/v1/reports/payins": {
+      post: {
+        tags: ["Pay-in"],
+        summary: "Pay-in report for a date range",
+        description: "Your own orders for a range of calendar days in India (at most 31), with totals by day and by flow. A Key only sees orders of its own mode. Signed string: `from|to`. The response carries `X-Report-Hash`, the SHA-256 of the report's content; the JSON repeats it as `report_hash`.",
+        requestBody: { required: true, content: { "application/json": { schema: {
+          type: "object", required: ["key", "from", "to", "hash"],
+          properties: {
+            key: { type: "string", example: "mk_test_xxx" },
+            from: { type: "string", example: "2026-10-01" },
+            to: { type: "string", example: "2026-10-31" },
+            format: { type: "string", enum: ["json", "csv"], default: "json" },
+            hash: { type: "string", description: "Signature over `from|to`." },
+          },
+        } } } },
+        responses: {
+          "200": { description: "The report (JSON, or CSV when `format` is `csv`)" },
+          "400": { description: "Bad dates, or a range over 31 days", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "401": { description: "invalid key or signature mismatch", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          "403": { description: "Live Key before live mode is activated (`code: LIVE_MODE_NOT_ACTIVATED`)", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         },
       },
     },
@@ -350,6 +375,16 @@ export const openapiSpec = {
           livemode: { type: "boolean" },
           created_at: { type: "string", format: "date-time" },
           completed_at: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      LimitError: {
+        type: "object",
+        properties: {
+          error: { type: "string", example: "amount is above the maximum of ₹5,000" },
+          code: { type: "string", enum: ["AMOUNT_BELOW_MIN", "AMOUNT_ABOVE_MAX", "UPI_LIMIT_EXCEEDED", "DAILY_LIMIT_EXCEEDED", "RATE_LIMITED"] },
+          field: { type: "string", example: "amount" },
+          limit: { type: "number", example: 5000 },
+          actual: { type: "number", example: 5000.01 },
         },
       },
       Error: {

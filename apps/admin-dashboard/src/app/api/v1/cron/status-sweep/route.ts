@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { resolveKatanaStatus, genRrn } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
+import { beat } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,11 @@ export async function POST(req: Request) {
       const r = await sendPayinCallback(o.id).catch(() => ({ sent: false }));
       if (r.sent) renotified++;
     }
-    return NextResponse.json({ ok: true, scanned: pending.length, swept, settled, failed, expired, renotified });
-  } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+    const out = { scanned: pending.length, swept, settled, failed, expired, renotified };
+    await beat("status-sweep", 60, true, out);
+    return NextResponse.json({ ok: true, ...out });
+  } catch (err) {
+    await beat("status-sweep", 60, false, { error: (err as Error).message });
+    const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
+  }
 }

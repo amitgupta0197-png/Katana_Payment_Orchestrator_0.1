@@ -18,6 +18,7 @@
 // is examined, so a payment email is processed exactly once.
 
 import { ImapFlow } from "imapflow";
+import { openText } from "@/lib/sealed-text";
 import { simpleParser } from "mailparser";
 import { ingestTxnAlert, isAuthMessage } from "@/lib/txn-reconcile";
 import { rows } from "@/lib/pg";
@@ -79,7 +80,7 @@ async function loadInboxes(): Promise<InboxConfig[]> {
   const seen = new Set(list.map((c) => c.email.toLowerCase()));
   for (const r of db) {
     if (seen.has(String(r.email).toLowerCase())) continue;
-    list.push({ email: r.email, appPassword: r.app_password ?? undefined, authType: r.auth_type, refreshToken: r.refresh_token ?? undefined,
+    list.push({ email: r.email, appPassword: openText(r.app_password) ?? undefined, authType: r.auth_type, refreshToken: openText(r.refresh_token) ?? undefined,
       host: r.host, port: r.port, merchantId: r.merchant_id ?? undefined, fromDb: true });
   }
   return list;
@@ -112,7 +113,7 @@ export async function pollInboxByEmail(email: string): Promise<EmailIngestResult
   if (!db.length) return null;
   const r = db[0];
   const cfg: InboxConfig = {
-    email: r.email, appPassword: r.app_password ?? undefined, authType: r.auth_type, refreshToken: r.refresh_token ?? undefined,
+    email: r.email, appPassword: openText(r.app_password) ?? undefined, authType: r.auth_type, refreshToken: openText(r.refresh_token) ?? undefined,
     host: r.host, port: r.port, merchantId: r.merchant_id ?? undefined, fromDb: true,
   };
   const res = await pollOneInbox(cfg);
@@ -130,7 +131,7 @@ export async function startWatchAll(): Promise<{ enabled: boolean; watches: Arra
   const watches: Array<{ email: string; ok: boolean; expiration?: string; error?: string }> = [];
   for (const r of db) {
     try {
-      const w = await startGmailWatch(r.refresh_token);
+      const w = await startGmailWatch(openText(r.refresh_token as string));
       if (w?.expiration) {
         await rows("vendorGateway", `UPDATE vendor_email_inboxes SET watch_expiration = to_timestamp(($2::bigint)/1000) WHERE email = $1`,
           [r.email, w.expiration]).catch(() => {});

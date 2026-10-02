@@ -4,6 +4,7 @@
 // HMAC-signed so we trust the merchant binding. Whitelisted in middleware (/api/oauth).
 
 import { NextResponse } from "next/server";
+import { sealText } from "@/lib/sealed-text";
 import { exchangeCode, verifyState, oauthConfigured, startGmailWatch } from "@/lib/gmail-oauth";
 import { rows } from "@/lib/pg";
 
@@ -44,7 +45,7 @@ export async function GET(req: Request) {
         status        = 'OK',
         last_error    = null,
         updated_at    = now()
-    `, [state.merchant, email.toLowerCase(), refreshToken]);
+    `, [state.merchant, email.toLowerCase(), sealText(refreshToken)]);   // sealed at rest (lib/sealed-text)
 
     // Start the Gmail push watch so new mail is delivered instantly (best-effort; the
     // 10s poll is the fallback if Pub/Sub isn't configured).

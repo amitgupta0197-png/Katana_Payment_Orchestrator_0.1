@@ -4,6 +4,7 @@
 //   MERCHANT    — U contact + webhook URL only (subset).
 
 import { NextResponse } from "next/server";
+import { aadhaarLast4Problem, gstinProblem, panProblem, tidyId } from "@/lib/kyc-validators";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
@@ -18,7 +19,19 @@ const updateSchema = z.object({
   return_url: z.string().url().optional().or(z.literal("")),
   stage: z.string().optional(),
   risk_tier: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  category_mcc: z.string().trim().regex(/^([0-9]{4})?$/, "a merchant category code has four digits").optional(),
+  website: z.string().url().optional().or(z.literal("")),
+  // KYB identifiers (merchant 0013). Checked for form here; lib/onboarding-gates checks them
+  // against each other when the application step is advanced.
+  gstin: z.string().trim().refine((v) => !v || !gstinProblem(v), (v) => ({ message: `gstin: ${gstinProblem(v)}` })).optional(),
+  business_pan: z.string().trim().refine((v) => !v || !panProblem(v), (v) => ({ message: `business_pan: ${panProblem(v)}` })).optional(),
+  director_name: z.string().trim().max(200).optional(),
+  director_pan: z.string().trim().refine((v) => !v || !panProblem(v), (v) => ({ message: `director_pan: ${panProblem(v)}` })).optional(),
+  director_aadhaar_last4: z.string().trim().refine((v) => !v || !aadhaarLast4Problem(v), (v) => ({ message: `director_aadhaar_last4: ${aadhaarLast4Problem(v)}` })).optional(),
+  est_monthly_volume: z.coerce.number().positive().max(1e12).optional(),
 });
+const KYB_FIELDS = ["gstin", "business_pan", "director_name", "director_pan", "director_aadhaar_last4", "est_monthly_volume", "category_mcc", "website"];
+const ID_FIELDS = new Set(["gstin", "business_pan", "director_pan"]);
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER", "MERCHANT"]);
@@ -35,7 +48,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const allowed = s.persona === "SUPER_ADMIN"
     ? new Set(Object.keys(updateSchema.shape))
     : s.persona === "PROVIDER"
-      ? new Set(["risk_tier"]) // KYC + bank are tracked in their own tables; expose later.
+      ? new Set(["risk_tier", ...KYB_FIELDS]) // the provider drives the application and its documents
       : new Set(["contact_email", "contact_phone", "webhook_url", "return_url"]);
   const fields = Object.fromEntries(
     Object.entries(body).filter(([k, v]) => allowed.has(k) && v !== undefined),
@@ -57,7 +70,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const sets: string[] = [];
     const args: unknown[] = [];
     for (const [k, v] of Object.entries(fields)) {
-      args.push(v);
+      // Identifiers are stored as issued (upper case, no spaces); an emptied field is cleared.
+      args.push(KYB_FIELDS.includes(k) ? (ID_FIELDS.has(k) ? tidyId(v as string) : v) || null : v);
       sets.push(`${k} = $${args.length}`);
     }
     args.push(id);

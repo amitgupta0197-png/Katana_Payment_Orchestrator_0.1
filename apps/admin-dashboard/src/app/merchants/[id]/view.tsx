@@ -28,6 +28,8 @@ import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card
 import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
+import { PayinLimitsCard } from "@/components/merchant/payin-limits-card";
+import { OnboardingChecksCard } from "@/components/merchant/onboarding-checks-card";
 import { LiveActivationCard } from "@/components/merchant/live-activation-card";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { JourneyBar, StatusLights } from "@/components/merchant/merchant-at-a-glance";
@@ -150,19 +152,26 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
   const step = STEPS[stepIndex];
   const [notes, setNotes] = useState("");
   const [riskTier, setRiskTier] = useState<"LOW" | "MEDIUM" | "HIGH">(merchant.risk_tier as any ?? "LOW");
+  // A system check refused the step (lib/onboarding-gates). A Super Admin may go ahead with a note.
+  const [blocked, setBlocked] = useState<{ error: string; canOverride: boolean } | null>(null);
+  const [override, setOverride] = useState(false);
 
   const m = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/merchants/${merchant.id}/advance`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: step.key, notes, risk_tier: step.key === "step_screening" ? riskTier : undefined }),
+        body: JSON.stringify({ step: step.key, notes, risk_tier: step.key === "step_screening" ? riskTier : undefined, override: override || undefined }),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        if (d.code === "GATE_FAILED") setBlocked({ error: d.error, canOverride: d.can_override === true });
+        throw new Error(d.error ?? "Failed");
+      }
       return r.json();
     },
     onSuccess: () => {
       toast.success(`Advanced to ${step.stage_to}`);
-      setOpen(false);
+      setOpen(false); setBlocked(null); setOverride(false);
       qc.invalidateQueries({ queryKey: ["merchant", merchant.id] });
       qc.invalidateQueries({ queryKey: ["merchants"] });
     },
@@ -200,6 +209,17 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
             <Label>Operator notes (audit log)</Label>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. 'docs verified by ops on 13-Jun'" />
           </div>
+          {blocked && (
+            <div className="rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
+              <div>A check stopped this step: {blocked.error}</div>
+              {blocked.canOverride && (
+                <label className="mt-2 flex items-center gap-1.5">
+                  <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+                  Advance anyway. The note above is recorded as the reason.
+                </label>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
@@ -652,6 +672,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
               </CardContent>
             </Card>
           </div>
+          <OnboardingChecksCard merchantId={merchant.id} />
         </TabsContent>
 
         <TabsContent value="payments">
@@ -662,6 +683,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         <TabsContent value="collection">
           <PayinFlowCard target={{ kind: "banker", id: merchant.id, name: merchant.brand_name || merchant.legal_name }} />
           <PaymentMethodsCard merchantId={merchant.id} />
+          <PayinLimitsCard merchantId={merchant.id} />
           <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
           <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
             <KatanaPayConfigCard merchantId={merchant.id} />

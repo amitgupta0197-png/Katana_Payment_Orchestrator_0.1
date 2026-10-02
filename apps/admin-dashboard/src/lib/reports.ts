@@ -12,6 +12,7 @@ import { rows } from "@/lib/pg";
 import { inr, esc } from "@/lib/telegram";
 import { IS_COLLECTION } from "@/lib/settlement-credit";
 import { RRN_PROVEN_SQL } from "@/lib/credit-verification";
+import { gatewayPerformance, isUnhealthy, platformSummary } from "@/lib/gateway-performance";
 
 // UTC instant of the most recent IST midnight — comparable to a timestamptz column.
 const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'";
@@ -166,10 +167,44 @@ export async function partnerInquiries(): Promise<string> {
   }
 }
 
-// Combined daily summary — all four, for the scheduled push and /report.
+const pct = (r: number | null) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+
+// ── Report 5: the platform's day — live pay-ins by flow, payouts, what waits on a person ──
+export async function platformToday(): Promise<string> {
+  try {
+    const s = await platformSummary();
+    const flows = s.payins.map((f) =>
+      `   • ${esc(f.flow)}: <b>${inr(f.paid_amount)}</b> · ${f.paid} of ${f.orders} paid · success ${pct(f.success_rate)}`).join("\n");
+    const o = s.open;
+    return [
+      `🧭 <b>Platform today</b>`,
+      flows || "   No live pay-ins yet today.",
+      `Payouts: <b>${inr(s.payouts.paid_amount)}</b> paid (${s.payouts.paid}) · ${s.payouts.pending} in progress`,
+      `Waiting on a person: ${o.manual_cases} credits to decide · ${o.compliance_flags} compliance flags · ${o.dead_letter_callbacks_24h} failed callbacks · ${o.ops_alerts} open alerts`,
+    ].join("\n");
+  } catch {
+    return `🧭 <b>Platform today</b>\n   ⚠️ unavailable`;
+  }
+}
+
+// ── Report 6: each gateway's success rate over the last 24 hours. Staff only: it names gateways. ──
+export async function gatewayLeague(): Promise<string> {
+  try {
+    const perf = await gatewayPerformance(24);
+    if (!perf.length) return `🏁 <b>Gateways, last 24h</b>\n   No gateway orders.`;
+    const ranked = [...perf].sort((a, b) => (b.success_rate ?? -1) - (a.success_rate ?? -1));
+    const lines = ranked.map((g) =>
+      `   ${isUnhealthy(g) ? "🔴" : "🟢"} ${esc(g.gateway)}: <b>${pct(g.success_rate)}</b> · ${g.paid} of ${g.orders} paid · ${inr(g.paid_amount)} · last ${g.recent_sample}: ${pct(g.recent_rate)}`).join("\n");
+    return [`🏁 <b>Gateways, last 24h</b>`, lines].join("\n");
+  } catch {
+    return `🏁 <b>Gateways, last 24h</b>\n   ⚠️ unavailable`;
+  }
+}
+
+// Combined daily summary — all six, for the scheduled push and /report.
 export async function fullReport(): Promise<string> {
-  const [c, h, s, p] = await Promise.all([
-    collectionsToday(), captureHealth(), settlementsSummary(), partnerInquiries(),
+  const [pl, c, g, h, s, p] = await Promise.all([
+    platformToday(), collectionsToday(), gatewayLeague(), captureHealth(), settlementsSummary(), partnerInquiries(),
   ]);
-  return [`📊 <b>Katana daily report</b>`, c, h, s, p].join("\n\n");
+  return [`📊 <b>Katana daily report</b>`, pl, c, g, h, s, p].join("\n\n");
 }

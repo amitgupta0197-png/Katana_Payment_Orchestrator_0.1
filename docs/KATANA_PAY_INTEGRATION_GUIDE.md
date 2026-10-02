@@ -85,7 +85,24 @@ The flow status APIs accept the order `id` or the flow reference (`P2P-000000123
 
 **Merchants paid on a gateway's payment page** get no UPI link: `deeplinks`, `upi_intent` and `qr_payload` are `null`, and the response adds `"gateway_url"` (the gateway's page). Send the customer to `pay_url` as usual (it hands over to the gateway) or straight to `gateway_url`. The gateway's own limits apply, e.g. a minimum amount per payment.
 
-Errors: `401 invalid key`, `401 signature mismatch`, `403` (blocked), `400 invalid amount`, `409` (the account can't take live payments yet: no gateway or receiving UPI ID set up), `502` (the gateway refused the order, e.g. below its minimum; no order created, retry with the same `txnid`).
+Errors: `401 invalid key`, `401 signature mismatch`, `403` (the account is blocked or suspended: `code` `MERCHANT_BLOCKED` / `MERCHANT_SUSPENDED`), `400 invalid amount`, `409` (the account can't take live payments yet: no gateway or receiving UPI ID set up), `502` (the gateway refused the order, e.g. below its minimum; no order created, retry with the same `txnid`).
+
+**Limits.** A live order outside your account's limits is refused with `422` and no order is created. The body says which limit and what it is:
+
+```json
+{ "error": "amount is above the maximum of ₹5,000", "code": "AMOUNT_ABOVE_MAX", "field": "amount", "limit": 5000, "actual": 5000.01 }
+```
+
+| `code` | Meaning |
+|---|---|
+| `AMOUNT_BELOW_MIN` | The amount is under the minimum for one order. |
+| `AMOUNT_ABOVE_MAX` | The amount is over your account's maximum for one order. |
+| `UPI_LIMIT_EXCEEDED` | The amount is over what one UPI payment can carry (₹1,00,000 unless your account has a higher maximum). |
+| `DAILY_LIMIT_EXCEEDED` | Today's orders plus this one would pass your daily limit. `actual` is the total it would reach. The day is the calendar day in India; an order that fails or expires gives its amount back. |
+
+Too many orders in one second are refused with `429`, `code` `RATE_LIMITED` and a `Retry-After: 1` header; send the order again after that. Repeating a `txnid` you already created is never limited: you get the original order back.
+
+**Request id.** Every response carries an `X-Request-Id` header. Send your own (8 to 64 letters, digits, `.`, `_`, `:` or `-`) and it is echoed and kept with the order; otherwise one is generated. Quote it when you contact support.
 
 ## 4. Sign the request
 
@@ -129,6 +146,21 @@ Callbacks for **test orders** also carry `"LIVEMODE":"false"` (included in the H
 ## 7. Status enquiry
 
 `GET /api/pay-status/{order_id}` → `{ status, amount, rrn, terminal, livemode, … }`. Use as a fallback if a callback is missed.
+
+## 7a. Pay-in report
+
+`POST /api/v1/reports/payins` returns your own orders for a date range, with totals.
+
+| Field | Meaning |
+|---|---|
+| `key` | Your Key. A test Key reports test orders, a live Key live ones. |
+| `from`, `to` | Calendar days in India, `YYYY-MM-DD`. At most 31 days. |
+| `format` | `json` (default) or `csv`. |
+| `hash` | Signed like an order, over the string `from|to`. |
+
+The JSON carries `summary` (orders, paid orders, paid amount, failed, expired, pending, success rate), `by_day`, `by_flow` and `orders` (your `txnid`, the order `id`, `amount`, `status`, `flow`, `utr`, `created_at`, `paid_at`). `status` is the same word your callback carries: `Captured`, `Failed`, `Expired`, or `Pending`. A report holds up to 10,000 orders; `truncated: true` means the range has more, and the totals still cover all of them.
+
+Every report carries an `X-Report-Hash` header, the SHA-256 of its content (the JSON repeats it as `report_hash`). Keep it with the file: a copy that has been edited no longer matches.
 
 ## 8. Status & response codes
 

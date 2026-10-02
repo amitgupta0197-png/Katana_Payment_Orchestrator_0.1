@@ -7,6 +7,7 @@
 // Whitelisted in middleware (PUBLIC_API).
 
 import { NextResponse } from "next/server";
+import { openText, sealText } from "@/lib/sealed-text";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { verifyDeviceRequest } from "@/lib/device-auth";
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     const existing = (await rows<{ app_password: string }>("vendorGateway",
       `SELECT app_password FROM vendor_email_inboxes WHERE email = $1`, [email]))[0];
     if (!existing && !appPw) return NextResponse.json({ error: "app password required for a new inbox" }, { status: 400 });
-    const effectivePw = appPw ?? existing!.app_password;
+    const effectivePw = appPw ?? openText(existing!.app_password);   // sealed at rest (lib/sealed-text)
 
     // Best-effort connect test for immediate feedback; we still SAVE either way so the
     // user can fix the password and the cron retries.
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
         port         = COALESCE($5, vendor_email_inboxes.port),
         enabled      = COALESCE($6, vendor_email_inboxes.enabled),
         status       = $7, last_error = $8, updated_at = now()
-    `, [body.merchant_id ?? null, email, appPw ?? "", body.host ?? null, body.port ?? null, body.enabled ?? null, status, test.ok ? null : (test.error ?? "connect failed")]);
+    `, [body.merchant_id ?? null, email, appPw ? sealText(appPw) : "", body.host ?? null, body.port ?? null, body.enabled ?? null, status, test.ok ? null : (test.error ?? "connect failed")]);
 
     if (!test.ok) return NextResponse.json({ ok: false, status: "saved", error: test.error ?? "could not connect — check the app password & that IMAP is enabled" });
     return NextResponse.json({ ok: true, status: "connected" });

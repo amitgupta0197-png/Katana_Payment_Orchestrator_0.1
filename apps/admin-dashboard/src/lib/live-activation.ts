@@ -118,6 +118,19 @@ export async function assertLiveActivated(code: string): Promise<void> {
   if (!(await isLiveActivated(code))) throw new LiveModeNotActivatedError(code);
 }
 
+/** How many successful test payments the checklist asks for (LIVE_MIN_TEST_PAYMENTS, default 1). */
+export function minTestPayments(): number {
+  const n = Number(process.env.LIVE_MIN_TEST_PAYMENTS ?? 1);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * LIVE_AUTO_ACTIVATE=1: a request with a complete checklist is approved at once, by the system.
+ * The checklist's first item is "onboarding approved", which only a Super Admin can make true,
+ * so a person has still approved the account; what this removes is the second approval.
+ */
+export const autoActivate = () => process.env.LIVE_AUTO_ACTIVATE === "1";
+
 export interface ChecklistItem {
   key: "onboarding" | "settlement_vpa" | "webhook_url" | "test_payment";
   label: string;
@@ -133,12 +146,14 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
     rows<{ vpa: string | null; vpas: unknown }>("merchant",
       `SELECT katana_pay->>'settlement_vpa' AS vpa, katana_pay->'settlement_vpas' AS vpas
          FROM merchant_payment_config WHERE merchant_code = $1`, [code]).catch(() => []),
-    rows("vendorGateway", `
-      SELECT 1 FROM vendor_payin_orders
-       WHERE merchant_id = $1 AND livemode = false AND status IN ('SUCCESS', 'SUCCEEDED') LIMIT 1`, [code]).catch(() => []),
-    rows("checkout", `
-      SELECT 1 FROM checkout_orders WHERE merchant_id = $1 AND livemode = false AND status = 'SUCCESS' LIMIT 1`, [code]).catch(() => []),
+    rows<{ n: number }>("vendorGateway", `
+      SELECT COUNT(*)::int AS n FROM vendor_payin_orders
+       WHERE merchant_id = $1 AND livemode = false AND status IN ('SUCCESS', 'SUCCEEDED')`, [code]).catch(() => []),
+    rows<{ n: number }>("checkout", `
+      SELECT COUNT(*)::int AS n FROM checkout_orders WHERE merchant_id = $1 AND livemode = false AND status = 'SUCCESS'`, [code]).catch(() => []),
   ]);
+  const need = minTestPayments();
+  const tests = (testPayin[0]?.n ?? 0) + (testCheckout[0]?.n ?? 0);
   const m = merchant[0];
   const c = cfg[0];
   const extraVpas = Array.isArray(c?.vpas) && c.vpas.some((v) => typeof v === "string" && v.trim());
@@ -157,7 +172,8 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
       hint: "Where Katana posts payment results for your server. Set it under Return & webhook URLs.",
     },
     {
-      key: "test_payment", label: "A test payment succeeded", done: testPayin.length > 0 || testCheckout.length > 0,
+      key: "test_payment", done: tests >= need,
+      label: need === 1 ? "A test payment succeeded" : `${need} test payments succeeded (${Math.min(tests, need)} so far)`,
       hint: "Create an order with your test key and open its payment page: tap Simulate success, or send an amount ending in .99.",
     },
   ];
@@ -219,6 +235,7 @@ export async function requestActivation(code: string, actor: string): Promise<Ac
      WHERE merchant_live_activation.status IN ('NOT_REQUESTED', 'REJECTED')
   `, [code, actor]);
   await logActivity(code, "LIVE_ACTIVATION_REQUESTED", actor, {});
+  if (autoActivate()) return decideActivation(code, "APPROVE", "system:auto", "checklist complete; approved automatically");
   return activationState(code);
 }
 

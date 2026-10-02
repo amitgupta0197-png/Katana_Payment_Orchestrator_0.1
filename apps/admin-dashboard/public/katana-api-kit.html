@@ -1004,7 +1004,9 @@ the payment was <b>collected</b>. Money reaching your bank account follows on th
   <tr><td>200</td><td><i>none —</i> <code>reused: true</code></td><td>Not an error: this <code>txnid</code> already exists. Check <code>order.amount</code> matches what you sent; if not, you have collided with another order (§5.1).</td></tr>
   <tr><td>401</td><td><code>invalid key</code></td><td>The Key is not recognised. Check you are using the right environment's credentials.</td></tr>
   <tr><td>401</td><td><code>signature mismatch</code></td><td>The hash did not match. Work the debugging list below.</td></tr>
-  <tr><td>403</td><td>—</td><td>The merchant account is blocked. Contact your Katana account manager.</td></tr>
+  <tr><td>403</td><td><code>code</code> <code>MERCHANT_BLOCKED</code> / <code>MERCHANT_SUSPENDED</code></td><td>The merchant account is blocked or suspended. Contact your Katana account manager.</td></tr>
+  <tr><td>422</td><td><code>code</code> <code>AMOUNT_BELOW_MIN</code>, <code>AMOUNT_ABOVE_MAX</code>, <code>UPI_LIMIT_EXCEEDED</code>, <code>DAILY_LIMIT_EXCEEDED</code></td><td>The order is outside the account's limits; no order was created. The body carries <code>field</code>, <code>limit</code> and <code>actual</code>. Switch on <code>code</code>, not on the message. A repeated <code>txnid</code> is never limited.</td></tr>
+  <tr><td>429</td><td><code>code</code> <code>RATE_LIMITED</code></td><td>Too many orders in one second. Retry with the same <code>txnid</code> after the <code>Retry-After</code> header (1 second).</td></tr>
   <tr><td>400</td><td><code>invalid amount</code></td><td>The amount is missing, zero, negative or not a number.</td></tr>
   <tr><td>400</td><td>validation error</td><td>A field failed validation — for example a <code>return_url</code> that is not http(s), or more than 30 entries in <code>receiver_vpas</code>. The message text is diagnostic; <b>do not string-match on it</b>.</td></tr>
   <tr><td>404</td><td>—</td><td>Status enquiry only: unknown order id. Check you sent the <code>order.id</code> UUID, not your <code>txnid</code>.</td></tr>

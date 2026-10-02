@@ -77,8 +77,8 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
-  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/fifo-reports", "/fifo-controls", "/security"],
-  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/fifo-controls", "/fifo-reports", "/security"],
+  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/fifo-reports", "/fifo-controls", "/security"],
+  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
@@ -143,6 +143,7 @@ export const navItems: NavItem[] = [
   { href: "/reconciliation", label: "Reconciliation", icon: GitMerge, status: "live", group: "Risk & Compliance" },
   { href: "/risk", label: "Risk & Velocity", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/risk/aml", label: "AML / Sanctions", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
+  { href: "/risk/payin-flags", label: "Pay-in flags", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
   { href: "/forensics", label: "Forensics", icon: FileSearch, status: "live", group: "Risk & Compliance" },

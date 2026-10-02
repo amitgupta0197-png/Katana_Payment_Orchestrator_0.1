@@ -21,7 +21,7 @@
 
 import { createHash } from "crypto";
 import { rows } from "@/lib/pg";
-import { getCircuit, isOpenCircuit } from "@/lib/circuit-breaker";
+import { claimProbe, getCircuit, isOpenCircuit } from "@/lib/circuit-breaker";
 
 export interface RoutingWeights {
   success_rate: number;
@@ -175,6 +175,12 @@ export async function pickRoute(input: RoutingInput): Promise<{
     const c = await getCircuit(rail.provider);
     if (isOpenCircuit(c)) {
       excluded.push({ provider: rail.provider, method: rail.method, reason: "circuit_open" });
+      continue;
+    }
+    // A recovering provider takes one request, the probe. Every other request skips it until
+    // the probe has answered.
+    if (c?.circuit_state === "HALF_OPEN" && !(await claimProbe(rail.provider))) {
+      excluded.push({ provider: rail.provider, method: rail.method, reason: "circuit_probing" });
       continue;
     }
     eligibleRails.push(rail);

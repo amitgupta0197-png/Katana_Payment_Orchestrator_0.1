@@ -104,6 +104,7 @@ Also accepts `application/x-www-form-urlencoded` (same fields).
 | `401`  | `invalid key` or `signature mismatch` |
 | `403`  | Merchant is blocked |
 | `409`  | The merchant can't take live payments yet: no pay-in gateway and no receiving UPI ID |
+| `409`  | `code: LIVE_CHECKOUT_UNAVAILABLE`: a live Key was used without `redirect=true` or `intent=true`. Live payments are always taken on the payment page or by UPI app links |
 | `502`  | The gateway refused the order (message says why, e.g. below its minimum); no order created |
 
 ### Merchants paid on a gateway's payment page

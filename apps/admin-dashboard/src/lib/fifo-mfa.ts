@@ -4,6 +4,7 @@
 // required regardless of the enforce flag.
 
 import { createHash } from "crypto";
+import { openText, sealText } from "@/lib/sealed-text";
 import { rows } from "@/lib/pg";
 import { generateSecret, otpauthUri, verifyTotp } from "@/lib/totp";
 import type { Persona } from "@/lib/auth";
@@ -16,7 +17,9 @@ export function isSensitiveRole(p: Persona): boolean { return SENSITIVE_ROLES.in
 export interface MfaRow { email: string; enabled: boolean; totp_secret: string }
 
 export async function getMfa(email: string): Promise<MfaRow | null> {
-  return (await rows<MfaRow>("fifo", `SELECT email, enabled, totp_secret FROM fifo_user_mfa WHERE email=$1`, [email]).catch(() => []))[0] ?? null;
+  const m = (await rows<MfaRow>("fifo", `SELECT email, enabled, totp_secret FROM fifo_user_mfa WHERE email=$1`, [email]).catch(() => []))[0];
+  // The secret is sealed at rest (lib/sealed-text); callers get the secret itself.
+  return m ? { ...m, totp_secret: openText(m.totp_secret) } : null;
 }
 
 // Begin enrolment — (re)generates a secret in disabled state and returns the
@@ -27,7 +30,7 @@ export async function enrollMfa(email: string, userId?: string | null): Promise<
     INSERT INTO fifo_user_mfa (email, user_id, totp_secret, enabled, created_at)
     VALUES ($1,$2,$3,false, now())
     ON CONFLICT (email) DO UPDATE SET totp_secret=EXCLUDED.totp_secret, enabled=false, created_at=now(), verified_at=NULL
-  `, [email, userId ?? null, secret]);
+  `, [email, userId ?? null, sealText(secret)]);
   return { secret, otpauth: otpauthUri(secret, email) };
 }
 

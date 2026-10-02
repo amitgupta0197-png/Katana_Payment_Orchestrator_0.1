@@ -14,7 +14,9 @@ import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-p
 import { gatewayName } from "@/lib/pg-catalog";
 import { classifyPayinOrder } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
-import { getMerchantFlow } from "@/lib/payin-flow-store";
+import { getEffectiveFlow } from "@/lib/payin-flow-store";
+import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
+import { getPayinLimits, getPayinUsage, insertWithinDailyLimit } from "@/lib/payin-limits-store";
 
 export interface CreateKatanaOrderInput {
   orderId: string;
@@ -33,6 +35,8 @@ export interface CreateKatanaOrderInput {
   client?: PayuIntentClient | null; // paying customer's IP + user-agent — PayU requires them
   /** The flow asked for by name (the P2P or the Intent API). Absent on the general order API. */
   flow?: OrderFlow | null;
+  /** The id of the request that created the order; kept on the order and in its status history. */
+  requestId?: string | null;
 }
 
 /**
@@ -89,8 +93,19 @@ function shortId(prefix: string) {
 export const HIGH_AMOUNT_HOLD = Number(process.env.HIGH_AMOUNT_HOLD ?? 50000);
 
 export class MerchantBlockedError extends Error {
-  constructor(public merchantId: string) { super(`merchant ${merchantId} is blocked`); }
+  readonly code: string = "MERCHANT_BLOCKED";
+  constructor(public merchantId: string, message = `merchant ${merchantId} is blocked`) { super(message); }
 }
+
+/** The banker, or the merchant it belongs to, is suspended or terminated. Answered like a block (403). */
+export class MerchantSuspendedError extends MerchantBlockedError {
+  readonly code = "MERCHANT_SUSPENDED";
+  constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} is suspended`); }
+}
+
+// Onboarding stages and merchant statuses that take no new pay-ins.
+const CLOSED_STAGES = new Set(["SUSPENDED", "TERMINATED", "REJECTED"]);
+const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
 
 export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
   const orderId = input.orderId;
@@ -100,12 +115,15 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   // attribution — so a real customer cannot pay one, and none counts toward real volume.
   const livemode = input.livemode !== false;
 
-  // Risk: block-merchant — a blocked merchant cannot create new pay-ins.
+  // Risk: a blocked merchant cannot create new pay-ins, and neither can a suspended or
+  // terminated one. A failed read refuses the order: "could not tell" is not "not blocked".
   if (input.merchantId) {
-    const b = await rows<{ blocked: boolean }>(
-      "merchant", `SELECT blocked FROM merchant_payment_config WHERE merchant_code = $1`, [input.merchantId],
-    ).catch(() => []);
+    const b = await rows<{ blocked: boolean | null; stage: string | null }>("merchant", `
+      SELECT (SELECT blocked FROM merchant_payment_config WHERE merchant_code = $1) AS blocked,
+             (SELECT stage FROM merchants WHERE merchant_code = $1 LIMIT 1) AS stage
+    `, [input.merchantId]);
     if (b[0]?.blocked === true) throw new MerchantBlockedError(input.merchantId);
+    if (CLOSED_STAGES.has(b[0]?.stage ?? "")) throw new MerchantSuspendedError(input.merchantId);
     // A live order needs live mode activated for this merchant (lib/live-activation). Checked here
     // so every route that creates a pay-in — key-signed or from the dashboard — is covered.
     if (livemode) await assertLiveActivated(input.merchantId);
@@ -115,7 +133,14 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   // to the banker's own UPI ID and no gateway is asked. INTENT: a gateway takes the payment, and
   // an order no gateway can take is refused rather than quietly sent to a UPI ID. No flow
   // selected yet (null): the routing below is inferred from what the merchant has, as before.
-  const decided = decideOrderFlow(await getMerchantFlow(input.merchantId), input.flow ?? null);
+  const setting = await getEffectiveFlow(input.merchantId);
+  // The merchant this banker belongs to (a `providers` row) is suspended: its bankers take nothing.
+  if (input.merchantId && setting.providerId) {
+    const p = await rows<{ status: string }>("provider",
+      `SELECT status FROM providers WHERE id = $1::uuid`, [setting.providerId]).catch(() => []);
+    if (CLOSED_STATUSES.has(p[0]?.status ?? "")) throw new MerchantSuspendedError(input.merchantId);
+  }
+  const decided = decideOrderFlow({ flow: setting.flow, active: setting.active }, input.flow ?? null);
   if (!decided.ok) throw new PayinFlowError(decided.error, decided.code);
   const flow = decided.flow;
   const gatewayAllowed = flow !== "P2P";
@@ -176,6 +201,26 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   // there; the gateway's answer settles it. CCAvenue has none either, but its merchants keep the
   // direct UPI link to their own UPI ID.
   const linkGw = !otherGw && connected && connected.mid.gateway !== "CCAVENUE" ? connected : null;
+
+  // A REPLAYED ORDER IS ANSWERED FIRST, as the order it was created as. It is not checked
+  // against today's limits or routed again, and its ref never reaches a gateway twice (a
+  // gateway refuses a reused transaction id).
+  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+  if (prior) return prior;
+
+  // LIMITS (lib/payin-limits): rate, ticket size, the UPI ceiling and the day's total. Checked
+  // before a gateway is asked for anything, so a refused order costs the gateway nothing. The
+  // usage is only read when a rate or daily limit is in force.
+  let dailyLimit: number | null = null;
+  if (input.merchantId) {
+    const limits = effectivePayinLimits(await getPayinLimits(input.merchantId), platformPayinLimits());
+    const usage = limits.maxTps != null || (livemode && limits.daily != null)
+      ? await getPayinUsage(input.merchantId, livemode)
+      : { dayAmount: 0, lastSecond: 0 };
+    const breach = checkPayinLimits({ amount: input.amount, livemode, upi: !linkGw, limits, usage });
+    if (breach) throw new PayinLimitError(breach);
+    if (livemode) dailyLimit = limits.daily;
+  }
   let checkoutUrl: string | null = null;
   let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
@@ -183,10 +228,6 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string;
   const status = "PENDING";
   if (payuMid) {
-    // PayU refuses a reused txnid, so a replayed order ref must not reach PayU again.
-    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-    if (prior) return prior;
-
     vendorTxnId = shortId("kp");   // PayU txnid: unique per MID, at most 25 characters
     const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
     const r = await createPayuUpiIntent(payuMid, {
@@ -205,8 +246,6 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
       payee_vpa: new URLSearchParams(r.intentQuery).get("pa"),
     };
   } else if (otherGw) {
-    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-    if (prior) return prior;
     const { mid, connector } = otherGw;
     const name = gatewayName(mid.gateway);
     // A live order must be paid on the merchant's live gateway account.
@@ -235,8 +274,6 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
       payee_vpa: new URLSearchParams(r.data.intentQuery).get("pa"),
     };
   } else if (linkGw) {
-    const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-    if (prior) return prior;
     const { mid, connector } = linkGw;
     const name = gatewayName(mid.gateway);
     if (mid.env !== "PROD") throw new PayuIntentError(`this merchant's ${name} credentials are sandbox (TEST); live orders need live credentials`);
@@ -272,11 +309,8 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     // A live order must pay a real account. With no gateway that takes the payment and no
     // receiver UPI ID, the only payee left is the sandbox one, which UPI apps refuse — so the
     // order is refused here instead of handing the customer a link that can never be paid.
-    // An Intent order that reached here has no gateway able to take it. A replayed order is
-    // answered first: it was created under whatever the flow was at the time.
+    // An Intent order that reached here has no gateway able to take it.
     if (livemode && flow === "INTENT") {
-      const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-      if (prior) return prior;
       throw new PayinFlowError(
         `${input.merchantId ?? "this merchant"} is on the Intent flow but no pay-in gateway is connected that can take this payment`, "FLOW_NOT_READY");
     }
@@ -309,6 +343,7 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     return_url: input.returnUrl ?? null,   // browser redirect after pay
     ...(merchantName ? { merchant_name: merchantName } : {}),   // shown on Katana's pay page
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
+    ...(input.requestId ? { request_id: input.requestId } : {}),   // also in the status history (vendorGateway 0033)
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent
     integration: !livemode ? { source: "test", env: "SANDBOX", live: false }
@@ -320,7 +355,7 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   // decided above, so the requested and the final channel are the same.
   const payinChannel = classifyPayinOrder(gateway?.provider);
 
-  const inserted = await rows<any>("vendorGateway", `
+  const insertSql = `
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode,
@@ -329,18 +364,25 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     ON CONFLICT (vendor, COALESCE(merchant_id, ''), livemode, order_id) DO NOTHING
     RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode,
               channel_type, channel_id
-  `, [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
+  `;
+  const insertArgs = [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode,
-      payinChannel.type, payinChannel.id]);
+      payinChannel.type, payinChannel.id];
+  // With a daily limit in force the insert is made under the banker's day lock, where the
+  // total is read again: orders arriving together cannot pass the limit between them.
+  const inserted = dailyLimit != null && input.merchantId
+    ? await insertWithinDailyLimit<any>(input.merchantId, input.amount, dailyLimit, insertSql, insertArgs)
+    : await rows<any>("vendorGateway", insertSql, insertArgs);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null };
 
-  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+  // Two requests for the same ref raced and the other one inserted first.
+  const raced = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
   // A conflict guarantees a row on this key, so an empty result means the row was
   // deleted between the two statements. Say so rather than returning `order: undefined`,
   // which surfaces to the caller as an opaque "order create failed".
-  if (!prior) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
-  return prior;
+  if (!raced) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
+  return raced;
 }
 
 // IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT.
@@ -495,13 +537,22 @@ export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput, retried
     ...(reviving ? { [order.status === "FAILED" ? "revived_from_failed" : "revived_from_expired"]: { at: now, by: input.actor } } : {}),
   };
 
-  const upd = await rows<any>("vendorGateway", `
-    UPDATE vendor_payin_orders
-       SET status = $2, response_code = $3, rrn = COALESCE($4, rrn),
-           meta = COALESCE(meta, '{}'::jsonb) || $5::jsonb, updated_at = now()
-     WHERE id = $1::uuid AND status = $6
-    RETURNING id::text, order_id, status, COALESCE(rrn,'') AS rrn
-  `, [order.id, input.outcome, responseCode, rrn, JSON.stringify(meta), order.status]);
+  let upd: any[];
+  try {
+    upd = await rows<any>("vendorGateway", `
+      UPDATE vendor_payin_orders
+         SET status = $2, response_code = $3, rrn = COALESCE($4, rrn),
+             meta = COALESCE(meta, '{}'::jsonb) || $5::jsonb, updated_at = now()
+       WHERE id = $1::uuid AND status = $6
+      RETURNING id::text, order_id, status, COALESCE(rrn,'') AS rrn
+    `, [order.id, input.outcome, responseCode, rrn, JSON.stringify(meta), order.status]);
+  } catch (err) {
+    // Another order was confirmed with this reference between the check above and this write.
+    // The unique index (vendorGateway 0035) is what makes that impossible to get past.
+    if ((err as { code?: string }).code === "23505")
+      return { ok: false, status: 409, error: "duplicate UTR — already used by another order" };
+    throw err;
+  }
 
   // The order changed between the read and the write: another confirmation landed, or the sweep
   // expired it. Nothing was written. Decide again on the fresh row, once — it then answers as an

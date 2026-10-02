@@ -51,12 +51,24 @@ function isRetryable(errorCode?: string): boolean {
 // `livemode: false` makes a TEST order: stamped on the row, and — like a simulated run — it
 // creates no ledger, commission or reserve entries. Unlike a simulated run it still sends the
 // merchant's webhook, marked livemode:false, because testing that callback is the point.
+//
+// A LIVE, NON-SIMULATED RUN IS REFUSED. The adapters behind this pipeline are sandboxes whose
+// outcome is decided by the amount (lib/payment-adapters): a live order "paid" here would post
+// ledger, commission and reserve rows and tell the merchant's server a payment succeeded when
+// no money moved. Live payments are taken by a gateway (the redirect and intent branches of
+// /api/pay) or the Katana Pay order APIs. LIVE_CHECKOUT_UNAVAILABLE says so.
+export const LIVE_CHECKOUT_UNAVAILABLE = "LIVE_CHECKOUT_UNAVAILABLE";
 export async function runCheckout(params: {
   merchantId: string; actorId: string | null; order: CheckoutOrderInput; simulated?: boolean; livemode?: boolean;
 }): Promise<CheckoutResult> {
   const { merchantId, actorId, order: body } = params;
   const simulated = params.simulated === true;
   const livemode = params.livemode !== false;
+  if (livemode && !simulated)
+    return { httpStatus: 409, body: {
+      error: "live payments are not taken here: send redirect=true for the payment page or intent=true for UPI app links, or use a test key",
+      code: LIVE_CHECKOUT_UNAVAILABLE,
+    } };
   const amountMinor = toMinor(typeof body.amount === "number" ? body.amount.toString() : body.amount, body.currency);
 
   // Idempotency: replay the existing order if the key was already used — BY THIS MERCHANT, IN

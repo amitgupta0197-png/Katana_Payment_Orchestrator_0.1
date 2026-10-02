@@ -12,6 +12,7 @@
 // proper queue worker.
 
 import { rows } from "@/lib/pg";
+import { openText } from "@/lib/sealed-text";
 import { payloadHash, sign, retrySchedule } from "@/lib/webhooks";
 import { publish } from "@/lib/events";
 import { safeFetch } from "@/lib/safe-fetch";
@@ -39,7 +40,8 @@ async function lookupConfig(merchantId: string): Promise<ConfigRow | null> {
   const r = await rows<ConfigRow>("notification",
     `SELECT target_url, secret, enabled FROM merchant_webhook_configs WHERE merchant_id = $1`,
     [merchantId]).catch(() => []);
-  return r[0] ?? null;
+  // The signing secret is sealed at rest (lib/sealed-text); rows from before that are plaintext.
+  return r[0] ? { ...r[0], secret: openText(r[0].secret) } : null;
 }
 
 export async function enqueue(input: {
