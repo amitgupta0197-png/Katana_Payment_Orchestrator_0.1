@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   try {
     const sp = new URL(req.url).searchParams;
-    if (sp.get("debug") === "1") return NextResponse.json(await debugEmail());
+    if (sp.get("debug") === "1") return NextResponse.json(await debugEmail(sp.get("q")?.slice(0, 200) || undefined));
     if (sp.get("watch") === "1") return NextResponse.json(await startWatchAll()); // renew Gmail push watches
     const r = await runJob("email-poll", 60, pollAllInboxes);
     return NextResponse.json({ ok: true, ...r });

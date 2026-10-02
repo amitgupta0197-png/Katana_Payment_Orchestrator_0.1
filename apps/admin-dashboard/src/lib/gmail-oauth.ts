@@ -8,6 +8,7 @@
 //   GOOGLE_OAUTH_CLIENT_SECRET=...
 //   GOOGLE_OAUTH_REDIRECT=https://katanapay.co/api/oauth/google/callback   (default)
 
+import { timingSafeEqual } from "crypto";
 import { signPayload } from "@/lib/fifo-notify";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -29,12 +30,19 @@ export function signState(merchant: string | undefined, device: string | undefin
   const payload = Buffer.from(JSON.stringify({ merchant: merchant || null, device: device || null, t: Date.now() })).toString("base64url");
   return `${payload}.${signPayload(payload)}`;
 }
-export function verifyState(state: string): { merchant: string | null; device: string | null } | null {
+// A sign-in is finished within minutes. A state older than this is a link someone kept.
+const STATE_MAX_AGE_MS = 15 * 60_000;
+
+export function verifyState(state: string, nowMs: number = Date.now()): { merchant: string | null; device: string | null } | null {
   const i = state.lastIndexOf(".");
   if (i < 0) return null;
-  const payload = state.slice(0, i), sig = state.slice(i + 1);
-  if (signPayload(payload) !== sig) return null;
-  try { return JSON.parse(Buffer.from(payload, "base64url").toString()); } catch { return null; }
+  const payload = state.slice(0, i), sig = Buffer.from(state.slice(i + 1)), want = Buffer.from(signPayload(payload));
+  if (sig.length !== want.length || !timingSafeEqual(sig, want)) return null;
+  try {
+    const s = JSON.parse(Buffer.from(payload, "base64url").toString()) as { merchant: string | null; device: string | null; t?: number };
+    if (typeof s.t !== "number" || nowMs - s.t > STATE_MAX_AGE_MS || s.t - nowMs > 60_000) return null;
+    return { merchant: s.merchant ?? null, device: s.device ?? null };
+  } catch { return null; }
 }
 
 export function buildAuthUrl(merchant: string | undefined, device: string | undefined): string {

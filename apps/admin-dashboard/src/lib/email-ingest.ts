@@ -23,6 +23,8 @@ import { simpleParser } from "mailparser";
 import { ingestTxnAlert, isAuthMessage } from "@/lib/txn-reconcile";
 import { rows } from "@/lib/pg";
 import { getAccessToken, startGmailWatch } from "@/lib/gmail-oauth";
+import { checkSender, senderCheckMode, type MailHeader } from "@/lib/email-sender-check";
+import { recordSecurityEvent } from "@/lib/security-event";
 
 export interface EmailIngestResult {
   enabled: boolean;
@@ -76,7 +78,7 @@ async function loadInboxes(): Promise<InboxConfig[]> {
     });
   }
   const db = await rows<any>("vendorGateway",
-    `SELECT email, app_password, auth_type, refresh_token, host, port, merchant_id FROM vendor_email_inboxes WHERE enabled = true`).catch(() => []);
+    `SELECT email, app_password, auth_type, refresh_token, host, port, merchant_id FROM vendor_email_inboxes WHERE enabled = true AND approved = true`).catch(() => []);
   const seen = new Set(list.map((c) => c.email.toLowerCase()));
   for (const r of db) {
     if (seen.has(String(r.email).toLowerCase())) continue;
@@ -109,7 +111,7 @@ export async function pollAllInboxes(): Promise<{ enabled: boolean; inboxes: num
 export async function pollInboxByEmail(email: string): Promise<EmailIngestResult | null> {
   const db = await rows<any>("vendorGateway",
     `SELECT email, app_password, auth_type, refresh_token, host, port, merchant_id
-       FROM vendor_email_inboxes WHERE lower(email) = lower($1) AND enabled = true LIMIT 1`, [email]).catch(() => []);
+       FROM vendor_email_inboxes WHERE lower(email) = lower($1) AND enabled = true AND approved = true LIMIT 1`, [email]).catch(() => []);
   if (!db.length) return null;
   const r = db[0];
   const cfg: InboxConfig = {
@@ -127,7 +129,7 @@ export async function pollInboxByEmail(email: string): Promise<EmailIngestResult
 export async function startWatchAll(): Promise<{ enabled: boolean; watches: Array<{ email: string; ok: boolean; expiration?: string; error?: string }> }> {
   if (!process.env.GOOGLE_PUBSUB_TOPIC) return { enabled: false, watches: [] };
   const db = await rows<any>("vendorGateway",
-    `SELECT email, refresh_token FROM vendor_email_inboxes WHERE auth_type = 'OAUTH' AND enabled = true AND refresh_token IS NOT NULL`).catch(() => []);
+    `SELECT email, refresh_token FROM vendor_email_inboxes WHERE auth_type = 'OAUTH' AND enabled = true AND approved = true AND refresh_token IS NOT NULL`).catch(() => []);
   const watches: Array<{ email: string; ok: boolean; expiration?: string; error?: string }> = [];
   for (const r of db) {
     try {
@@ -142,7 +144,9 @@ export async function startWatchAll(): Promise<{ enabled: boolean; watches: Arra
   return { enabled: true, watches };
 }
 
-// Only act on real payment-provider senders/subjects (never random inbox mail).
+// A cheap first look: does the mail mention a payment provider at all? It decides which mails
+// are worth parsing, nothing more — the sender or the subject saying "paytm" proves nothing.
+// Whether the mail is acted on is decided by trustedSender() below.
 const PAYMENT_SENDER_RE = /paytm|phonepe|razorpay|bharatpe|gpay|google\s*pay|npci/i;
 // Paytm-for-Business phrases a received payment as "Rs. X paid at …" (from the payer's
 // action), so "paid" counts as a credit here — safe because we only parse payment-
@@ -171,6 +175,21 @@ const ORDER_REF_RE = /order\s*(?:id|no|ref(?:erence)?)?[:\s#]+([A-Za-z][A-Za-z0-
 // longer. We REQUIRE a recognised label before the digits so a phone number, amount,
 // or order number is never mistaken for the UTR. Captured group 1 = the reference.
 const UTR_RE = /\b(?:UPI\s*Ref(?:erence)?(?:\s*(?:No\.?|ID|Number))?|UTR|RRN|Bank\s*Ref(?:erence)?(?:\s*(?:No\.?|ID))?|Ref(?:erence)?\s*No\.?)\s*[:.#=-]?\s*([0-9]{11,22})\b/i;
+
+/**
+ * May this mail be acted on? Only when the mailbox's own server authenticated it as coming
+ * from a payment provider's domain (lib/email-sender-check). A mail that claims to be from a
+ * provider and is not is recorded as a security event; an ordinary mail that merely mentions
+ * a payment is passed over quietly.
+ */
+async function trustedSender(inbox: string, from: string, headers: MailHeader[]): Promise<boolean> {
+  const v = checkSender(headers);
+  if (v.trusted) return true;
+  if (PAYMENT_SENDER_RE.test(from))
+    await recordSecurityEvent({ risk: "UNVERIFIED_EMAIL", severity: "HIGH",
+      detail: `mailbox ${inbox}: mail from ${from.slice(0, 120) || "(no sender)"} — ${v.reason}` });
+  return senderCheckMode() === "report";
+}
 
 function toAmount(s: string | undefined | null): number | null {
   if (!s) return null;
@@ -378,6 +397,7 @@ async function pollOneInboxOAuth(cfg: InboxConfig): Promise<EmailIngestResult> {
       if (!PAYMENT_SENDER_RE.test(`${from} ${subject}`)) continue;
       const hit = parsePaymentEmail(subject, gmailBody(msg.payload));
       if (!hit) continue;
+      if (!(await trustedSender(cfg.email, from, headers.map((x) => ({ name: String(x.name ?? ""), value: String(x.value ?? "") }))))) continue;
       const eventTime = msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : new Date().toISOString();
       const r = await ingestTxnAlert({
         source: "EMAIL", merchant_id: cfg.merchantId || undefined,
@@ -396,14 +416,16 @@ async function pollOneInboxOAuth(cfg: InboxConfig): Promise<EmailIngestResult> {
 
 // Debug: show what the OAuth inbox actually contains and what the parser extracts,
 // ignoring the seen-set and the payment filter — used to diagnose missed captures.
-export async function debugEmail(): Promise<any> {
+// `query` is a Gmail search (default: the last day), e.g. "from:bharatpe newer_than:60d" to see
+// how a provider's real mail fares against the sender check.
+export async function debugEmail(query = "newer_than:1d"): Promise<any> {
   const inboxes = (await loadInboxes()).filter((c) => c.authType === "OAUTH" && c.refreshToken);
   if (!inboxes.length) return { error: "no OAuth inbox connected" };
   const cfg = inboxes[0];
   try {
     const access = await getAccessToken(cfg.refreshToken!);
     const auth = { authorization: `Bearer ${access}` };
-    const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent("newer_than:1d")}&maxResults=15`, { headers: auth });
+    const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=15`, { headers: auth });
     const list: any = await listRes.json();
     const out: any[] = [];
     for (const { id } of (list.messages || []).slice(0, 15)) {
@@ -414,7 +436,7 @@ export async function debugEmail(): Promise<any> {
       const body = gmailBody(m.payload);
       const full = `${subject}\n${body}`.replace(/\s+/g, " ");
       const orderIdHit = /\bKP-[A-Za-z0-9]{4,}-[A-Za-z0-9]{3,}\b/i.exec(full)?.[0] ?? null;
-      out.push({ from, subject, senderMatch: PAYMENT_SENDER_RE.test(`${from} ${subject}`), parsed: parsePaymentEmail(subject, body), orderIdHit, snippet: full.slice(0, 700) });
+      out.push({ from, subject, senderMatch: PAYMENT_SENDER_RE.test(`${from} ${subject}`), senderCheck: checkSender(headers.map((x) => ({ name: String(x.name ?? ""), value: String(x.value ?? "") }))), parsed: parsePaymentEmail(subject, body), orderIdHit, snippet: full.slice(0, 700) });
     }
     return { email: cfg.email, count: out.length, messages: out };
   } catch (e) { return { error: (e as Error).message }; }
@@ -453,6 +475,9 @@ export async function pollOneInbox(cfg: InboxConfig): Promise<EmailIngestResult>
         const hit = parsePaymentEmail(subject, body);
         await markSeen();
         if (!hit) continue;
+        // The headers in the order the message carries them: the receiving server's own are on top.
+        const mailHeaders = parsed.headerLines.map((h) => ({ name: h.key, value: h.line.slice(h.line.indexOf(":") + 1).trim() }));
+        if (!(await trustedSender(cfg.email, `${fromName} <${from}>`, mailHeaders))) continue;
 
         const eventTime = (msg.envelope?.date instanceof Date ? msg.envelope.date : new Date()).toISOString();
         const r = await ingestTxnAlert({

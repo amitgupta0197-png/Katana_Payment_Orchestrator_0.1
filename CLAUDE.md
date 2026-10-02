@@ -62,6 +62,7 @@ Katana takes pay-ins on two flows, and every merchant is explicitly on one: P2P 
 - A failed webhook signature goes through `recordSecurityEvent` (`lib/security-event.ts`).
 - Bank statements (MT940, camt.053) are read by `lib/bank-statement.ts` and imported through `POST /api/v1/bank-feeds/{bank_code}`. Credits go to the reconciler as `BANK_STATEMENT`, a source that never auto-confirms an order: a statement line has a date, not a time. Do not change it to `BANK_API`.
 - Live activation: `LIVE_MIN_TEST_PAYMENTS` sets how many test payments the checklist asks for; `LIVE_AUTO_ACTIVATE=1` approves a complete request without a second person. Both default to the old behaviour.
+- Payment mail: a linked mailbox is read only once staff approve it (`vendor_email_inboxes.approved`, Admin → Mailboxes), because linking needs no login. A mail is acted on only when `checkSender` (`lib/email-sender-check.ts`) finds the mailbox's own server authenticated it as from a payment provider's domain; a keyword in the sender or subject proves nothing. A new provider's domain goes in `PAYMENT_EMAIL_DOMAINS`.
 - Anything that needs a person goes through `raiseAlert` / `setAlert` (`lib/ops-alert.ts`): one Telegram message per condition to the admin chats, repeated only after a quiet period. Scheduled checks live in `lib/ops-monitor.ts`.
 
 ## Naming: the pay-in product is Katana Pay

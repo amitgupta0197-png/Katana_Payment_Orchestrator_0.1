@@ -9,7 +9,12 @@
 import { rows } from "@/lib/pg";
 import { raiseAlert } from "@/lib/ops-alert";
 
-export type SecurityRisk = "BAD_SIGNATURE";
+export type SecurityRisk = "BAD_SIGNATURE" | "UNVERIFIED_EMAIL";
+
+const TITLE: Record<SecurityRisk, string> = {
+  BAD_SIGNATURE: "A webhook failed its signature check",
+  UNVERIFIED_EMAIL: "A payment mail failed its sender check and was not acted on",
+};
 
 export async function recordSecurityEvent(e: { risk: SecurityRisk; severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; detail: string }): Promise<void> {
   try {
@@ -23,7 +28,7 @@ export async function recordSecurityEvent(e: { risk: SecurityRisk; severity?: "L
       RETURNING alert_id::text
     `, [e.risk, e.severity ?? "HIGH", detail]);
     if (ins.length)
-      await raiseAlert({ key: `security:${e.risk}`, severity: "WARN", title: "A webhook failed its signature check", body: detail, repeatMinutes: 30 });
+      await raiseAlert({ key: `security:${e.risk}`, severity: "WARN", title: TITLE[e.risk], body: detail, repeatMinutes: 30 });
   } catch (err) {
     console.warn("[security-event] not recorded:", (err as Error).message);
   }

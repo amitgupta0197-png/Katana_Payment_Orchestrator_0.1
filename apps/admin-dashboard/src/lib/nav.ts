@@ -165,6 +165,7 @@ export const navItems: NavItem[] = [
   { href: "/tenants", label: "Tenants", icon: Globe, status: "live", group: "Operations" },
 
   { href: "/admin/users",          label: "Users",        icon: UserCog,  status: "live", group: "Admin" },
+  { href: "/admin/mailboxes",      label: "Mailboxes",    icon: KeyRound, status: "live", group: "Admin" },
   { href: "/admin/roles",          label: "Roles & Permissions", icon: Shield, status: "live", group: "Admin" },
   { href: "/admin/api-keys",       label: "API Keys",     icon: KeyRound, status: "live", group: "Admin" },
   { href: "/admin/assignments",    label: "Assignments",  icon: UserPlus, status: "live", group: "Admin" },
