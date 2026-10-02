@@ -7,8 +7,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { rows } from "@/lib/pg";
-import { clientIp, clearLoginFailures, currentEpoch, epochValid, loginLock, recordLoginFailure, revokeSessions } from "@/lib/session-security";
-import { enrollMfa, getMfa, MfaCodeRequired, verifyAndEnable, disableMfa } from "@/lib/fifo-mfa";
+import { clientIp, clearLoginFailures, currentEpoch, epochValid, loginLock, recordLoginFailure, revokeSession, revokeSessions, sessionRevoked } from "@/lib/session-security";
+import { enrollMfa, getMfa, MfaCodeRequired, verifyAndEnable, disableMfa, resetMfa, checkLoginCode } from "@/lib/fifo-mfa";
+import { signSession, verifySession } from "@/lib/auth";
 import { totpNow } from "@/lib/totp";
 import { isSealed } from "@/lib/sealed-text";
 import { generatePassword, MIN_PASSWORD_LENGTH } from "@/lib/password";
@@ -24,6 +25,7 @@ async function cleanup() {
   await rows("fifo", "DELETE FROM fifo_login_attempts WHERE email LIKE 'itest-%@example.com'");
   await rows("fifo", "DELETE FROM fifo_user_security WHERE email LIKE 'itest-%@example.com'");
   await rows("fifo", "DELETE FROM fifo_user_mfa WHERE email LIKE 'itest-%@example.com'");
+  await rows("fifo", "DELETE FROM fifo_revoked_sessions WHERE email LIKE 'itest-%@example.com'");
 }
 before(async () => { if (LOCAL) await cleanup(); });
 after(async () => { if (LOCAL) await cleanup(); setTimeout(() => process.exit(process.exitCode ?? 0), 50).unref(); });
@@ -87,6 +89,33 @@ test("two-factor that is on cannot be replaced or switched off without a current
   const third = await enrollMfa(e, null, totpNow(second.secret));
   assert.notEqual(third.secret, second.secret);
   assert.equal((await getMfa(e))?.enabled, false);
+});
+
+test("logging out ends that session and leaves the user's other sessions alone", opts, async () => {
+  const e = email("logout");
+  const base = { user_id: "u", email: e, full_name: "", persona: "ADMIN" as const, scope_id: null, scope_label: "" };
+  const a = verifySession(signSession(base))!, b = verifySession(signSession(base))!;
+  assert.ok(a.sid && b.sid && a.sid !== b.sid);                              // every session has its own id
+  assert.equal(verifySession(signSession({ ...base, sid: a.sid }))!.sid, a.sid);   // and keeps it when re-issued
+  assert.equal(await sessionRevoked(a.sid), false);
+  await revokeSession(a.sid!, e, a.exp);
+  assert.equal(await sessionRevoked(a.sid), true);
+  assert.equal(await sessionRevoked(b.sid), false);
+  assert.equal(await sessionRevoked(undefined), false);                       // a session from before ids existed
+  const stored = await rows<{ left: number }>("fifo",
+    "SELECT extract(epoch FROM expires_at - now())::int AS left FROM fifo_revoked_sessions WHERE sid = $1", [a.sid]);
+  assert.ok(stored[0].left > 7 * 3600 && stored[0].left <= 8 * 3600);         // kept until the cookie would expire
+});
+
+test("a Super Admin reset removes two-factor without a code", opts, async () => {
+  const e = email("reset");
+  const { secret } = await enrollMfa(e);
+  await verifyAndEnable(e, totpNow(secret));
+  assert.equal(await checkLoginCode(e, undefined), false);                    // a code is needed to sign in
+  assert.equal(await resetMfa(e), true);
+  assert.equal(await getMfa(e), null);
+  assert.equal(await checkLoginCode(e, undefined), true);
+  assert.equal(await resetMfa(e), false);                                     // nothing left to reset
 });
 
 test("a generated password meets the minimum length", () => {

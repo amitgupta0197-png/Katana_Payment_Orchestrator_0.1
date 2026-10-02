@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
+import { sharedKeyAccepted } from "@/lib/device-auth";
 import { gateOrResponse } from "@/lib/scope";
 import { settlementVpasFor } from "@/lib/settlement-vpa";
 
@@ -67,6 +68,12 @@ export async function GET() {
     const devices = await rows<any>("vendorGateway", deviceSql(true))
       .catch(() => rows<any>("vendorGateway", deviceSql(false)).catch(() => []));
 
+    // Which phones sign with their own key (vendorGateway 0037) and which still use the key
+    // shared by every agent before v3.11.
+    const keyed = new Set((await rows<{ device_id: string }>("vendorGateway",
+      `SELECT device_id FROM vendor_device_keys`).catch(() => [])).map((k) => k.device_id));
+    for (const x of devices) x.own_key = keyed.has(x.device_id);
+
     // The VPAs each banker receives on, so the device screen offers a choice of real values
     // instead of a free-text field that could silently attach a phone to the wrong account.
     const deviceCodes = [...new Set(devices.map((x: any) => x.merchant_id).filter(Boolean))] as string[];
@@ -90,6 +97,11 @@ export async function GET() {
         alerts_open: Number(c2?.n ?? 0),
         devices_trusted: Number(c3?.n ?? 0),
         confirmed_24h: Number(c4?.n ?? 0),
+        // Phones heard from in the last day that still sign with the shared key. At zero the
+        // shared key can be switched off (AGENT_SHARED_KEY_ACCEPTED=0).
+        devices_shared_key: devices.filter((x: any) => !x.unenrolled && !x.own_key
+          && x.last_heartbeat && Date.now() - new Date(x.last_heartbeat).getTime() < 24 * 3600_000).length,
+        shared_key_accepted: sharedKeyAccepted(),
       },
       cases, security, devices, recent, vpa_options,
     });

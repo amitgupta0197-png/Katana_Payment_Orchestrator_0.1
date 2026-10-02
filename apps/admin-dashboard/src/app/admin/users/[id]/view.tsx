@@ -153,6 +153,19 @@ export default function UserDetailView({ id }: { id: string }) {
       <ActivityFeed resourceType="user" resourceId={id} />
     )},
     { key: "danger", label: "Danger zone", icon: AlertOctagon, content: (
+      <>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-base">Reset two-factor</CardTitle>
+          <CardDescription>For a lost or replaced authenticator. Removes the user&apos;s two-factor and signs them out everywhere; they set it up again at their next sign-in.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="secondary" disabled={patch.isPending} onClick={() => {
+            if (confirm(`Reset two-factor for ${user.email}?`))
+              patch.mutate({ reset_mfa: true, notes: "two-factor reset from danger zone" }, { onSuccess: () => toast.success("Two-factor reset") });
+          }}>Reset two-factor</Button>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle className="text-base text-[color:var(--color-danger)]">Disable user</CardTitle>
@@ -177,6 +190,7 @@ export default function UserDetailView({ id }: { id: string }) {
           )}
         </CardContent>
       </Card>
+      </>
     )},
   ];
 

@@ -1,10 +1,13 @@
 "use client";
 
-// Client half of the merchant integration guide — everything here is static text;
-// the interactivity is only copy-to-clipboard, which is why the page itself stays
-// a server component.
+// Client half of the merchant integration guide. The guide itself is static text; the one
+// live part is the credentials section, which issues a Key + Salt for each of the merchant's
+// own bankers.
 
 import { useState } from "react";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
 import { Plug, Copy, Check, ExternalLink, Download, KeyRound, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
@@ -21,6 +24,40 @@ function Copyable({ value }: { value: string }) {
       <span className="break-all">{value}</span>
       {c ? <Check className="h-3 w-3 shrink-0 text-[color:var(--color-success)]" /> : <Copy className="h-3 w-3 shrink-0 opacity-60" />}
     </button>
+  );
+}
+
+/** One Key + Salt card per banker mapped to this merchant — the same card the banker's detail page shows. */
+function BankerCredentials() {
+  const q = useQuery({
+    queryKey: ["mp:integration-bankers"],
+    queryFn: async () => {
+      const r = await fetch("/api/merchants");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return (await r.json()) as { merchants: { id: string; merchant_code: string; legal_name?: string; brand_name?: string }[] };
+    },
+  });
+  const bankers = q.data?.merchants ?? [];
+  if (q.isLoading) return <p className="mb-4 text-sm text-[color:var(--color-text-muted)]">Loading your bankers…</p>;
+  if (q.isError) return <p className="mb-4 text-sm text-[color:var(--color-danger)]">Could not load your bankers: {(q.error as Error).message}</p>;
+  if (!bankers.length)
+    return (
+      <Card className="mb-4"><CardContent className="p-4 text-sm">
+        No banker is set up under this account yet, so there is nothing to issue a Key for. Add one under{" "}
+        <Link className="text-[color:var(--color-brand)] hover:underline" href="/merchant-portal/merchants">Bankers</Link>, or ask your Katana account manager.
+      </CardContent></Card>
+    );
+  return (
+    <>
+      {bankers.map((b) => (
+        <div key={b.id}>
+          {bankers.length > 1 && (
+            <div className="mb-1 text-sm font-medium">{b.brand_name || b.legal_name || b.merchant_code} <span className="font-mono text-xs text-[color:var(--color-text-muted)]">{b.merchant_code}</span></div>
+          )}
+          <MerchantCheckoutKeyCard merchantId={b.id} merchantCode={b.merchant_code} />
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -116,16 +153,23 @@ hash = SHA512(seq)                                        // lowercase hex`;
         </CardContent>
       </Card>
 
-      {/* Credentials — read-only pointer, PROVIDER has no self-serve issue */}
+      {/* Credentials. This section used to say only "issued in the banker's own portal" and
+          offered no button, while the onboarding message tells a merchant to come HERE and
+          press Generate (Test) — so every new merchant arrived, found nothing to press, and
+          reported that keys could not be generated (2026-10-02). The pair has always been
+          issuable from this login, on each banker's detail page; it is now offered where the
+          merchant is sent to look for it. */}
       <Card className="mb-4">
         <CardHeader><CardTitle className="text-base inline-flex items-center gap-2"><KeyRound className="h-4 w-4" />Credentials (Key + Salt)</CardTitle>
           <CardDescription>Every request carries the Key; the Salt signs it and verifies our callbacks.</CardDescription></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Key + Salt are issued <b>per banker</b>, in that banker&apos;s own portal under <b>Integration</b>. If you need a pair for an account you manage, ask your Katana account manager.</p>
+          <p>Key + Salt are issued <b>per banker</b>. Generate the pair for each of your bankers just below.</p>
           <p>Each banker has a <b>test pair</b> (<code className="text-xs">mk_test_…</code>) and a <b>live pair</b> (<code className="text-xs">mk_live_…</code>). The Key that signs an order decides its mode: test orders pay a sandbox UPI ID and never move real money. Integrate with the test pair, then swap in the live pair.</p>
           <p className="text-[color:var(--color-text-muted)]">Each Salt is shown <b>once</b> at issue and is never displayed again. Keep it server-side only — never in browser or app code. Regenerating a pair invalidates only that pair, immediately.</p>
         </CardContent>
       </Card>
+
+      <BankerCredentials />
 
       {/* Endpoints */}
       <Card className="mb-4">

@@ -10,6 +10,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { branchKeysForMerchant } from "@/lib/provider-integration";
 import { SETTLEMENT_STATUSES } from "@/lib/branch-settlement";
+import { openJsonField } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       const keys = await branchKeysForMerchant(s.scope_id!);
       if (!keys.includes(r.merchant_key)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ settlement: r });
+    return NextResponse.json({ settlement: openJsonField(r, "beneficiary_snapshot", "account_number") });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 

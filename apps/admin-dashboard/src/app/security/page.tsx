@@ -4,6 +4,7 @@
 // devices bound to your account.
 
 import { useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck, Smartphone, KeyRound, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +31,8 @@ export default function SecurityPage() {
     },
   });
 
+  const mustSetUp = !!status.data && status.data.enforced && status.data.sensitive_role && !status.data.enabled;
+
   const start = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/v1/mfa/enroll", { method: "POST" });
@@ -48,7 +51,11 @@ export default function SecurityPage() {
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
       return d;
     },
-    onSuccess: () => { toast.success("MFA enabled"); setEnroll(null); setCode(""); qc.invalidateQueries({ queryKey: ["mfa-status"] }); },
+    onSuccess: () => {
+      toast.success("MFA enabled"); setEnroll(null); setCode(""); qc.invalidateQueries({ queryKey: ["mfa-status"] });
+      // Sent here because set-up was required: the session is now good, so reload into the app.
+      if (mustSetUp) window.location.assign("/");
+    },
     onError: (e: Error) => toast.error("Invalid code", { description: e.message }),
   });
 
@@ -69,13 +76,19 @@ export default function SecurityPage() {
     <>
       <PageHeader title="Security" description="Multi-factor authentication and device binding (BRD SEC-003/004)." icon={ShieldCheck} />
 
+      {mustSetUp && (
+        <div className="mb-4 rounded-md border border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)] px-3 py-2 text-sm">
+          Two-factor is required for your role. Set it up below to continue; the rest of the dashboard opens once it is on.
+        </div>
+      )}
+
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2"><KeyRound className="h-4 w-4" /> Multi-factor authentication
             {st && <Badge variant={st.enabled ? "success" : "warning"}>{st.enabled ? "ENABLED" : "DISABLED"}</Badge>}
           </CardTitle>
           <CardDescription>
-            {st?.enforced ? "Enforced for sensitive roles." : "Optional (enforcement off)."} {st?.sensitive_role ? "Your role is sensitive — MFA recommended." : ""}
+            {st?.enforced ? "Required for staff roles." : "Optional (enforcement off)."} {st?.sensitive_role && !st.enforced ? "Recommended for your role." : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -83,7 +96,8 @@ export default function SecurityPage() {
 
           {enroll && (
             <div className="space-y-2 rounded-md border p-3">
-              <div className="text-sm font-medium">1. Add this secret to your authenticator app</div>
+              <div className="text-sm font-medium">1. Scan this with your authenticator app, or type the secret in</div>
+              <div className="inline-block rounded-md bg-white p-2"><QRCodeSVG value={enroll.otpauth} size={168} level="M" marginSize={1} /></div>
               <div className="text-xs">Secret: <span className="font-mono select-all">{enroll.secret}</span></div>
               <div className="break-all text-xs text-[color:var(--color-text-muted)]">otpauth URI: <span className="font-mono select-all">{enroll.otpauth}</span></div>
               <div className="text-sm font-medium pt-2">2. Enter the current 6-digit code</div>

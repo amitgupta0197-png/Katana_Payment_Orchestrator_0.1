@@ -20,11 +20,13 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import { requireSecret } from "@/lib/secrets";
+import { deviceKey, touchDeviceKey, verifyDeviceSignature } from "@/lib/device-keys";
+import { recordSecurityEvent } from "@/lib/security-event";
 
-// Dedicated device-signing key — distinct from FIFO_WEBHOOK_SECRET (which signs OUTBOUND
-// merchant callbacks). The agent embeds this to sign its requests; keeping it separate means
-// extracting it from the APK does not also forge outbound callbacks (audit H2/C3). Resolved
-// lazily so callback routes that import this module don't require it.
+// The key shared by every agent before v3.11 — distinct from FIFO_WEBHOOK_SECRET (which signs
+// OUTBOUND merchant callbacks), so extracting it from the APK does not also forge outbound
+// callbacks (audit H2/C3). Being in a public APK, it authenticates nobody in particular: see
+// verifyDeviceRequest. Resolved lazily so callback routes that import this module don't require it.
 let _agentSecret: string | null = null;
 function agentSecret(): string {
   if (_agentSecret === null)
@@ -40,23 +42,85 @@ export function deviceSignature(timestamp: string, payload: string): string {
   return createHmac("sha256", agentSecret()).update(`${timestamp}.${payload}`).digest("hex");
 }
 
+export type DeviceAuth =
+  | { ok: true; deviceId: string | null; keyed: boolean }
+  | { ok: false; error: string };
+
+/** The agent's shared key is still accepted unless AGENT_SHARED_KEY_ACCEPTED=0. */
+export function sharedKeyAccepted(): boolean {
+  return process.env.AGENT_SHARED_KEY_ACCEPTED !== "0";
+}
+
+/** What the phone's own key signs: its device id, the timestamp and the payload. */
+export function deviceSigningString(deviceId: string, timestamp: string, payload: string): string {
+  return `${deviceId}.${timestamp}.${payload}`;
+}
+
+// The device id a request says it is from: `device_id` in the JSON body, or in the query
+// string for the capture-rrn GET.
+function claimedDeviceId(payload: string): string | null {
+  if (payload.startsWith("?")) return new URLSearchParams(payload).get("device_id") || null;
+  try {
+    const v = (JSON.parse(payload) as { device_id?: unknown })?.device_id;
+    return typeof v === "string" && v ? v : null;
+  } catch { return null; }
+}
+
 /**
  * Verify a device request. `payload` is the exact bytes the agent signed — the raw body for
- * POST routes, or the query string (`url.search`) for the capture-rrn GET. Honours the
- * x-sandbox transition bypass on device routes (LEGACY_SANDBOX_AGENTS); otherwise requires a
- * fresh, valid signature.
+ * POST routes, or the query string (`url.search`) for the capture-rrn GET.
+ *
+ * TWO SIGNATURES, DURING THE MOVE FROM ONE TO THE OTHER.
+ *
+ *   x-device-id + x-device-signature   the phone's own key (agent v3.11+, lib/device-keys.ts).
+ *       Proves which phone sent it. The device id in the payload must be the same one.
+ *   x-signature                        the key shared by every agent before that. It is in the
+ *       public APK, so it proves only that the sender has seen the APK. Still accepted for a
+ *       phone that has not enrolled a key, because the fleet cannot be updated in one moment;
+ *       refused for a phone that has, and refused for everyone once AGENT_SHARED_KEY_ACCEPTED=0.
+ *
+ * Also honours the x-sandbox transition bypass on device routes (LEGACY_SANDBOX_AGENTS).
  */
-export function verifyDeviceRequest(req: Request, payload: string): { ok: true } | { ok: false; error: string } {
-  if (deviceSandboxRequested(req)) return { ok: true };
+export async function verifyDeviceRequest(req: Request, payload: string): Promise<DeviceAuth> {
+  const claimed = claimedDeviceId(payload);
+  if (deviceSandboxRequested(req)) return { ok: true, deviceId: claimed, keyed: false };
   const ts = req.headers.get("x-timestamp");
+  const ownSig = req.headers.get("x-device-signature");
   const sig = req.headers.get("x-signature");
-  if (!ts || !sig) return { ok: false, error: "missing signature/timestamp" };
+  if (!ts || !(ownSig || sig)) return { ok: false, error: "missing signature/timestamp" };
   const tsNum = Number(ts);
   if (Number.isNaN(tsNum)) return { ok: false, error: "bad timestamp" };
   const tsMs = tsNum > 1e12 ? tsNum : tsNum * 1000; // accept seconds or millis
   if (Math.abs(Date.now() - tsMs) > REPLAY_SKEW_MS) return { ok: false, error: "stale timestamp (replay window exceeded)" };
+
+  if (ownSig) {
+    // Header values are ASCII and a device id need not be, so the agent sends it percent-encoded.
+    let deviceId = "";
+    try { deviceId = decodeURIComponent(req.headers.get("x-device-id") ?? ""); } catch { /* refused below */ }
+    if (!deviceId) return { ok: false, error: "missing device id" };
+    if (claimed && claimed !== deviceId) return { ok: false, error: "device id does not match the signing device" };
+    const key = await deviceKey(deviceId);
+    if (key) {
+      if (!verifyDeviceSignature(key.public_key, deviceSigningString(deviceId, ts, payload), ownSig))
+        return { ok: false, error: "invalid signature" };
+      touchDeviceKey(deviceId);
+      return { ok: true, deviceId, keyed: true };
+    }
+    // Not enrolled (yet, or its key was reset): the request stands or falls on the shared key.
+  }
+
+  if (!sig || !sharedKeyAccepted()) return { ok: false, error: "this device has no enrolled key" };
   if (!sigEqual(deviceSignature(ts, payload), sig)) return { ok: false, error: "invalid signature" };
-  return { ok: true };
+  // A phone that has its own key never needs the shared one again. A request that names such
+  // a phone and carries only the shared signature did not come from it.
+  if (claimed && await deviceKey(claimed)) {
+    void recordSecurityEvent({
+      risk: "DEVICE_KEY", severity: "HIGH",
+      detail: `A request naming device "${claimed}" was signed with the shared agent key, but that phone signs with its own key. Refused.`,
+    });
+    return { ok: false, error: "this device signs with its own key" };
+  }
+  return { ok: true, deviceId: claimed, keyed: false };
 }
 
 /** x-sandbox bypass for CALLBACK routes / anything not hit by the live agent. Never in prod. */

@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { openText, sealOptional } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const sets: string[] = []; const args: unknown[] = [];
-    for (const [k, v] of fields) { args.push(v); sets.push(`${k} = $${args.length}`); }
+    // The account number is sealed at rest (lib/sealed-text).
+    for (const [k, v] of fields) { args.push(k === "account_number" ? sealOptional(v as string) : v); sets.push(`${k} = $${args.length}`); }
     args.push(benId); args.push(id);
     const upd = await rows<any>("provider", `
       UPDATE provider_beneficiary_accounts SET ${sets.join(", ")}, updated_at = now()
@@ -51,7 +53,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       RETURNING id::text, label, beneficiary_name, account_number, ifsc, bank_name, mobile_number, vpa, transfer_mode, active
     `, args);
     if (!upd.length) return NextResponse.json({ error: "beneficiary not found" }, { status: 404 });
-    return NextResponse.json({ beneficiary: upd[0] });
+    return NextResponse.json({ beneficiary: { ...upd[0], account_number: openText(upd[0].account_number) } });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 

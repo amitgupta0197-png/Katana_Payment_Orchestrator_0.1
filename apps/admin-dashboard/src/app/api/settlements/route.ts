@@ -9,6 +9,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { branchKeysForMerchant } from "@/lib/provider-integration";
 import { purposeForAmount } from "@/lib/branch-settlement";
+import { openJsonField } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,10 @@ async function enrich(list: any[]): Promise<any[]> {
   ]);
   const pByx = new Map(provs.map((p: any) => [p.id, p]));
   const mByc = new Map(merchants.map((m: any) => [m.merchant_code, m]));
+  // The snapshot holds the account number sealed, as the beneficiary row does; whoever may see
+  // the settlement sees the number.
   return list.map((r) => ({
-    ...r,
+    ...openJsonField(r, "beneficiary_snapshot", "account_number"),
     provider_code: pByx.get(r.provider_id)?.code ?? null,
     provider_name: pByx.get(r.provider_id)?.legal_name ?? null,
     branch_name: mByc.get(r.merchant_key) ? (mByc.get(r.merchant_key).brand_name || mByc.get(r.merchant_key).legal_name) : null,

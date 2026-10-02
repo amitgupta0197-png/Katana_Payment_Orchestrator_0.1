@@ -7,6 +7,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse, resolveProviderMerchants } from "@/lib/scope";
 import { createBeneficiary, maskAccount } from "@/lib/fifo-payout";
+import { openText } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,7 @@ export async function GET(req: Request) {
         FROM fifo_beneficiaries WHERE ${where} ORDER BY created_at DESC LIMIT 200
     `, params);
     // Mask account numbers in the response (SEC-008).
-    const masked = list.map((b) => ({ ...b, account_number: maskAccount(b.account_number).masked }));
+    const masked = list.map((b) => ({ ...b, account_number: maskAccount(openText(b.account_number)).masked }));
     return NextResponse.json({ beneficiaries: masked });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

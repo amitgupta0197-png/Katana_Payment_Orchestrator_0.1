@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/world-class/empty-state";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 
 interface Summary {
-  counts: { cases_open: number; alerts_open: number; devices_trusted: number; confirmed_24h: number };
+  counts: { cases_open: number; alerts_open: number; devices_trusted: number; confirmed_24h: number; devices_shared_key?: number; shared_key_accepted?: boolean };
   cases: any[];
   security: any[];
   devices: any[];
@@ -167,6 +167,14 @@ export default function TransactionIntelConsole() {
         {/* Devices */}
         <TabsContent value="devices">
           <Card><CardContent className="p-0">
+            {d?.counts.shared_key_accepted && (
+              <div className={`border-b px-3 py-2 text-xs ${MUTED}`}>
+                {d.counts.devices_shared_key
+                  ? `${d.counts.devices_shared_key} phone${d.counts.devices_shared_key === 1 ? "" : "s"} heard from in the last day still sign with the shared key. Update the agent on them to v3.11 or later.`
+                  : "Every phone heard from in the last day signs with its own key."}
+                {" "}The shared key stays accepted until the server is set to AGENT_SHARED_KEY_ACCEPTED=0.
+              </div>
+            )}
             {devices.length === 0 ? (
               <EmptyState icon={Smartphone} title="No devices yet" description="Forwarder devices appear here on their first alert or heartbeat." />
             ) : (
@@ -178,6 +186,11 @@ export default function TransactionIntelConsole() {
                         <span className="font-mono text-sm">{dev.device_id}</span>
                         <Badge variant={deviceVariant(dev.status)}>{dev.status}</Badge>
                         {dev.label && <span className={`text-xs ${MUTED}`}>{dev.label}</span>}
+                        {/* Own key: only this phone can send as this device. Shared key: an
+                            agent older than v3.11, signing with the key every such agent has. */}
+                        {!dev.unenrolled && (dev.own_key
+                          ? <Badge variant="success" title="Signs with its own key (agent v3.11 or later)">own key</Badge>
+                          : <Badge variant="warning" title="Agent older than v3.11: signs with the key shared by every such agent. Update the agent on this phone.">shared key</Badge>)}
                         {/* Seen on credits but no longer enrolled — device_id is the name typed
                             into the agent, so a rename leaves its captures behind. Listed so
                             those credits can still be attributed to a UPI ID. */}
@@ -211,6 +224,12 @@ export default function TransactionIntelConsole() {
                           ))}
                         </select>
                       </label>
+                      {dev.own_key && (
+                        <Button size="sm" variant="secondary" title="For a phone whose agent was reinstalled: it then enrols a new key"
+                          onClick={() => { if (confirm(`Reset the signing key of ${dev.device_id}? Do this only if the agent was reinstalled on that phone.`)) post("/api/v1/recon/devices", { device_id: dev.device_id, reset_key: true }, "Signing key reset"); }}>
+                          Reset key
+                        </Button>
+                      )}
                       {dev.status !== "TRUSTED"
                         ? <Button size="sm" onClick={() => setDevice(dev.device_id, "TRUSTED")}><ShieldCheck className="h-4 w-4" /> Trust</Button>
                         : <Button size="sm" variant="secondary" onClick={() => setDevice(dev.device_id, "SUSPENDED")}><Ban className="h-4 w-4" /> Suspend</Button>}

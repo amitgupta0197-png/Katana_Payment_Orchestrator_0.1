@@ -46,7 +46,9 @@ export default function LoginPage() {
         if (body.mfa_required) setMfaRequired(true);
         throw new Error(body.error ?? "Sign-in failed");
       }
-      router.push(next || LANDING[body.persona] || "/");
+      // Staff who must have two-factor and have not set it up go there first (the middleware
+      // would send them anyway).
+      router.push(body.mfa_setup_required ? "/security?setup=1" : next || LANDING[body.persona] || "/");
       router.refresh();
     } catch (err) {
       setError((err as Error).message);

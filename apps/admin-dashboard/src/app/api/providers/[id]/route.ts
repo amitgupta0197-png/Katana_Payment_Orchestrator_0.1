@@ -13,6 +13,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { publish } from "@/lib/events";
+import { openText, sealOptional } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         FROM providers p WHERE p.id = $1::uuid
     `, [id]);
     if (!provider.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    provider[0].bank_account_no = openText(provider[0].bank_account_no);   // sealed at rest (lib/sealed-text)
 
     const users = await rows<any>("provider", `
       SELECT id::text, email, COALESCE(name,'') AS name, role, created_at
@@ -116,6 +118,13 @@ function isSensitive(fields: Record<string, unknown>): { action: string; payload
   return null;
 }
 
+// The audit log says that the account changed and to which one, not the whole number.
+function forAudit(state: Record<string, unknown>): Record<string, unknown> {
+  if (typeof state.bank_account_no !== "string" || !state.bank_account_no) return state;
+  const n = openText(state.bank_account_no);
+  return { ...state, bank_account_no: `••••${n.slice(-4)}` };
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER"]);
   if ("response" in g) return g.response;
@@ -189,7 +198,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const sets: string[] = [];
     const args: unknown[] = [];
     for (const [k, v] of Object.entries(fields)) {
-      args.push(v);
+      // The account number is sealed at rest (lib/sealed-text).
+      args.push(k === "bank_account_no" ? sealOptional(v as string) : v);
       sets.push(`${k} = $${args.length}`);
     }
     args.push(id);
@@ -201,7 +211,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, before_state, after_state)
       VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb)
-    `, [id, s.email, "merchant.updated", JSON.stringify(before[0]), JSON.stringify(fields)]).catch(() => {});
+    `, [id, s.email, "merchant.updated", JSON.stringify(forAudit(before[0])), JSON.stringify(forAudit(fields))]).catch(() => {});
     return NextResponse.json(res[0]);
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

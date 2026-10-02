@@ -16,6 +16,7 @@ import { activePayoutProvider, prodEnabled, type PayoutRail } from "@/lib/payout
 import { dispatchProviderPayout } from "@/lib/provider-payout-order";
 import { sendPayoutCallback } from "@/lib/payout-api";
 import { checkPayoutPolicy, getPayoutPolicy, isMerchantSuspended } from "@/lib/payout-policy";
+import { openText, sealOptional } from "@/lib/sealed-text";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -50,7 +51,7 @@ export async function createBeneficiary(input: CreateBeneficiaryInput): Promise<
       (merchant_id, beneficiary_name, bank_name, account_number, account_last4, ifsc, upi_id, wallet_address, network, created_by, merchant_ref)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     RETURNING id::text
-  `, [input.merchantId, input.beneficiaryName, input.bankName ?? null, input.accountNumber ?? null, last4,
+  `, [input.merchantId, input.beneficiaryName, input.bankName ?? null, sealOptional(input.accountNumber), last4,
       input.ifsc ?? null, input.upiId ?? null, input.walletAddress ?? null, input.network ?? null, input.createdBy ?? null,
       input.merchantRef ?? null]))[0];
 
@@ -137,6 +138,7 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
      WHERE id=$1::uuid AND merchant_id=$2
   `, [input.beneficiaryId, input.merchantId]))[0];
   if (!b) return { error: "beneficiary not found for merchant", status: 404 };
+  b.account_number = openText(b.account_number);   // sealed at rest (lib/sealed-text)
   if (b.status !== "APPROVED") return { error: `beneficiary not whitelisted (status=${b.status})`, status: 409 };
 
   const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();

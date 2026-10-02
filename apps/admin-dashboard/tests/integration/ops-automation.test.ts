@@ -9,7 +9,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { rows } from "@/lib/pg";
 import { claimProbe, getCircuit, recordFailure, recordSuccess, resetCircuit, config } from "@/lib/circuit-breaker";
-import { isSealed, openText, sealPlaintextSecrets } from "@/lib/sealed-text";
+import { isSealed, openJsonField, openText, sealPlaintextSecrets, SEALED_COLUMNS } from "@/lib/sealed-text";
+import { createBeneficiary } from "@/lib/fifo-payout";
 import { recordSecurityEvent } from "@/lib/security-event";
 import { gatewayPerformance, isUnhealthy, platformSummary } from "@/lib/gateway-performance";
 import { platformToday, gatewayLeague } from "@/lib/reports";
@@ -155,8 +156,48 @@ test("plaintext secrets are sealed in place, still open to the same value, and a
   assert.equal(isSealed(stored), true);
   assert.equal(openText(stored), "itest-plain-secret");
   const second = await sealPlaintextSecrets();
-  assert.deepEqual(second.map((r) => r.sealed), [0, 0, 0, 0]);
+  assert.equal(second.length, SEALED_COLUMNS.length);
+  assert.equal(second.every((r) => r.sealed === 0), true);
   assert.equal(await read(), stored);
+});
+
+test("bank account numbers are sealed at rest: new ones as written, old ones by the seal job", opts, async () => {
+  const raw = (db: "fifo" | "provider", sql: string, id: string) => rows<{ v: string }>(db, sql, [id]).then((r) => r[0].v);
+
+  // A payout beneficiary written now: sealed, with its last four digits beside it.
+  const { id: ben } = await createBeneficiary({ merchantId: "ITEST-SEAL", beneficiaryName: "Seal Test", accountNumber: "50100012345678", ifsc: "HDFC0001234", createdBy: "itest" });
+  const stored = await raw("fifo", "SELECT account_number AS v FROM fifo_beneficiaries WHERE id = $1::uuid", ben);
+  assert.equal(isSealed(stored), true);
+  assert.equal(openText(stored), "50100012345678");
+  assert.equal(await raw("fifo", "SELECT account_last4 AS v FROM fifo_beneficiaries WHERE id = $1::uuid", ben), "5678");
+
+  // Rows from before: a merchant's own account, a settlement beneficiary, and its snapshot on a request.
+  const prov = (await rows<{ id: string }>("provider", `
+    INSERT INTO providers (tenant_id, code, legal_name, contact_email, kind, bank_account_no, settlement_currency, kyc_status, status)
+    VALUES ('tenant-default', $1, 'Seal Test', 'itest-seal@example.com', 'PROVIDER', '111122223333', 'INR', 'PENDING', 'ACTIVE') RETURNING id::text`, [`ITEST-SEAL-${Date.now()}`]))[0].id;
+  const pb = (await rows<{ id: string }>("provider", `
+    INSERT INTO provider_beneficiary_accounts (provider_id, beneficiary_name, account_number, ifsc) VALUES ($1::uuid, 'Seal Test', '444455556666', 'HDFC0001234') RETURNING id::text`, [prov]))[0].id;
+  const st = (await rows<{ id: string }>("provider", `
+    INSERT INTO provider_branch_settlements (provider_id, merchant_key, beneficiary_id, beneficiary_snapshot, amount)
+    VALUES ($1::uuid, 'ITEST-SEAL', $2::uuid, $3::jsonb, 10) RETURNING id::text`, [prov, pb, JSON.stringify({ beneficiary_name: "Seal Test", account_number: "444455556666", ifsc: "HDFC0001234" })]))[0].id;
+
+  const done = await sealPlaintextSecrets();
+  for (const t of ["providers", "provider_beneficiary_accounts", "provider_branch_settlements"])
+    assert.ok((done.find((r) => r.table === t)?.sealed ?? 0) >= 1, t);
+
+  const own = await raw("provider", "SELECT bank_account_no AS v FROM providers WHERE id = $1::uuid", prov);
+  const acct = await raw("provider", "SELECT account_number AS v FROM provider_beneficiary_accounts WHERE id = $1::uuid", pb);
+  const snap = (await rows<{ beneficiary_snapshot: Record<string, string> }>("provider", "SELECT beneficiary_snapshot FROM provider_branch_settlements WHERE id = $1::uuid", [st]))[0];
+  assert.deepEqual([isSealed(own), isSealed(acct), isSealed(snap.beneficiary_snapshot.account_number)], [true, true, true]);
+  assert.deepEqual([openText(own), openText(acct)], ["111122223333", "444455556666"]);
+  // The rest of the snapshot is untouched, and the number opens for whoever is served the settlement.
+  assert.equal(snap.beneficiary_snapshot.ifsc, "HDFC0001234");
+  assert.equal(openJsonField(snap, "beneficiary_snapshot", "account_number").beneficiary_snapshot.account_number, "444455556666");
+
+  await rows("provider", "DELETE FROM provider_branch_settlements WHERE id = $1::uuid", [st]);
+  await rows("provider", "DELETE FROM providers WHERE id = $1::uuid", [prov]);
+  await rows("fifo", "DELETE FROM fifo_approvals WHERE resource_id = $1", [ben]).catch(() => {});
+  await rows("fifo", "DELETE FROM fifo_beneficiaries WHERE id = $1::uuid", [ben]);
 });
 
 test("a bad webhook signature is recorded once, however often it is repeated", opts, async () => {

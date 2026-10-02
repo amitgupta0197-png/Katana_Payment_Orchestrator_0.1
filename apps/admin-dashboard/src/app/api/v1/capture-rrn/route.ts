@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   const merchantId = url.searchParams.get("merchant_id") ?? "";
 
   // Auth: HMAC over the raw query string (timestamp bound in), or the device sandbox bypass.
-  const auth = verifyDeviceRequest(req, url.search);
+  const auth = await verifyDeviceRequest(req, url.search);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   if (!merchantId) return NextResponse.json({ commands: [] });

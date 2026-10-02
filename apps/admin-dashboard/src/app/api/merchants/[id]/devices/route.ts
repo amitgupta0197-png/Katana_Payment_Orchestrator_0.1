@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
+import { resetDeviceKey } from "@/lib/device-keys";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       `DELETE FROM vendor_devices WHERE device_id = $1 AND merchant_id = $2 RETURNING device_id`,
       [deviceId, scope.code]);
     if (!r.length) return NextResponse.json({ error: "device not found for this merchant" }, { status: 404 });
+    // Its signing key goes with it: if the agent is installed again it enrols afresh.
+    await resetDeviceKey(r[0].device_id).catch(() => false);
     return NextResponse.json({ removed: r[0].device_id });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

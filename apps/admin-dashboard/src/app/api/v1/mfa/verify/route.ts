@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     const s = g.session;
     await setSessionCookie({
       user_id: s.user_id, email: s.email, full_name: s.full_name, persona: s.persona,
-      scope_id: s.scope_id, scope_label: s.scope_label, mfa: true, device: s.device, sv: s.sv,
+      scope_id: s.scope_id, scope_label: s.scope_label, mfa: true, device: s.device, sv: s.sv, sid: s.sid,
     });
     return NextResponse.json({ ok: true, enabled: true });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

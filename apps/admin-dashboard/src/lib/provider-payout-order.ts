@@ -20,6 +20,7 @@ import { sendPayoutCallback } from "@/lib/payout-api";
 import { isMerchantSuspended } from "@/lib/payout-policy";
 import { gatewayName } from "@/lib/pg-catalog";
 import { payoutConnector, prodEnabled, providerCreds, type PayoutRail, type TransferState } from "@/lib/payout-providers";
+import { openText } from "@/lib/sealed-text";
 
 export interface ProviderPayoutOrder {
   id: string; order_ref: string; txn_ref: string; merchant_id: string;
@@ -74,6 +75,7 @@ export async function dispatchProviderPayout(orderId: string): Promise<DispatchR
   const ben = (await rows<any>("fifo", `
     SELECT status, beneficiary_name, account_number, ifsc, upi_id FROM fifo_beneficiaries WHERE id=$1::uuid
   `, [o.beneficiary_id]).catch(() => []))[0];
+  if (ben) ben.account_number = openText(ben.account_number);   // sealed at rest (lib/sealed-text)
   const active = await providerCreds(o.provider, o.merchant_id);
   // Checked before claiming: these cancel the payout without anything having been sent.
   const blocker = (await isMerchantSuspended(o.merchant_id)) ? "payouts are suspended for this merchant"

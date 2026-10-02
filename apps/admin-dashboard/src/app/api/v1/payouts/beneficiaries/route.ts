@@ -11,6 +11,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { createBeneficiary } from "@/lib/fifo-payout";
 import { authPayoutRequest, parseMerchantBody } from "@/lib/payout-api";
+import { openText } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,12 @@ const view = (b: Bene) => ({
 });
 
 async function findByRef(merchantCode: string, ref: string): Promise<Bene | null> {
-  return (await rows<Bene>("fifo", `
+  const b = (await rows<Bene>("fifo", `
     SELECT id::text, merchant_ref, status, beneficiary_name, account_number, account_last4, ifsc, upi_id
       FROM fifo_beneficiaries WHERE merchant_id=$1 AND merchant_ref=$2
-  `, [merchantCode, ref]))[0] ?? null;
+  `, [merchantCode, ref]))[0];
+  // The account number is sealed at rest (lib/sealed-text); sameDetails compares the number itself.
+  return b ? { ...b, account_number: openText(b.account_number) } : null;
 }
 
 // Same ref, different details: refuse rather than silently keep the old account.

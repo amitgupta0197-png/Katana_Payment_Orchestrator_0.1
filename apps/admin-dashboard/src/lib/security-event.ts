@@ -1,4 +1,5 @@
-// Security events that are not about a phone: a webhook that failed its signature, for one.
+// Security events with no enrolled phone behind them: a webhook that failed its signature, a
+// request claiming to be a phone it is not.
 // Written to vendor_security_alerts (vendorGateway 0006), the list ops already reviews under
 // Reconciliation → Security, and sent to the admin Telegram chats (lib/ops-alert).
 //
@@ -9,11 +10,12 @@
 import { rows } from "@/lib/pg";
 import { raiseAlert } from "@/lib/ops-alert";
 
-export type SecurityRisk = "BAD_SIGNATURE" | "UNVERIFIED_EMAIL";
+export type SecurityRisk = "BAD_SIGNATURE" | "UNVERIFIED_EMAIL" | "DEVICE_KEY";
 
 const TITLE: Record<SecurityRisk, string> = {
   BAD_SIGNATURE: "A webhook failed its signature check",
   UNVERIFIED_EMAIL: "A payment mail failed its sender check and was not acted on",
+  DEVICE_KEY: "A capture phone's signing key was refused",
 };
 
 export async function recordSecurityEvent(e: { risk: SecurityRisk; severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; detail: string }): Promise<void> {

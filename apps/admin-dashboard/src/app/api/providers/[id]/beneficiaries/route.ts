@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { openText, sealOptional } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,9 @@ function scopeDenied(session: any, id: string): NextResponse | null {
     return NextResponse.json({ error: "merchants can only manage their own beneficiaries" }, { status: 403 });
   return null;
 }
+
+// The account number is sealed at rest (lib/sealed-text); the merchant sees their own in full.
+const opened = <T extends { account_number?: string | null }>(b: T): T => ({ ...b, account_number: openText(b.account_number) });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const g = await gateOrResponse(["SUPER_ADMIN", "PROVIDER"]);
@@ -30,7 +34,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
        WHERE provider_id = $1::uuid
        ORDER BY active DESC, created_at DESC
     `, [id]);
-    return NextResponse.json({ beneficiaries: list });
+    return NextResponse.json({ beneficiaries: list.map(opened) });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
@@ -68,12 +72,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         (provider_id, label, beneficiary_name, account_number, ifsc, bank_name, mobile_number, vpa, transfer_mode, created_by)
       VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING id::text, label, beneficiary_name, account_number, ifsc, bank_name, mobile_number, vpa, transfer_mode, active, created_at
-    `, [id, body.label ?? null, body.beneficiary_name, body.account_number ?? null, body.ifsc ?? null,
+    `, [id, body.label ?? null, body.beneficiary_name, sealOptional(body.account_number), body.ifsc ?? null,
         body.bank_name ?? null, body.mobile_number ?? null, body.vpa ?? null, body.transfer_mode, s.email]);
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, 'provider.beneficiary.added', $3::jsonb)
     `, [id, s.email, JSON.stringify({ beneficiary_name: body.beneficiary_name, transfer_mode: body.transfer_mode })]).catch(() => {});
-    return NextResponse.json({ beneficiary: ins[0] });
+    return NextResponse.json({ beneficiary: opened(ins[0]) });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

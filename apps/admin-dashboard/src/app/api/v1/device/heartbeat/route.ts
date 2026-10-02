@@ -59,7 +59,7 @@ function readCounters(raw: Record<string, unknown>): Record<string, number> | nu
 
 export async function POST(req: Request) {
   const rawText = await req.text();
-  const auth = verifyDeviceRequest(req, rawText);
+  const auth = await verifyDeviceRequest(req, rawText);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body; try { body = schema.parse(JSON.parse(rawText)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
   const counters = readCounters(body as unknown as Record<string, unknown>);
@@ -195,6 +195,8 @@ export async function POST(req: Request) {
       if (m.length) { merchantKnown = true; merchantName = m[0].name; }
     }
 
-    return NextResponse.json({ ok: true, merchant_known: merchantKnown, merchant_name: merchantName });
+    // own_key: whether this request was recognised by the phone's own key. An agent that has
+    // one and is told false enrols it again (its key was reset, or never arrived).
+    return NextResponse.json({ ok: true, merchant_known: merchantKnown, merchant_name: merchantName, own_key: auth.keyed });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

@@ -1,18 +1,13 @@
-// MFA + device binding engine (Katana BRD SEC-003, SEC-004). Non-breaking:
-// enforcement is env-gated (FIFO_MFA_ENFORCE, default off) so live logins keep
-// working until users enrol. When a user has MFA enabled, a TOTP code is always
-// required regardless of the enforce flag.
+// MFA + device binding engine (Katana BRD SEC-003, SEC-004). Enforcement is env-gated
+// (FIFO_MFA_ENFORCE, default off; the policy is in lib/mfa-policy.ts). When a user has MFA
+// enabled, a TOTP code is always required regardless of the enforce flag.
 
 import { createHash } from "crypto";
 import { openText, sealText } from "@/lib/sealed-text";
 import { rows } from "@/lib/pg";
 import { generateSecret, otpauthUri, verifyTotp } from "@/lib/totp";
-import type { Persona } from "@/lib/auth";
 
-export const SENSITIVE_ROLES: Persona[] = ["SUPER_ADMIN", "ADMIN", "OPERATOR", "FINANCE", "RISK", "COMPLIANCE"];
-export const MFA_ENFORCED = (process.env.FIFO_MFA_ENFORCE ?? "false") === "true";
-
-export function isSensitiveRole(p: Persona): boolean { return SENSITIVE_ROLES.includes(p); }
+export { SENSITIVE_ROLES, MFA_ENFORCED, isSensitiveRole } from "@/lib/mfa-policy";
 
 export interface MfaRow { email: string; enabled: boolean; totp_secret: string }
 
@@ -70,6 +65,14 @@ export async function checkLoginCode(email: string, token?: string): Promise<boo
   const m = await getMfa(email);
   if (!m || !m.enabled) return true;          // no MFA enabled → nothing to check
   return !!token && verifyTotp(m.totp_secret, token);
+}
+
+/**
+ * Remove a user's two-factor without a code: for a lost or replaced authenticator, by a Super
+ * Admin. The user sets it up again at their next sign-in.
+ */
+export async function resetMfa(email: string): Promise<boolean> {
+  return (await rows("fifo", `DELETE FROM fifo_user_mfa WHERE email=$1 RETURNING 1`, [email])).length > 0;
 }
 
 export function deviceHash(userAgent?: string | null, ip?: string | null): string {

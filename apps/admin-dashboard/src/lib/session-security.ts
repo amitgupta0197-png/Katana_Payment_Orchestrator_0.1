@@ -24,7 +24,7 @@ function broken(what: string, err: unknown): void {
   void raiseAlert({
     key: `auth:${what}`, severity: "CRITICAL", repeatMinutes: 360,
     title: what === "lockout" ? "Login lockout is not working" : "Session revocation is not working",
-    body: `${(err as Error).message.slice(0, 200)}. Apply tools/migrations/fifo/0018_login_attempts_ip.sql.`,
+    body: `${(err as Error).message.slice(0, 200)}. Apply tools/migrations/fifo/0018_login_attempts_ip.sql and 0019_revoked_sessions.sql.`,
   });
 }
 
@@ -100,4 +100,38 @@ export async function revokeSessions(email: string): Promise<void> {
 /** True when a session carrying `sessionEpoch` is still current for this user. */
 export async function epochValid(email: string, sessionEpoch: number | undefined): Promise<boolean> {
   return (sessionEpoch ?? 0) === await currentEpoch(email);
+}
+
+// ── Ending one session (logout) ──────────────────────────────────────────────────────
+
+// The ids of sessions that were logged out and have not yet expired. Few and short-lived, so
+// the whole set is held in memory and re-read at the same interval as the epoch; a logout on
+// this instance takes effect at once.
+let revoked = new Map<string, number>();   // sid → expiry (ms)
+let revokedReadAt = 0;
+
+async function revokedSet(): Promise<Map<string, number>> {
+  if (Date.now() - revokedReadAt < EPOCH_TTL_MS) return revoked;
+  try {
+    const r = await rows<{ sid: string; expires_at: string }>("fifo",
+      `SELECT sid, expires_at FROM fifo_revoked_sessions WHERE expires_at > now()`);
+    revoked = new Map(r.map((x) => [x.sid, new Date(x.expires_at).getTime()]));
+  } catch (err) { broken("revocation", err); }
+  revokedReadAt = Date.now();
+  return revoked;
+}
+
+/** End one session: its cookie is refused from now on. `exp` is the cookie's own expiry (unix seconds). */
+export async function revokeSession(sid: string, email: string, exp: number): Promise<void> {
+  revoked.set(sid, exp * 1000);
+  await rows("fifo", `
+    INSERT INTO fifo_revoked_sessions (sid, email, expires_at) VALUES ($1, $2, to_timestamp($3))
+    ON CONFLICT (sid) DO NOTHING
+  `, [sid, email, exp]).catch((err) => broken("revocation", err));
+  await rows("fifo", `DELETE FROM fifo_revoked_sessions WHERE expires_at < now()`).catch(() => {});
+}
+
+export async function sessionRevoked(sid: string | undefined): Promise<boolean> {
+  if (!sid) return false;
+  return (await revokedSet()).has(sid);
 }

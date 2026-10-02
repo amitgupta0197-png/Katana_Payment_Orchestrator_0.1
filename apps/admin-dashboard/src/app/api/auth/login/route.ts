@@ -61,8 +61,8 @@ export async function POST(req: Request) {
     const primary = personas[0];
 
     // MFA (SEC-003). If the user has MFA enabled, a valid TOTP is always required.
-    // If enforcement is on for a sensitive role but the user hasn't enrolled yet,
-    // we still let them in (non-breaking) and signal that setup is required.
+    // If enforcement is on for a staff role and the user hasn't enrolled yet, they are let
+    // in with a session that can only reach two-factor set-up (lib/mfa-policy.ts).
     const mfa = await getMfa(u[0].email);
     if (mfa?.enabled) {
       const ok = await checkLoginCode(u[0].email, body.totp);

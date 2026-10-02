@@ -212,3 +212,63 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     </Card>
   );
 }
+
+interface CapturedCredit {
+  id: string; amount: number; utr: string; app: string; source: string; payer_name: string;
+  outcome: string; matched_order_ref: string; received_at: string;
+}
+
+/**
+ * What the agent phone captured, whether or not an order was waiting for it.
+ *
+ * The Transactions table above lists ORDERS, so a payment made straight to the banker's QR —
+ * no order — appeared nowhere on this page, and a working agent looked dead (2026-10-01: a
+ * captured Rs1 was on the server and in Transaction Intel, and not here).
+ */
+export function MerchantCapturedCreditsCard({ merchantId }: { merchantId: string }) {
+  const q = useQuery({
+    queryKey: ["merchant", merchantId, "credits"],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${merchantId}/credits`);
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
+      return (await r.json()) as { credits: CapturedCredit[] };
+    },
+    refetchInterval: 10_000,
+  });
+
+  const credits = q.data?.credits ?? [];
+  const cols: Column<CapturedCredit>[] = [
+    { key: "received_at", header: "Received", render: (c) => formatDateTime(c.received_at) },
+    { key: "amount", header: "Amount", render: (c) => formatAmount(c.amount, "INR") },
+    { key: "utr", header: "UTR / RRN", render: (c) => c.utr ? <span className="font-mono text-xs">{c.utr}</span> : "—" },
+    { key: "app", header: "App", render: (c) => c.app },
+    { key: "payer_name", header: "Payer", render: (c) => c.payer_name || "—" },
+    {
+      key: "matched_order_ref", header: "Order",
+      render: (c) => c.matched_order_ref
+        ? <span className="font-mono text-xs">{c.matched_order_ref}</span>
+        : <Badge variant="default" title="Paid straight to the QR — no Katana order was waiting for it">No order</Badge>,
+    },
+  ];
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">Captured payments</CardTitle>
+          <CardDescription>UPI credits the agent phone read off the payment app, newest first — including payments made straight to the QR, which have no order above.</CardDescription>
+        </div>
+        <Badge variant="default">{credits.length} shown</Badge>
+      </CardHeader>
+      <CardContent>
+        <DataTable
+          columns={cols}
+          rows={credits}
+          loading={q.isLoading}
+          rowKey={(c) => c.id}
+          emptyState="Nothing captured yet. A payment appears here within seconds of the agent phone reading it."
+        />
+      </CardContent>
+    </Card>
+  );
+}

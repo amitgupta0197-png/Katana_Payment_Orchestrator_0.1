@@ -14,6 +14,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { settlementVpasFor } from "@/lib/settlement-vpa";
+import { resetDeviceKey } from "@/lib/device-keys";
 
 export const dynamic = "force-dynamic";
 const ROLES = ["SUPER_ADMIN", "ADMIN", "RISK"] as const;
@@ -50,12 +51,25 @@ const schema = z.object({
   merchant_id: z.string().max(120).optional(),
   /** UPI ID this phone receives on. "" clears it. Must be one of the banker's configured VPAs. */
   receiving_vpa: z.string().max(120).optional(),
+  /** Forget this phone's signing key so it can enrol a new one (the agent was reinstalled). */
+  reset_key: z.literal(true).optional(),
 });
 
 export async function POST(req: Request) {
   const g = await gateOrResponse([...ROLES]);
   if ("response" in g) return g.response;
   let body; try { body = schema.parse(await req.json()); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+
+  if (body.reset_key) {
+    try {
+      const had = await resetDeviceKey(body.device_id);
+      await rows("vendorGateway", `
+        INSERT INTO vendor_recon_audit (actor, action, entity, entity_id, detail)
+        VALUES ($1,'DEVICE_KEY_RESET','device',$2,$3)
+      `, [g.session.email, body.device_id, had ? "signing key removed; the phone enrols a new one on its next heartbeat" : "no key on record"]).catch(() => {});
+      return NextResponse.json({ ok: true, key_reset: had });
+    } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  }
 
   try {
     // Validate a receiving VPA against the banker that owns the device. A typo or another

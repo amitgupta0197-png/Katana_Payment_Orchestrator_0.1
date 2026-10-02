@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const merchant = new URL(req.url).searchParams.get("m") || undefined;
   const raw = await req.text();
   // Was unauthenticated (audit H4): require a device signature (or the sandbox bypass).
-  const auth = verifyDeviceRequest(req, raw);
+  const auth = await verifyDeviceRequest(req, raw);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let b: { clientAlertId?: string; body?: string; sender?: string; source?: string };
   try { b = JSON.parse(raw); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }

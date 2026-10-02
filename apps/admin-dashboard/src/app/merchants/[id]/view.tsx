@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderAttributionCard } from "@/components/merchant/assign-provider";
 import { PaymentMethodsCard, KatanaPayConfigCard } from "@/components/merchant/payment-config";
-import { PayinOperationsCard, MerchantTransactionsCard } from "@/components/merchant/payin-operations";
+import { PayinOperationsCard, MerchantTransactionsCard, MerchantCapturedCreditsCard } from "@/components/merchant/payin-operations";
 import { MerchantAgentCard } from "@/components/merchant/agent-permission";
 import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
@@ -678,6 +678,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         <TabsContent value="payments">
           <PayinOperationsCard merchantId={merchant.id} />
           <MerchantTransactionsCard merchantId={merchant.id} />
+          <MerchantCapturedCreditsCard merchantId={merchant.id} />
         </TabsContent>
 
         <TabsContent value="collection">

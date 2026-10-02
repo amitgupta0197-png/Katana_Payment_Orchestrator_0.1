@@ -154,7 +154,7 @@ export async function resolveProviderMerchants(s: Session): Promise<string[]> {
 }
 
 import { getSession, requirePersona } from "./auth";
-import { MFA_ENFORCED, isSensitiveRole } from "./fifo-mfa";
+import { mfaSetupRequired } from "./mfa-policy";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -170,7 +170,7 @@ export async function gate(allowed: Persona[], opts: GateOpts = {}): Promise<Ses
   const s = await getSession();
   const g = requirePersona(s, ...allowed);
   if (!g.ok) throw new HttpError(g.status, g.error);
-  if (opts.requireMfa !== false && MFA_ENFORCED && isSensitiveRole(g.session.persona) && !g.session.mfa)
+  if (opts.requireMfa !== false && mfaSetupRequired(g.session))
     throw new HttpError(403, "MFA enrollment required for this role");
   return g.session;
 }

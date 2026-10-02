@@ -1,10 +1,10 @@
 // Persona-based session. HMAC-signed cookie carrying (user_id, persona, scope_id).
 // Production: replace with proper JWT lib (jose) + RS256 + rotation.
 
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { requireSecret } from "@/lib/secrets";
-import { epochValid } from "@/lib/session-security";
+import { epochValid, sessionRevoked } from "@/lib/session-security";
 
 // BRD §8 roles. OPERATOR/COMPLIANCE/FINANCE/RISK/SUPPORT added for the FIFO
 // payment-operations module; access is enforced per-route via gateOrResponse.
@@ -23,6 +23,7 @@ export interface Session {
   mfa?: boolean;       // MFA satisfied at login (SEC-003)
   device?: string;     // bound device hash (SEC-004)
   sv?: number;         // session epoch at issue time — for revocation (audit M6)
+  sid?: string;        // this session's own id — what logout revokes
   exp: number; // unix seconds
 }
 
@@ -36,7 +37,7 @@ function sign(payload: string): string {
 
 export function signSession(s: Omit<Session, "exp">): string {
   const exp = Math.floor(Date.now() / 1000) + TTL_SECONDS;
-  const body = Buffer.from(JSON.stringify({ ...s, exp })).toString("base64url");
+  const body = Buffer.from(JSON.stringify({ ...s, sid: s.sid ?? randomUUID(), exp })).toString("base64url");
   return `${body}.${sign(body)}`;
 }
 
@@ -60,6 +61,8 @@ export async function getSession(): Promise<Session | null> {
   if (!s) return null;
   // Revocation check (M6): reject sessions issued before the user's current epoch.
   if (!(await epochValid(s.email, s.sv))) return null;
+  // ...and the one session that was logged out.
+  if (await sessionRevoked(s.sid)) return null;
   return s;
 }
 

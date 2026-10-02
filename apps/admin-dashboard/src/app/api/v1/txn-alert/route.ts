@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   const rawText = await req.text();
   // Device auth: valid HMAC signature (timestamp bound in) over the raw body, or the
   // x-sandbox transition bypass on the device tier. See lib/device-auth.
-  const auth = verifyDeviceRequest(req, rawText);
+  const auth = await verifyDeviceRequest(req, rawText);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   let body: z.infer<typeof schema>;

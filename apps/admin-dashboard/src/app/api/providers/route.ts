@@ -8,6 +8,7 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { hashPassword, generatePassword } from "@/lib/password";
+import { openText, sealOptional } from "@/lib/sealed-text";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,8 @@ export async function GET() {
        WHERE ${where}
        ORDER BY p.created_at DESC LIMIT 200
     `, params);
+    // The account number is sealed at rest (lib/sealed-text).
+    for (const p of providers) p.bank_account_no = openText(p.bank_account_no);
     return NextResponse.json({ providers });
   } catch (err) {
     const e = pgError(err);
@@ -122,7 +125,7 @@ export async function POST(req: Request) {
         contact_phone = EXCLUDED.contact_phone, updated_at = now()
       RETURNING id, code, legal_name, kyc_status, status, created_at
     `, [tenant, body.code, body.legal_name, body.contact_email, body.contact_phone ?? null, body.kind,
-        body.bank_account_no ?? null, body.bank_ifsc ?? null, body.settlement_currency]);
+        sealOptional(body.bank_account_no), body.bank_ifsc ?? null, body.settlement_currency]);
     const provider = res[0];
 
     // Optional one-shot provisioning. Each block is non-fatal: the provider row

@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireSecret } from "@/lib/secrets";
+import { mfaSetupRequired, MFA_SETUP_UI, MFA_SETUP_API } from "@/lib/mfa-policy";
 
 const COOKIE_NAME = "katana_session";
 // MUST resolve to the exact same value as lib/auth.ts, or session verification diverges.
@@ -24,7 +25,7 @@ const SECRET = requireSecret("SESSION_SECRET", process.env.SESSION_SECRET, "dev-
 type Persona = "SUPER_ADMIN" | "ADMIN" | "PROVIDER" | "MERCHANT" | "BANKER" | "OPERATOR" | "COMPLIANCE" | "FINANCE" | "RISK" | "SUPPORT";
 interface Session {
   user_id: string; email: string; full_name: string;
-  persona: Persona; scope_id: string | null; scope_label: string; exp: number;
+  persona: Persona; scope_id: string | null; scope_label: string; mfa?: boolean; exp: number;
 }
 
 function b64urlToBytes(s: string): Uint8Array {
@@ -70,7 +71,7 @@ const PUBLIC_UI = ["/login", "/developers", "/katana-pay"];
 // response-hash authenticated) bypass the session gate.
 // /api/v1/webhooks/payment-status (HMAC x-signature) and /api/v1/cron/daily
 // (x-cron-key secret) authenticate themselves, so they bypass the session gate.
-const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/openapi", "/api/pay", "/api/pay/status", "/api/v1/katana-pay/order", "/api/v1/p2p/order", "/api/v1/intent/order", "/api/v1/payouts/create", "/api/v1/payouts/beneficiaries", "/api/v1/payouts/status", "/api/v1/katana-pay/callback","/api/gateway/payu/return", "/api/gateway/payu/webhook", "/api/gateway/payu/payout-webhook", "/api/gateway/razorpay/payout-webhook", "/api/gateway/cashfree/payout-webhook", "/api/gateway/paytm/payout-webhook", "/api/gateway/rubyvault/webhook", "/api/gateway/rubyvault/return", "/api/gateway/ismartpay/webhook", "/api/gateway/ismartpay/return", "/api/gateway/ismartpay/payout-webhook", "/api/gateway/razorpay/webhook", "/api/gateway/razorpay/return", "/api/gateway/cashfree/webhook", "/api/gateway/cashfree/return", "/api/gateway/phonepe/webhook", "/api/gateway/phonepe/return", "/api/gateway/paytm/webhook", "/api/gateway/paytm/return", "/api/gateway/ccavenue/webhook", "/api/gateway/ccavenue/return", "/api/gateway/payu-links/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/txn-alert", "/api/v1/text-alert", "/api/v1/device/heartbeat", "/api/v1/device/email-config", "/api/v1/agent-debug", "/api/v1/capture-rrn", "/api/v1/cron/daily", "/api/v1/cron/status-sweep", "/api/v1/cron/email-poll", "/api/v1/cron/capture-health", "/api/v1/cron/payu-verify", "/api/v1/cron/payu-payout-verify", "/api/v1/partner-inquiry", "/api/v1/telegram/webhook", "/api/v1/cron/telegram-daily", "/api/v1/reports/paytm-import", "/api/v1/cron/monitor", "/api/v1/cron/reserve-release", "/api/metrics", "/api/v1/reports/payins"];
+const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/health", "/api/openapi", "/api/pay", "/api/pay/status", "/api/v1/katana-pay/order", "/api/v1/p2p/order", "/api/v1/intent/order", "/api/v1/payouts/create", "/api/v1/payouts/beneficiaries", "/api/v1/payouts/status", "/api/v1/katana-pay/callback","/api/gateway/payu/return", "/api/gateway/payu/webhook", "/api/gateway/payu/payout-webhook", "/api/gateway/razorpay/payout-webhook", "/api/gateway/cashfree/payout-webhook", "/api/gateway/paytm/payout-webhook", "/api/gateway/rubyvault/webhook", "/api/gateway/rubyvault/return", "/api/gateway/ismartpay/webhook", "/api/gateway/ismartpay/return", "/api/gateway/ismartpay/payout-webhook", "/api/gateway/razorpay/webhook", "/api/gateway/razorpay/return", "/api/gateway/cashfree/webhook", "/api/gateway/cashfree/return", "/api/gateway/phonepe/webhook", "/api/gateway/phonepe/return", "/api/gateway/paytm/webhook", "/api/gateway/paytm/return", "/api/gateway/ccavenue/webhook", "/api/gateway/ccavenue/return", "/api/gateway/payu-links/return", "/api/pay-result", "/api/v1/webhooks/payment-status", "/api/v1/txn-alert", "/api/v1/text-alert", "/api/v1/device/heartbeat", "/api/v1/device/enroll", "/api/v1/device/email-config", "/api/v1/agent-debug", "/api/v1/capture-rrn", "/api/v1/cron/daily", "/api/v1/cron/status-sweep", "/api/v1/cron/email-poll", "/api/v1/cron/capture-health", "/api/v1/cron/payu-verify", "/api/v1/cron/payu-payout-verify", "/api/v1/partner-inquiry", "/api/v1/telegram/webhook", "/api/v1/cron/telegram-daily", "/api/v1/reports/paytm-import", "/api/v1/cron/monitor", "/api/v1/cron/reserve-release", "/api/metrics", "/api/v1/reports/payins"];
 // Prefix-matched public surfaces: the customer-facing Katana Pay payment page and
 // its status endpoint (the order id in the URL is the capability).
 const PUBLIC_UI_PREFIX = ["/pay", "/katana-pay"];
@@ -203,6 +204,22 @@ export async function middleware(req: NextRequest) {
   }
 
   const persona = session.persona;
+
+  // Two-factor enforcement (lib/mfa-policy.ts): a staff session that has not passed a code
+  // goes to set-up and nowhere else. This covers every route, including the ones that read
+  // the session themselves and never call `gate`.
+  if (mfaSetupRequired(session)) {
+    if (isApi) {
+      if (!isUnder(pathname, MFA_SETUP_API))
+        return new NextResponse(JSON.stringify({ error: "two-factor set-up required", code: "MFA_SETUP_REQUIRED" }),
+          { status: 403, headers: { "content-type": "application/json" } });
+    } else if (pathname !== MFA_SETUP_UI) {
+      const url = req.nextUrl.clone();
+      url.pathname = MFA_SETUP_UI;
+      url.search = "?setup=1";
+      return NextResponse.redirect(url);
+    }
+  }
 
   // /api/admin/set-password is SUPER_ADMIN *or* ADMIN (route-gated), matching
   // banker login provisioning — carve it out of the blanket /api/admin gate.

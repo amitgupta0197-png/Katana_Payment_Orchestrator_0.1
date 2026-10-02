@@ -1,11 +1,13 @@
 // GET   /api/admin/users/[id] — full user + persona assignments
-// PATCH /api/admin/users/[id] — update status (active/suspended/disabled)
+// PATCH /api/admin/users/[id] — update status (active/suspended/disabled); { reset_mfa: true }
+//        removes the user's two-factor (lost authenticator) and ends their sessions
 // DELETE — soft-delete via status=disabled
 //
 // SUPER_ADMIN only — invite/disable/impersonate paths flow through here.
 
 import { NextResponse } from "next/server";
 import { revokeSessions } from "@/lib/session-security";
+import { resetMfa } from "@/lib/fifo-mfa";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
@@ -41,6 +43,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const patchSchema = z.object({
   status: z.enum(["active", "suspended", "disabled"]).optional(),
   full_name: z.string().min(1).max(255).optional(),
+  reset_mfa: z.literal(true).optional(),
   notes: z.string().optional(),
 });
 
@@ -53,6 +56,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   let body;
   try { body = patchSchema.parse(await req.json()); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  }
+  if (body.reset_mfa) {
+    try {
+      const u = await rows<{ email: string }>("auth", `SELECT email::text FROM users WHERE id=$1::uuid`, [id]);
+      if (!u.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+      const had = await resetMfa(u[0].email);
+      await revokeSessions(u[0].email);
+      await wormAppend({
+        actorId: s.user_id, actorEmail: s.email,
+        action: "user.mfa_reset",
+        resourceType: "user", resourceId: id,
+        before: { two_factor: had }, after: { two_factor: false },
+        notes: body.notes,
+      }).catch(() => null);
+      return NextResponse.json({ ok: true, email: u[0].email, had_two_factor: had });
+    } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
   }
   const sets: string[] = [];
   const args: unknown[] = [];

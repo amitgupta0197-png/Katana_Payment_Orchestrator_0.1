@@ -31,7 +31,7 @@ const schema = z.object({
 
 export async function POST(req: Request) {
   const raw = await req.text();
-  const auth = verifyDeviceRequest(req, raw);
+  const auth = await verifyDeviceRequest(req, raw);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
   let body: z.infer<typeof schema>;
   try { body = schema.parse(JSON.parse(raw)); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
