@@ -908,6 +908,16 @@ recorded as skipped on Katana's side. Confirm your credentials are issued before
   "RESPONSE_DATE_TIME": "2026-09-08T11:35:42.991Z",
   "HASH": "8EAC6B6DC198A6B3DCA18995B0843A2A9D305825906261E0E34B425C7329DEBC"
 }</pre>
+<p>The body has the same fields for every outcome. A failed and an expired order, and the second callback of an
+order that is paid after it expired (§7.3):</p>
+<pre>// Failed: the payment was declined. RRN is an empty string.
+{ "ORDER_ID": "UK108-ESN78453", "STATUS": "Failed",   "RESPONSE_CODE": "004", "RRN": "", … }
+
+// Expired: no payment arrived in time. RRN is an empty string.
+{ "ORDER_ID": "UK108-ESN78454", "STATUS": "Expired",  "RESPONSE_CODE": "003", "RRN": "", … }
+
+// The same order, paid after it expired: a SECOND callback, some time later
+{ "ORDER_ID": "UK108-ESN78454", "STATUS": "Captured", "RESPONSE_CODE": "000", "RRN": "123456789102", … }</pre>
 <table>
   <tr><th>Field name</th><th>Description</th><th>Example value</th></tr>
   <tr><td><code>PAY_ID</code></td><td>Payment identifier assigned by Katana</td><td>9323643809301818</td></tr>
@@ -966,14 +976,16 @@ refreshed per delivery, so it cannot be used as a freshness bound.</div>
 <table>
   <tr><th>&nbsp;</th><th>&nbsp;</th></tr>
   <tr><td>Callbacks per order</td><td><b>One</b> at the first terminal status, and a second (<code>Captured</code>) if an <code>Expired</code> or <code>Failed</code> order is paid afterwards</td></tr>
-  <tr><td>Attempts</td><td><b>6</b></td></tr>
+  <tr><td>Attempts</td><td><b>7</b>: the first at once, then one after each wait below</td></tr>
   <tr><td>Backoff</td><td>1 min → 5 min → 15 min → 1 hour → 6 hours → 24 hours</td></tr>
   <tr><td>Your response deadline</td><td><b>8 seconds</b> per attempt; a slower reply is recorded as a failure and retried</td></tr>
   <tr><td>Success</td><td>Any <code>2xx</code></td></tr>
-  <tr><td>After 6 failures</td><td>The callback is <b>abandoned</b>. Katana does not deliver it later.</td></tr>
+  <tr><td>After 7 failures</td><td>The callback is <b>abandoned</b>. Katana does not deliver it later.</td></tr>
   <tr><td><code>notify_url</code> requirements</td><td>http(s), publicly resolvable; must not resolve to a private, loopback or link-local address</td></tr>
 </table>
-<p>Every attempt is recorded on Katana's side and can be replayed by your account manager on request.</p>
+<p>Every attempt is recorded on Katana's side. In the portal, <b>Orders</b> shows each attempt for an order with
+what your server answered, <b>Resend</b> sends a callback again, and <b>Send test event</b> sends a sample of each
+status to your callback URL.</p>
 <div class="note badbox"><b>The callback is a convenience, not a guarantee.</b> Each one is abandoned after
 roughly 31 hours of failures. An <code>Expired</code> or <code>Failed</code> order that is paid afterwards (§7.3)
 gets a second, <code>Captured</code> callback, with the same delivery rules. The status enquiry (§7) is the

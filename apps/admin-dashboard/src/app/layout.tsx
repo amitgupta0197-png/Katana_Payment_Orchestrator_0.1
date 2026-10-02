@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { TestModeBanner } from "@/components/layout/test-mode-banner";
 import { getLivemode } from "@/lib/mode";
+import { GatewayAlertBanner } from "@/components/layout/gateway-alert-banner";
 
 export const metadata: Metadata = {
   title: {
@@ -72,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="flex flex-1 flex-col min-w-0">
                 <Header />
                 <TestModeBanner livemode={livemode} />
+                <GatewayAlertBanner />
                 <main
                   id="main-content"
                   role="main"

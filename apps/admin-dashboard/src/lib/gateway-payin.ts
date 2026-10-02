@@ -18,6 +18,7 @@ import { payinProdId, type GatewayMid } from "@/lib/gateway-creds";
 import { gatewayName } from "@/lib/pg-catalog";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
+import { goLiveBlocker } from "@/lib/gateway-golive";
 import { confirmKatanaOrder } from "@/lib/katana-order";
 import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
 import { gatewayPayinFor, payinConnector, payinConnectorFor } from "@/lib/payin-providers";
@@ -252,6 +253,9 @@ export async function startGatewayCheckout(input: GatewayOrderInput): Promise<{ 
   if (blocker) return { httpStatus: 409, body: { error: blocker } };
   const existing = await rows<{ id: string; merchant_id: string; status: string }>("checkout",
     `SELECT id::text, merchant_id, status FROM checkout_orders WHERE idempotency_key = $1 LIMIT 1`, [input.txnid]);
+  // An account still on its go-live checklist takes only verification payments (lib/gateway-golive).
+  const notLive = input.livemode && !existing.length ? await goLiveBlocker(input.merchantCode, input.mid.gateway, Number(input.amount)) : null;
+  if (notLive) return { httpStatus: 409, body: { error: notLive, code: "ACCOUNT_NOT_LIVE" } };
   if (existing.length && (existing[0].merchant_id !== input.merchantCode || existing[0].status !== "CREATED"))
     return { httpStatus: 409, body: { error: "txnid already used" } };
   const orderId = existing[0]?.id ?? (await createCheckoutOrder(input))?.id;
@@ -302,6 +306,8 @@ export async function issueGatewayIntent(input: GatewayOrderInput): Promise<{ ht
     return { httpStatus: 409, body: { error: "txnid already used" } };
   }
 
+  const notLive = input.livemode ? await goLiveBlocker(input.merchantCode, input.mid.gateway, Number(input.amount)) : null;
+  if (notLive) return { httpStatus: 409, body: { error: notLive, code: "ACCOUNT_NOT_LIVE" } };
   const created = await createCheckoutOrder({ ...input, method: "UPI_INTENT" });
   if (!created) return { httpStatus: 409, body: { error: "txnid already used" } };
   const r = await connector.upiIntent(input.mid, orderFor(input), input.client);

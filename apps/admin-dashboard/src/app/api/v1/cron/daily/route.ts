@@ -13,6 +13,7 @@ import { scanAnomalies } from "@/lib/fifo-anomaly";
 import { beat } from "@/lib/jobs";
 import { certStatus, publicHost } from "@/lib/tls-check";
 import { setAlert } from "@/lib/ops-alert";
+import { pruneApiLog } from "@/lib/api-log";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,8 @@ export async function POST(req: Request) {
         title: `TLS certificate for ${cert.host} expires in ${cert.days_left} day${cert.days_left === 1 ? "" : "s"}`,
         body: "Renew it before then: customers cannot reach the pay page on an expired certificate.",
       });
+    // The API request log keeps 90 days (lib/api-log).
+    out.api_log_pruned = await pruneApiLog(90).catch((e) => ({ error: (e as Error).message }));
     await beat("daily", 86_400, true, out);
     return NextResponse.json({ ok: true, ...out });
   } catch (err) {

@@ -24,6 +24,10 @@ import { getMerchantFlow } from "@/lib/payin-flow-store";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
+import { goLiveBlocker } from "@/lib/gateway-golive";
+import { logApiRequest } from "@/lib/api-log";
+import { requestIdFrom } from "@/lib/katana-order-api";
+import { clientIp } from "@/lib/session-security";
 
 // Everything this route answers goes to a merchant, so no gateway is ever named (lib/merchant-safe).
 const json = (body: Record<string, unknown> | undefined, init?: ResponseInit) =>
@@ -68,9 +72,32 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   return out;
 }
 
+/** What the request log needs from a request, filled in as far as the request got. */
+interface Seen { merchant: string | null; livemode: boolean | null; body: unknown }
+
 export async function POST(req: Request) {
+  const started = Date.now();
+  const requestId = requestIdFrom(req);
+  const seen: Seen = { merchant: null, livemode: null, body: null };
+  const res = await handle(req, seen);
+  // The request log (lib/api-log) reads a copy of the answer; the answer itself is untouched.
+  // A hosted-page answer is HTML, not JSON, and is logged without a body.
+  const answer = (res.headers.get("content-type") ?? "").includes("json") ? await res.clone().json().catch(() => null) : null;
+  logApiRequest({
+    requestId, merchantId: seen.merchant, livemode: seen.livemode, apiVersion: "v1", method: "POST", endpoint: "/api/pay",
+    httpStatus: res.status, latencyMs: Date.now() - started, errorCode: res.status >= 400 ? (answer?.code ?? null) : null,
+    requestBody: seen.body, responseBody: answer, ip: clientIp(req),
+  });
+  return res;
+}
+
+async function handle(req: Request, seen: Seen): Promise<NextResponse> {
   let body;
-  try { body = schema.parse(await parseBody(req)); } catch (e) {
+  try {
+    const raw = await parseBody(req);
+    seen.body = raw;
+    body = schema.parse(raw);
+  } catch (e) {
     return json({ error: (e as Error).message }, { status: 400 });
   }
 
@@ -81,6 +108,7 @@ export async function POST(req: Request) {
     const resolved = await resolveCheckoutKey(body.key);
     if (!resolved) return json({ error: "invalid key" }, { status: 401 });
     const { merchantCode, livemode } = resolved;
+    seen.merchant = merchantCode; seen.livemode = livemode;
 
     const creds = await getCheckoutCreds(merchantCode, livemode);
     if (!creds || creds.key !== body.key) {
@@ -145,6 +173,9 @@ export async function POST(req: Request) {
       }
       const currency = (body.currency ?? "INR").toUpperCase();
       const amountMinor = toMinor(amountStr, currency);
+      // An account still on its go-live checklist takes only verification payments (lib/gateway-golive).
+      const notLive = await goLiveBlocker(merchantCode, "PAYU", Number(amountStr));
+      if (notLive) return json({ error: notLive, code: "ACCOUNT_NOT_LIVE" }, { status: 409 });
 
       // Create/track the order; PayU's callback finalises it. Store the merchant's
       // own success/failure URLs so the return handler can forward the customer.
@@ -186,6 +217,8 @@ export async function POST(req: Request) {
       }
       const currency = (body.currency ?? "INR").toUpperCase();
       if (currency !== "INR") return json({ error: "UPI intent supports INR only" }, { status: 400 });
+      const notLive = await goLiveBlocker(merchantCode, "PAYU", Number(amountStr));
+      if (notLive) return json({ error: notLive, code: "ACCOUNT_NOT_LIVE" }, { status: 409 });
 
       const r = await issuePayuIntent({
         mid: gwMid, merchantCode, livemode,

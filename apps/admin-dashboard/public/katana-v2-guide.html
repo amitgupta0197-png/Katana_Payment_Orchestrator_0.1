@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Pay — API v2 Integration Guide</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  h2 { font-size:21px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--bd); }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--bd); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .brand { color:var(--brand); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .badbox { border-left-color:var(--bad); }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  .step { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:50%; font-size:13px; margin-right:8px; }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ol { padding-left:22px; } ol li { margin:6px 0; }
+  @media print {
+    body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8}
+    /* On paper there is nothing to scroll, so a long line must wrap or it is silently
+       cut off — and these samples exist to be copied. */
+    pre{white-space:pre-wrap;word-break:break-word;overflow:visible}
+    /* Keep a code block or callout whole, but let a long table flow across pages —
+       holding one back leaves half a page blank. Rows still stay intact. */
+    pre,.note{break-inside:avoid} tr{break-inside:avoid} h2,h3{break-after:avoid}
+    thead{display:table-header-group}
+    .wrap{max-width:none;padding:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Katana Pay API v2</h1>
+  <div class="sub">Create an order, send the customer to pay, get told the result. Two endpoints, one webhook, four statuses.</div>
+</header>
+
+<div class="note badbox"><strong>Webhooks are notifications; they can fail or retry. Always confirm order status by calling GET /v2/orders/{id} before fulfilling.</strong></div>
+
+<div class="toc">
+  <a href="#keys">1. Keys and modes</a>
+  <a href="#create">2. Create an order</a>
+  <a href="#read">3. Read an order</a>
+  <a href="#status">4. The four statuses</a>
+  <a href="#webhook">5. Webhooks</a>
+  <a href="#verify">6. Verify the signature</a>
+  <a href="#retries">7. Retries, resend and test events</a>
+  <a href="#errors">8. Errors</a>
+  <a href="#v1">9. If you are on v1 today</a>
+</div>
+
+<h2 id="keys">1. Keys and modes</h2>
+<p>Every request carries your API key in a header, over HTTPS:</p>
+<pre>Authorization: Bearer sk_live_…</pre>
+<p>Create keys in the portal under <strong>Webhooks &amp; keys</strong>. A key is shown once, when it is made.</p>
+<table>
+  <tr><th>Key</th><th>Orders it creates</th></tr>
+  <tr><td><code>sk_test_…</code></td><td>Test orders. No money moves. Use amounts ending <code>.99</code> to get a success, <code>.13</code> a failure and <code>.11</code> an expiry (for example <code>10099</code>, <code>10013</code>, <code>10011</code>).</td></tr>
+  <tr><td><code>sk_live_…</code></td><td>Live orders. Available once live mode is activated for your account.</td></tr>
+</table>
+<p>The key decides the mode. A test key cannot read a live order, and a live key cannot read a test one.</p>
+
+<h2 id="create">2. Create an order</h2>
+<pre>POST https://katanapay.co/v2/orders
+Authorization: Bearer sk_live_…
+Content-Type: application/json
+
+{
+  "amount": 200000,
+  "currency": "INR",
+  "reference": "inv-1001",
+  "callback_url": "https://your-server.example/katana/webhook",
+  "metadata": { "cart": "42" }
+}</pre>
+<table>
+  <tr><th>Field</th><th></th><th>Meaning</th></tr>
+  <tr><td><code>amount</code></td><td>required</td><td>An integer in minor units (paise). <code>200000</code> is ₹2,000.00.</td></tr>
+  <tr><td><code>currency</code></td><td>optional</td><td><code>INR</code>, the default and the only value accepted.</td></tr>
+  <tr><td><code>reference</code></td><td>required</td><td>Your own id for the order, up to 60 characters, unique within your account. Sending the same reference again returns the same order, so a retry after a timeout is safe.</td></tr>
+  <tr><td><code>callback_url</code></td><td>optional</td><td>Where this order's webhook goes. Without it, the callback URL saved in the portal is used.</td></tr>
+  <tr><td><code>return_url</code></td><td>optional</td><td>Where the customer's browser is sent after paying.</td></tr>
+  <tr><td><code>flow</code></td><td>optional</td><td><code>P2P</code> or <code>INTENT</code>. Leave it out: your account's own setting is used.</td></tr>
+  <tr><td><code>metadata</code></td><td>optional</td><td>Up to 20 keys of your own notes. Given back when you read the order.</td></tr>
+</table>
+<p>Answer, <code>201</code> for a new order and <code>200</code> for a reference you already used:</p>
+<pre>{
+  "order_id": "KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b",
+  "reference": "inv-1001",
+  "status": "PENDING",
+  "checkout_url": "https://katanapay.co/pay/3f2b8c1e-9a4d-4e6f-8b7a-0c1d2e3f4a5b",
+  "expires_at": "2026-10-02T14:15:00.000Z"
+}</pre>
+<p>Send the customer's browser to <code>checkout_url</code>. Keep <code>order_id</code> or your own <code>reference</code>; either reads the order back.</p>
+
+<h2 id="read">3. Read an order</h2>
+<pre>GET https://katanapay.co/v2/orders/inv-1001
+GET https://katanapay.co/v2/orders/KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b
+Authorization: Bearer sk_live_…</pre>
+<p>The path takes Katana's <code>order_id</code> or your own <code>reference</code>. The answer is the same object a webhook carries, so one piece of code handles both, plus <code>checkout_url</code>, <code>expires_at</code>, <code>created_at</code>, <code>livemode</code> and your <code>metadata</code>.</p>
+<pre>{
+  "event": "payment.success",
+  "event_id": "evt_9c1d…",
+  "order_id": "KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b",
+  "reference": "inv-1001",
+  "status": "SUCCESS",
+  "amount": 200000,
+  "currency": "INR",
+  "rrn": "123456789012",
+  "rrn_is_synthetic": false,
+  "paid_at": "2026-10-02T14:32:00.000Z",
+  "gateway": null,
+  "checkout_url": null,
+  "expires_at": null,
+  "created_at": "2026-10-02T14:00:00.000Z",
+  "livemode": true,
+  "metadata": { "cart": "42" }
+}</pre>
+<p>While an order is <code>PENDING</code>, <code>event</code> and <code>event_id</code> are <code>null</code>.</p>
+
+<h2 id="status">4. The four statuses</h2>
+<table>
+  <tr><th>Status</th><th>Meaning</th><th>Can it still change?</th></tr>
+  <tr><td><code>PENDING</code></td><td>The order was created and is waiting for the payment.</td><td>Yes.</td></tr>
+  <tr><td><code>SUCCESS</code></td><td>The payment is confirmed.</td><td>No. This is final.</td></tr>
+  <tr><td><code>FAILED</code></td><td>The payment was declined, or failed in a way that cannot be recovered.</td><td>Only to <code>SUCCESS</code>, if the customer tries again on the same order and pays.</td></tr>
+  <tr><td><code>EXPIRED</code></td><td>The customer's time ran out.</td><td>Only to <code>SUCCESS</code>: a payment the bank authorised late still counts.</td></tr>
+</table>
+<div class="note warnbox">An order told <code>EXPIRED</code> or <code>FAILED</code> can become <code>SUCCESS</code> afterwards. You are then sent <code>payment.success</code> with <code>"previous_status": "EXPIRED"</code> (or <code>"FAILED"</code>). Do not treat an expiry as the last word on money: read the order before you refuse to deliver.</div>
+<p><code>rrn</code> is the bank's reference for the payment. When <code>rrn_is_synthetic</code> is <code>true</code>, the bank gave Katana no reference and the value was made by Katana: it identifies the payment to Katana support, but it does not appear on a bank statement.</p>
+<p><code>gateway</code> is always <code>null</code>.</p>
+
+<h2 id="webhook">5. Webhooks</h2>
+<p>When an order reaches <code>SUCCESS</code>, <code>FAILED</code> or <code>EXPIRED</code>, Katana sends an HTTP <code>POST</code> to the order's <code>callback_url</code>:</p>
+<pre>POST /katana/webhook
+Content-Type: application/json
+X-Katana-Event: payment.success
+X-Katana-Signature: t=1790951520,v1=5f8a…c2
+X-Katana-Event-ID: evt_9c1d…
+
+{
+  "event": "payment.success",
+  "event_id": "evt_9c1d…",
+  "order_id": "KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b",
+  "reference": "inv-1001",
+  "status": "SUCCESS",
+  "previous_status": "EXPIRED",
+  "amount": 200000,
+  "currency": "INR",
+  "rrn": "123456789012",
+  "rrn_is_synthetic": false,
+  "paid_at": "2026-10-02T14:32:00.000Z",
+  "gateway": null
+}</pre>
+<table>
+  <tr><th>Event</th><th>Status</th><th>Sent when</th></tr>
+  <tr><td><code>payment.success</code></td><td><code>SUCCESS</code></td><td>The payment is confirmed.</td></tr>
+  <tr><td><code>payment.failed</code></td><td><code>FAILED</code></td><td>The payment failed.</td></tr>
+  <tr><td><code>payment.expired</code></td><td><code>EXPIRED</code></td><td>The order's time ran out with no payment.</td></tr>
+</table>
+<ul>
+  <li><code>previous_status</code> is present only when a <code>SUCCESS</code> follows an <code>EXPIRED</code> or a <code>FAILED</code>.</li>
+  <li><code>rrn</code> and <code>paid_at</code> are <code>null</code> unless the status is <code>SUCCESS</code>.</li>
+  <li>Answer with any <code>2xx</code> within 8 seconds. Anything else is a failed delivery and is retried.</li>
+  <li>Use <code>event_id</code> to ignore a delivery you have already processed: every retry of an event carries the same id.</li>
+</ul>
+<p>In the portal you choose which outcomes you are sent: <strong>Receive all outcomes</strong> (the default) or <strong>Receive paid only</strong>, which sends <code>payment.success</code> alone and leaves you to read the status of the other orders.</p>
+
+<h2 id="verify">6. Verify the signature</h2>
+<p>The signature proves the delivery came from Katana and was not altered. Your webhook secret (<code>whsec_…</code>) is shown once in the portal when you move to v2 or replace it.</p>
+<pre>signed_payload = "{t}.{raw request body}"
+v1             = hex( HMAC-SHA256( key = webhook secret, message = signed_payload ) )</pre>
+<p>Sign the body exactly as it arrived, before parsing it. Refuse a delivery whose <code>t</code> is more than 300 seconds from your clock.</p>
+<h3>Node.js</h3>
+<pre>const [t, v1] = req.headers["x-katana-signature"].split(",").map((p) =&gt; p.split("=")[1]);
+const expected = crypto.createHmac("sha256", WEBHOOK_SECRET).update(`${t}.${rawBody}`).digest("hex");
+const fresh = Math.abs(Date.now() / 1000 - Number(t)) &lt;= 300;
+const valid = fresh &amp;&amp; crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected));
+if (!valid) return res.status(400).end();</pre>
+<h3>PHP</h3>
+<pre>parse_str(str_replace(",", "&amp;", $_SERVER["HTTP_X_KATANA_SIGNATURE"]), $sig);
+$raw      = file_get_contents("php://input");
+$expected = hash_hmac("sha256", $sig["t"] . "." . $raw, $WEBHOOK_SECRET);
+$valid    = abs(time() - (int) $sig["t"]) &lt;= 300 &amp;&amp; hash_equals($expected, $sig["v1"]);
+if (!$valid) { http_response_code(400); exit; }</pre>
+<h3>Python</h3>
+<pre>sig = dict(p.split("=", 1) for p in request.headers["X-Katana-Signature"].split(","))
+expected = hmac.new(WEBHOOK_SECRET.encode(), f"{sig['t']}.".encode() + raw_body, hashlib.sha256).hexdigest()
+fresh = abs(time.time() - int(sig["t"])) &lt;= 300
+if not (fresh and hmac.compare_digest(expected, sig["v1"])):
+    abort(400)</pre>
+
+<h2 id="retries">7. Retries, resend and test events</h2>
+<p>A delivery your server does not answer with <code>2xx</code> is tried again: 7 attempts in all over about 31 hours, the first at once and the rest 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours and 24 hours after the attempt before. Every attempt carries the same <code>event_id</code>. After the last one the delivery is marked as given up and Katana's operations team is told.</p>
+<p>In the portal:</p>
+<ul>
+  <li><strong>Orders</strong> finds any order by its order id, your reference or the bank reference, and shows each status change and every delivery attempt: when it was sent, what your server answered and how long it took.</li>
+  <li><strong>Resend</strong>, on a delivery, queues the same event again. It is a new delivery, so it has a new <code>event_id</code>.</li>
+  <li><strong>Send test event</strong> sends a sample of each event to your saved callback URL. A sample has the reference <code>test-event</code> and belongs to no order.</li>
+  <li><strong>API log</strong> lists your requests of the last 7 days with their status and latency.</li>
+</ul>
+
+<h2 id="errors">8. Errors</h2>
+<p>Every <code>4xx</code> and <code>5xx</code> answer has the same shape:</p>
+<pre>{ "code": "ORDER_NOT_FOUND", "message": "no order with that id or reference", "reference": "req_5b1c…" }</pre>
+<p>Branch on <code>code</code>; <code>message</code> is for a person. <code>reference</code> is the id of the request, also in the <code>X-Request-Id</code> header: quote it to Katana support. Send your own <code>X-Request-Id</code> and it is used instead.</p>
+<table>
+  <tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr>
+<tr><td><code>HTTPS_REQUIRED</code></td><td>400</td><td>The request was not made over HTTPS.</td></tr>
+<tr><td><code>INVALID_REQUEST</code></td><td>400</td><td>A field is missing or malformed; the message names it.</td></tr>
+<tr><td><code>UNSUPPORTED_CURRENCY</code></td><td>400</td><td>Only INR is accepted.</td></tr>
+<tr><td><code>UNAUTHORIZED</code></td><td>401</td><td>The API key is missing, unknown or revoked.</td></tr>
+<tr><td><code>MERCHANT_BLOCKED</code></td><td>403</td><td>The account is blocked and takes no orders.</td></tr>
+<tr><td><code>MERCHANT_SUSPENDED</code></td><td>403</td><td>The account is suspended or terminated.</td></tr>
+<tr><td><code>LIVE_MODE_NOT_ACTIVATED</code></td><td>403</td><td>A live key was used before live mode was activated.</td></tr>
+<tr><td><code>ORDER_NOT_FOUND</code></td><td>404</td><td>No order with that id or reference belongs to this key.</td></tr>
+<tr><td><code>REFERENCE_REUSED</code></td><td>409</td><td>The reference already belongs to an order with a different amount.</td></tr>
+<tr><td><code>FLOW_NOT_SELECTED</code></td><td>409</td><td>No pay-in flow has been selected for the account yet.</td></tr>
+<tr><td><code>FLOW_NOT_ENABLED</code></td><td>409</td><td>The requested flow is not enabled for the account.</td></tr>
+<tr><td><code>FLOW_NOT_READY</code></td><td>409</td><td>The account's flow cannot take this payment yet.</td></tr>
+<tr><td><code>SETUP_INCOMPLETE</code></td><td>409</td><td>The account has no way to take this payment; contact Katana support.</td></tr>
+<tr><td><code>ACCOUNT_NOT_LIVE</code></td><td>409</td><td>Live payments on the account are still being verified.</td></tr>
+<tr><td><code>AMOUNT_BELOW_MIN</code></td><td>422</td><td>The amount is under the minimum.</td></tr>
+<tr><td><code>AMOUNT_ABOVE_MAX</code></td><td>422</td><td>The amount is over the account's maximum.</td></tr>
+<tr><td><code>UPI_LIMIT_EXCEEDED</code></td><td>422</td><td>The amount is over the limit for one UPI payment.</td></tr>
+<tr><td><code>DAILY_LIMIT_EXCEEDED</code></td><td>422</td><td>The order would pass the account's limit for the day.</td></tr>
+<tr><td><code>RATE_LIMITED</code></td><td>429</td><td>Too many orders in one second; retry after the Retry-After header.</td></tr>
+<tr><td><code>PROCESSOR_ERROR</code></td><td>502</td><td>The payment processor did not accept the request; retry with the same reference.</td></tr>
+<tr><td><code>INTERNAL_ERROR</code></td><td>500</td><td>Something failed on Katana's side; retry with the same reference.</td></tr>
+</table>
+<p>After a <code>5xx</code>, or a timeout, send the same request again with the same <code>reference</code>: you get the order that was created, never a second one.</p>
+
+<h2 id="v1">9. If you are on v1 today</h2>
+<p>Nothing changes for you until you choose to. The v1 endpoints and the v1 callback keep working as they are.</p>
+<ul>
+  <li>The webhook version is a setting on your account, in the portal under <strong>Webhooks &amp; keys</strong>: <code>v1</code> or <code>v2</code>. Existing accounts stay on v1 until they switch; new accounts start on v2. You can switch back.</li>
+  <li>The setting decides the callback for every order of the account, whichever API created it.</li>
+  <li>v2 has no request signature and no Salt: the API key in the header is the credential, and the webhook is verified with the webhook secret.</li>
+  <li>Amounts are integers in paise in v2, not rupee strings.</li>
+  <li>In v2 the paid status is the word <code>SUCCESS</code>, in the request log, the status API and the webhook alike.</li>
+</ul>
+</div>
+</body>
+</html>

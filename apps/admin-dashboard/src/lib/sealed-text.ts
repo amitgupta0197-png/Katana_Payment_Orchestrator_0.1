@@ -56,6 +56,8 @@ export function openJsonField<T extends Record<string, any>>(row: T, column: key
 // columns: read the row by something else and compare after openText.
 export const SEALED_COLUMNS: { db: DbKey; table: string; key: string; column: string; json?: string }[] = [
   { db: "notification", table: "merchant_webhook_configs", key: "config_id", column: "secret" },
+  // The v2 webhook signing secret (merchant 0014). Written sealed from the start.
+  { db: "merchant", table: "merchants", key: "id", column: "webhook_secret" },
   { db: "vendorGateway", table: "vendor_email_inboxes", key: "email", column: "app_password" },
   { db: "vendorGateway", table: "vendor_email_inboxes", key: "email", column: "refresh_token" },
   { db: "fifo", table: "fifo_user_mfa", key: "email", column: "totp_secret" },

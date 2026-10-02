@@ -221,6 +221,23 @@ attempt is recorded — so a callback is never silently dropped.</p>
   "RRN": "123456789012", "RESPONSE_DATE_TIME": "2026-07-01T…Z",
   "HASH": "716346F5…EC21"
 }</pre>
+<h3>One sample for each outcome</h3>
+<p>The body has the same fields whatever happened. These are the three statuses a callback can carry, and the
+second callback of an order that is paid late:</p>
+<pre>// Paid
+{ "ORDER_ID": "ORDER-1001", "STATUS": "Captured", "RESPONSE_CODE": "000", "RRN": "123456789012", … }
+
+// Failed: the payment was declined. RRN is an empty string.
+{ "ORDER_ID": "ORDER-1002", "STATUS": "Failed",   "RESPONSE_CODE": "004", "RRN": "", … }
+
+// Expired: no payment arrived in time. RRN is an empty string.
+{ "ORDER_ID": "ORDER-1003", "STATUS": "Expired",  "RESPONSE_CODE": "003", "RRN": "", … }
+
+// The same order, paid after it expired: a SECOND callback, some time later
+{ "ORDER_ID": "ORDER-1003", "STATUS": "Captured", "RESPONSE_CODE": "000", "RRN": "123456789013", … }</pre>
+<p>In the portal, <b>Orders</b> finds any order by its order id, your <code>txnid</code> or the bank reference and
+shows every callback attempt with what your server answered; <b>Resend</b> sends one again, and
+<b>Send test event</b> sends a sample of each status to your callback URL.</p>
 <h3>Verify the HASH (with your Salt)</h3>
 <ol>
   <li>Take every field <b>except</b> <code>HASH</code>.</li>

@@ -1,6 +1,15 @@
 // OpenAPI 3.0 spec for the public Katana Pay integration API. Single source of
 // truth — served as JSON at /api/openapi and rendered as Swagger UI at /developers.
 
+import { V2_ERRORS } from "@/lib/v2-api-errors";
+
+// A v2 error answer for one HTTP status, listing the codes that status can carry.
+function v2Error(status: number) {
+  const codes = Object.entries(V2_ERRORS).filter(([, e]) => e.status === status).map(([c]) => `\`${c}\``).join(", ");
+  return { description: codes, content: { "application/json": { schema: { $ref: "#/components/schemas/V2Error" } } } };
+}
+const V2_SECURITY = [{ ApiKey: [] }];
+
 // The P2P and Intent order APIs: the general order operation, for one flow by name.
 function flowOrderOp(flow: string, how: string) {
   return {
@@ -70,6 +79,15 @@ export const openapiSpec = {
       "   still become `REVERSED` if the beneficiary's bank returns it.",
       "A test Key pays out through the payout provider's sandbox only and never moves real money.",
       "",
+      "## API v2",
+      "`POST /v2/orders` and `GET /v2/orders/{id}` are a simpler way to do the same thing. A v2 request carries an API key",
+      "in the `Authorization: Bearer` header (`sk_test_…` or `sk_live_…`, made in the dashboard under Webhooks & keys) and",
+      "no signature. Amounts are integers in paise. A status is one of `PENDING`, `SUCCESS`, `FAILED`, `EXPIRED`. Every",
+      "error is `{ code, message, reference }`. The webhook is `payment.success` / `payment.failed` / `payment.expired`,",
+      "signed in the `X-Katana-Signature` header, and its body is the same object `GET /v2/orders/{id}` returns.",
+      "**Webhooks are notifications; they can fail or retry. Always confirm order status by calling GET /v2/orders/{id} before fulfilling.**",
+      "Full guide: `/katana-v2-guide.html`. Everything below marked v1 keeps working unchanged.",
+      "",
       "## Going live",
       "A live Key is refused with `403` and `code: LIVE_MODE_NOT_ACTIVATED` until live mode is activated for the",
       "merchant (dashboard: Integration → Activate live mode, approved by Katana).",
@@ -77,10 +95,36 @@ export const openapiSpec = {
   },
   servers: [{ url: "https://katanapay.co", description: "Production" }],
   tags: [
+    { name: "v2", description: "The v2 order API: Bearer API key, paise, four statuses" },
     { name: "Pay-in", description: "Create and track S2S UPI pay-in orders" },
     { name: "Payout", description: "Register beneficiaries and send payouts (IMPS / NEFT / RTGS / UPI)" },
   ],
   paths: {
+    "/v2/orders": {
+      post: {
+        tags: ["v2"], security: V2_SECURITY,
+        summary: "Create an order",
+        description: "Creates an order and returns the page to send the customer to. Idempotent on `reference`: sending the same reference again returns the same order (`200`); the same reference with a different amount is refused (`409 REFERENCE_REUSED`).",
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/V2CreateOrder" } } } },
+        responses: {
+          "201": { description: "Order created", content: { "application/json": { schema: { $ref: "#/components/schemas/V2OrderCreated" } } } },
+          "200": { description: "The reference was used before: the existing order", content: { "application/json": { schema: { $ref: "#/components/schemas/V2OrderCreated" } } } },
+          "400": v2Error(400), "401": v2Error(401), "403": v2Error(403), "409": v2Error(409), "422": v2Error(422), "429": v2Error(429), "500": v2Error(500), "502": v2Error(502),
+        },
+      },
+    },
+    "/v2/orders/{id}": {
+      get: {
+        tags: ["v2"], security: V2_SECURITY,
+        summary: "Read an order",
+        description: "By Katana's `order_id` (`KTN_…`) or by your own `reference`. A key reads only the orders of its own account and mode. The answer is the object a webhook carries, plus `checkout_url`, `expires_at`, `created_at`, `livemode` and `metadata`.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" }, description: "`order_id` or your `reference`" }],
+        responses: {
+          "200": { description: "The order", content: { "application/json": { schema: { $ref: "#/components/schemas/V2Order" } } } },
+          "401": v2Error(401), "404": v2Error(404),
+        },
+      },
+    },
     "/api/v1/katana-pay/order": {
       post: {
         tags: ["Pay-in"],
@@ -228,7 +272,64 @@ export const openapiSpec = {
     },
   },
   components: {
+    securitySchemes: {
+      ApiKey: { type: "http", scheme: "bearer", description: "A v2 API key: `sk_test_…` creates test orders, `sk_live_…` live ones." },
+    },
     schemas: {
+      V2CreateOrder: {
+        type: "object",
+        required: ["amount", "reference"],
+        properties: {
+          amount: { type: "integer", description: "Minor units (paise).", example: 200000 },
+          currency: { type: "string", default: "INR", enum: ["INR"] },
+          reference: { type: "string", maxLength: 60, description: "Your own id for the order, unique within your account.", example: "inv-1001" },
+          callback_url: { type: "string", format: "uri", description: "Where this order's webhook goes. Without it, the callback URL saved in the dashboard." },
+          return_url: { type: "string", format: "uri", description: "Where the customer's browser is sent after paying." },
+          flow: { type: "string", enum: ["P2P", "INTENT"], description: "Leave out to use the account's own setting." },
+          metadata: { type: "object", additionalProperties: true, description: "Up to 20 keys of your own notes; given back when the order is read." },
+        },
+      },
+      V2OrderCreated: {
+        type: "object",
+        properties: {
+          order_id: { type: "string", example: "KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b" },
+          reference: { type: "string", example: "inv-1001" },
+          status: { type: "string", enum: ["PENDING", "SUCCESS", "FAILED", "EXPIRED"], example: "PENDING" },
+          checkout_url: { type: "string", format: "uri" },
+          expires_at: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      V2Order: {
+        type: "object",
+        description: "An order as v2 states it. The webhook body is these fields up to `gateway`.",
+        properties: {
+          event: { type: "string", nullable: true, enum: ["payment.success", "payment.failed", "payment.expired"], description: "null while the order is PENDING" },
+          event_id: { type: "string", nullable: true, example: "evt_9c1d0e2f3a4b5c6d7e8f9a0b1c2d3e4f" },
+          order_id: { type: "string", example: "KTN_3f2b8c1e9a4d4e6f8b7a0c1d2e3f4a5b" },
+          reference: { type: "string", example: "inv-1001" },
+          status: { type: "string", enum: ["PENDING", "SUCCESS", "FAILED", "EXPIRED"] },
+          previous_status: { type: "string", enum: ["EXPIRED", "FAILED"], description: "Present only when SUCCESS follows EXPIRED or FAILED." },
+          amount: { type: "integer", description: "Minor units (paise).", example: 200000 },
+          currency: { type: "string", example: "INR" },
+          rrn: { type: "string", nullable: true, description: "The bank's reference; null unless SUCCESS.", example: "123456789012" },
+          rrn_is_synthetic: { type: "boolean", description: "true when Katana made the reference: it is on no bank statement." },
+          paid_at: { type: "string", format: "date-time", nullable: true },
+          gateway: { type: "string", nullable: true, description: "Always null." },
+          checkout_url: { type: "string", format: "uri", nullable: true },
+          expires_at: { type: "string", format: "date-time", nullable: true },
+          created_at: { type: "string", format: "date-time" },
+          livemode: { type: "boolean" },
+          metadata: { type: "object", nullable: true, additionalProperties: true },
+        },
+      },
+      V2Error: {
+        type: "object",
+        properties: {
+          code: { type: "string", enum: Object.keys(V2_ERRORS), example: "ORDER_NOT_FOUND" },
+          message: { type: "string", description: "For a person; branch on `code`." },
+          reference: { type: "string", description: "The id of the request, also in the X-Request-Id header.", example: "req_5b1c0e2f3a4b5c6d7e8f9a0b" },
+        },
+      },
       CreateOrderRequest: {
         type: "object",
         required: ["key", "txnid", "amount", "hash"],

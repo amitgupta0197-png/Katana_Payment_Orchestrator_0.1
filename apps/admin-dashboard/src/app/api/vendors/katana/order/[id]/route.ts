@@ -6,6 +6,8 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { orderInScope } from "@/lib/portal-scope";
+import { seesGatewayNames } from "@/lib/merchant-safe";
 import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
@@ -20,12 +22,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const found = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel,
              COALESCE(rrn,'') AS rrn, response_code, status, customer_vpa, customer_phone,
-             meta, created_at, livemode,
+             meta, created_at, livemode, merchant_id,
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
        WHERE id = $1::uuid AND vendor = 'KATANA'
     `, [id]);
-    if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // A banker login reads its own orders only (lib/portal-scope); another's is "not found".
+    if (!found.length || !(await orderInScope(g.session, found[0].merchant_id)))
+      return NextResponse.json({ error: "not found" }, { status: 404 });
 
     let order = found[0];
     if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
@@ -58,6 +62,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
 
     const meta = order.meta ?? {};
+    // `meta` holds which gateway took the payment and its page address. That stays with staff
+    // (lib/merchant-safe); a banker gets the order and its payment links, which follow.
+    if (!seesGatewayNames(g.session.persona)) order = { ...order, meta: undefined };
     return NextResponse.json({
       order,
       status: order.status,

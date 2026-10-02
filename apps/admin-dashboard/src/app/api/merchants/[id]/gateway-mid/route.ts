@@ -16,6 +16,7 @@ import { wormAppend } from "@/lib/worm";
 import { storeGatewayMid, getGatewayMidStatus, payinProdId } from "@/lib/gateway-creds";
 import { GATEWAYS, gatewayDef, validateCredFields } from "@/lib/pg-catalog";
 import { payinProdEnabled, payinWebhookUrl } from "@/lib/payin-providers/types";
+import { getGoLive, startVerifying } from "@/lib/gateway-golive";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // Where the gateway should send payment events; not a secret.
     // PayU Client ID mode has no webhook: its payments are confirmed from the Payment Links API.
     const hook = status.configured && !(status.gateway === "PAYU" && status.auth === "client_credentials");
-    return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null });
+    // Where a live account stands on the go-live checklist; null for one with no checklist.
+    const golive = status.configured && status.env === "PROD" ? await getGoLive(code, status.gateway).catch(() => null) : null;
+    return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null, golive: golive ? { status: golive.status } : null });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
@@ -90,12 +93,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       extra: Object.keys(extra).length ? extra : undefined,
     });
     const after = await getGatewayMidStatus(code);
+    // A live account goes on the go-live checklist (lib/gateway-golive) and takes only small
+    // verification payments until it passes. One that was already live on this gateway is
+    // recorded as LIVE: rotating its credentials must not stop its payments.
+    let golive = null;
+    if (body.env === "PROD") {
+      const alreadyLive = before.configured && before.env === "PROD" && before.gateway === def.id;
+      golive = await startVerifying(code, def.id, g.session.email, alreadyLive).catch(() => null);
+    }
     await wormAppend({
       actorId: g.session.user_id, actorEmail: g.session.email,
       action: before.configured ? "merchant.payin_gateway.rotated" : "merchant.payin_gateway.set",
       resourceType: "merchant", resourceId: id, before, after: { merchant_code: code, ...after },
     }).catch(() => {});
     // Echo only non-secret status back.
-    return NextResponse.json({ status: after }, { status: 201 });
+    return NextResponse.json({ status: after, golive: golive ? { status: golive.status } : null }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

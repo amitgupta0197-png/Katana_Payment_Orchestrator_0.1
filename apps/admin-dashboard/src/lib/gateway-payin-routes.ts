@@ -12,6 +12,7 @@ import type { GatewayId } from "@/lib/pg-catalog";
 import { checkGatewayPayin, checkoutReturnDest, gatewayOrderOwner, gatewayPayinFor } from "@/lib/gateway-payin";
 import { publicBase } from "@/lib/payin-providers/types";
 import { recordSecurityEvent } from "@/lib/security-event";
+import { outcomeOf, recordGatewayWebhook } from "@/lib/gateway-webhook-log";
 
 export interface WebhookBody { raw: string; json: Record<string, any> | null; form: Record<string, string> | null }
 
@@ -36,16 +37,30 @@ export async function handlePayinWebhook(req: Request, input: {
   const b = await readBody(req);
   if (!b.json) return NextResponse.json({ ok: false, error: "empty body" }, { status: 400 });
   const txnid = input.txnidOf(b);
-  if (!txnid) return NextResponse.json({ ok: true, ignored: "no order reference" });
+  // Every event that arrives is recorded (lib/gateway-webhook-log), whatever comes of it.
+  const seen = { gateway: input.provider, txnId: txnid || null };
+  if (!txnid) {
+    recordGatewayWebhook({ ...seen, outcome: "IGNORED" });
+    return NextResponse.json({ ok: true, ignored: "no order reference" });
+  }
   const owner = await gatewayOrderOwner(input.provider, txnid);
-  if (!owner) return NextResponse.json({ ok: true, ignored: "unknown order", txn_id: txnid });
+  if (!owner) {
+    recordGatewayWebhook({ ...seen, outcome: "UNKNOWN_ORDER" });
+    return NextResponse.json({ ok: true, ignored: "unknown order", txn_id: txnid });
+  }
   const gw = await gatewayPayinFor(owner.merchantCode);
-  if (!gw || gw.mid.gateway !== input.provider) return NextResponse.json({ ok: true, ignored: "gateway not connected", txn_id: txnid });
-  if (input.verify(gw.mid, b, req.headers) === false) {
+  if (!gw || gw.mid.gateway !== input.provider) {
+    recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, outcome: "NOT_CONNECTED" });
+    return NextResponse.json({ ok: true, ignored: "gateway not connected", txn_id: txnid });
+  }
+  const signed = input.verify(gw.mid, b, req.headers);
+  if (signed === false) {
+    recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, signatureOk: false, outcome: "BAD_SIGNATURE" });
     await recordSecurityEvent({ risk: "BAD_SIGNATURE", detail: `pay-in webhook from ${input.provider} for ${owner.merchantCode}, order ${txnid}` });
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const r = await checkGatewayPayin({ provider: input.provider, txnid, merchantCode: owner.merchantCode, source: "webhook" });
+  recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, signatureOk: signed, outcome: outcomeOf(r), status: r.status });
   return NextResponse.json({ ok: true, txn_id: txnid, status: r.status, applied: r.applied, ...(r.reason ? { note: r.reason } : {}) });
 }
 

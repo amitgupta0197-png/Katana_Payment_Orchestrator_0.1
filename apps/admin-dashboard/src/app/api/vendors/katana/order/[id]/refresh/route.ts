@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { orderInScope } from "@/lib/portal-scope";
 import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
@@ -17,10 +18,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const found = await rows<any>("vendorGateway", `
-      SELECT id::text, status, amount, livemode, meta, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
+      SELECT id::text, status, amount, livemode, meta, merchant_id, EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'
     `, [id]);
-    if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // A banker login refreshes its own orders only (lib/portal-scope).
+    if (!found.length || !(await orderInScope(g.session, found[0].merchant_id)))
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     const o = found[0];
 
     // A held order or one with a payment proof waits for a person (autoResolvePaused); a refresh

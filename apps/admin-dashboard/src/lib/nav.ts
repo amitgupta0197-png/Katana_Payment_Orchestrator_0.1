@@ -36,6 +36,7 @@ import {
   ArrowLeftRight,
   Smartphone,
   Building2,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 
@@ -75,11 +76,11 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // to their job. Nothing is removed from the app — every page stays reachable by URL
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
-  OPERATOR:   ["/", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
+  OPERATOR:   ["/", "/orders", "/gateway-health", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
-  SUPPORT:    ["/", "/payin-data", "/payout-data", "/summary", "/security"],
+  SUPPORT:    ["/", "/orders", "/api-log", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
 // Resolve the nav a given persona should see. SUPER_ADMIN/ADMIN see everything;
@@ -105,6 +106,12 @@ export const navItems: NavItem[] = [
   { href: "/payin-flows",        label: "Pay-in Flows",    icon: ArrowLeftRight, status: "live", group: "Payment Management" },
   { href: "/payin-flows/p2p",    label: "P2P Pay-ins",     icon: Smartphone,     status: "live", group: "Payment Management" },
   { href: "/payin-flows/intent", label: "Intent Pay-ins",  icon: Building2,      status: "live", group: "Payment Management" },
+  // The order desk and the v2 operations screens. Open to every staff role, like their APIs.
+  { href: "/orders",           label: "Order search",    icon: Search,     status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
+  { href: "/gateway-health",   label: "Gateway health",  icon: Activity,   status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
+  { href: "/gateway-golive",   label: "Gateway go-live", icon: Rocket,     status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
+  { href: "/webhook-settings", label: "Webhook settings", icon: Workflow,  status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
+  { href: "/api-log",          label: "API request log", icon: ScrollText, status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
   { href: "/qr-switch",        label: "QR Operations",   icon: QrCode,   status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR"] },
   { href: "/transactions",     label: "Transactions",    icon: Receipt,  status: "live", group: "Payment Management" },
   // Personas match the /api/statements gate — a link to an endpoint the viewer is refused by

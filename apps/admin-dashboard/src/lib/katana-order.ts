@@ -17,6 +17,7 @@ import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
 import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
 import { getPayinLimits, getPayinUsage, insertWithinDailyLimit } from "@/lib/payin-limits-store";
+import { assertGoLiveAllows } from "@/lib/gateway-golive";
 
 export interface CreateKatanaOrderInput {
   orderId: string;
@@ -37,6 +38,10 @@ export interface CreateKatanaOrderInput {
   flow?: OrderFlow | null;
   /** The id of the request that created the order; kept on the order and in its status history. */
   requestId?: string | null;
+  /** v2: the merchant's own key/value notes, kept on the order and given back when it is read. */
+  metadata?: Record<string, string | number | boolean | null>;
+  /** Which order API created it. Absent = v1. */
+  apiVersion?: "v2";
 }
 
 /**
@@ -221,6 +226,11 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     if (breach) throw new PayinLimitError(breach);
     if (livemode) dailyLimit = limits.daily;
   }
+  // A gateway account that is still on its go-live checklist takes a few small verification
+  // payments and nothing else (lib/gateway-golive). An account with no checklist is not gated.
+  const gatewayId = payuMid ? "PAYU" : (otherGw ?? linkGw)?.mid.gateway ?? null;
+  if (livemode && gatewayId && input.merchantId) await assertGoLiveAllows(input.merchantId, gatewayId, input.amount);
+
   let checkoutUrl: string | null = null;
   let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
@@ -344,6 +354,8 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     ...(merchantName ? { merchant_name: merchantName } : {}),   // shown on Katana's pay page
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     ...(input.requestId ? { request_id: input.requestId } : {}),   // also in the status history (vendorGateway 0033)
+    ...(input.apiVersion ? { api_version: input.apiVersion } : {}),
+    ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent
     integration: !livemode ? { source: "test", env: "SANDBOX", live: false }

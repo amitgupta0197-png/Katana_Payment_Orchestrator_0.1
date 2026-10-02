@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { orderInScope } from "@/lib/portal-scope";
 import { buildUpiQuery, buildDeeplinks } from "@/lib/katana-pay";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +22,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const found = await rows<any>("vendorGateway",
-      `SELECT id::text, order_id, amount, status, meta FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
-    if (!found.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+      `SELECT id::text, order_id, amount, status, meta, merchant_id FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
+    // A banker login changes the receiving UPI ID of its own orders only (lib/portal-scope).
+    if (!found.length || !(await orderInScope(g.session, found[0].merchant_id)))
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = found[0];
     if (["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"].includes(order.status))
       return NextResponse.json({ error: `order is ${order.status}` }, { status: 409 });

@@ -19,6 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { applyPayuResult, parsePayuBody } from "@/lib/payu-result";
+import { recordGatewayWebhook } from "@/lib/gateway-webhook-log";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,15 @@ export async function POST(req: Request) {
   catch { return NextResponse.json({ ok: false, error: "bad request" }, { status: 400 }); }
 
   const r = await applyPayuResult(p);
+  // That PayU called is recorded whatever came of it (lib/gateway-webhook-log).
+  recordGatewayWebhook({
+    gateway: "PAYU", txnId: r.txnid || null, status: r.status,
+    // A Client ID account has no Salt to check a hash with: unsigned, not badly signed.
+    signatureOk: !r.matched || r.reason === "payu_client_id_mode" ? null : r.hashOk,
+    outcome: !r.txnid ? "IGNORED" : !r.matched ? "UNKNOWN_ORDER" : r.reason === "payu_client_id_mode" ? "NOT_APPLIED"
+      : !r.hashOk ? "BAD_SIGNATURE" : r.applied ? "APPLIED"
+      : r.reason?.startsWith("still ") ? "NOT_FINAL" : r.status === "SUCCESS" || r.status === "FAILED" ? "ALREADY_FINAL" : "NOT_APPLIED",
+  });
 
   // Always 200 once the payload is readable, including for an unknown txnid. PayU retries
   // non-2xx, and retrying an order we do not have will never start working — it would just

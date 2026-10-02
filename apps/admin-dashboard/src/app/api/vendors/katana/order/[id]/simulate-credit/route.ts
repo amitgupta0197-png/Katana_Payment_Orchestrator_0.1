@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
+import { orderInScope } from "@/lib/portal-scope";
 import { genRrn, KATANA_TERMINAL } from "@/lib/katana-pay";
 import { ingestTxnAlert } from "@/lib/txn-reconcile";
 
@@ -24,7 +25,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   try {
     const cur = await rows<any>("vendorGateway",
       `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
-    if (!cur.length) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // A merchant or banker login simulates a credit on its own test orders only (lib/portal-scope).
+    if (!cur.length || !(await orderInScope(g.session, cur[0].merchant_id)))
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     const order = cur[0];
     if (KATANA_TERMINAL.has(order.status))
       return NextResponse.json({ error: `order already ${order.status}` }, { status: 409 });

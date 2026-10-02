@@ -28,12 +28,13 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       if (r.status === 403) return { restricted: true as const };
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
-      return d as { status: PayinStatus; webhook_url?: string | null };
+      return d as { status: PayinStatus; webhook_url?: string | null; golive?: { status: "VERIFYING" | "LIVE" } | null };
     },
   });
   const restricted = (q.data as { restricted?: boolean })?.restricted;
   const status = (q.data as { status?: PayinStatus })?.status;
   const webhookUrl = (q.data as { webhook_url?: string | null })?.webhook_url;
+  const golive = (q.data as { golive?: { status: "VERIFYING" | "LIVE" } | null })?.golive;
   const copyEndpoint = async () => {
     if (!webhookUrl) return;
     try { await navigator.clipboard.writeText(webhookUrl); toast.success("Payment events URL copied", { description: webhookUrl }); }
@@ -80,7 +81,14 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
               {status.connector
                 ? <Badge variant="success">Connected</Badge>
                 : <Badge variant="warning">Saved — connector coming soon</Badge>}
+              {golive && <Badge variant={golive.status === "LIVE" ? "success" : "warning"}>{golive.status === "LIVE" ? "Live" : "Verifying"}</Badge>}
             </div>
+            {golive?.status === "VERIFYING" && (
+              <div className="rounded-md border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] p-2 text-xs">
+                This account takes only small verification payments until its go-live checklist is complete.{" "}
+                <a className="font-medium underline" href="/gateway-golive">Open the checklist</a>
+              </div>
+            )}
             <div><span className="text-[color:var(--color-text-muted)]">Merchant ID:</span> <span className="font-mono">{status.mid_code}</span></div>
             <div><span className="text-[color:var(--color-text-muted)]">{status.auth === "client_credentials" ? "Client ID" : "Key"}:</span> <span className="font-mono">{status.key_hint}</span> <span className="text-[color:var(--color-text-muted)]">· secret sealed</span></div>
             {status.connector && webhookUrl && (

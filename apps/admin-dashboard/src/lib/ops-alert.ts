@@ -7,9 +7,14 @@
 // must not break the work that noticed the condition.
 //
 // These go to Katana staff only (lib/telegram's admin allowlist), so they may name a gateway.
+//
+// An alert raised with `email: true` is also mailed to the operations team (lib/ops-email) at
+// the same moments: when it is sent and when it is resolved. Mail that is not configured, or
+// that fails, changes nothing else.
 
 import { rows } from "@/lib/pg";
 import { broadcastToAdmins, esc, telegramConfigured } from "@/lib/telegram";
+import { sendOpsEmail } from "@/lib/ops-email";
 
 export type AlertSeverity = "INFO" | "WARN" | "CRITICAL";
 
@@ -21,6 +26,8 @@ export interface AlertInput {
   body?: string;
   /** Minutes before a still-open alert is sent again. */
   repeatMinutes?: number;
+  /** Also mail the operations team (lib/ops-email). */
+  email?: boolean;
 }
 
 const ICON: Record<AlertSeverity, string> = { INFO: "ℹ️", WARN: "⚠️", CRITICAL: "🚨" };
@@ -46,7 +53,9 @@ export async function raiseAlert(a: AlertInput): Promise<{ sent: boolean }> {
           THEN now() ELSE ops_alerts.last_sent_at END
       RETURNING (last_sent_at = now()) AS send
     `, [a.key, a.severity, a.title, a.body ?? null, repeat]);
-    if (!r[0]?.send || !telegramConfigured()) return { sent: false };
+    if (!r[0]?.send) return { sent: false };
+    const mailed = a.email ? await sendOpsEmail(`[Katana ${a.severity}] ${a.title}`, `${a.title}\n\n${a.body ?? ""}`.trim()) : false;
+    if (!telegramConfigured()) return { sent: mailed };
     await broadcastToAdmins(`${ICON[a.severity]} <b>${esc(a.title)}</b>${a.body ? `\n${esc(a.body)}` : ""}`);
     return { sent: true };
   } catch (err) {
@@ -56,12 +65,13 @@ export async function raiseAlert(a: AlertInput): Promise<{ sent: boolean }> {
 }
 
 /** The condition no longer holds. Says so once, if the alert was open. */
-export async function resolveAlert(key: string, note?: string): Promise<{ resolved: boolean }> {
+export async function resolveAlert(key: string, note?: string, opts: { email?: boolean } = {}): Promise<{ resolved: boolean }> {
   try {
     const r = await rows<{ title: string }>("audit", `
       UPDATE ops_alerts SET resolved_at = now() WHERE alert_key = $1 AND resolved_at IS NULL RETURNING title
     `, [key]);
     if (!r.length) return { resolved: false };
+    if (opts.email) await sendOpsEmail(`[Katana resolved] ${r[0].title}`, `Resolved: ${r[0].title}${note ? `\n\n${note}` : ""}`);
     if (telegramConfigured()) await broadcastToAdmins(`✅ <b>Resolved: ${esc(r[0].title)}</b>${note ? `\n${esc(note)}` : ""}`);
     return { resolved: true };
   } catch (err) {
@@ -72,7 +82,7 @@ export async function resolveAlert(key: string, note?: string): Promise<{ resolv
 
 /** Raise when `on`, resolve when not: for a check that runs on a schedule. */
 export async function setAlert(on: boolean, a: AlertInput): Promise<void> {
-  if (on) await raiseAlert(a); else await resolveAlert(a.key);
+  if (on) await raiseAlert(a); else await resolveAlert(a.key, undefined, { email: a.email });
 }
 
 export interface OpenAlert { alert_key: string; severity: AlertSeverity; title: string; body: string | null; first_seen_at: string; last_seen_at: string }

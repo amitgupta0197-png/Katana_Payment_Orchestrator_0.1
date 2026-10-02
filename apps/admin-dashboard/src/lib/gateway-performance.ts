@@ -139,3 +139,110 @@ export async function platformSummary(): Promise<PlatformSummary> {
     open: { manual_cases: cases.n, compliance_flags: flags.n, ops_alerts: alerts.n, dead_letter_callbacks_24h: dlq.n },
   };
 }
+
+// ── Gateway health (the health screen and its alerts) ────────────────────────────
+//
+// One row per gateway, over the last 24 hours of live orders, joined with the webhooks that
+// gateway actually sent (gateway_webhook_events, vendorGateway 0038). Three things are watched:
+//
+//   NO_WEBHOOK         it took orders in the last 24 hours and sent no webhook in that time
+//   SLOW_CONFIRMATION  half its paid orders took more than 30 minutes to be confirmed
+//   HIGH_REVIVAL       more than 20% of its paid orders were paid after they had expired
+//
+// The last one is the confirmation window being too short for that gateway: the merchant was
+// told Expired and then Success. It needs a handful of paid orders before it says anything.
+
+export interface GatewayHealth {
+  gateway_name: string;
+  orders_last_24h: number;
+  /** Paid over all orders of the window, 0 to 1; null with no orders. */
+  pct_confirmed: number | null;
+  median_confirm_latency_minutes: number | null;
+  webhooks_received_last_24h: number;
+  /** Paid after expiring, over paid; null with no paid orders. */
+  pct_revived_after_expiry: number | null;
+  last_webhook_at: string | null;
+  paid_last_24h: number;
+  alerts: GatewayHealthAlert[];
+}
+
+export type GatewayHealthAlert = "NO_WEBHOOK" | "SLOW_CONFIRMATION" | "HIGH_REVIVAL";
+
+export const HEALTH_MAX_LATENCY_MIN = Number(process.env.GATEWAY_HEALTH_MAX_LATENCY_MIN ?? 30);
+export const HEALTH_MAX_REVIVAL = Number(process.env.GATEWAY_HEALTH_MAX_REVIVAL ?? 0.2);
+export const HEALTH_REVIVAL_MIN_PAID = Number(process.env.GATEWAY_HEALTH_REVIVAL_MIN_PAID ?? 5);
+
+export const GATEWAY_ALERT_TEXT: Record<GatewayHealthAlert, string> = {
+  NO_WEBHOOK: "No webhook in the past 24 hours",
+  SLOW_CONFIRMATION: `Median confirmation over ${HEALTH_MAX_LATENCY_MIN} minutes`,
+  HIGH_REVIVAL: `Over ${Math.round(HEALTH_MAX_REVIVAL * 100)}% of paid orders were paid after expiring`,
+};
+
+/** Which alerts a gateway's figures raise. Pure. */
+export function gatewayHealthAlerts(g: Omit<GatewayHealth, "alerts">): GatewayHealthAlert[] {
+  const out: GatewayHealthAlert[] = [];
+  if (g.orders_last_24h > 0 && g.webhooks_received_last_24h === 0) out.push("NO_WEBHOOK");
+  if (g.median_confirm_latency_minutes != null && g.median_confirm_latency_minutes > HEALTH_MAX_LATENCY_MIN) out.push("SLOW_CONFIRMATION");
+  if (g.pct_revived_after_expiry != null && g.paid_last_24h >= HEALTH_REVIVAL_MIN_PAID && g.pct_revived_after_expiry > HEALTH_MAX_REVIVAL) out.push("HIGH_REVIVAL");
+  return out;
+}
+
+export async function gatewayHealth(hours = 24): Promise<GatewayHealth[]> {
+  const [orders, hooks] = await Promise.all([
+    rows<Record<string, string | null>>("vendorGateway", `
+      SELECT upper(i.gateway) AS gateway, COUNT(*)::text AS orders,
+             COUNT(*) FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED'))::text AS paid,
+             COUNT(*) FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED') AND p.meta ? 'revived_from_expired')::text AS revived,
+             (percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (COALESCE(i.confirmed_at, p.updated_at) - p.created_at)) / 60.0)
+                FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED')))::text AS median_min
+        FROM katana_intent_orders i JOIN vendor_payin_orders p ON p.id = i.order_id
+       WHERE i.livemode AND i.gateway IS NOT NULL AND p.created_at > now() - make_interval(hours => $1::int)
+       GROUP BY 1`, [hours]),
+    // A database without the table yet has recorded no webhooks.
+    rows<Record<string, string | null>>("vendorGateway", `
+      SELECT upper(gateway) AS gateway,
+             COUNT(*) FILTER (WHERE received_at > now() - make_interval(hours => $1::int))::text AS n,
+             MAX(received_at) AS last_at
+        FROM gateway_webhook_events GROUP BY 1`, [hours])
+      .catch((err) => ((err as { code?: string }).code === "42P01" ? [] : Promise.reject(err))),
+  ]);
+  const hook = new Map(hooks.map((h) => [h.gateway!, h]));
+  const names = [...new Set([...orders.map((o) => o.gateway!), ...hook.keys()])].sort();
+  const order = new Map(orders.map((o) => [o.gateway!, o]));
+  return names.map((name) => {
+    const o = order.get(name), h = hook.get(name);
+    const n = Number(o?.orders ?? 0), paid = Number(o?.paid ?? 0);
+    const base = {
+      gateway_name: name, orders_last_24h: n, paid_last_24h: paid,
+      pct_confirmed: rate(paid, n),
+      median_confirm_latency_minutes: o?.median_min != null ? Math.round(Number(o.median_min) * 10) / 10 : null,
+      webhooks_received_last_24h: Number(h?.n ?? 0),
+      pct_revived_after_expiry: rate(Number(o?.revived ?? 0), paid),
+      last_webhook_at: h?.last_at ? new Date(h.last_at).toISOString() : null,
+    };
+    return { ...base, alerts: gatewayHealthAlerts(base) };
+  });
+}
+
+/** Raise or clear each gateway's three alerts. Run by the monitor every five minutes. */
+export async function checkGatewayWebhookHealth(): Promise<{ gateways: number; alerts: string[] }> {
+  const health = await gatewayHealth(24);
+  const raised: string[] = [];
+  for (const g of health) {
+    for (const kind of ["NO_WEBHOOK", "SLOW_CONFIRMATION", "HIGH_REVIVAL"] as GatewayHealthAlert[]) {
+      const on = g.alerts.includes(kind);
+      if (on) raised.push(`${g.gateway_name}:${kind}`);
+      await setAlert(on, {
+        key: `gateway:${kind.toLowerCase()}:${g.gateway_name}`, severity: kind === "NO_WEBHOOK" ? "CRITICAL" : "WARN", repeatMinutes: 360,
+        email: true,   // the banner, the admin chats and a mail to ops
+        title: `${g.gateway_name}: ${GATEWAY_ALERT_TEXT[kind].toLowerCase()}`,
+        body: kind === "NO_WEBHOOK"
+          ? `${g.orders_last_24h} live orders in the last 24 hours and no webhook received${g.last_webhook_at ? ` since ${g.last_webhook_at}` : " ever"}. Payments are being confirmed by status checks only. Check the webhook URL in the gateway's dashboard.`
+          : kind === "SLOW_CONFIRMATION"
+            ? `Median time from order to confirmation is ${g.median_confirm_latency_minutes} minutes over ${g.paid_last_24h} paid orders.`
+            : `${pct(g.pct_revived_after_expiry)} of ${g.paid_last_24h} paid orders were confirmed after the order had expired: merchants were told Expired, then Success.`,
+      });
+    }
+  }
+  return { gateways: health.length, alerts: raised };
+}

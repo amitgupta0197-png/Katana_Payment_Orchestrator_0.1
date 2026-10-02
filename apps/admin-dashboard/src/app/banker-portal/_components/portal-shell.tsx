@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, Receipt, Banknote, BookOpen, CreditCard,
-  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug, FileSpreadsheet, QrCode,
+  KeyRound, ShieldAlert, UserCog, LogOut, HelpCircle, Landmark, Plug, FileSpreadsheet, QrCode, Search, Webhook, ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ const NAV = [
   { href: "/banker-portal",             label: "Dashboard",   icon: LayoutDashboard, exact: true  },
   { href: "/banker-portal/qr-switch",   label: "QR switch",   icon: QrCode,         exact: false },
   { href: "/banker-portal/transactions",label: "Transactions",icon: Receipt,         exact: false },
+  { href: "/banker-portal/orders",      label: "Orders",      icon: Search,          exact: false },
   { href: "/banker-portal/statements",  label: "Statements",  icon: FileSpreadsheet, exact: false },
   { href: "/banker-portal/settlements", label: "Settlements", icon: Banknote,        exact: false },
   { href: "/banker-portal/provider-settlements", label: "Merchant settlements", icon: Landmark, exact: false },
@@ -25,6 +26,8 @@ const NAV = [
   { href: "/banker-portal/sub-mids",    label: "Sub-MIDs",    icon: CreditCard,      exact: false },
   { href: "/banker-portal/api-keys",    label: "API keys",    icon: KeyRound,        exact: false },
   { href: "/banker-portal/integration", label: "Integration", icon: Plug,            exact: false },
+  { href: "/banker-portal/webhooks",    label: "Webhooks & keys", icon: Webhook,     exact: false },
+  { href: "/banker-portal/api-log",     label: "API log",     icon: ScrollText,      exact: false },
   { href: "/banker-portal/disputes",    label: "Disputes",    icon: ShieldAlert,     exact: false },
   { href: "/banker-portal/profile",     label: "Profile",     icon: UserCog,         exact: false },
   { href: "/banker-portal/help",        label: "Help & guide",icon: HelpCircle,      exact: false },

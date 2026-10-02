@@ -16,13 +16,15 @@
 //   jobs:stale             scheduled jobs the crontab has stopped calling
 //   jobs:failing           scheduled jobs whose last run failed
 //   gateway:health:<GW>    a gateway whose recent orders are mostly not being paid (lib/gateway-performance)
+//   gateway:no_webhook:<GW>, gateway:slow_confirmation:<GW>, gateway:high_revival:<GW>
+//                          a gateway that has stopped calling, confirms slowly, or pays after expiry
 //   compliance:flags       transaction patterns on live pay-ins waiting for review (lib/payin-compliance)
 
 import { rows, type DbKey } from "@/lib/pg";
 import { setAlert, type AlertSeverity } from "@/lib/ops-alert";
 import { jobStatuses } from "@/lib/jobs";
 import { scanPayinCompliance, type ComplianceScanResult } from "@/lib/payin-compliance-store";
-import { checkGatewayHealth } from "@/lib/gateway-performance";
+import { checkGatewayHealth, checkGatewayWebhookHealth } from "@/lib/gateway-performance";
 
 interface Check {
   key: string;
@@ -94,10 +96,11 @@ export interface MonitorResult {
   failing_jobs: string[];
   compliance: ComplianceScanResult | { error: string };
   gateways: { gateways: number; unhealthy: string[] } | { error: string };
+  gateway_webhooks: { gateways: number; alerts: string[] } | { error: string };
 }
 
 export async function runMonitor(): Promise<MonitorResult> {
-  const out: MonitorResult = { checks: {}, stale_jobs: [], failing_jobs: [], compliance: { error: "not run" }, gateways: { error: "not run" } };
+  const out: MonitorResult = { checks: {}, stale_jobs: [], failing_jobs: [], compliance: { error: "not run" }, gateways: { error: "not run" }, gateway_webhooks: { error: "not run" } };
 
   for (const c of CHECKS) {
     try {
@@ -111,6 +114,7 @@ export async function runMonitor(): Promise<MonitorResult> {
 
   out.compliance = await scanPayinCompliance().catch((err) => ({ error: (err as Error).message }));
   out.gateways = await checkGatewayHealth().catch((err) => ({ error: (err as Error).message }));
+  out.gateway_webhooks = await checkGatewayWebhookHealth().catch((err) => ({ error: (err as Error).message }));
 
   // The monitor's own heartbeat is written after it returns, so it never reports itself.
   const jobs = (await jobStatuses()).filter((j) => j.job !== "monitor");

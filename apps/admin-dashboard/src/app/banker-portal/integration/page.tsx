@@ -132,6 +132,8 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild size="sm" variant="secondary"><a href="/katana-pay-integration.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> Open setup guide</a></Button>
+            {/* The simpler API (lib/v2-api): Bearer key, four statuses, header-signed webhook. Keys are under Webhooks & keys. */}
+            <Button asChild size="sm" variant="secondary"><a href="/katana-v2-guide.html" target="_blank" rel="noopener"><ExternalLink className="h-4 w-4" /> API v2 guide</a></Button>
             {/* The PDF is the same guide, printed — it is what merchants forward to their own developers. */}
             <Button asChild size="sm" variant="secondary"><a href="/Katana-Pay-Integration-Guide.pdf" target="_blank" rel="noopener"><Download className="h-4 w-4" /> Download PDF</a></Button>
           </div>

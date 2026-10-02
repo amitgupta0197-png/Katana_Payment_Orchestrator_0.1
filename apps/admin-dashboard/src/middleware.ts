@@ -75,6 +75,9 @@ const PUBLIC_API = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api
 // Prefix-matched public surfaces: the customer-facing Katana Pay payment page and
 // its status endpoint (the order id in the URL is the capability).
 const PUBLIC_UI_PREFIX = ["/pay", "/katana-pay"];
+// /v2/* is the v2 order API (lib/v2-api): Bearer API key, no session. It is an API whose path
+// does not start with /api, so it is let through here rather than sent to /login.
+const V2_API = /^\/v2(\/|$)/;
 const PUBLIC_API_PREFIX = ["/api/pay-status", "/api/oauth", "/api/v1/katana-pay/callback", "/api/v1/p2p/order", "/api/v1/intent/order", "/api/v1/bank-feeds"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
@@ -162,6 +165,8 @@ export async function middleware(req: NextRequest) {
     dest.pathname = pathname.replace("/provider-portal", "/merchant-portal");
     return NextResponse.redirect(dest, 308);
   }
+
+  if (V2_API.test(pathname)) return NextResponse.next({ request: { headers: withPathname(req) } });
 
   if (isApi) {
     if (PUBLIC_API.includes(pathname) || isUnder(pathname, PUBLIC_API_PREFIX) || VENDOR_CALLBACK.test(pathname) || SANDBOX_PREFIX.test(pathname)) {

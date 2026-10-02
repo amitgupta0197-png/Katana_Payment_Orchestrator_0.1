@@ -31,6 +31,9 @@ import { activationErrorResponse } from "@/lib/live-activation";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody, merchantSafeError } from "@/lib/merchant-safe";
 import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
+import { AccountNotLiveError } from "@/lib/gateway-golive";
+import { logApiRequest } from "@/lib/api-log";
+import { clientIp } from "@/lib/session-security";
 
 const schema = z.object({
   key: z.string().min(1),
@@ -81,15 +84,31 @@ export function requestIdFrom(req: Request): string {
 
 export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promise<NextResponse> {
   const requestId = requestIdFrom(req);
-  const res = await handle(req, api, requestId);
+  const started = Date.now();
+  const seen: Seen = { merchant: null, livemode: null, body: null };
+  const res = await handle(req, api, requestId, seen);
   res.headers.set("x-request-id", requestId);
+  // The request log (lib/api-log) reads a copy of the answer; the answer itself is untouched.
+  const answer = await res.clone().json().catch(() => null);
+  logApiRequest({
+    requestId, merchantId: seen.merchant, livemode: seen.livemode, apiVersion: "v1", method: "POST",
+    endpoint: `/${api.where}`, httpStatus: res.status, latencyMs: Date.now() - started,
+    errorCode: res.status >= 400 ? (answer?.code ?? null) : null, requestBody: seen.body, responseBody: answer, ip: clientIp(req),
+  });
   return res;
 }
 
-async function handle(req: Request, api: KatanaOrderApi, requestId: string): Promise<NextResponse> {
+/** What the request log needs from a request, filled in as far as the request got. */
+interface Seen { merchant: string | null; livemode: boolean | null; body: unknown }
+
+async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen: Seen): Promise<NextResponse> {
   const WHERE = api.where;
   let body;
-  try { body = schema.parse(await parseBody(req)); } catch (e) {
+  try {
+    const raw = await parseBody(req);
+    seen.body = raw;
+    body = schema.parse(raw);
+  } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
@@ -100,6 +119,7 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string): Pro
     const resolved = await resolveCheckoutKey(body.key);
     if (!resolved) return NextResponse.json({ error: "invalid key" }, { status: 401 });
     const { merchantCode, livemode } = resolved;
+    seen.merchant = merchantCode; seen.livemode = livemode;
     const creds = await getCheckoutCreds(merchantCode, livemode);
     if (!creds || creds.key !== body.key) return NextResponse.json({ error: "invalid key" }, { status: 401 });
 
@@ -164,6 +184,7 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string): Pro
     // The merchant's flow does not allow this order: say which rule, so an integration can tell
     // "not enabled for you" from a payment failure.
     if (err instanceof PayinFlowError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    if (err instanceof AccountNotLiveError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: merchantSafeError(err.message, WHERE) }, { status: err.status });
     const a = activationErrorResponse(err);   // live key, live mode not activated
     if (a) return NextResponse.json(a.body, { status: a.status });

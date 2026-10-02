@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Swords, LayoutDashboard, UserPlus, Store, CreditCard,
   Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
-  FileSpreadsheet, GitMerge,
+  FileSpreadsheet, GitMerge, Search, Webhook, ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ const NAV = [
   { href: "/merchant-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
   { href: "/merchant-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
   { href: "/merchant-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
+  { href: "/merchant-portal/orders",     label: "Orders",     icon: Search,          exact: false },
   { href: "/merchant-portal/reconciliation", label: "Reconciliation", icon: GitMerge, exact: false },
   { href: "/merchant-portal/statements", label: "Statements", icon: FileSpreadsheet, exact: false },
   { href: "/merchant-portal/settlements", label: "Settlements", icon: Banknote,      exact: false },
@@ -31,6 +32,8 @@ const NAV = [
   { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
   { href: "/merchant-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
   { href: "/merchant-portal/integration", label: "Integration", icon: Plug,          exact: false },
+  { href: "/merchant-portal/webhooks",   label: "Webhooks & keys", icon: Webhook,    exact: false },
+  { href: "/merchant-portal/api-log",    label: "API log",    icon: ScrollText,      exact: false },
   { href: "/merchant-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
   { href: "/merchant-portal/help",       label: "Help & guide", icon: HelpCircle,    exact: false },
 ];
