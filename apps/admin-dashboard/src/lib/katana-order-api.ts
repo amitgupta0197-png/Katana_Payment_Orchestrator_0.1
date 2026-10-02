@@ -113,8 +113,9 @@ export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promis
     const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
     // Merchants on a hosted-page gateway (PayU Client ID, RubyVault, iSmartPay) pay on that page.
     // pay_url is still Katana's page, which shows the order and hands over to the gateway;
-    // gateway_url is the gateway's page itself. No UPI app link or QR. The gateway is never
-    // named to the merchant (lib/merchant-safe).
+    // gateway_url goes straight to the gateway's page — through Katana's own link
+    // (/pay/{id}/go), because that page's address names the gateway and the gateway is never
+    // named to the merchant (lib/merchant-safe). No UPI app link or QR.
     const hosted = !!r.checkoutUrl;
     return NextResponse.json(merchantSafeBody({
       verified: true,
@@ -128,7 +129,7 @@ export async function katanaOrderPost(req: Request, api: KatanaOrderApi): Promis
       upi_intent: hosted ? null : r.upiIntent,
       qr_payload: hosted ? null : r.upiIntent,
       pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
-      ...(hosted ? { gateway_url: r.checkoutUrl } : {}),
+      ...(hosted ? { gateway_url: `${base}/pay/${r.order.id}/go` } : {}),
     }, WHERE), { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message }, { status: 403 });

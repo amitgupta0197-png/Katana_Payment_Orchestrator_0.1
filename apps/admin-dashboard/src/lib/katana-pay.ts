@@ -89,6 +89,39 @@ export function decideKatanaStatus(
 
 export const KATANA_TERMINAL = new Set(["SUCCESS", "SUCCEEDED", "FAILED", "EXPIRED"]);
 
+// Map an order status → the (STATUS, RESPONSE_CODE) a merchant's status callback carries.
+export function callbackStatus(status: string): { STATUS: string; RESPONSE_CODE: string } {
+  switch (status) {
+    case "SUCCESS": case "SUCCEEDED": return { STATUS: "Captured", RESPONSE_CODE: "000" };
+    case "FAILED": return { STATUS: "Failed", RESPONSE_CODE: "004" };
+    case "EXPIRED": return { STATUS: "Expired", RESPONSE_CODE: "003" };
+    default: return { STATUS: status, RESPONSE_CODE: "005" };
+  }
+}
+
+// A status callback is sent ONCE PER STATUS, not once per order. EXPIRED and FAILED are soft
+// terminals: a payment that lands afterwards revives the order to SUCCESS (lib/katana-order),
+// and the merchant, already told "Expired" or "Failed", must then be told "Captured". The stamp
+// left by the earlier callback (meta.callback) only blocks a repeat of that same status.
+// "Captured" is hard final: once a merchant has been told it, nothing else is ever sent.
+export function payinCallbackSent(
+  stamp: { sent_at?: string; status?: string } | null | undefined,
+  orderStatus: string,
+): boolean {
+  if (!stamp?.sent_at) return false;
+  if (!stamp.status || stamp.status === "Captured") return true;
+  return callbackStatus(orderStatus).STATUS === stamp.status;
+}
+
+// Which gateway orders are still worth asking their gateway about (a SQL condition on
+// vendor_payin_orders). A paid order never is. One the gateway has not answered for is, until
+// the caller's own age limit. One the gateway answered "failed" for is asked again for two more
+// hours: on a hosted payment page a declined attempt can be followed by one that goes through,
+// and that payment must not be stranded on a FAILED order.
+export const GATEWAY_RECHECK_SQL = `status NOT IN ('SUCCESS','SUCCEEDED')
+       AND ((status <> 'FAILED' AND COALESCE(meta->'gateway'->>'final', '') = '')
+            OR created_at >= now() - interval '2 hours')`;
+
 // Auto-resolution pause. The status enquiry / poller normally advances a PENDING
 // order over time (sandbox amount rule + pending-expiry). It must NOT do so while
 // the order is parked for a human decision: a high-amount hold (meta.hold) or a

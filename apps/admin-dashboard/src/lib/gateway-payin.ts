@@ -19,6 +19,7 @@ import { gatewayName } from "@/lib/pg-catalog";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
 import { confirmKatanaOrder } from "@/lib/katana-order";
+import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
 import { gatewayPayinFor, payinConnector, payinConnectorFor } from "@/lib/payin-providers";
 import {
   checkoutPage, payinProdEnabled, publicBase, payinReturnUrl, payinWebhookUrl,
@@ -87,7 +88,9 @@ export async function applyGatewayPayinState(provider: string, txnid: string, s:
       status: s.status, error: s.error,
     },
   });
-  if (o.status === "SUCCESS" || o.status === "FAILED") return { applied: false, status: o.status, reason: "already_final" };
+  // A paid order is final. A FAILED one gives way only to the gateway's own word that the
+  // payment went through after all.
+  if (o.status === "SUCCESS" || (o.status === "FAILED" && s.final !== "SUCCESS")) return { applied: false, status: o.status, reason: "already_final" };
   if (!s.final) return { applied: false, status: "UNKNOWN", reason: `still ${s.status?.toLowerCase()}` };
 
   const evidence = { source, provider, gateway_status: s.status, payment_id: s.paymentId ?? null, bank_ref: s.bankRef ?? null };
@@ -101,7 +104,7 @@ export async function applyGatewayPayinState(provider: string, txnid: string, s:
   }
 
   const moved = await rows<{ id: string }>("checkout",
-    `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid AND status NOT IN ('SUCCESS','FAILED') RETURNING id::text`,
+    `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid AND ${s.final === "SUCCESS" ? "status <> 'SUCCESS'" : "status NOT IN ('SUCCESS','FAILED')"} RETURNING id::text`,
     [s.final, o.id]).catch(() => []);
   if (!moved.length) return { applied: false, status: s.final, reason: "already_final" };
   await rows("checkout", `
@@ -126,8 +129,7 @@ export async function claimGatewayPayinCheck(provider: string, txnid: string, mi
                             to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
      WHERE vendor = 'KATANA' AND vendor_txn_id = $1
        AND meta->'gateway'->>'provider' = $3
-       AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
-       AND COALESCE(meta->'gateway'->>'final', '') = ''
+       AND ${GATEWAY_RECHECK_SQL}
        AND (meta->'gateway'->>'checked_at' IS NULL
             OR (meta->'gateway'->>'checked_at')::timestamptz < now() - make_interval(secs => $2::double precision))
     RETURNING id::text
@@ -135,7 +137,7 @@ export async function claimGatewayPayinCheck(provider: string, txnid: string, mi
   return r.length > 0;
 }
 
-/** Remember a gateway's definite failure so an EXPIRED order isn't asked about again. */
+/** Remember a gateway's failure answer, so the order is asked about again only for a while (GATEWAY_RECHECK_SQL). */
 export async function markGatewayPayinFinal(provider: string, txnid: string, status: string): Promise<void> {
   await rows("vendorGateway", `
     UPDATE vendor_payin_orders SET meta = jsonb_set(meta, '{gateway,final}', to_jsonb($2::text))

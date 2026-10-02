@@ -415,11 +415,12 @@ export interface ConfirmKatanaOrderResult {
 }
 
 // Single source of truth for marking a Katana pay-in paid/failed. Enforces the
-// final-status lock (idempotent for webhook retries), duplicate-UTR blocking, and
+// final-status lock (idempotent for webhook retries; a confirmed payment revives an EXPIRED
+// or FAILED order, nothing changes a paid one), duplicate-UTR blocking, and
 // records who/what/how confirmed it on meta.confirmation. settlementStatus=SETTLED
 // additionally stamps meta.settlement so the dashboard can distinguish "paid" from
 // "settled to the receiver account".
-export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput): Promise<ConfirmKatanaOrderResult> {
+export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput, retried = false): Promise<ConfirmKatanaOrderResult> {
   const key = input.id ?? input.orderRef;
   if (!key) return { ok: false, status: 400, error: "id or orderRef required" };
   // An order ref is unique per MERCHANT, not platform-wide (vendorGateway 0024/0025). A lookup
@@ -452,11 +453,13 @@ export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput): Promis
   // Final-status lock. A retried webhook delivering the same terminal outcome is a
   // safe idempotent replay; a conflicting outcome is rejected.
   //
-  // EXPIRED is a SOFT terminal — it only means "we stopped waiting". A real, confirmed
-  // credit landing on an expired order REVIVES it to SUCCESS (the customer paid, so we
-  // honour it rather than stranding the money). SUCCESS/SUCCEEDED/FAILED stay HARD
-  // final and never change.
-  const reviving = order.status === "EXPIRED" && input.outcome === "SUCCESS";
+  // EXPIRED and FAILED are SOFT terminals. EXPIRED only means "we stopped waiting"; FAILED
+  // means an attempt was declined, and on a gateway's payment page the customer can try again
+  // on the same order. A real, confirmed payment landing on either REVIVES the order to
+  // SUCCESS (the customer paid, so we honour it rather than stranding the money). Nothing else
+  // moves them: an expired order is never failed, a failed one never expired.
+  // SUCCESS/SUCCEEDED is HARD final and never changes.
+  const reviving = (order.status === "EXPIRED" || order.status === "FAILED") && input.outcome === "SUCCESS";
   if (KATANA_TERMINAL.has(order.status) && !reviving) {
     if (order.status === input.outcome)
       return { ok: true, status: 200, idempotent: true, order: { id: order.id, order_id: order.order_id, status: order.status, rrn: order.rrn } };
@@ -478,8 +481,10 @@ export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput): Promis
   const responseCode = input.outcome === "SUCCESS" ? "00" : "U30";
   const settled = input.outcome === "SUCCESS" && input.settlementStatus?.toUpperCase() === "SETTLED";
   const now = new Date().toISOString();
+  // Only the keys this confirmation sets. They are merged into the stored meta by the UPDATE
+  // below, never written over it: the row read above may be stale by now, and writing it back
+  // whole would drop what was stamped since (the callback record, a gateway check).
   const meta = {
-    ...(order.meta ?? {}),
     review: input.outcome === "SUCCESS" ? "CONFIRMED" : "REJECTED",
     confirmation: {
       by: input.actor, at: now, evidence: input.evidence,
@@ -487,15 +492,24 @@ export async function confirmKatanaOrder(input: ConfirmKatanaOrderInput): Promis
       settlement_status: input.settlementStatus ?? null,
     },
     ...(settled ? { settlement: { status: "SETTLED", at: now } } : {}),
-    ...(reviving ? { revived_from_expired: { at: now, by: input.actor } } : {}),
+    ...(reviving ? { [order.status === "FAILED" ? "revived_from_failed" : "revived_from_expired"]: { at: now, by: input.actor } } : {}),
   };
 
   const upd = await rows<any>("vendorGateway", `
     UPDATE vendor_payin_orders
-       SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), meta = $5::jsonb, updated_at = now()
-     WHERE id = $1::uuid
+       SET status = $2, response_code = $3, rrn = COALESCE($4, rrn),
+           meta = COALESCE(meta, '{}'::jsonb) || $5::jsonb, updated_at = now()
+     WHERE id = $1::uuid AND status = $6
     RETURNING id::text, order_id, status, COALESCE(rrn,'') AS rrn
-  `, [order.id, input.outcome, responseCode, rrn, JSON.stringify(meta)]);
+  `, [order.id, input.outcome, responseCode, rrn, JSON.stringify(meta), order.status]);
+
+  // The order changed between the read and the write: another confirmation landed, or the sweep
+  // expired it. Nothing was written. Decide again on the fresh row, once — it then answers as an
+  // idempotent replay, a revive, or a conflict, exactly as if this call had arrived second.
+  if (!upd.length) {
+    if (!retried) return confirmKatanaOrder(input, true);
+    return { ok: false, status: 409, error: "order changed while it was being confirmed — retry" };
+  }
 
   // The order just reached a terminal status — POST the signed status callback to
   // the merchant's server (best-effort; idempotent; retried by the outbox).

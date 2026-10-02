@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused } from "@/lib/katana-pay";
+import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +36,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         const upd = await rows<any>("vendorGateway", `
           UPDATE vendor_payin_orders
              SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
-           WHERE id = $1::uuid
+           WHERE id = $1::uuid AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
           RETURNING id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel,
                     COALESCE(rrn,'') AS rrn, response_code, status, customer_vpa, customer_phone,
                     meta, created_at, livemode
         `, [order.id, decision.status, decision.response_code, rrn]);
-        order = upd[0];
+        if (upd.length) {
+          order = upd[0];
+          // This enquiry just made the order final, so the merchant is told, as on every other path.
+          sendPayinCallback(order.id).catch(() => {});
+        } else {
+          // Confirmed by someone else since the read above: a final order is not written over.
+          order = (await rows<any>("vendorGateway", `
+            SELECT id::text, order_id, pay_id, vendor_txn_id, amount, currency_code, channel,
+                   COALESCE(rrn,'') AS rrn, response_code, status, customer_vpa, customer_phone,
+                   meta, created_at, livemode
+              FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'
+          `, [order.id]))[0] ?? order;
+        }
       }
     }
 

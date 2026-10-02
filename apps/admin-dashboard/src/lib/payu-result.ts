@@ -23,6 +23,7 @@ import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
 import { confirmKatanaOrder } from "@/lib/katana-order";
+import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 
 // PayU pay-ins created through the Katana Pay order flow (lib/katana-order) live in
@@ -53,6 +54,10 @@ async function settlePayuPayin(
   if (!r.ok) return { applied: false, reason: r.error };
   return r.idempotent ? { applied: false, reason: "already_final" } : { applied: true };
 }
+
+/** Which checkout orders an outcome may move: a failure only an open order, a success also a FAILED one. */
+const movableTo = (next: "SUCCESS" | "FAILED") =>
+  next === "SUCCESS" ? "status <> 'SUCCESS'" : "status NOT IN ('SUCCESS','FAILED')";
 
 function payuOutcome(status: string): "SUCCESS" | "FAILED" | null {
   const s = status.toLowerCase();
@@ -113,11 +118,13 @@ export async function applyVerifiedPayuStatus(input: {
                mihpayid: input.mihpayid, bank_ref_num: input.bankRefNum },
   });
 
-  if (o.status === "SUCCESS" || o.status === "FAILED") {
+  const s = input.payuStatus.toLowerCase();
+  // A paid order is final. A FAILED one is final too, except against PayU's own word that the
+  // payment went through after all: that is honoured, not stranded.
+  if (o.status === "SUCCESS" || (o.status === "FAILED" && s !== "success")) {
     return { applied: false, status: o.status, reason: "already_final" };
   }
 
-  const s = input.payuStatus.toLowerCase();
   // Only "success" is success. PayU explicitly advises treating pending AND failure as
   // unsuccessful unless verified otherwise, so a pending payment is left alone to be
   // re-checked on the next sweep rather than being written off.
@@ -126,7 +133,13 @@ export async function applyVerifiedPayuStatus(input: {
   }
   const nextStatus: "SUCCESS" | "FAILED" = s === "success" ? "SUCCESS" : "FAILED";
 
-  await rows("checkout", `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid`, [nextStatus, o.id]).catch(() => {});
+  // The status read above may be stale: the webhook, the browser return and the sweep can all
+  // carry the same payment at once. Only the write that actually moves the order records the
+  // transition and notifies the merchant, and a final order is never written over.
+  const moved = await rows<{ id: string }>("checkout",
+    `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid AND ${movableTo(nextStatus)} RETURNING id::text`,
+    [nextStatus, o.id]).catch(() => []);
+  if (!moved.length) return { applied: false, status: nextStatus, reason: "already_final" };
   await rows("checkout", `
     INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, reason, payload)
     VALUES ($1::uuid, $2, $3, 'gateway', $4, $5::jsonb)
@@ -145,8 +158,8 @@ export async function applyVerifiedPayuStatus(input: {
 
 /**
  * Stamp a PayU pay-in as checked now — atomically, and only if it was last checked more than
- * `minIntervalSec` ago. False when someone else checked it moments ago, when PayU already gave a
- * final failure, or when the order is settled. This single UPDATE is what stops several open pay
+ * `minIntervalSec` ago. False when someone else checked it moments ago, when PayU answered
+ * failure more than two hours after the order was made, or when the order is paid. This single UPDATE is what stops several open pay
  * pages plus the 15s sweep from multiplying PayU verify calls for one order.
  */
 export async function claimPayuPayinCheck(txnid: string, minIntervalSec: number): Promise<boolean> {
@@ -156,8 +169,7 @@ export async function claimPayuPayinCheck(txnid: string, minIntervalSec: number)
                             to_jsonb(to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
      WHERE vendor = 'KATANA' AND vendor_txn_id = $1
        AND meta->'gateway'->>'provider' = 'PAYU'
-       AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
-       AND COALESCE(meta->'gateway'->>'final', '') = ''
+       AND ${GATEWAY_RECHECK_SQL}
        AND (meta->'gateway'->>'checked_at' IS NULL
             OR (meta->'gateway'->>'checked_at')::timestamptz < now() - make_interval(secs => $2::double precision))
     RETURNING id::text
@@ -165,7 +177,7 @@ export async function claimPayuPayinCheck(txnid: string, minIntervalSec: number)
   return r.length > 0;
 }
 
-/** Remember PayU's definite failure: an EXPIRED order cannot become FAILED, so it must not be asked again. */
+/** Remember PayU's failure answer, so the order is asked about again only for a while (GATEWAY_RECHECK_SQL). */
 export async function markPayuPayinFinal(txnid: string, payuStatus: string): Promise<void> {
   await rows("vendorGateway", `
     UPDATE vendor_payin_orders
@@ -261,8 +273,11 @@ export async function applyPayuResult(
   }) : "";
   const hashOk = !!gwMid && !!p.hash && expected.toLowerCase() === p.hash.toLowerCase();
 
-  const success = payuStatus === "success" && hashOk;
-  const nextStatus: "SUCCESS" | "FAILED" = success ? "SUCCESS" : "FAILED";
+  // Only a payload whose hash verifies can settle the order, and only with a final answer.
+  // An unverified one used to close the order as FAILED — but this URL is public, and a forged
+  // or garbled post (or a wrong stored Salt) then shut out the genuine payment for good. So did a
+  // verified "pending". Both now leave the order open: the verify sweep asks PayU and settles it.
+  const outcome = hashOk ? payuOutcome(payuStatus) : null;
 
   // Record the gateway's own account of the payment before the status guard below —
   // a duplicate delivery applies nothing to the order but may still carry detail the
@@ -271,14 +286,34 @@ export async function applyPayuResult(
     orderId: o.id, provider: "PAYU", source, hashVerified: hashOk, payload: p,
   });
 
-  let applied = false;
-  if (o.status !== "SUCCESS" && o.status !== "FAILED") {
-    applied = true;
-    await rows("checkout", `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid`, [nextStatus, o.id]).catch(() => {});
+  if (!outcome) {
+    if (!hashOk) await rows("checkout", `
+      INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, reason, payload)
+      VALUES ($1::uuid, $2, $2, 'gateway', 'payu hash mismatch — not applied', $3::jsonb)
+    `, [o.id, o.status, JSON.stringify({ source, payu_status: p.status, mihpayid: p.mihpayid, hash_ok: false })]).catch(() => {});
+    // The browser is still sent on with what is known: the order's own status if it is final.
+    const known = o.status === "SUCCESS" || o.status === "FAILED" ? o.status as "SUCCESS" | "FAILED" : "UNKNOWN";
+    return {
+      matched: true, txnid, status: known, hashOk,
+      dest: known === "SUCCESS" ? o.client_surl : known === "FAILED" ? o.client_furl : o.client_surl ?? o.client_furl,
+      reason: hashOk ? `still ${payuStatus}` : "hash_verification_failed", applied: false,
+    };
+  }
+  const success = outcome === "SUCCESS";
+  const nextStatus = outcome;
+
+  // The guard is in the UPDATE itself, not only in the status read earlier: the browser return
+  // and the webhook arrive together, and a check-then-write lets both through — two merchant
+  // webhooks, or a FAILED written over a SUCCESS. A verified success does move a FAILED order.
+  const moved = await rows<{ id: string }>("checkout",
+    `UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid AND ${movableTo(nextStatus)} RETURNING id::text`,
+    [nextStatus, o.id]).catch(() => []);
+  const applied = moved.length > 0;
+  if (applied) {
     await rows("checkout", `
       INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, reason, payload)
       VALUES ($1::uuid, $2, $3, 'gateway', $4, $5::jsonb)
-    `, [o.id, o.status, nextStatus, hashOk ? `payu ${payuStatus}` : "payu hash mismatch",
+    `, [o.id, o.status, nextStatus, `payu ${payuStatus}`,
         JSON.stringify({ payu_status: p.status, mihpayid: p.mihpayid, mode: p.mode, hash_ok: hashOk })]).catch(() => {});
     await enqueueWebhook({
       merchantId: o.merchant_id, orderId: o.id,
@@ -291,7 +326,6 @@ export async function applyPayuResult(
   return {
     matched: true, txnid, status: nextStatus, hashOk,
     dest: success ? o.client_surl : o.client_furl,
-    reason: hashOk ? undefined : "hash_verification_failed",
     applied,
   };
 }

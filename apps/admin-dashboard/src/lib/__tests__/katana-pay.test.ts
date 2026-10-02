@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  buildKatanaSignString, decideKatanaStatus, resolveKatanaStatus, signKatanaHash, verifyKatanaHash, PENDING_EXPIRY_SECONDS,
+  buildKatanaSignString, decideKatanaStatus, resolveKatanaStatus, signKatanaHash, verifyKatanaHash, payinCallbackSent, PENDING_EXPIRY_SECONDS,
 } from "@/lib/katana-pay";
 
 test("a live order never changes state on its amount", () => {
@@ -24,6 +24,23 @@ test("a terminal status is final; a pending order expires after the limit", () =
   assert.equal(resolveKatanaStatus("PENDING", 10000, PENDING_EXPIRY_SECONDS - 1).status, "PENDING");
   const e = resolveKatanaStatus("PENDING", 10000, PENDING_EXPIRY_SECONDS);
   assert.deepEqual([e.status, e.changed], ["EXPIRED", true]);
+});
+
+test("a status callback is sent once per status: an expired or failed order paid afterwards is still told Captured", () => {
+  assert.ok(!payinCallbackSent(null, "EXPIRED"));
+  assert.ok(!payinCallbackSent({ status: "Expired" }, "EXPIRED"));   // a recorded skip is not a send
+  const expired = { sent_at: "2026-10-01T13:41:53.377Z", status: "Expired" };
+  assert.ok(payinCallbackSent(expired, "EXPIRED"));
+  assert.ok(!payinCallbackSent(expired, "SUCCESS"));
+  const captured = { sent_at: "2026-10-01T14:34:39.000Z", status: "Captured" };
+  assert.ok(payinCallbackSent(captured, "SUCCESS"));
+  assert.ok(payinCallbackSent(captured, "SUCCEEDED"));
+  assert.ok(payinCallbackSent(captured, "EXPIRED"));   // Captured is final: nothing follows it
+  assert.ok(payinCallbackSent(captured, "FAILED"));
+  const failed = { sent_at: "2026-10-01T14:34:39.000Z", status: "Failed" };
+  assert.ok(payinCallbackSent(failed, "FAILED"));
+  assert.ok(!payinCallbackSent(failed, "SUCCESS"));     // a failed attempt, then a payment that went through
+  assert.ok(payinCallbackSent({ sent_at: "2026-10-01T14:34:39.000Z" }, "SUCCESS"));   // a stamp with no status blocks any repeat
 });
 
 test("the callback hash is SHA256 over the sorted KEY=value pairs joined by ~, plus the salt, uppercased", () => {

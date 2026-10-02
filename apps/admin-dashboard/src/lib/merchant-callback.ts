@@ -9,23 +9,14 @@
 // Target precedence: the per-order notify_url (passed at order creation) → the
 // merchant's configured webhook_url. Delivery + retries go through the existing
 // webhook_outbox engine; we also kick an immediate dispatch so the first attempt
-// is instant. Idempotent: meta.callback.sent_at guards against double-sends.
+// is instant. Idempotent per status: meta.callback (sent_at + status) guards against
+// double-sends, while an EXPIRED order revived by a late payment is still told "Captured".
 
 import { rows } from "@/lib/pg";
 import { getCheckoutCreds } from "@/lib/merchant-checkout";
-import { signKatanaHash } from "@/lib/katana-pay";
+import { signKatanaHash, callbackStatus, payinCallbackSent } from "@/lib/katana-pay";
 import { enqueue, dispatchPending } from "@/lib/webhook-outbox";
 import { KATANA_TERMINAL } from "@/lib/katana-pay";
-
-// Map our internal status → Katana (STATUS, RESPONSE_CODE) for the callback.
-function callbackStatus(status: string): { STATUS: string; RESPONSE_CODE: string } {
-  switch (status) {
-    case "SUCCESS": case "SUCCEEDED": return { STATUS: "Captured", RESPONSE_CODE: "000" };
-    case "FAILED": return { STATUS: "Failed", RESPONSE_CODE: "004" };
-    case "EXPIRED": return { STATUS: "Expired", RESPONSE_CODE: "003" };
-    default: return { STATUS: status, RESPONSE_CODE: "005" };
-  }
-}
 
 async function merchantWebhookUrl(merchantCode: string): Promise<string | null> {
   const r = await rows<{ webhook_url: string | null }>(
@@ -47,7 +38,8 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   if (!KATANA_TERMINAL.has(cur.status)) return { sent: false, reason: "not terminal" };
 
   const meta = cur.meta ?? {};
-  if (meta.callback?.sent_at) return { sent: false, reason: "already sent" };       // idempotent
+  // Idempotent per status: an order told "Expired" and then paid late still gets its "Captured".
+  if (payinCallbackSent(meta.callback, cur.status)) return { sent: false, reason: "already sent" };
   const merchantCode: string | null = cur.merchant_id ?? null;
   if (!merchantCode) return { sent: false, reason: "no merchant" };
 
@@ -93,10 +85,21 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   }
   const body = { ...payload, HASH: hash };
 
-  const outboxId = await enqueue({
-    merchantId: merchantCode, eventType: "payin.status", orderId: orderRowId,
-    payload: body, targetUrlOverride: target, livemode,
-  }).catch(() => null);
+  let outboxId: string | null = null, queueError = false;
+  try {
+    outboxId = await enqueue({
+      merchantId: merchantCode, eventType: "payin.status", orderId: orderRowId,
+      payload: body, targetUrlOverride: target, livemode,
+    });
+  } catch { queueError = true; }
+  if (!outboxId) {
+    // NOTHING WAS QUEUED, so this is not recorded as sent. "not queued" (the outbox write failed)
+    // is picked up again by the status sweep; a merchant whose webhooks are switched off is not.
+    const skipped = queueError ? "not queued" : "webhooks disabled";
+    await rows("vendorGateway", `UPDATE vendor_payin_orders SET meta = COALESCE(meta,'{}'::jsonb) || $2::jsonb WHERE id = $1::uuid`,
+      [orderRowId, JSON.stringify({ callback: { skipped, at: new Date().toISOString(), target } })]).catch(() => {});
+    return { sent: false, reason: skipped };
+  }
 
   // Stamp BEFORE dispatching so a retry/parallel caller won't double-enqueue.
   await rows("vendorGateway", `

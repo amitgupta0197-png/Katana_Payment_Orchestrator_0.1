@@ -7,6 +7,7 @@ import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused, PENDIN
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { checkPayuPayinNow } from "@/lib/payu-result";
 import { checkGatewayPayin } from "@/lib/gateway-payin";
+import { publicBase } from "@/lib/payin-providers/types";
 
 export interface PayStatusPayload {
   order_id: string; amount: number; currency_code: string; status: string;
@@ -15,7 +16,7 @@ export interface PayStatusPayload {
   merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
   livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
-  checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): the page the customer pays on
+  checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): Katana's link to the page the customer pays on
   checkout_methods: "ALL" | "UPI" | null;   // what that page takes: UPI only, or cards / net banking / wallets too
 }
 
@@ -61,12 +62,15 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
     const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, order.livemode !== false);
     if (decision.changed) {
       const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
+      // The order was read before the gateway was asked, so it may have been confirmed since.
+      // A final order is never written over: the guard makes this a no-op and the fresh row is read.
       const upd = await rows<any>("vendorGateway", `
         UPDATE vendor_payin_orders
            SET status = $2, response_code = $3, rrn = COALESCE($4, rrn), updated_at = now()
-         WHERE id = $1::uuid
+         WHERE id = $1::uuid AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
         RETURNING id::text, order_id, amount, currency_code, COALESCE(rrn,'') AS rrn, status, meta, created_at, updated_at, livemode
       `, [order.id, decision.status, decision.response_code, rrn]);
+      if (!upd.length) return readOrderStatus(id);
       order = upd[0];
       // Auto-resolution just flipped this order terminal — fire the merchant
       // status callback (idempotent; no-op if already sent or no target).
@@ -86,7 +90,11 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
     // Held orders wait for an operator and never expire, so they get no countdown.
     expires_at: !terminal && !held && createdAt
       ? new Date(createdAt.getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null,
-    completed_at: terminal && order.updated_at ? new Date(order.updated_at).toISOString() : null,
+    // When the payment was confirmed, where that is recorded: updated_at also moves when the
+    // callback is stamped, so on its own it can show the notification time instead.
+    completed_at: !terminal ? null
+      : typeof meta.confirmation?.at === "string" ? meta.confirmation.at
+      : order.updated_at ? new Date(order.updated_at).toISOString() : null,
     order_id: order.order_id,
     amount: Number(order.amount),
     currency_code: order.currency_code,
@@ -98,9 +106,10 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
     deeplinks: meta.deeplinks ?? null,
     upi_intent: meta.upi_intent ?? null,
     return_url: meta.return_url ?? null,   // browser redirect target after payment
-    checkout_url: typeof meta.gateway?.checkout_url === "string" ? meta.gateway.checkout_url : null,
     // This response is public (the customer's pay page and the merchant's status polling), so
-    // it never names the gateway (lib/merchant-safe): only what its page can be paid with.
+    // it never names the gateway (lib/merchant-safe): the page is reached through Katana's own
+    // link (/pay/{id}/go), never by its address, and only what it can be paid with is said.
+    checkout_url: typeof meta.gateway?.checkout_url === "string" ? `${publicBase()}/pay/${order.id}/go` : null,
     checkout_methods: typeof meta.gateway?.checkout_url === "string" ? (meta.gateway.provider === "PAYU" ? "ALL" : "UPI") : null,
   };
 }

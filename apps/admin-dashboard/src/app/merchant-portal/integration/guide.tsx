@@ -186,6 +186,7 @@ hash = SHA512(seq)                                        // lowercase hex`;
             <li>· Default <b>return_url</b> and <b>webhook URL</b> saved (or passed per order).</li>
             <li>· Small live payment made — callback received and <b>HASH verified</b> with the live Salt.</li>
             <li>· Callbacks handled <b>idempotently</b> — the same ORDER_ID may arrive more than once.</li>
+            <li>· <b>Expired and Failed are not always the last word</b> — if the customer&apos;s payment goes through afterwards, a second callback with STATUS=&quot;Captured&quot; follows. Dedupe on ORDER_ID + STATUS, and let Captured win. Captured is final.</li>
           </ul>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Badge variant="brand">Full reference</Badge>

@@ -136,8 +136,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ vendor:
         { status: cached2.response_status, headers: { "x-callback-replay": "race" } });
     }
 
-    await rows("checkout",
-      "UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid", [to, o.id]);
+    // The transition was judged against the status read above. Two callbacks for one order with
+    // different outcomes carry different idempotency keys, so both get this far; only the one
+    // that still finds the order in that status moves it. The other must not write over it.
+    const moved = await rows<{ id: string }>("checkout",
+      "UPDATE checkout_orders SET status=$1 WHERE id=$2::uuid AND status=$3 RETURNING id::text", [to, o.id, from]);
+    if (!moved.length) {
+      const conflict = { error: "order changed while the callback was being applied", from, to };
+      await rows("checkout",
+        "UPDATE callback_dedup SET response_status=409, response_body=$2::jsonb WHERE idempotency_key=$1",
+        [idempotencyKey, JSON.stringify(conflict)]).catch(() => {});
+      return NextResponse.json(conflict, { status: 409 });
+    }
     await rows("checkout", `
       INSERT INTO order_state_transitions
         (order_id, from_status, to_status, actor_kind, actor_id, reason, payload)

@@ -14,7 +14,8 @@
 // triggers the browser redirect, and without this the payment would sit unconfirmed.
 //
 // Public route (allow-listed in middleware) — authenticated by PayU's response hash, not
-// by a session. An unsigned or mis-signed payload is recorded as FAILED, never SUCCESS.
+// by a session. An unsigned or mis-signed payload settles nothing: the order stays open and the
+// verify sweep asks PayU itself.
 
 import { NextResponse } from "next/server";
 import { applyPayuResult, parsePayuBody } from "@/lib/payu-result";
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     matched: r.matched,
     status: r.status,
     hash_verified: r.hashOk,
-    applied: r.applied,          // false = already finalised by the browser redirect
+    applied: r.applied,          // false = already finalised, or nothing in this payload could settle it
     ...(r.reason ? { note: r.reason } : {}),
   });
 }

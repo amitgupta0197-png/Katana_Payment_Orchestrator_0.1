@@ -177,6 +177,10 @@ export async function GET(req: Request) {
         at: meta.revived_from_expired.at, title: "Revived from expired",
         detail: "A real credit arrived after the order had expired; the order was honoured.",
       });
+      if (isIso(meta.revived_from_failed?.at)) events.push({
+        at: meta.revived_from_failed.at, title: "Revived from failed",
+        detail: "A payment went through after an earlier attempt had failed; the order was honoured.",
+      });
       if (!conf && (o.status === "FAILED" || o.status === "EXPIRED")) events.push({
         at: new Date(o.updated_at).toISOString(), title: o.status === "EXPIRED" ? "Order expired" : "Payment failed",
         detail: o.status === "EXPIRED" ? "No payment arrived before the order timed out." : "The gateway reported the payment as failed.",

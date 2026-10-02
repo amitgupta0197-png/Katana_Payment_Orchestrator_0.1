@@ -16,6 +16,7 @@
 // untouched and reported as skipped.
 import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
+import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 import { applyVerifiedPayuStatus, claimPayuPayinCheck, markPayuPayinFinal } from "@/lib/payu-result";
@@ -44,23 +45,24 @@ async function run() {
   // PayU pay-ins from the Katana Pay order flow (vendor_payin_orders, keyed by the PayU txnid).
   // EXPIRED is included on purpose: the pay page stops waiting after 15 minutes, but a customer
   // who approved late has still paid, and confirmKatanaOrder revives an expired order on success.
+  // So is a recently FAILED one, for the same reason (GATEWAY_RECHECK_SQL).
   const payins = await rows<{ txn_id: string; merchant_id: string; provider: string }>("vendorGateway", `
     SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider
       FROM vendor_payin_orders
      WHERE vendor = 'KATANA' AND COALESCE(meta->'gateway'->>'provider', '') <> ''
-       AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED')
+       AND ${GATEWAY_RECHECK_SQL}
        AND livemode = true
        -- No 2-minute grace here: with UPI intent the customer approves in their app within
        -- seconds and there is no browser return to wait for. The pay page asks PayU itself too.
        AND created_at <  now() - interval '5 seconds'
        AND created_at >= now() - ($1 || ' hours')::interval
-       -- PayU already answered failure: an EXPIRED order cannot be moved to FAILED, so without
-       -- this it would be asked about again on every run for 48 hours.
-       AND COALESCE(meta->'gateway'->>'final', '') = ''
        -- Ask every 10s while the customer is likely still in their UPI app, then every 10 minutes,
-       -- so abandoned intents don't hammer PayU's verify API.
+       -- so abandoned intents don't hammer PayU's verify API. An order the gateway already
+       -- answered "failed" for is asked every 2 minutes, and only until it is two hours old
+       -- (GATEWAY_RECHECK_SQL): long enough to catch a second attempt that went through.
        AND (meta->'gateway'->>'checked_at' IS NULL
             OR (meta->'gateway'->>'checked_at')::timestamptz < now() - CASE
+                 WHEN status = 'FAILED' OR COALESCE(meta->'gateway'->>'final', '') <> '' THEN interval '2 minutes'
                  WHEN created_at >= now() - interval '30 minutes' THEN interval '10 seconds'
                  ELSE interval '10 minutes' END)
      ORDER BY created_at DESC

@@ -77,8 +77,8 @@ for any errors.</p>
   <b>Three things that will cost you money if you skip them.</b>
   <ol style="margin:8px 0 0">
     <li>Your <code>txnid</code> must be <b>globally unique across the Katana platform</b>, not just unique to you. Prefix it with your merchant code (§5.1).</li>
-    <li><code>Expired</code> is <b>not final</b>. A late payment can still succeed, and you will <b>not</b> get a second callback. Re-check before you cancel an order (§7.3).</li>
-    <li>Katana sends <b>one</b> callback per order and gives up after 6 failed attempts. The status enquiry is the authoritative record, and a daily reconciliation sweep is mandatory (§10.2).</li>
+    <li><code>Expired</code> and <code>Failed</code> are <b>not final</b>. A payment that goes through afterwards still succeeds, and a second callback with <code>Captured</code> follows — your handler must accept it, not discard it as a duplicate (§7.3).</li>
+    <li>Katana gives up on a callback after 6 failed attempts. The status enquiry is the authoritative record, and a daily reconciliation sweep is mandatory (§10.2).</li>
   </ol>
 </div>
 
@@ -822,7 +822,7 @@ lowercase <code>status</code> field and <b>no <code>RESPONSE_CODE</code> at all<
   <tr><th>Enquiry <code>status</code></th><th><code>terminal</code></th><th>Equivalent callback</th><th>Deliver?</th></tr>
   <tr><td class="ok">SUCCESS</td><td>true</td><td><code>Captured</code> / <code>000</code></td><td><b>Yes</b></td></tr>
   <tr><td class="warn">PENDING</td><td>false</td><td><code>Pending</code> / <code>005</code></td><td>No — still open</td></tr>
-  <tr><td>FAILED</td><td>true</td><td><code>Failed</code> / <code>004</code></td><td>No</td></tr>
+  <tr><td>FAILED</td><td>true</td><td><code>Failed</code> / <code>004</code></td><td>No — but see §7.3</td></tr>
   <tr><td>EXPIRED</td><td>true</td><td><code>Expired</code> / <code>003</code></td><td>No — but see §7.3</td></tr>
 </table>
 Deliver only on <code>status = "SUCCESS"</code>. Compare case-insensitively and treat any value not in this table as
@@ -858,7 +858,7 @@ capability. It provides no cryptographic assurance beyond TLS — for that, veri
 <table>
   <tr><th>Field</th><th>Description</th></tr>
   <tr><td><code>status</code></td><td>Current status, in the enquiry vocabulary above.</td></tr>
-  <tr><td><code>terminal</code></td><td><code>true</code> once the order reached a final state. <code>SUCCESS</code> and <code>FAILED</code> are permanent; <code>EXPIRED</code> is <b>provisional</b> (§7.3).</td></tr>
+  <tr><td><code>terminal</code></td><td><code>true</code> once the order reached a final state. <code>SUCCESS</code> is permanent; <code>EXPIRED</code> and <code>FAILED</code> are <b>provisional</b> (§7.3).</td></tr>
   <tr><td><code>rrn</code></td><td>Bank reference for the credit, when one was captured. See the note below.</td></tr>
   <tr><td><code>proof_submitted</code></td><td><code>true</code> when the payer uploaded a payment proof; the order is then held for operator review (§4.4).</td></tr>
 </table>
@@ -873,17 +873,18 @@ client-side analytics, ad-network URL parameters and third-party logs. Address y
 <code>ORDER_ID</code>.</div>
 
 <h3 id="s7-3">7.3. Expiry and late credits</h3>
-<div class="note badbox"><b><code>Expired</code> is not permanent, and you will not get a second callback.</b> If the
-customer's payment lands after the order expired, Katana honours it and the order becomes <code>SUCCESS</code> —
-because the customer really did pay. But Katana sends <b>exactly one callback per order</b> (§8.3), and the
-<code>Expired</code> callback has already been sent. <b>No further notification is issued.</b></div>
+<div class="note badbox"><b><code>Expired</code> and <code>Failed</code> are not permanent.</b> If the customer's
+payment lands after the order expired, or goes through after an earlier attempt failed, Katana honours it and the
+order becomes <code>SUCCESS</code> — because the customer really did pay. Katana then sends a <b>second
+callback</b> with <code>STATUS = "Captured"</code> (§8.3). Your handler must let it overwrite the earlier
+<code>Expired</code> or <code>Failed</code>, not discard it as a duplicate.</div>
 <p>Practical consequences you must build for:</p>
 <ul>
   <li>Before you cancel an order, void a reservation or release stock on <code>Expired</code>, <b>re-run the status
     enquiry</b>.</li>
   <li>Your reconciliation sweep (§10.2) must re-check every order that ended <code>EXPIRED</code> in the last few
     days, not just the ones still <code>PENDING</code>.</li>
-  <li>Treat <code>SUCCESS</code> and <code>FAILED</code> as permanent; treat <code>EXPIRED</code> as "probably not
+  <li>Treat <code>SUCCESS</code> as permanent; treat <code>EXPIRED</code> and <code>FAILED</code> as "probably not
     paid, verify before acting irreversibly".</li>
 </ul>
 
@@ -955,15 +956,16 @@ credit, so it does not by itself prove the customer paid that amount. Reconcile 
 queue or table, return <code>200</code> immediately, and do your fulfilment work asynchronously. A handler that
 charges a card, sends an email or waits on a third party before replying will blow the deadline, be recorded as
 failed, and be retried — which is how merchants end up double-fulfilling.</div>
-<div class="note warnbox"><b>Handle callbacks idempotently.</b> Key your handler on <code>ORDER_ID</code> and make a
-repeat delivery a no-op that still returns <code>200</code>. Your <code>ORDER_ID</code> dedupe is what protects you
-from replay — make it durable, not in-memory. <code>RESPONSE_DATE_TIME</code> is the first-attempt time and is not
+<div class="note warnbox"><b>Handle callbacks idempotently.</b> Key your handler on <code>ORDER_ID</code> +
+<code>STATUS</code> and make a repeat of the same status a no-op that still returns <code>200</code>. A
+<code>Captured</code> after an <code>Expired</code> or <code>Failed</code> is <b>not</b> a repeat (§7.3). That dedupe
+is what protects you from replay — make it durable, not in-memory. <code>RESPONSE_DATE_TIME</code> is the first-attempt time and is not
 refreshed per delivery, so it cannot be used as a freshness bound.</div>
 
 <h3 id="s8-3">8.3. Delivery and retries</h3>
 <table>
   <tr><th>&nbsp;</th><th>&nbsp;</th></tr>
-  <tr><td>Callbacks per order</td><td><b>Exactly one</b>, at the first terminal status</td></tr>
+  <tr><td>Callbacks per order</td><td><b>One</b> at the first terminal status, and a second (<code>Captured</code>) if an <code>Expired</code> or <code>Failed</code> order is paid afterwards</td></tr>
   <tr><td>Attempts</td><td><b>6</b></td></tr>
   <tr><td>Backoff</td><td>1 min → 5 min → 15 min → 1 hour → 6 hours → 24 hours</td></tr>
   <tr><td>Your response deadline</td><td><b>8 seconds</b> per attempt; a slower reply is recorded as a failure and retried</td></tr>
@@ -972,10 +974,10 @@ refreshed per delivery, so it cannot be used as a freshness bound.</div>
   <tr><td><code>notify_url</code> requirements</td><td>http(s), publicly resolvable; must not resolve to a private, loopback or link-local address</td></tr>
 </table>
 <p>Every attempt is recorded on Katana's side and can be replayed by your account manager on request.</p>
-<div class="note badbox"><b>The callback is a convenience, not a guarantee.</b> It is sent once, and abandoned after
-roughly 31 hours of failures. A status change after that first callback — including an <code>Expired</code> order
-that later succeeds (§7.3) — produces <b>no</b> further notification. The status enquiry (§7) is the authoritative
-record, and the daily reconciliation sweep (§10.2) is mandatory, not optional.</div>
+<div class="note badbox"><b>The callback is a convenience, not a guarantee.</b> Each one is abandoned after
+roughly 31 hours of failures. An <code>Expired</code> or <code>Failed</code> order that is paid afterwards (§7.3)
+gets a second, <code>Captured</code> callback, with the same delivery rules. The status enquiry (§7) is the
+authoritative record, and the daily reconciliation sweep (§10.2) is mandatory, not optional.</div>
 <h2 id="s9">9. Gateway options and response</h2>
 <h3 id="s9-1">9.1. Response Code for Valid Transaction</h3>
 <h4>Table 4 — response codes for valid transactions</h4>
@@ -983,11 +985,11 @@ record, and the daily reconciliation sweep (§10.2) is mandatory, not optional.<
   <tr><th>RESPONSE_CODE</th><th>STATUS</th><th>Terminal</th><th>Meaning</th></tr>
   <tr><td class="ok">000</td><td>Captured</td><td>yes</td><td>Paid. Deliver the goods or service.</td></tr>
   <tr><td class="warn">005</td><td>Pending</td><td>no</td><td>Awaiting payment.</td></tr>
-  <tr><td>004</td><td>Failed</td><td>yes</td><td>Declined or failed.</td></tr>
+  <tr><td>004</td><td>Failed</td><td><b class="warn">soft</b> ¹</td><td>Declined or failed.</td></tr>
   <tr><td>003</td><td>Expired</td><td><b class="warn">soft</b> ¹</td><td>Katana stopped waiting for the credit.</td></tr>
 </table>
-<p class="sub">¹ <b><code>Expired</code> is not permanent.</b> A late payment can still move the order to
-<code>SUCCESS</code>, and no second callback is sent. Re-check before writing it off — see §7.3.</p>
+<p class="sub">¹ <b><code>Expired</code> and <code>Failed</code> are not permanent.</b> A payment that goes through
+afterwards moves the order to <code>SUCCESS</code>, and a second callback with <code>Captured</code> is sent — see §7.3.</p>
 <div class="note"><b>Treat any unrecognised code as not-paid.</b> Katana currently emits only the four codes above.
 Codes in the <code>0xx</code> range may be added; a code you do not recognise must never be read as success — log it
 and treat the order as unpaid.</div>
@@ -1075,7 +1077,7 @@ anything else will produce an inconsistent order.</div>
   <li>Browser-return parameters are treated as <b>display only</b> (§4.5).</li>
   <li>Reconciliation sweep runs on a schedule and can carry an order for <b>days</b> (held orders never expire,
     §4.4).</li>
-  <li><code>EXPIRED</code> orders are <b>re-checked</b> before being written off (§7.3).</li>
+  <li><code>EXPIRED</code> and <code>FAILED</code> orders are <b>re-checked</b> before being written off, and a later <code>Captured</code> callback is accepted (§7.3).</li>
   <li>A test payment completed in each of: <b>success, failure, expiry, and callback-not-received</b>.</li>
   <li>Escalation contact and account manager recorded on both sides (§11).</li>
 </ul>
@@ -1091,7 +1093,7 @@ callback is sent once and abandoned after ~31 hours of failures (§8.3), and tha
 <ol>
   <li>Select your own orders that are not in a final state, plus any that reached a final state in the last 7 days.</li>
   <li>For each, <code>GET /api/pay-status/{katana_order_id}</code> — <b>without</b> <code>?wait=1</code> (§7.1).</li>
-  <li>Apply the status table in §7. <b>Re-check every <code>EXPIRED</code> order</b> at least once (§7.3).</li>
+  <li>Apply the status table in §7. <b>Re-check every <code>EXPIRED</code> and <code>FAILED</code> order</b> at least once (§7.3).</li>
   <li>Compare amounts numerically and investigate any mismatch before adjusting your books.</li>
   <li>Download the day's transactions from <b>Transactions → Export</b> in your Katana portal and match on
     <code>RRN</code> against your bank statement. The export carries the date, your reference, amount, status,

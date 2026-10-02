@@ -243,7 +243,7 @@ export const openapiSpec = {
           },
           upi_intent: { type: "string", nullable: true, description: "null for a merchant paid on a gateway's page.", example: "upi://pay?pa=...&am=499.00..." },
           qr_payload: { type: "string", nullable: true, description: "Render this string as a QR code. null for a merchant paid on a gateway's page.", example: "upi://pay?pa=...&am=499.00..." },
-          gateway_url: { type: "string", description: "Only for a merchant paid on a gateway's own page: that page. `pay_url` hands over to it too.", example: "https://…" },
+          gateway_url: { type: "string", description: "Only for a merchant paid on a gateway's own page: a link straight to that page. `pay_url` hands over to it too.", example: "https://katanapay.co/pay/<uuid>/go" },
           pay_url: { type: "string", description: "Hosted pay page — redirect the customer here.", example: "https://katanapay.co/pay/<uuid>" },
         },
       },

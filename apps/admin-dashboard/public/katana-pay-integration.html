@@ -158,7 +158,7 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
   …,
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // still the page to send the customer to
   "deeplinks": null, "upi_intent": null, "qr_payload": null,
-  "gateway_url": "https://…"                          // the gateway's page, if you'd rather skip ours
+  "gateway_url": "https://katanapay.co/pay/8d20c0b6-…/go"  // straight to the gateway's page, if you'd rather skip ours
 }</pre>
 <p>Send the customer to <code>pay_url</code> as usual — it shows the order and hands over to the gateway — or
 straight to <code>gateway_url</code>. The result reaches you the same way (callback, status enquiry). The gateway's
@@ -219,8 +219,13 @@ attempt is recorded — so a callback is never silently dropped.</p>
 (included in the HASH like any other field) and is signed with the <b>test Salt</b>. Live callbacks omit the field.
 Verify with the Salt of the matching mode, and never fulfil a real order from a <code>LIVEMODE=false</code> callback.</div>
 <div class="note warnbox"><b>Treat callbacks as idempotent.</b> The same <code>ORDER_ID</code> may arrive more than
-once (a retry, or a status that settles twice). Key your handler on <code>ORDER_ID</code> and make a second
-delivery a no-op.</div>
+once (a retry). Key your handler on <code>ORDER_ID</code> + <code>STATUS</code> and make a repeat of the same
+status a no-op.</div>
+<div class="note warnbox"><b><code>Expired</code> and <code>Failed</code> can be followed by <code>Captured</code>.</b>
+If the customer's payment goes through after the order expired, or after an earlier attempt failed, Katana honours
+it: the order becomes <code>SUCCESS</code> and a <b>second callback</b> with <code>STATUS = "Captured"</code> is
+sent. Let <code>Captured</code> overwrite an earlier <code>Expired</code> or <code>Failed</code>.
+<code>Captured</code> is final — nothing is ever sent after it.</div>
 
 <h2 id="enquiry">7. Status enquiry (and long-poll)</h2>
 <p>At any time: <code>GET /api/pay-status/{order_id}</code></p>
@@ -241,9 +246,11 @@ watching a screen. Either way, enquiry is the <b>fallback if a callback was miss
   <tr><th>STATUS</th><th>RESPONSE_CODE</th><th>Terminal</th><th>Meaning</th></tr>
   <tr><td class="ok">Captured</td><td>000</td><td>yes</td><td>Paid — fulfil the order.</td></tr>
   <tr><td class="warn">Pending</td><td>005</td><td>no</td><td>Awaiting payment.</td></tr>
-  <tr><td>Failed</td><td>004</td><td>yes</td><td>Declined / failed.</td></tr>
-  <tr><td>Expired</td><td>003</td><td>yes</td><td>Payment request lapsed.</td></tr>
+  <tr><td>Failed</td><td>004</td><td>yes *</td><td>Declined / failed.</td></tr>
+  <tr><td>Expired</td><td>003</td><td>yes *</td><td>Payment request lapsed.</td></tr>
 </table>
+<p>* <code>Failed</code> and <code>Expired</code> end the order unless the payment goes through afterwards; a
+<code>Captured</code> callback then follows (see §6). <code>Captured</code> never changes.</p>
 
 <h2 id="trace">9. Traceability — following one payment end to end</h2>
 <p>Every pay-in carries four identifiers. Store all of them against your order; each answers a different question.</p>
@@ -263,7 +270,8 @@ customer pays by UPI    → credit confirmed
                         → customer redirected to your return_url
 </pre>
 <p>A payment that never completes ends <b>Expired</b>; one that fails ends <b>Failed</b>. Both are terminal and both
-fire a callback, so your side never has to guess.</p>
+fire a callback, so your side never has to guess. If the money arrives afterwards all the same, the order moves to
+<b>SUCCESS</b> and a <code>Captured</code> callback follows.</p>
 
 <h3>Reconciling a day</h3>
 <ul>
