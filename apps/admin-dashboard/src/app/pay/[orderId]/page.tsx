@@ -24,6 +24,7 @@ interface PayStatus {
   payee_vpa?: string | null;
   held?: boolean;
   expires_at?: string | null;
+  confirming?: boolean;   // the time to pay is over; the order is only waiting to be confirmed
   completed_at?: string | null;
   livemode?: boolean;   // false = a test order: labelled so nobody mistakes it for a real payment
   checkout_url?: string | null;   // pay on the gateway's own page (PayU Client ID, RubyVault, iSmartPay)
@@ -56,7 +57,7 @@ function phaseOf(d: PayStatus | undefined): Phase {
   if (d.status === "SUCCESS" || d.status === "SUCCEEDED") return "success";
   if (d.status === "FAILED") return "failed";
   if (d.status === "EXPIRED") return "expired";
-  if (d.proof_submitted || d.held) return "verifying";
+  if (d.proof_submitted || d.held || d.confirming) return "verifying";
   return "waiting";
 }
 
@@ -379,13 +380,15 @@ function VerifyingBody({ d }: { d: PayStatus }) {
       <p className="kp-dim kp-rise mt-3 max-w-[32ch] text-sm">
         {d.proof_submitted
           ? "We got your screenshot and are matching it with the credit. This screen updates once it's confirmed."
+          : d.confirming
+            ? "The time to pay is over. If you paid, we're confirming it now and this screen updates as soon as it's confirmed."
           : d.checkout_url
             ? "We're confirming your payment. This screen updates as soon as it's confirmed."
             : "Payments of this size get a quick manual check. This screen updates once it's confirmed."}
       </p>
       <p className="kp-faint mt-3 text-xs">Please don&apos;t pay again.</p>
       {/* Back from the gateway without finishing: the same payment page can be opened again. */}
-      {d.checkout_url && /^https?:\/\//i.test(d.checkout_url) && (
+      {!d.confirming && d.checkout_url && /^https?:\/\//i.test(d.checkout_url) && (
         <a href={d.checkout_url} className="kp-dim kp-rise mt-6 text-xs underline underline-offset-4">
           Didn&apos;t finish paying? Open the payment page again
         </a>

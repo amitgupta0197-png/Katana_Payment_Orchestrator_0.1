@@ -12,9 +12,11 @@ import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/l
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
 import { gatewayName } from "@/lib/pg-catalog";
-import { classifyPayinOrder } from "@/lib/payin-channel";
+import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
+import { allowsPayin } from "@/lib/merchant-services";
+import { getProviderServices } from "@/lib/merchant-services-store";
 import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
 import { getPayinLimits, getPayinUsage, insertWithinDailyLimit } from "@/lib/payin-limits-store";
 import { assertGoLiveAllows } from "@/lib/gateway-golive";
@@ -108,6 +110,12 @@ export class MerchantSuspendedError extends MerchantBlockedError {
   constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} is suspended`); }
 }
 
+/** The banker's merchant was onboarded for payouts only (lib/merchant-services). Answered 403. */
+export class PayinNotEnabledError extends MerchantBlockedError {
+  readonly code = "PAYIN_NOT_ENABLED";
+  constructor(merchantId: string) { super(merchantId, `pay-ins are not enabled for merchant ${merchantId}`); }
+}
+
 // Onboarding stages and merchant statuses that take no new pay-ins.
 const CLOSED_STAGES = new Set(["SUSPENDED", "TERMINATED", "REJECTED"]);
 const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
@@ -144,6 +152,8 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     const p = await rows<{ status: string }>("provider",
       `SELECT status FROM providers WHERE id = $1::uuid`, [setting.providerId]).catch(() => []);
     if (CLOSED_STATUSES.has(p[0]?.status ?? "")) throw new MerchantSuspendedError(input.merchantId);
+    // A merchant onboarded for payouts only takes no pay-in order, on any flow.
+    if (!allowsPayin(await getProviderServices(setting.providerId))) throw new PayinNotEnabledError(input.merchantId);
   }
   const decided = decideOrderFlow({ flow: setting.flow, active: setting.active }, input.flow ?? null);
   if (!decided.ok) throw new PayinFlowError(decided.error, decided.code);
@@ -365,7 +375,12 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
 
   // The collection rail, fixed here for the life of the order (vendorGateway 0029). Routing is
   // decided above, so the requested and the final channel are the same.
-  const payinChannel = classifyPayinOrder(gateway?.provider);
+  // A test order never reaches a gateway, so it has none to be classified by: on the Intent
+  // flow it is an Intent order all the same, taken by the sandbox. Without this it was written
+  // as P2P, the Intent API answered `flow: "P2P"` and the Intent status lookup did not find it.
+  const payinChannel = !gateway?.provider && flow === "INTENT"
+    ? { type: "INTENT" as const, id: SANDBOX_CHANNEL_ID }
+    : classifyPayinOrder(gateway?.provider);
 
   const insertSql = `
     INSERT INTO vendor_payin_orders

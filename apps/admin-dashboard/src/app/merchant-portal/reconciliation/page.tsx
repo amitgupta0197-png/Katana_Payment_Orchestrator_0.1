@@ -52,7 +52,7 @@ const STAGES: { key: StageKey; label: string; hint: string; explain: string }[] 
     explain: "Proves what the merchant requested: the merchant order ID, Katana transaction ID, banker, amount, channel and creation time." },
   { key: "gateway", label: "Gateway success", hint: "Payment status",
     explain: "Proves what the payment system reported: the order reached SUCCESS, by a gateway webhook, a status enquiry or an operator's confirmation." },
-  { key: "credit", label: "Bank evidence", hint: "UTR / RRN / credit",
+  { key: "credit", label: "Bank evidence", hint: "UTR or money seen arriving",
     explain: "Proves the money actually landed: a UTR or RRN stated for the payment, or a bank-credit alert matched to the order. A paid order without it is awaiting evidence." },
   { key: "settled", label: "Settled", hint: "By the banker",
     explain: "Proves the banker has settled the payment to you, on INTENT and P2P alike: the banker's verified settlements cover the order. Settlements are lump sums, so they are applied to each banker's paid orders oldest first." },
@@ -146,8 +146,8 @@ export default function ProviderReconciliationPage() {
     { label: "Failed / expired", value: st?.NOT_PAID.count ?? 0, tone: "text-[color:var(--color-danger)]", state: "NOT_PAID" },
     // Captured credits are the P2P rail, so they have no place in an INTENT-only view.
     ...(channel === "INTENT" ? [] : [
-      { label: "P2P credits awaiting RRN", value: vpa.data?.totals?.awaitingRrn ?? 0, tone: "text-[color:var(--color-warning)]", href: "/merchant-portal" },
-      { label: "P2P VPA mismatch", value: vpa.data?.totals?.vpaMismatch ?? 0, tone: "text-[color:var(--color-danger)]", href: "/merchant-portal" },
+      { label: "P2P payments waiting for bank reference", value: vpa.data?.totals?.awaitingRrn ?? 0, tone: "text-[color:var(--color-warning)]", href: "/merchant-portal" },
+      { label: "P2P paid to a different UPI ID", value: vpa.data?.totals?.vpaMismatch ?? 0, tone: "text-[color:var(--color-danger)]", href: "/merchant-portal" },
     ]),
   ];
 

@@ -168,7 +168,7 @@ gateway's reason.</p>
   <tr><th>Error</th><th>Meaning</th></tr>
   <tr><td><code>401 invalid key</code></td><td>Unknown Key.</td></tr>
   <tr><td><code>401 signature mismatch</code></td><td>Hash didn't match — check your signing string.</td></tr>
-  <tr><td><code>403</code></td><td>Account blocked or suspended (<code>code</code> <code>MERCHANT_BLOCKED</code> / <code>MERCHANT_SUSPENDED</code>).</td></tr>
+  <tr><td><code>403</code></td><td>Account blocked or suspended (<code>code</code> <code>MERCHANT_BLOCKED</code> / <code>MERCHANT_SUSPENDED</code>), or set up for payouts only (<code>code</code> <code>PAYIN_NOT_ENABLED</code>).</td></tr>
   <tr><td><code>400 invalid amount</code></td><td>Amount missing / not positive.</td></tr>
   <tr><td><code>409</code></td><td>This account can't take live payments yet (no payment gateway or receiving UPI ID is set up). Contact your Katana account manager.</td></tr>
   <tr><td><code>502</code></td><td>The payment gateway refused the order — the message gives its reason (for example, below its minimum amount). No order was created; fix and retry with the same <code>txnid</code>.</td></tr>

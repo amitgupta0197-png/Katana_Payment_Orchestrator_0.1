@@ -49,7 +49,7 @@ export default function LiveActivationsPage() {
   const cols: Column<Row>[] = [
     {
       key: "merchant_code", header: "Banker", render: (r) => r.merchant_id
-        ? <Link href={`/merchants/${r.merchant_id}`} className="font-medium text-[color:var(--color-brand)] hover:underline">{r.name ?? r.merchant_code}</Link>
+        ? <Link href={`/bankers/${r.merchant_id}`} className="font-medium text-[color:var(--color-brand)] hover:underline">{r.name ?? r.merchant_code}</Link>
         : <span className="font-medium">{r.name ?? r.merchant_code}</span>,
     },
     { key: "name", header: "Code", render: (r) => <span className="font-mono text-xs">{r.merchant_code}</span> },

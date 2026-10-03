@@ -10,6 +10,7 @@ import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
 import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { LiveActivationCard } from "@/components/merchant/live-activation-card";
+import { StarterKitCard } from "@/components/merchant/starter-kit-card";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -98,6 +99,7 @@ export default function ProviderPortalMerchantDetailView({ id }: { id: string })
         <LiveActivationCard merchantId={merchant.id} />
         <MerchantCheckoutKeyCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
         <MerchantTspWebhookCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+        <StarterKitCard merchantId={merchant.id} />
       </div>
     </>
   );

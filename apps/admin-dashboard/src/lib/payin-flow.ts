@@ -39,7 +39,7 @@ export const PAYIN_FLOW_LABEL: Record<PayinFlowSetting, string> = {
 export const PAYIN_FLOW_HINT: Record<PayinFlow, string> = {
   P2P: "Payers pay the banker's own UPI ID. Confirmed by a bank credit.",
   INTENT: "A payment gateway issues and confirms every payment.",
-  BOTH: "Set up for both. One of the two is selected as the flow in use.",
+  BOTH: "Set up for both. One of the two is the default for orders that don't name a flow.",
 };
 
 export function parseOrderFlow(v: unknown): OrderFlow | null {
@@ -101,7 +101,7 @@ export function decideOrderFlow(m: MerchantFlow, requested?: OrderFlow | null): 
 
 /** A setting is valid when BOTH names its flow in use and a single flow names none. */
 export function validateMerchantFlow(flow: PayinFlow, active: OrderFlow | null | undefined): string | null {
-  if (flow === "BOTH" && !active) return "select which flow is in use: P2P or Intent";
-  if (flow !== "BOTH" && active) return "a flow in use is only selected for Both";
+  if (flow === "BOTH" && !active) return "select the default flow: P2P or Intent";
+  if (flow !== "BOTH" && active) return "a default flow is only selected for Both";
   return null;
 }

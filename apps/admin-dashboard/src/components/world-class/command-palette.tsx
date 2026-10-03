@@ -13,11 +13,15 @@ import { navItems } from "@/lib/nav";
 interface Hit { kind: string; id: string; title: string; subtitle: string; href: string }
 
 const QUICK_ADD = [
-  { id: "qa:merchant", title: "New merchant", hint: "Go to merchants and open Create", href: "/providers?new=1" },
-  { id: "qa:merchant", title: "New banker", hint: "Go to merchants and open Onboard", href: "/merchants?new=1" },
+  { id: "qa:merchant", title: "New merchant", hint: "Go to merchants and open Create", href: "/merchants?new=1" },
+  { id: "qa:merchant", title: "New banker", hint: "Go to bankers and open Onboard", href: "/bankers?new=1" },
   { id: "qa:tenant",   title: "New tenant",   hint: "Go to tenants and open Create",   href: "/tenants?new=1" },
   { id: "qa:user",     title: "Add user",     hint: "Go to /admin/access and open Add user", href: "/admin/access?new=1" },
 ];
+
+// What a search hit is, in the dashboard's words. The search API keeps the table names: a
+// `providers` row is a Merchant here and a `merchants` row is a Banker.
+const KIND_LABEL: Record<string, string> = { provider: "Merchant", merchant: "Banker" };
 
 export function CommandPalette() {
   const router = useRouter();
@@ -66,7 +70,7 @@ export function CommandPalette() {
   type Item = { id: string; group: "Quick add" | "Records" | "Pages"; title: string; subtitle: string; href: string; icon?: React.ReactNode };
   const items: Item[] = [
     ...quickHits.map((a) => ({ id: a.id, group: "Quick add" as const, title: a.title, subtitle: a.hint, href: a.href, icon: <Plus className="h-3.5 w-3.5" /> })),
-    ...serverHits.map((h) => ({ id: `s:${h.kind}:${h.id}`, group: "Records" as const, title: h.title, subtitle: `${h.kind} · ${h.subtitle}`, href: h.href, icon: <ExternalLink className="h-3.5 w-3.5" /> })),
+    ...serverHits.map((h) => ({ id: `s:${h.kind}:${h.id}`, group: "Records" as const, title: h.title, subtitle: `${KIND_LABEL[h.kind] ?? h.kind} · ${h.subtitle}`, href: h.href, icon: <ExternalLink className="h-3.5 w-3.5" /> })),
     ...navHits.map((n) => ({ id: `n:${n.href}`, group: "Pages" as const, title: n.label, subtitle: n.href, href: n.href, icon: <ArrowRight className="h-3.5 w-3.5" /> })),
   ];
 

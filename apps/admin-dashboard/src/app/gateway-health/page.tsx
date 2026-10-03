@@ -12,6 +12,7 @@ import { formatDateTime } from "@/lib/utils";
 
 interface Row {
   gateway_name: string; orders_last_24h: number; pct_confirmed: number | null; median_confirm_latency_minutes: number | null;
+  p95_confirm_latency_minutes?: number | null; confirm_window_minutes?: number;
   webhooks_received_last_24h: number; pct_revived_after_expiry: number | null; last_webhook_at: string | null; alerts: string[];
 }
 
@@ -68,6 +69,8 @@ export default function GatewayHealthPage() {
                       <th className="px-3 py-2 text-right font-medium">Orders 24h</th>
                       <th className="px-3 py-2 text-right font-medium">Confirmed</th>
                       <th className="px-3 py-2 text-right font-medium">Median confirm</th>
+                      <th className="px-3 py-2 text-right font-medium" title="95 in 100 paid orders were confirmed within this time from order creation">95% confirmed in</th>
+                      <th className="px-3 py-2 text-right font-medium" title="How long an order waits for this gateway after the customer's 15 minutes, before it is told Expired">Confirm window</th>
                       <th className="px-3 py-2 text-right font-medium">Webhooks 24h</th>
                       <th className="px-3 py-2 text-right font-medium">Paid after expiry</th>
                       <th className="px-3 py-2 font-medium">Last webhook</th>
@@ -80,6 +83,8 @@ export default function GatewayHealthPage() {
                         <td className="px-3 py-2 text-right tabular-nums">{g.orders_last_24h}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{pct(g.pct_confirmed)}</td>
                         <td className={`px-3 py-2 text-right tabular-nums ${g.alerts.includes("SLOW_CONFIRMATION") ? "font-medium text-[color:var(--color-danger)]" : ""}`}>{g.median_confirm_latency_minutes == null ? "—" : `${g.median_confirm_latency_minutes} min`}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{g.p95_confirm_latency_minutes == null ? "—" : `${g.p95_confirm_latency_minutes} min`}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{g.confirm_window_minutes ? `${g.confirm_window_minutes} min` : "none"}</td>
                         <td className={`px-3 py-2 text-right tabular-nums ${g.alerts.includes("NO_WEBHOOK") ? "font-medium text-[color:var(--color-danger)]" : ""}`}>{g.webhooks_received_last_24h}</td>
                         <td className={`px-3 py-2 text-right tabular-nums ${g.alerts.includes("HIGH_REVIVAL") ? "font-medium text-[color:var(--color-danger)]" : ""}`}>{pct(g.pct_revived_after_expiry)}</td>
                         <td className="px-3 py-2" title={g.last_webhook_at ? formatDateTime(g.last_webhook_at) : undefined}>{ago(g.last_webhook_at)}</td>

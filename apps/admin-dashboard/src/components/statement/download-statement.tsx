@@ -167,7 +167,7 @@ export function DownloadStatement({
                     say so rather than letting the numbers look like they disagree. */}
                 {!preview.isLoading && (preview.data?.awaiting_count ?? 0) > 0 && (
                   <>
-                    <Row label="Awaiting RRN (not in Gross)" value={formatAmount(preview.data?.awaiting_gross ?? 0)} />
+                    <Row label="Waiting for bank reference (not in Gross)" value={formatAmount(preview.data?.awaiting_gross ?? 0)} />
                     <p className="text-xs text-[color:var(--color-text-muted)]">
                       {preview.data?.awaiting_count} credit{(preview.data?.awaiting_count ?? 0) === 1 ? "" : "s"} still
                       waiting on a UPI reference — listed in the file, excluded from the totals above.

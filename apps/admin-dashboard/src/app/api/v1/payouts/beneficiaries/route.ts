@@ -3,15 +3,18 @@
 //
 //   hash over: beneficiary_ref|name|account_number|ifsc|upi_id
 //
-// A beneficiary is created PENDING and can't be paid until someone at Katana other than the
-// registering key approves it. Re-sending the same beneficiary_ref with the same details
-// returns the existing one with its current status, so this doubles as a status check.
+// With a live key a beneficiary is created PENDING and can't be paid until someone at Katana other
+// than the registering key approves it. With a test key it is approved at once and can only ever
+// receive test payouts (the payout sandbox): no money can reach it. The two modes keep separate
+// lists. Re-sending the same beneficiary_ref with the same details returns the existing one with
+// its current status, so this doubles as a status check.
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { createBeneficiary } from "@/lib/fifo-payout";
 import { authPayoutRequest, parseMerchantBody } from "@/lib/payout-api";
 import { openText } from "@/lib/sealed-text";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 
 export const dynamic = "force-dynamic";
 
@@ -28,18 +31,18 @@ const schema = z.object({
   .refine((b) => !!(b.account_number || b.upi_id), "send account_number + ifsc, or upi_id");
 
 type Bene = { id: string; merchant_ref: string; status: string; beneficiary_name: string;
-  account_number: string | null; account_last4: string | null; ifsc: string | null; upi_id: string | null };
+  account_number: string | null; account_last4: string | null; ifsc: string | null; upi_id: string | null; livemode: boolean };
 
 const view = (b: Bene) => ({
   beneficiary_id: b.id, beneficiary_ref: b.merchant_ref, status: b.status, name: b.beneficiary_name,
-  account_last4: b.account_last4, ifsc: b.ifsc, upi_id: b.upi_id,
+  account_last4: b.account_last4, ifsc: b.ifsc, upi_id: b.upi_id, livemode: b.livemode,
 });
 
-async function findByRef(merchantCode: string, ref: string): Promise<Bene | null> {
+async function findByRef(merchantCode: string, ref: string, livemode: boolean): Promise<Bene | null> {
   const b = (await rows<Bene>("fifo", `
-    SELECT id::text, merchant_ref, status, beneficiary_name, account_number, account_last4, ifsc, upi_id
-      FROM fifo_beneficiaries WHERE merchant_id=$1 AND merchant_ref=$2
-  `, [merchantCode, ref]))[0];
+    SELECT id::text, merchant_ref, status, beneficiary_name, account_number, account_last4, ifsc, upi_id, livemode
+      FROM fifo_beneficiaries WHERE merchant_id=$1 AND merchant_ref=$2 AND livemode=$3
+  `, [merchantCode, ref, livemode]))[0];
   // The account number is sealed at rest (lib/sealed-text); sameDetails compares the number itself.
   return b ? { ...b, account_number: openText(b.account_number) } : null;
 }
@@ -62,8 +65,11 @@ export async function POST(req: Request) {
     const auth = await authPayoutRequest(body.key, body.hash,
       [body.beneficiary_ref, body.name, body.account_number, body.ifsc, body.upi_id]);
     if (!auth.ok) return NextResponse.json({ error: auth.error, code: auth.code }, { status: auth.status });
+    // A pay-in only account sends no payouts, so it registers no beneficiaries either (lib/merchant-services).
+    const off = await serviceRefusal(auth.merchantCode, "PAYOUT");
+    if (off) return NextResponse.json(off, { status: 403 });
 
-    const existing = await findByRef(auth.merchantCode, body.beneficiary_ref);
+    const existing = await findByRef(auth.merchantCode, body.beneficiary_ref, auth.livemode);
     if (existing) {
       if (!sameDetails(existing, body))
         return NextResponse.json({ error: `beneficiary_ref ${body.beneficiary_ref} is already registered with different details` }, { status: 409 });
@@ -74,13 +80,13 @@ export async function POST(req: Request) {
       await createBeneficiary({
         merchantId: auth.merchantCode, merchantRef: body.beneficiary_ref, beneficiaryName: body.name,
         bankName: body.bank_name, accountNumber: body.account_number, ifsc: body.ifsc, upiId: body.upi_id,
-        createdBy: `api:${body.key}`,
+        createdBy: `api:${body.key}`, livemode: auth.livemode,
       });
     } catch (err) {
       // A parallel request with the same ref won; fall through and return its row.
       if ((err as { code?: string }).code !== "23505") throw err;
     }
-    const created = await findByRef(auth.merchantCode, body.beneficiary_ref);
+    const created = await findByRef(auth.merchantCode, body.beneficiary_ref, auth.livemode);
     if (!created) return NextResponse.json({ error: "beneficiary not saved" }, { status: 500 });
     if (!sameDetails(created, body))
       return NextResponse.json({ error: `beneficiary_ref ${body.beneficiary_ref} is already registered with different details` }, { status: 409 });

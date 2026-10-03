@@ -9,6 +9,9 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { hashPassword, generatePassword } from "@/lib/password";
 import { openText, sealOptional } from "@/lib/sealed-text";
+import { validateOnboardingChoice } from "@/lib/merchant-services";
+import { setProviderServices } from "@/lib/merchant-services-store";
+import { setProviderFlow } from "@/lib/payin-flow-store";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +32,7 @@ export async function GET() {
       SELECT p.id, p.tenant_id, p.code, p.legal_name, p.contact_email::text AS contact_email,
              COALESCE(p.contact_phone,'') AS contact_phone, p.kind,
              p.kyc_status, p.status, p.settlement_currency,
+             p.services, p.payin_flow, p.payin_active_flow,
              COALESCE(p.bank_account_no,'') AS bank_account_no,
              COALESCE(p.bank_ifsc,'') AS bank_ifsc,
              p.created_at,
@@ -64,6 +68,15 @@ const createSchema = z.object({
   bank_account_no: z.string().optional(),
   bank_ifsc: z.string().optional(),
   settlement_currency: z.string().default("INR"),
+  // What the merchant is onboarded for (lib/merchant-services): pay-in, pay-out or both, and
+  // for a merchant that takes pay-ins its flow (lib/payin-flow). The create form always sends
+  // them; a caller that leaves `services` out creates a merchant with nothing selected.
+  services: z.enum(["PAYIN", "PAYOUT", "BOTH"]).optional(),
+  payin_flow: z.enum(["P2P", "INTENT", "BOTH"]).optional(),
+  payin_active_flow: z.enum(["P2P", "INTENT"]).optional(),
+  // A new merchant only: a code that already exists is refused (409) instead of updating that
+  // merchant, which is what this route otherwise does. The create journey always sends it.
+  create_only: z.boolean().optional(),
   // One-shot onboarding: also provision the sign-ins/entities tied to this
   // provider. Banker = the provider wearing its DT hat (banker_id = provider
   // code); branch = a merchant mapped under this provider (merchant==branch,
@@ -115,7 +128,17 @@ export async function POST(req: Request) {
   try { body = createSchema.parse(await req.json()); } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
+  if (body.services) {
+    const bad = validateOnboardingChoice(body.services, body.payin_flow ?? null, body.payin_active_flow ?? null);
+    if (bad) return NextResponse.json({ error: bad }, { status: 400 });
+  } else if (body.payin_flow) {
+    return NextResponse.json({ error: "select the services with the pay-in flow: PAYIN, PAYOUT or BOTH" }, { status: 400 });
+  }
   try {
+    if (body.create_only) {
+      const exists = await rows("provider", `SELECT 1 FROM providers WHERE tenant_id = $1 AND upper(code) = upper($2)`, [tenant, body.code]);
+      if (exists.length) return NextResponse.json({ error: `the code ${body.code} is already used by another merchant`, code: "CODE_TAKEN" }, { status: 409 });
+    }
     const res = await rows<any>("provider", `
       INSERT INTO providers (tenant_id, code, legal_name, contact_email, contact_phone, kind,
                              bank_account_no, bank_ifsc, settlement_currency, kyc_status, status)
@@ -127,6 +150,19 @@ export async function POST(req: Request) {
     `, [tenant, body.code, body.legal_name, body.contact_email, body.contact_phone ?? null, body.kind,
         sealOptional(body.bank_account_no), body.bank_ifsc ?? null, body.settlement_currency]);
     const provider = res[0];
+
+    // The services and the pay-in flow chosen for the merchant, each with its history row.
+    if (body.services) {
+      const by = g.session.email, note = "selected when the merchant was created";
+      const sv = await setProviderServices(provider.id, { services: body.services, by, note });
+      if (!sv.ok) return NextResponse.json({ error: sv.error }, { status: 400 });
+      provider.services = sv.services;
+      if (body.payin_flow) {
+        const fl = await setProviderFlow(provider.id, { flow: body.payin_flow, active: body.payin_active_flow ?? null, by, note });
+        if (!fl.ok) return NextResponse.json({ error: fl.error }, { status: 400 });
+        provider.payin_flow = fl.flow.flow; provider.payin_active_flow = fl.flow.active;
+      }
+    }
 
     // Optional one-shot provisioning. Each block is non-fatal: the provider row
     // exists even if a login step fails; failures are reported back per-item.

@@ -190,18 +190,24 @@ export async function markPayuPayinFinal(txnid: string, payuStatus: string): Pro
  * Ask PayU now whether a PayU pay-in was paid, and settle it if so. Called from the pay-status poll
  * so the customer's page flips within seconds of approving in their UPI app — without waiting for
  * PayU's webhook (which may not be configured) or the sweep. Throttled by claimPayuPayinCheck.
+ *
+ * `minIntervalSec: null` is the staff refresh: PayU is asked whatever the throttle and the
+ * re-check window say. `reason` / `lookupError` say why nothing was applied, as checkGatewayPayin does.
  */
-export async function checkPayuPayinNow(txnid: string, merchantId: string, minIntervalSec: number): Promise<{ applied: boolean }> {
-  if (!(await claimPayuPayinCheck(txnid, minIntervalSec))) return { applied: false };
+export async function checkPayuPayinNow(txnid: string, merchantId: string, minIntervalSec: number | null): Promise<{
+  applied: boolean; status: "SUCCESS" | "FAILED" | "UNKNOWN"; reason?: string; lookupError?: string;
+}> {
+  if (minIntervalSec != null && !(await claimPayuPayinCheck(txnid, minIntervalSec)))
+    return { applied: false, status: "UNKNOWN", reason: "checked_recently" };
   const mid = payuKeySalt(await getGatewayMid(merchantId));
-  if (!mid) return { applied: false };
+  if (!mid) return { applied: false, status: "UNKNOWN", reason: "no_gateway_credentials" };
   const v = await verifyPayuTxn(mid, txnid);
-  if (!v.found) return { applied: false };
+  if (!v.found) return { applied: false, status: "UNKNOWN", reason: "lookup_failed", lookupError: `PayU: ${v.status}`.slice(0, 80) };
   if (v.status === "failure" || v.status === "failed") await markPayuPayinFinal(txnid, v.status);
   const r = await applyVerifiedPayuStatus({
     txnid, payuStatus: v.status, mihpayid: v.mihpayid, bankRefNum: v.bankRefNum, raw: v.raw,
   });
-  return { applied: r.applied };
+  return { applied: r.applied, status: r.status, reason: r.reason };
 }
 
 /** Parse a PayU POST body, which may be JSON or form-encoded depending on channel. */

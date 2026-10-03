@@ -9,6 +9,7 @@ export const V2_ERRORS = {
   UNAUTHORIZED:            { status: 401, meaning: "The API key is missing, unknown or revoked." },
   MERCHANT_BLOCKED:        { status: 403, meaning: "The account is blocked and takes no orders." },
   MERCHANT_SUSPENDED:      { status: 403, meaning: "The account is suspended or terminated." },
+  PAYIN_NOT_ENABLED:       { status: 403, meaning: "The account is set up for payouts only and takes no pay-in orders." },
   LIVE_MODE_NOT_ACTIVATED: { status: 403, meaning: "A live key was used before live mode was activated." },
   ORDER_NOT_FOUND:         { status: 404, meaning: "No order with that id or reference belongs to this key." },
   REFERENCE_REUSED:        { status: 409, meaning: "The reference already belongs to an order with a different amount." },

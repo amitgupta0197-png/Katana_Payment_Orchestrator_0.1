@@ -42,7 +42,9 @@ export function verificationOf(r: VerifiableCredit, vpas: string[]): CreditVerif
 
 /** Label and badge tone for a verification state. */
 export function verificationLabel(v: CreditVerification): string {
-  return v === "vpa_mismatch" ? "VPA mismatch" : v === "awaiting" ? "awaiting RRN" : v;
+  // The words merchants read (lib/plain-words): no "VPA", no "RRN".
+  return v === "vpa_mismatch" ? "Paid to a different UPI ID" : v === "awaiting" ? "Waiting for bank reference"
+    : v === "matched" ? "Linked to an order" : "Confirmed by bank";
 }
 
 export function verificationVariant(v: CreditVerification): "success" | "danger" | "warning" {

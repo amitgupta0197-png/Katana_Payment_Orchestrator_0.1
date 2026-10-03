@@ -9,9 +9,12 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/lib/__tests__/*.test.ts",
-    "test:integration": "tsx --env-file=.env.local --test --test-concurrency=1 tests/integration/*.test.ts"
+    "test:integration": "tsx --env-file=.env.local --test --test-concurrency=1 tests/integration/*.test.ts",
+    "test:e2e": "tsx --env-file=.env.local --test --test-concurrency=1 tests/e2e/*.e2e.test.ts",
+    "e2e:staff": "tsx --env-file=.env.local tests/e2e/seed-local-staff.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@grpc/grpc-js": "^1.12.2",
     "@grpc/proto-loader": "^0.7.13",
     "@hookform/resolvers": "^3.9.1",

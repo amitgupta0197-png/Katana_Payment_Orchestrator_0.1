@@ -16,7 +16,7 @@
 // The gateway behind an order is never named: `gateway` is always null (lib/merchant-safe).
 
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
-import { genRrn, PENDING_EXPIRY_SECONDS, autoResolvePaused } from "@/lib/katana-pay";
+import { genRrn, orderExpirySeconds, autoResolvePaused } from "@/lib/katana-pay";
 
 export const V2_STATUSES = ["PENDING", "SUCCESS", "FAILED", "EXPIRED"] as const;
 export type V2Status = (typeof V2_STATUSES)[number];
@@ -78,6 +78,7 @@ export interface V2OrderRow {
   meta: Record<string, any> | null;
   updated_at?: string | Date | null;
   created_at?: string | Date | null;
+  livemode?: boolean | null;
 }
 
 export interface V2Body {
@@ -144,11 +145,16 @@ export function v2Body(o: V2OrderRow, eventId: string | null = null): V2Body {
   };
 }
 
-/** When a PENDING order stops waiting; null once it is final, and for an order held for a manual check. */
-export function v2ExpiresAt(o: V2OrderRow): string | null {
+/**
+ * When a PENDING order stops waiting and is told EXPIRED; null once it is final, and for an order
+ * held for a manual check. For an order sent to a gateway this is after the customer's time to
+ * pay: it includes the confirmation window (lib/katana-pay), when there is one.
+ */
+export function v2ExpiresAt(o: V2OrderRow, env: Record<string, string | undefined> = process.env): string | null {
   if (v2Status(o.status) !== "PENDING" || autoResolvePaused(o.meta)) return null;
   const created = iso(o.created_at);
-  return created ? new Date(new Date(created).getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null;
+  const after = orderExpirySeconds(o.meta, o.livemode !== false, env);
+  return created ? new Date(new Date(created).getTime() + after * 1000).toISOString() : null;
 }
 
 /** A sample body for a test event: no order behind it, and marked so in its ids. */

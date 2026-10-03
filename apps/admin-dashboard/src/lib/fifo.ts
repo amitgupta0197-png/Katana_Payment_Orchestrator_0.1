@@ -9,6 +9,7 @@ import { rows } from "@/lib/pg";
 import { randomBytes, createHash } from "crypto";
 import { computeRiskScore } from "@/lib/risk";
 import { postJournal } from "@/lib/ledger";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 
 export type Direction = "PAYIN" | "PAYOUT";
 
@@ -192,6 +193,9 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order?: Cr
   if (!m) return { error: "merchant not found", status: 404 };
   if (m.stage !== "LIVE") return { error: `merchant not LIVE (stage=${m.stage})`, status: 409 };
   if (input.amountMinor <= 0n) return { error: "amount must be > 0", status: 400 };
+  // The merchant was onboarded for the other service only (lib/merchant-services).
+  const off = await serviceRefusal(input.merchantId, input.direction === "PAYOUT" ? "PAYOUT" : "PAYIN");
+  if (off) return { error: off.error, status: 403 };
 
   // FR-003 / §11.A: enforce per-transaction / daily / monthly limits.
   const limitErr = await checkMerchantLimits(input.merchantId, input.amountMinor, input.direction);

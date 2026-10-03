@@ -51,7 +51,9 @@ export function toV2Error(err: unknown, where: string): V2Error {
   if (err instanceof PayinLimitError)
     return new V2Error(err.code, err.message, err.status === 429 ? { "retry-after": "1" } : undefined);
   if (err instanceof MerchantBlockedError)
-    return new V2Error(err.code === "MERCHANT_SUSPENDED" ? "MERCHANT_SUSPENDED" : "MERCHANT_BLOCKED", "this account takes no orders");
+    return err.code === "PAYIN_NOT_ENABLED"
+      ? new V2Error("PAYIN_NOT_ENABLED", "pay-ins are not enabled for this account")
+      : new V2Error(err.code === "MERCHANT_SUSPENDED" ? "MERCHANT_SUSPENDED" : "MERCHANT_BLOCKED", "this account takes no orders");
   if (err instanceof LiveModeNotActivatedError) return new V2Error("LIVE_MODE_NOT_ACTIVATED", err.message);
   if (err instanceof AccountNotLiveError) return new V2Error("ACCOUNT_NOT_LIVE", err.message);
   if (err instanceof PayinFlowError) return new V2Error(err.code, safe(err.message));

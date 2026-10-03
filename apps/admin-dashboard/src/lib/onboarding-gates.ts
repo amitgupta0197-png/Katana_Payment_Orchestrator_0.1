@@ -26,11 +26,12 @@
 import { rows } from "@/lib/pg";
 import { safeFetch } from "@/lib/safe-fetch";
 import { screenName } from "@/lib/risk";
+import { bankerSetup } from "@/lib/merchant-setup";
 import {
   aadhaarLast4Problem, gstinPan, gstinProblem, mccProblem, mccStanding, panProblem, prohibitedWords, tidyId,
 } from "@/lib/kyc-validators";
 
-export type GateName = "APPLICATION" | "WEBSITE" | "DOCUMENTS" | "SCREENING";
+export type GateName = "APPLICATION" | "WEBSITE" | "DOCUMENTS" | "SCREENING" | "SETUP";
 export type GateResult = "PASS" | "REVIEW" | "FAIL";
 
 export interface GateOutcome {
@@ -43,6 +44,7 @@ export interface GateOutcome {
 
 export interface OnboardingSubject {
   id: string;
+  merchant_code?: string | null;
   legal_name: string;
   brand_name: string | null;
   category_mcc: string | null;
@@ -54,7 +56,7 @@ export interface OnboardingSubject {
   director_aadhaar_last4: string | null;
 }
 
-export const SUBJECT_COLS = `id::text, legal_name, brand_name, category_mcc, website, gstin, business_pan,
+export const SUBJECT_COLS = `id::text, merchant_code, legal_name, brand_name, category_mcc, website, gstin, business_pan,
   director_name, director_pan, director_aadhaar_last4`;
 
 const worst = (problems: number, missing: number): GateResult => (problems ? "FAIL" : missing ? "REVIEW" : "PASS");
@@ -154,6 +156,21 @@ export async function gateScreening(m: OnboardingSubject): Promise<GateOutcome> 
   return { gate: "SCREENING", result: "PASS", summary: "No sanctions or PEP match", detail };
 }
 
+/**
+ * Go-live: the banker is set up for what its merchant was onboarded for (lib/merchant-services).
+ * A P2P banker needs its settlement UPI ID, an Intent banker its pay-in gateway; a merchant
+ * nobody chose for is only flagged for a look.
+ */
+export async function gateSetup(m: OnboardingSubject): Promise<GateOutcome> {
+  if (!m.merchant_code) return { gate: "SETUP", result: "REVIEW", summary: "banker has no code to look its setup up by", detail: {} };
+  const s = await bankerSetup(m.merchant_code);
+  return {
+    gate: "SETUP", result: s.result, summary: s.summary,
+    detail: { services: s.services, payin_flow: s.flow.flow, payin_active_flow: s.flow.active,
+      items: s.items.map((i) => ({ key: i.key, state: i.state })) },
+  };
+}
+
 export type OnboardingStep = "step_application" | "step_kyb_docs" | "step_screening" | "step_bank_verify" | "step_config" | "step_approval";
 
 /** Run the gates of one onboarding step. Steps with no system check return none. */
@@ -161,6 +178,7 @@ export async function runStepGates(step: OnboardingStep, m: OnboardingSubject): 
   if (step === "step_application") return [gateApplication(m), await gateWebsite(m.website)];
   if (step === "step_kyb_docs") return [await gateDocuments(m)];
   if (step === "step_screening") return [await gateScreening(m)];
+  if (step === "step_approval") return [await gateSetup(m)];
   return [];
 }
 

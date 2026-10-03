@@ -45,6 +45,12 @@ export default function PayinFlowsPage() {
       </div>
 
       {q.isError && <div className="mb-4 text-sm text-[color:var(--color-danger)]">{(q.error as Error).message}</div>}
+      {(q.data?.payout_only?.merchants ?? 0) > 0 && (
+        <p className="mb-4 text-xs text-[color:var(--color-text-muted)]">
+          Not listed: {q.data!.payout_only!.merchants} pay-out only merchant{q.data!.payout_only!.merchants === 1 ? "" : "s"} and
+          their {q.data!.payout_only!.bankers} banker{q.data!.payout_only!.bankers === 1 ? "" : "s"}. They take no pay-ins and have no flow.
+        </p>
+      )}
 
       <Tabs defaultValue="merchants">
         <TabsList>

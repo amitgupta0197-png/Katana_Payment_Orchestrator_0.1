@@ -28,6 +28,7 @@ import { resolveCheckoutKey, getCheckoutCreds, type CheckoutCreds } from "@/lib/
 import { isLiveActivated } from "@/lib/live-activation";
 import { signKatanaHash } from "@/lib/katana-pay";
 import { enqueue, dispatchPending } from "@/lib/webhook-outbox";
+import { stripGatewayNames } from "@/lib/merchant-safe";
 
 export function payoutSignature(creds: CheckoutCreds, fields: (string | null | undefined)[]): string {
   const parts = fields.map((f) => f ?? "");
@@ -102,8 +103,10 @@ export function payoutView(r: any): PayoutView {
     payout_id: r.order_ref, txnid: r.merchant_txn_id ?? null, status, terminal: isFinalPayoutStatus(status),
     amount: fromMinor(r.amount_minor, r.currency), currency: r.currency, rail: r.payout_rail ?? null,
     beneficiary_id: r.beneficiary_id ?? null, utr: r.utr ?? null,
-    // Only a reason the merchant can act on; internal notes stay internal.
-    failure_reason: status === "FAILED" || status === "REJECTED" || status === "REVERSED" ? r.failure_reason ?? null : null,
+    // Only a reason the merchant can act on; internal notes stay internal. The reason can carry a
+    // gateway's name (lib/merchant-safe): every reader of this view is a merchant.
+    failure_reason: (status === "FAILED" || status === "REJECTED" || status === "REVERSED") && r.failure_reason
+      ? stripGatewayNames(String(r.failure_reason), "payment processor") : null,
     livemode: r.livemode !== false,
     created_at: new Date(r.created_at).toISOString(),
     completed_at: r.completed_at ? new Date(r.completed_at).toISOString() : null,

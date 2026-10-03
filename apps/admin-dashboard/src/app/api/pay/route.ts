@@ -21,6 +21,7 @@ import { payuAutoSubmitForm } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody } from "@/lib/merchant-safe";
 import { getMerchantFlow } from "@/lib/payin-flow-store";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
@@ -124,6 +125,10 @@ async function handle(req: Request, seen: Seen): Promise<NextResponse> {
 
     // A live order — either branch below — needs live mode activated for this merchant.
     if (livemode) await assertLiveActivated(merchantCode);
+
+    // A merchant onboarded for payouts only takes no pay-in on any branch below (lib/merchant-services).
+    const off = await serviceRefusal(merchantCode, "PAYIN");
+    if (off) return json(off, { status: 403 });
 
     // This is the gateway checkout: every payment it starts is taken by a gateway. A merchant
     // on the P2P flow (lib/payin-flow) is never sent to one, so it is pointed at the P2P API.

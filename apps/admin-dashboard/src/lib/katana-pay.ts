@@ -122,6 +122,24 @@ export const GATEWAY_RECHECK_SQL = `status NOT IN ('SUCCESS','SUCCEEDED')
        AND ((status <> 'FAILED' AND COALESCE(meta->'gateway'->>'final', '') = '')
             OR created_at >= now() - interval '2 hours')`;
 
+// What staff are told when a gateway was asked about an order and nothing changed (the "Force
+// status refresh" action). `reason` and `lookupError` are what the gateway check returned
+// (lib/gateway-payin, lib/payu-result). The text can carry a gateway's name and its own words,
+// so it is for staff only: a merchant session gets GATEWAY_CHECK_NOTE_MERCHANT instead.
+export function gatewayCheckNote(r: { status: string; reason?: string; lookupError?: string }): string {
+  const why = r.reason ?? "";
+  if (r.lookupError) return `The gateway gave no usable answer: ${r.lookupError}`;
+  if (why === "no_gateway_credentials") return "The gateway could not be asked: this merchant's saved gateway credentials are missing or belong to another gateway";
+  if (why === "checked_recently") return "The gateway was asked moments ago; try again in a few seconds";
+  if (why === "not_found_at_gateway") return "The gateway has no order under this reference";
+  if (why === "already_final") return "The gateway's answer matches the order; nothing to change";
+  if (why.startsWith("still ")) return `The gateway says the payment is ${why.slice(6).toUpperCase() || "not final"}; nothing was changed`;
+  if (r.status === "SUCCESS") return `The gateway says the payment went through, but it was not applied: ${why || "unknown reason"}`;
+  if (r.status === "FAILED") return `The gateway says the payment failed; the order was left as it is${why ? ` (${why})` : ""}`;
+  return why ? `The gateway's answer was not applied: ${why}` : "The gateway gave no final answer";
+}
+export const GATEWAY_CHECK_NOTE_MERCHANT = "The payment processor has not confirmed a payment for this order";
+
 // Auto-resolution pause. The status enquiry / poller normally advances a PENDING
 // order over time (sandbox amount rule + pending-expiry). It must NOT do so while
 // the order is parked for a human decision: a high-amount hold (meta.hold) or a
@@ -143,22 +161,64 @@ export function genRrn(seed: string): string {
 // never hangs forever (sandbox 15 min; tune per provider SLA when live).
 export const PENDING_EXPIRY_SECONDS = 900;
 
+// Two clocks, not one. PENDING_EXPIRY_SECONDS is the CUSTOMER's time to pay. A live order that
+// was sent to a gateway is then held PENDING for a further confirmation window, which is OUR
+// time to hear from the gateway: a gateway can confirm a payment well after the customer made
+// it, and expiring at 15 minutes tells the merchant "Expired" and then "Captured". In the
+// window the customer is offered no way to start a payment; the order only waits.
+//
+// The window is off (0) until set, so nothing changes by default:
+//   PAYIN_CONFIRM_WINDOW_SECONDS            every gateway
+//   PAYIN_CONFIRM_WINDOW_SECONDS_<GATEWAY>  one gateway, which wins (e.g. _PAYU)
+// A P2P order (no gateway) and a test order have no window.
+export const CONFIRM_WINDOW_MAX_SECONDS = 24 * 3600;
+
+type OrderMeta = { gateway?: { provider?: unknown } | null } | null | undefined;
+
+export function confirmWindowSeconds(
+  meta: OrderMeta,
+  livemode = true,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const provider = meta?.gateway?.provider;
+  if (!livemode || typeof provider !== "string" || !provider) return 0;
+  const own = env[`PAYIN_CONFIRM_WINDOW_SECONDS_${provider.toUpperCase()}`];
+  const n = Math.floor(Number(own != null && own !== "" ? own : env.PAYIN_CONFIRM_WINDOW_SECONDS));
+  return Number.isFinite(n) && n > 0 ? Math.min(n, CONFIRM_WINDOW_MAX_SECONDS) : 0;
+}
+
+/** The age at which a PENDING order is given up on: the customer's time plus the confirmation window. */
+export function orderExpirySeconds(meta: OrderMeta, livemode = true, env: Record<string, string | undefined> = process.env): number {
+  return PENDING_EXPIRY_SECONDS + confirmWindowSeconds(meta, livemode, env);
+}
+
+/** True while the customer's time is over and the order is only waiting for its gateway. */
+export function inConfirmWindow(
+  status: string, ageSeconds: number, meta: OrderMeta, livemode = true,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return !KATANA_TERMINAL.has(status) && ageSeconds >= PENDING_EXPIRY_SECONDS
+    && ageSeconds < orderExpirySeconds(meta, livemode, env);
+}
+
 // Single source of truth for resolving a Katana Pay order's status. Enforces the
 // final-status lock (terminal never re-resolves), then the deterministic sandbox
 // decision, then the pending-expiry rule. Used by the status enquiry, the cron
 // sweep poller, and the force-refresh action so they can never disagree.
+// `expirySeconds` is the order's own limit (orderExpirySeconds).
 export function resolveKatanaStatus(
   currentStatus: string,
   amountMinor: number,
   ageSeconds: number,
   livemode = true,
+  expirySeconds = PENDING_EXPIRY_SECONDS,
 ): { status: string; response_code: string; changed: boolean } {
   if (KATANA_TERMINAL.has(currentStatus)) {
     return { status: currentStatus, response_code: "", changed: false }; // final-status lock
   }
   const d = decideKatanaStatus(amountMinor, ageSeconds, livemode);
   let status = d.status, code = d.response_code;
-  if (status === "PENDING" && ageSeconds >= PENDING_EXPIRY_SECONDS) {
+  if (status === "PENDING" && ageSeconds >= expirySeconds) {
     status = "EXPIRED"; code = "U69"; // pending-expiry
   }
   return { status, response_code: code, changed: status !== currentStatus };

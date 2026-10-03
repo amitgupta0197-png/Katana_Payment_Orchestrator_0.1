@@ -20,6 +20,7 @@ import { decideSca } from "@/lib/sca";
 import { postJournal } from "@/lib/ledger";
 import { getGatewayMid, signForGateway } from "@/lib/gateway-creds";
 import { randomBytes } from "crypto";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 
 export interface CheckoutOrderInput {
   client_ref: string;
@@ -69,6 +70,9 @@ export async function runCheckout(params: {
       error: "live payments are not taken here: send redirect=true for the payment page or intent=true for UPI app links, or use a test key",
       code: LIVE_CHECKOUT_UNAVAILABLE,
     } };
+  // A merchant onboarded for payouts only takes no pay-in, test or live (lib/merchant-services).
+  const off = await serviceRefusal(merchantId, "PAYIN");
+  if (off) return { httpStatus: 403, body: off };
   const amountMinor = toMinor(typeof body.amount === "number" ? body.amount.toString() : body.amount, body.currency);
 
   // Idempotency: replay the existing order if the key was already used — BY THIS MERCHANT, IN

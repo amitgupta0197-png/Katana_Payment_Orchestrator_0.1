@@ -6,6 +6,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { listGates, requiredDocuments, strictOnboarding } from "@/lib/onboarding-gates";
+import { bankerSetup } from "@/lib/merchant-setup";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const m = (await rows<Record<string, string | null>>("merchant", `
       SELECT gstin, business_pan, director_name, director_pan, director_aadhaar_last4,
-             est_monthly_volume::text, category_mcc, website, stage
+             est_monthly_volume::text, category_mcc, website, stage, merchant_code
         FROM merchants WHERE id = $1::uuid`, [id]))[0];
     const history = await rows("merchant", `
       SELECT from_stage, to_stage, changed_at FROM merchant_status_history
@@ -26,6 +27,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({
       details: m, gates: await listGates(id), history,
       required_documents: requiredDocuments({ gstin: m.gstin }), strict: strictOnboarding(),
+      // What the banker's merchant was onboarded for, and what go-live still needs (the SETUP gate).
+      setup: m.merchant_code ? await bankerSetup(m.merchant_code).catch(() => null) : null,
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

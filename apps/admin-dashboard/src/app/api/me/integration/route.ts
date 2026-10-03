@@ -12,6 +12,7 @@ import { issueCheckoutCreds, getCheckoutCredsStatus, ISSUED_CHECKOUT_SCHEMES } f
 import { ownMerchantCode } from "@/lib/merchant-keys";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { merchantSafeScheme } from "@/lib/merchant-safe";
+import { getBankerServices } from "@/lib/merchant-services-store";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,8 @@ export async function GET() {
       return_url: m.return_url ?? "",
       endpoints: endpoints(),
       schemes: ISSUED_CHECKOUT_SCHEMES,
+      // What the banker's merchant was onboarded for (lib/merchant-services).
+      services: await getBankerServices(code).catch(() => "UNSET" as const),
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

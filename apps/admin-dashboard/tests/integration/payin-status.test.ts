@@ -62,6 +62,32 @@ test("an order unpaid past the limit expires; a payment that lands later revives
   assert.deepEqual([paid?.status, paid?.rrn, paid?.completed_at], ["SUCCESS", utr, o.meta.confirmation.at]);
 });
 
+test("a gateway order waits out its confirmation window before it expires; the customer's time stays 15 minutes", opts, async () => {
+  // A gateway that exists nowhere: the status read asks it, gets no answer, and carries on.
+  process.env.PAYIN_CONFIRM_WINDOW_SECONDS_ITESTGW = "1800";
+  try {
+    const id = await order();
+    await rows("vendorGateway", `UPDATE vendor_payin_orders SET meta = COALESCE(meta,'{}'::jsonb) || '{"gateway":{"provider":"ITESTGW"}}'::jsonb WHERE id = $1::uuid`, [id]);
+    const fresh = await readOrderStatus(id);
+    assert.deepEqual([fresh?.status, fresh?.confirming, fresh?.confirm_until], ["PENDING", false, null]);
+
+    await age(id, 20);   // past the customer's 15 minutes, inside the 30-minute window
+    const waiting = await readOrderStatus(id);
+    assert.deepEqual([waiting?.status, waiting?.terminal, waiting?.confirming], ["PENDING", false, true]);
+    assert.ok(waiting?.confirm_until && new Date(waiting.confirm_until).getTime() > Date.now());
+    assert.equal((await row(id)).status, "PENDING");
+
+    await age(id, 46);   // past both
+    const expired = await readOrderStatus(id);
+    assert.deepEqual([expired?.status, expired?.confirming], ["EXPIRED", false]);
+
+    // An order with no gateway has no window, whatever is set.
+    const p2p = await order();
+    await age(p2p, 20);
+    assert.equal((await readOrderStatus(p2p))?.status, "EXPIRED");
+  } finally { delete process.env.PAYIN_CONFIRM_WINDOW_SECONDS_ITESTGW; }
+});
+
 test("a paid order is never expired afterwards, however old it gets", opts, async () => {
   const id = await order();
   assert.equal((await confirm(id, `ITESTUTR${Date.now()}A`)).ok, true);

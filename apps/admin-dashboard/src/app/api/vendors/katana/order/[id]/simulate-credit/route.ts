@@ -14,6 +14,7 @@ import { gateOrResponse } from "@/lib/scope";
 import { orderInScope } from "@/lib/portal-scope";
 import { genRrn, KATANA_TERMINAL } from "@/lib/katana-pay";
 import { ingestTxnAlert } from "@/lib/txn-reconcile";
+import { confirmKatanaOrder } from "@/lib/katana-order";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const cur = await rows<any>("vendorGateway",
-      `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta, livemode FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
+      `SELECT id::text, order_id, merchant_id, customer_vpa, amount::float AS amount, status, meta, livemode, channel_type FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'`, [id]);
     // A merchant or banker login simulates a credit on its own test orders only (lib/portal-scope).
     if (!cur.length || !(await orderInScope(g.session, cur[0].merchant_id)))
       return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -39,6 +40,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const meta = order.meta ?? {};
     const payee = meta.receiver_vpa ?? null;
     const utr = genRrn(order.id);
+    // A test order on the Intent flow is confirmed by its gateway, never by a bank credit (the
+    // reconciler leaves Intent orders alone), so its simulation is the gateway's confirmation.
+    if (order.channel_type === "INTENT") {
+      const c = await confirmKatanaOrder({
+        id: order.id, livemode: false, outcome: "SUCCESS", utr, evidence: "WEBHOOK",
+        actor: `${g.session.email}:simulated`, note: "Simulated gateway confirmation of a test order",
+      });
+      if (!c.ok) return NextResponse.json({ error: c.error }, { status: c.status });
+      return NextResponse.json({ simulated: true, outcome: "CONFIRMED", order_id: order.id, detail: "test order on the Intent flow: confirmed as its gateway would" });
+    }
     const r = await ingestTxnAlert({
       source: "SIMULATED",
       device_id: "sim-device-01",

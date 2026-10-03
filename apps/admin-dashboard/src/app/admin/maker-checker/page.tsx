@@ -145,7 +145,7 @@ export default function MakerCheckerPage() {
             rows={q.data?.pending ?? []}
             loading={q.isLoading}
             rowKey={(r) => r.request_id}
-            emptyState="No pending requests. Trigger one from /providers/[id] (Approve KYC)."
+            emptyState="No pending requests. Trigger one from /merchants/[id] (Approve KYC)."
           />
         </CardContent>
       </Card>

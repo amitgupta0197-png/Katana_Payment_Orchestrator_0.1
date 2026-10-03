@@ -3,7 +3,9 @@
 // (GET /api/v1/p2p/order/{id}, GET /api/v1/intent/order/{id}).
 
 import { rows, pgError } from "@/lib/pg";
-import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS } from "@/lib/katana-pay";
+import {
+  resolveKatanaStatus, orderExpirySeconds, inConfirmWindow, genRrn, KATANA_TERMINAL, autoResolvePaused, PENDING_EXPIRY_SECONDS,
+} from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { checkPayuPayinNow } from "@/lib/payu-result";
 import { checkGatewayPayin } from "@/lib/gateway-payin";
@@ -15,6 +17,9 @@ export interface PayStatusPayload {
   mode: string; deeplinks: unknown; upi_intent: unknown; return_url: string | null;
   merchant_name: string | null; payee_vpa: string | null;
   held: boolean; expires_at: string | null; completed_at: string | null;
+  // The customer's time to pay is over and the order is waiting for its payment processor to
+  // confirm (the confirmation window, lib/katana-pay). `confirm_until` is when it stops waiting.
+  confirming: boolean; confirm_until: string | null;
   livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
   checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): Katana's link to the page the customer pays on
   checkout_methods: "ALL" | "UPI" | null;   // what that page takes: UPI only, or cards / net banking / wallets too
@@ -50,16 +55,20 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
   if (provider && order.livemode !== false && !KATANA_TERMINAL.has(order.status)) {
     // PayU with a Client ID + Secret is asked through its connector, like the other gateways.
     const payuKeySalt = provider === "PAYU" && order.meta?.gateway?.auth !== "client_credentials";
+    // Past the customer's time to pay the order may wait much longer (the confirmation window);
+    // an open page then asks the gateway every 30s, not every 4s.
+    const throttle = order.age_seconds >= PENDING_EXPIRY_SECONDS ? 30 : 4;
     const r = payuKeySalt
-      ? await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, 4).catch(() => ({ applied: false }))
-      : await checkGatewayPayin({ provider, txnid: order.vendor_txn_id, merchantCode: order.merchant_id, source: "pay_page", throttleSec: 4 })
+      ? await checkPayuPayinNow(order.vendor_txn_id, order.merchant_id, throttle).catch(() => ({ applied: false }))
+      : await checkGatewayPayin({ provider, txnid: order.vendor_txn_id, merchantCode: order.merchant_id, source: "pay_page", throttleSec: throttle })
           .catch(() => ({ applied: false }));
     if (r.applied) return readOrderStatus(id);
   }
 
   if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
     const amountMinor = Math.round(Number(order.amount) * 100);
-    const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, order.livemode !== false);
+    const live = order.livemode !== false;
+    const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, live, orderExpirySeconds(order.meta, live));
     if (decision.changed) {
       const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
       // The order was read before the gateway was asked, so it may have been confirmed since.
@@ -82,12 +91,19 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
   const terminal = KATANA_TERMINAL.has(order.status);
   const held = autoResolvePaused(meta);
   const createdAt = order.created_at ? new Date(order.created_at) : null;
+  const live = order.livemode !== false;
+  const ageSeconds = createdAt ? Math.floor((Date.now() - createdAt.getTime()) / 1000) : 0;
+  const confirming = !held && inConfirmWindow(order.status, ageSeconds, meta, live);
   return {
+    confirming,
+    confirm_until: confirming && createdAt
+      ? new Date(createdAt.getTime() + orderExpirySeconds(meta, live) * 1000).toISOString() : null,
     merchant_name: upiParam(meta.upi_intent, "pn") ?? (typeof meta.merchant_name === "string" ? meta.merchant_name : null),
     payee_vpa: upiParam(meta.upi_intent, "pa"),
     held,
     livemode: order.livemode !== false,
-    // Held orders wait for an operator and never expire, so they get no countdown.
+    // Held orders wait for an operator and never expire, so they get no countdown. This is the
+    // customer's time to pay; a gateway order may wait longer for its confirmation (confirm_until).
     expires_at: !terminal && !held && createdAt
       ? new Date(createdAt.getTime() + PENDING_EXPIRY_SECONDS * 1000).toISOString() : null,
     // When the payment was confirmed, where that is recorded: updated_at also moves when the

@@ -36,7 +36,7 @@ export default function MappedMerchantsPage() {
   const cols: Column<Merchant>[] = [
     {
       key: "merchant_code", header: "Code",
-      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline" href={`/merchant-portal/merchants/${r.id}`}>{r.merchant_code}</Link>,
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline" href={`/merchant-portal/bankers/${r.id}`}>{r.merchant_code}</Link>,
     },
     { key: "brand_name", header: "Brand", render: (r) => r.brand_name ?? r.legal_name },
     {

@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LiveActivationCard, useLiveActivation } from "@/components/merchant/live-activation-card";
+import { ServicesNotice } from "@/components/merchant/services";
+import type { MerchantServicesSetting } from "@/lib/merchant-services";
 
 interface Creds { configured: boolean; key?: string; scheme?: string; salt_hint?: string }
 
@@ -27,6 +29,7 @@ interface Integration {
   webhook_url: string; return_url: string;
   endpoints: { base_url: string; create_order: string; pay_page: string; status_enquiry: string };
   schemes: string[];
+  services?: MerchantServicesSetting;
 }
 
 function Copyable({ value, mono = true }: { value: string; mono?: boolean }) {
@@ -128,6 +131,7 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
 
   return (
     <>
+      <ServicesNotice services={d?.services ?? "UNSET"} />
       <PageHeader title="Integration" description="Connect any website to Katana Pay — endpoints, signing, and status callbacks." icon={Plug}
         actions={
           <div className="flex flex-wrap items-center gap-2">

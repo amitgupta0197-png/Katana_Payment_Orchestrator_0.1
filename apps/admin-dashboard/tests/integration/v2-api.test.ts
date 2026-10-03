@@ -276,6 +276,9 @@ test("an order is found by its id, its reference or its bank reference, within s
   assert.deepEqual(await searchOrders(reference, { staff: false, codes: [OTHER] }), []);
   assert.deepEqual(await searchOrders(reference, { staff: false, codes: [] }), []);
   assert.equal((await searchOrders(utr, { staff: true, codes: null })).length, 1);
+  // This order's callback is sent without being awaited. Let it land here, or it arrives in the
+  // next test after that test has emptied `sent` and is read as that test's first delivery.
+  await settle();
 });
 
 test("a test event is sent in the banker's version, belongs to no order and is attempted once", opts, async () => {

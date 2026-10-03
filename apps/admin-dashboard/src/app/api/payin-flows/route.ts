@@ -4,6 +4,10 @@
 // with the flow in force for it: its own when it has one, else its merchant's. A merchant or
 // banker on BOTH counts under P2P and under Intent, because it is set up for each.
 //
+// A merchant onboarded for payouts only (lib/merchant-services) takes no pay-ins and has no
+// flow: it and its bankers are left out, and counted in `payout_only`, rather than shown as
+// "not selected".
+//
 // ?flow=P2P|INTENT narrows both lists to those on that flow (BOTH included).
 //
 // SUPER_ADMIN only.
@@ -26,7 +30,7 @@ export async function GET(req: Request) {
   const only = parseOrderFlow(new URL(req.url).searchParams.get("flow"));
 
   try {
-    const [providers, maps, merchants, own] = await Promise.all([
+    const [providers, maps, merchants, own, payoutOnly] = await Promise.all([
       rows<{ id: string; code: string; legal_name: string; status: string; payin_flow: string; payin_active_flow: string | null; payin_flow_set_at: string | null }>("provider", `
         SELECT id::text, code, legal_name, status, payin_flow, payin_active_flow, payin_flow_set_at
           FROM providers ORDER BY legal_name
@@ -41,7 +45,10 @@ export async function GET(req: Request) {
       rows<{ merchant_code: string; payin_flow: string; payin_active_flow: string | null }>("merchant", `
         SELECT merchant_code, payin_flow, payin_active_flow FROM merchant_payment_config WHERE payin_flow <> 'UNSET'
       `).catch(() => []),
+      // Its own query: a database without the column yet has no pay-out only merchants.
+      rows<{ id: string }>("provider", `SELECT id::text FROM providers WHERE services = 'PAYOUT'`).catch(() => []),
     ]);
+    const noPayin = new Set(payoutOnly.map((p) => p.id));
 
     const providerFlow = new Map<string, MerchantFlow>(providers.map((p) => [p.id, merchantFlowOf(p.payin_flow, p.payin_active_flow)]));
     const providerName = new Map(providers.map((p) => [p.id, p.legal_name]));
@@ -51,7 +58,7 @@ export async function GET(req: Request) {
     const ownFlow = new Map<string, MerchantFlow>(own.map((o) => [o.merchant_code, merchantFlowOf(o.payin_flow, o.payin_active_flow)]));
     const ready = await flowReadiness(merchants.map((m) => m.merchant_code));
 
-    const bankers = merchants.map((m) => {
+    const allBankers = merchants.map((m) => {
       const providerId = providerOfBanker.get(m.id) ?? providerOfBanker.get(m.merchant_code) ?? null;
       const mine = ownFlow.get(m.merchant_code);
       const parent = providerId ? providerFlow.get(providerId) : undefined;
@@ -65,7 +72,9 @@ export async function GET(req: Request) {
       };
     });
 
-    const merchantRows = providers.map((p) => {
+    const bankers = allBankers.filter((b) => !(b.provider_id && noPayin.has(b.provider_id)));
+
+    const merchantRows = providers.filter((p) => !noPayin.has(p.id)).map((p) => {
       const f = providerFlow.get(p.id)!;
       return {
         id: p.id, code: p.code, name: p.legal_name, status: p.status,
@@ -79,6 +88,9 @@ export async function GET(req: Request) {
     for (const b of bankers) counts.bankers[b.flow]++;
 
     const on = <T extends MerchantFlow>(list: T[]) => (only ? list.filter((x) => isOnFlow(x, only)) : list);
-    return NextResponse.json({ flow: only, counts, merchants: on(merchantRows), bankers: on(bankers) });
+    return NextResponse.json({
+      flow: only, counts, merchants: on(merchantRows), bankers: on(bankers),
+      payout_only: { merchants: noPayin.size, bankers: allBankers.length - bankers.length },
+    });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

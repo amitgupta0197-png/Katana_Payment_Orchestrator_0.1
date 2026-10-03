@@ -8,7 +8,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { orderInScope } from "@/lib/portal-scope";
 import { seesGatewayNames } from "@/lib/merchant-safe";
-import { resolveKatanaStatus, genRrn, KATANA_TERMINAL, autoResolvePaused } from "@/lib/katana-pay";
+import { resolveKatanaStatus, orderExpirySeconds, genRrn, KATANA_TERMINAL, autoResolvePaused } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     let order = found[0];
     if (!autoResolvePaused(order.meta)) { // high-amount holds + proofs await manual review
       const amountMinor = Math.round(Number(order.amount) * 100);
-      const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, order.livemode !== false);
+      const live = order.livemode !== false;
+      const decision = resolveKatanaStatus(order.status, amountMinor, order.age_seconds, live, orderExpirySeconds(order.meta, live));
       if (decision.changed) {
         const rrn = decision.status === "SUCCESS" ? genRrn(order.id) : null;
         const upd = await rows<any>("vendorGateway", `

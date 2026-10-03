@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatDateTime } from "@/lib/utils";
+import { ReadinessPreview } from "@/components/merchant/readiness";
 import {
   ORDER_FLOWS, PAYIN_FLOWS, PAYIN_FLOW_HINT, PAYIN_FLOW_LABEL,
   type MerchantFlow, type OrderFlow, type PayinFlow, type PayinFlowSetting,
@@ -23,9 +24,9 @@ import {
 type Variant = "brand" | "info" | "success" | "default";
 const VARIANT: Record<PayinFlowSetting, Variant> = { INTENT: "brand", P2P: "info", BOTH: "success", UNSET: "default" };
 
-/** "P2P", "Intent", "Both · Intent in use", "Not selected". */
+/** "P2P", "Intent", "Both · Intent by default", "Not selected". */
 export function flowText(f: MerchantFlow): string {
-  return f.flow === "BOTH" && f.active ? `Both · ${PAYIN_FLOW_LABEL[f.active]} in use` : PAYIN_FLOW_LABEL[f.flow];
+  return f.flow === "BOTH" && f.active ? `Both · ${PAYIN_FLOW_LABEL[f.active]} by default` : PAYIN_FLOW_LABEL[f.flow];
 }
 
 export function FlowBadge({ flow, active }: { flow: PayinFlowSetting; active?: OrderFlow | null }) {
@@ -128,7 +129,7 @@ export function FlowSelectDialog({ target, current, inherited, open, onOpenChang
 
         {flow === "BOTH" && (
           <div className="space-y-1.5">
-            <Label>Flow in use</Label>
+            <Label>Default flow</Label>
             <div className="grid grid-cols-2 gap-2">
               {ORDER_FLOWS.map((f) => (
                 <button key={f} type="button" aria-pressed={active === f} onClick={() => setActive(f)}
@@ -141,9 +142,14 @@ export function FlowSelectDialog({ target, current, inherited, open, onOpenChang
               ))}
             </div>
             <p className="text-xs text-[color:var(--color-text-muted)]">
-              Orders created on the general order API take this flow. The P2P and Intent APIs can each still be called directly.
+              The P2P and Intent order APIs always use their own flow. The general order API and v2 don't name one, so they use this.
             </p>
           </div>
+        )}
+
+        {/* A merchant's flow reaches every banker under it: say which would not be ready (staff only). */}
+        {target.kind === "merchant" && (
+          <ReadinessPreview providerId={target.id} flow={flow} active={active} enabled={open && valid && !unchanged} />
         )}
 
         <div className="space-y-1.5">

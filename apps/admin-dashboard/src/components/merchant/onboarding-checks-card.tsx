@@ -13,6 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDateTime } from "@/lib/utils";
+import { ServicesBadge } from "@/components/merchant/services";
+import { FlowBadge } from "@/components/payin/flow";
+import type { MerchantServicesSetting } from "@/lib/merchant-services";
+import type { OrderFlow, PayinFlowSetting } from "@/lib/payin-flow";
 
 const FIELDS = [
   { key: "gstin", label: "GSTIN", placeholder: "15 characters" },
@@ -28,7 +32,14 @@ type Key = (typeof FIELDS)[number]["key"];
 type Form = Record<Key, string>;
 
 interface Gate { id: string; gate: string; result: "PASS" | "REVIEW" | "FAIL"; detail: { summary?: string }; overridden_by: string | null; checked_at: string }
-interface Data { details: Record<Key, string | null>; gates: Gate[]; required_documents: string[]; strict: boolean }
+interface SetupItem { key: string; label: string; state: "DONE" | "MISSING" | "OPTIONAL_MISSING"; hint: string }
+interface Setup {
+  services: MerchantServicesSetting; flow: { flow: PayinFlowSetting; active: OrderFlow | null };
+  provider_id: string | null; items: SetupItem[]; result: "PASS" | "REVIEW" | "FAIL"; summary: string;
+}
+interface Data { details: Record<Key, string | null>; gates: Gate[]; required_documents: string[]; strict: boolean; setup?: Setup | null }
+
+const SETUP_BADGE = { DONE: ["success", "Done"], MISSING: ["danger", "Needed"], OPTIONAL_MISSING: ["warning", "Optional"] } as const;
 
 const VARIANT = { PASS: "success", REVIEW: "warning", FAIL: "danger" } as const;
 const EMPTY = Object.fromEntries(FIELDS.map((f) => [f.key, ""])) as Form;
@@ -89,6 +100,28 @@ export function OnboardingChecksCard({ merchantId }: { merchantId: string }) {
         <div className="flex justify-end">
           <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !q.data}>{save.isPending ? "Saving…" : "Save details"}</Button>
         </div>
+        {q.data?.setup && (
+          <div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="font-medium">Onboarded for</span>
+              <ServicesBadge services={q.data.setup.services} />
+              {q.data.setup.services !== "PAYOUT" && <FlowBadge flow={q.data.setup.flow.flow} active={q.data.setup.flow.active} />}
+              <span className="text-xs text-[color:var(--color-text-muted)]">
+                {q.data.setup.provider_id ? "Selected on the merchant this banker belongs to." : "This banker is not mapped under a merchant."}
+              </span>
+            </div>
+            <div className="mb-1 text-xs text-[color:var(--color-text-muted)]">Needed before go-live (checked again when Approval is advanced):</div>
+            <ul className="space-y-1.5">
+              {q.data.setup.items.map((i) => (
+                <li key={i.key} className="flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant={SETUP_BADGE[i.state][0]}>{SETUP_BADGE[i.state][1]}</Badge>
+                  <span className="font-medium">{i.label}</span>
+                  {i.state !== "DONE" && <span className="min-w-0 flex-1 text-[color:var(--color-text-muted)]">{i.hint}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div>
           <div className="mb-2 font-medium">Checks run by the system</div>
           {gates.length === 0 ? (

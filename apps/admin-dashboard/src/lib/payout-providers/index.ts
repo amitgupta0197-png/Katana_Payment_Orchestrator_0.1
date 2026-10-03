@@ -7,6 +7,7 @@ import { razorpayConnector } from "@/lib/payout-providers/razorpay";
 import { cashfreeConnector } from "@/lib/payout-providers/cashfree";
 import { paytmConnector } from "@/lib/payout-providers/paytm";
 import { ismartpayConnector } from "@/lib/payout-providers/ismartpay";
+import { sandboxConnector, SANDBOX_PAYOUT } from "@/lib/payout-providers/sandbox";
 import type { PayoutConnector } from "@/lib/payout-providers/types";
 
 export type AnyConnector = PayoutConnector<{ env: GatewayEnv }>;
@@ -22,6 +23,7 @@ const CONNECTORS: Partial<Record<GatewayId, AnyConnector>> = {
 export const PAYOUT_PROVIDERS = Object.keys(CONNECTORS) as GatewayId[];
 
 export function payoutConnector(id: string | null | undefined): AnyConnector | null {
+  if (id === SANDBOX_PAYOUT) return sandboxConnector as unknown as AnyConnector;
   return (id && CONNECTORS[id as GatewayId]) || null;
 }
 
@@ -42,6 +44,11 @@ export async function activePayoutProvider(merchantCode: string): Promise<Active
   return creds ? { connector, creds } : null;
 }
 
+/** Katana's payout sandbox (lib/payout-providers/sandbox): a test payout with no gateway sandbox to go to. */
+export function sandboxPayout(): ActivePayout {
+  return { connector: sandboxConnector as unknown as AnyConnector, creds: { env: "TEST" } };
+}
+
 /** Credentials for a specific gateway, only if it is still the merchant's payout gateway. */
 export async function providerCreds(provider: string, merchantCode: string): Promise<ActivePayout | null> {
   const connector = payoutConnector(provider);
@@ -51,4 +58,5 @@ export async function providerCreds(provider: string, merchantCode: string): Pro
 }
 
 export { prodEnabled, payoutWebhookUrlFor } from "@/lib/payout-providers/types";
+export { SANDBOX_PAYOUT } from "@/lib/payout-providers/sandbox";
 export type { PayoutRail, TransferState } from "@/lib/payout-providers/types";

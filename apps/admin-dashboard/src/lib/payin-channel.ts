@@ -43,5 +43,8 @@ export function classifyPayinOrder(gatewayProvider: string | null | undefined): 
   return { type: "P2P", id: P2P_CHANNEL_ID };
 }
 
+/** The rail of a TEST order on the Intent flow: no gateway is called, the sandbox takes it. */
+export const SANDBOX_CHANNEL_ID = "SANDBOX";
+
 // checkout_orders are taken by a payment gateway by construction, so they are INTENT.
 export const CHECKOUT_ORDER_CHANNEL: PayinChannel = "INTENT";

@@ -63,9 +63,10 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
     mutationFn: async (orderId: string) => {
       const r = await fetch(`/api/vendors/katana/order/${orderId}/refresh`, { method: "POST" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
-      return r.json() as Promise<{ status: string; changed: boolean }>;
+      return r.json() as Promise<{ status: string; changed: boolean; note?: string }>;
     },
-    onSuccess: (d) => { toast[d.changed ? "success" : "info"](`Status: ${d.status}`); qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] }); },
+    // `note`: what the gateway answered when a gateway order did not change.
+    onSuccess: (d) => { toast[d.changed ? "success" : "info"](`Status: ${d.status}`, d.note ? { description: d.note, duration: 12000 } : undefined); qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] }); },
     onError: (e: Error) => toast.error("Refresh failed", { description: e.message }),
   });
 
@@ -183,7 +184,7 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     { key: "status", header: "Status", render: (o) => <Badge variant={statusVariant(o.status)}>{o.status}</Badge> },
     { key: "mode", header: "Mode", render: (o) => o.source === "checkout" ? `Hosted checkout${o.vendor !== "CHECKOUT" ? ` · ${railLabel(o.vendor)}` : ""}` : o.mode === "QR" ? "QR" : "deeplink" },
     { key: "active_vpa", header: "Payee VPA", render: (o) => o.active_vpa ? <span className="font-mono text-xs">{o.active_vpa}</span> : "—" },
-    { key: "rrn", header: "UTR / RRN", render: (o) => o.rrn ? <span className="font-mono text-xs">{o.rrn}</span> : "—" },
+    { key: "rrn", header: "UTR (bank reference)", render: (o) => o.rrn ? <span className="font-mono text-xs">{o.rrn}</span> : "—" },
     { key: "sub_mid_code", header: "Sub-MID", render: (o) => o.sub_mid_code || "—" },
     { key: "created_at", header: "Date", render: (o) => formatDateTime(o.created_at) },
   ];
@@ -240,7 +241,7 @@ export function MerchantCapturedCreditsCard({ merchantId }: { merchantId: string
   const cols: Column<CapturedCredit>[] = [
     { key: "received_at", header: "Received", render: (c) => formatDateTime(c.received_at) },
     { key: "amount", header: "Amount", render: (c) => formatAmount(c.amount, "INR") },
-    { key: "utr", header: "UTR / RRN", render: (c) => c.utr ? <span className="font-mono text-xs">{c.utr}</span> : "—" },
+    { key: "utr", header: "UTR (bank reference)", render: (c) => c.utr ? <span className="font-mono text-xs">{c.utr}</span> : "—" },
     { key: "app", header: "App", render: (c) => c.app },
     { key: "payer_name", header: "Payer", render: (c) => c.payer_name || "—" },
     {

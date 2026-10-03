@@ -1,316 +1,190 @@
 "use client";
 
+// L1 — world-class providers list. Composes DataView (search/filter/density/
+// columns/saved-views/bulk/FAB) + RowActions (kebab) + EmptyState.
+
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Store, Plus, ChevronRight, ExternalLink, Link2, Copy, KeyRound } from "lucide-react";
+import { UserPlus, Plus, Pencil, Archive, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Column } from "@/components/ui/data-table";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
 import { DataView } from "@/components/world-class/data-view";
-import { RowActions } from "@/components/world-class/row-actions";
-import { AssignProviderDialog } from "@/components/merchant/assign-provider";
+import { RowActions, ACT } from "@/components/world-class/row-actions";
 import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
+import { ServicesBadge } from "@/components/merchant/services";
+import { MerchantWizard } from "@/components/merchant/onboarding-wizard";
+import { FlowBadge } from "@/components/payin/flow";
+import type { MerchantServicesSetting } from "@/lib/merchant-services";
+import type { OrderFlow, PayinFlowSetting } from "@/lib/payin-flow";
 
-interface Merchant {
-  id: string; merchant_code: string; legal_name: string; brand_name?: string;
-  business_type?: string; category_mcc?: string; contact_email: string;
-  stage: string; risk_tier?: string; created_at: string;
+interface Provider {
+  services?: MerchantServicesSetting; payin_flow?: PayinFlowSetting; payin_active_flow?: OrderFlow | null;
+  id: string; code: string; legal_name: string; contact_email: string;
+  kind: string; kyc_status: string; status: string; settlement_currency: string;
+  user_count: number; doc_count: number; merchant_count: number; created_at: string;
 }
-interface FunnelRow { stage: string; n: number }
 
-function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean; onOpenChange?: (o: boolean) => void } = {}) {
+export default function ProvidersPage() {
   const qc = useQueryClient();
-  const [internalOpen, setInternalOpen] = useState(false);
-  const open = controlledOpen ?? internalOpen;
-  const setOpen = onOpenChange ?? setInternalOpen;
-  const [form, setForm] = useState({
-    merchant_code: "M-NEW", legal_name: "New Merchant Pvt Ltd",
-    brand_name: "", business_type: "PRIVATE_LIMITED", category_mcc: "5411",
-    contact_email: "ops@newmerchant.example", contact_phone: "9999900000",
-    website: "https://newmerchant.example", registered_address: "Mumbai, India",
-    provider_id: "",
-  });
-  // Providers to map this merchant under (SUPER_ADMIN sees all; PROVIDER sees only its own).
-  const providersQ = useQuery({
+  const canCreate = useCan("providers", "create");
+  const canUpdate = useCan("providers", "update");
+  const canDelete = useCan("providers", "delete");
+  const [createOpen, setCreateOpen] = useState(false);
+  const sp = useSearchParams();
+
+  // Cmd+K "New merchant" deep-link.
+  useEffect(() => { if (sp.get("new") === "1" && canCreate) setCreateOpen(true); }, [sp, canCreate]);
+
+  const q = useQuery({
     queryKey: ["providers"],
-    enabled: open,
-    queryFn: async () => {
-      const r = await fetch("/api/providers");
-      if (!r.ok) return { providers: [] as { id: string; code: string; legal_name: string }[] };
-      return (await r.json()) as { providers: { id: string; code: string; legal_name: string }[] };
-    },
+    queryFn: async () => (await fetch("/api/providers").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { providers: Provider[] },
   });
-  const providers = providersQ.data?.providers ?? [];
-  // Holds the login credentials returned by the create call so the admin can copy
-  // and share them with the new merchant (the password is shown only once).
-  const [created, setCreated] = useState<null | { merchant_code: string; login?: { email: string; password: string | null; existing: boolean } }>(null);
-  const closeAll = () => { setCreated(null); setOpen(false); };
-  const m = useMutation({
-    mutationFn: async () => {
-      const r = await fetch("/api/merchants", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, provider_id: form.provider_id || undefined }),
+
+  const patch = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: Record<string, unknown> }) => {
+      const r = await fetch(`/api/providers/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");
       return r.json();
     },
-    onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["merchants"] });
-      if (d?.login?.password) {
-        toast.success("Banker onboarded — share the login below");
-        setCreated(d);
-      } else {
-        toast.success(d?.login?.existing ? "Banker onboarded — login already existed for this email" : "Banker onboarded — APPLICATION stage");
-        setOpen(false);
-      }
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["providers"] }),
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
-  const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
 
-  if (created?.login) {
-    const { email, password } = created.login;
-    return (
-      <Dialog open={open} onOpenChange={(o) => { if (!o) closeAll(); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Banker login created</DialogTitle>
-            <DialogDescription>
-              Share these credentials with the banker. The password is shown <strong>only once</strong> — copy it now.
-              They can change it later under Profile → Change password.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Login URL</Label>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs">{typeof window !== "undefined" ? window.location.origin : ""}/login</code>
-                <Button size="sm" variant="ghost" onClick={() => copy(`${window.location.origin}/login`)}><Copy className="h-4 w-4" /></Button>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Email</Label>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs">{email}</code>
-                <Button size="sm" variant="ghost" onClick={() => copy(email)}><Copy className="h-4 w-4" /></Button>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Temporary password</Label>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded-md border bg-[color:var(--color-surface-muted)] px-2 py-1.5 text-xs font-semibold">{password}</code>
-                <Button size="sm" variant="ghost" onClick={() => copy(password!)}><Copy className="h-4 w-4" /></Button>
-              </div>
-            </div>
-            <Button variant="secondary" className="w-full" onClick={() => copy(`Katana login\nURL: ${window.location.origin}/login\nEmail: ${email}\nPassword: ${password}`)}>
-              <Copy className="h-4 w-4" /> Copy all
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button onClick={closeAll}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  // BULK ACTIONS RUN PER ROW, and report per row.
+  //
+  // There is no batch endpoint, and inventing one would hide the interesting part: some rows
+  // legitimately refuse. A delete is declined for an APPROVED merchant or one carrying settlement
+  // history (the API answers 409 with a reason), so "18 selected" can end as "15 deleted, 3
+  // skipped" — and the operator has to be told which, or they will assume it all worked.
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const runBulk = async (
+    ids: string[],
+    verb: string,
+    run: (id: string) => Promise<Response>,
+  ) => {
+    setBulkBusy(true);
+    const skipped: string[] = [];
+    let done = 0;
+    // Sequential: 18 concurrent writes against one Postgres pool is how you turn a tidy-up into
+    // an outage, and the list is small enough that it costs a second.
+    for (const id of ids) {
+      try {
+        const r = await run(id);
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) done++;
+        else skipped.push(`${d.code ?? id.slice(0, 8)}: ${d.error ?? `HTTP ${r.status}`}`);
+      } catch (e) {
+        skipped.push(`${id.slice(0, 8)}: ${(e as Error).message}`);
+      }
+    }
+    setBulkBusy(false);
+    qc.invalidateQueries({ queryKey: ["providers"] });
+    if (done && !skipped.length) toast.success(`${done} merchant${done === 1 ? "" : "s"} ${verb}`);
+    else if (done) toast.warning(`${done} ${verb}, ${skipped.length} skipped`, { description: skipped.slice(0, 4).join(" · ") });
+    else toast.error(`Nothing ${verb}`, { description: skipped.slice(0, 4).join(" · ") });
+  };
 
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {controlledOpen === undefined && (
-        <DialogTrigger asChild><Button><Plus /> Onboard banker</Button></DialogTrigger>
-      )}
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Onboard banker — Step 1: Application</DialogTitle>
-          <DialogDescription>
-            Per PRODUCT_VISION §2.2 step 1. Stage starts at APPLICATION. KYB documents,
-            screening, bank verification, config, and approval happen in subsequent stages.
-            A banker login is created automatically.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Banker code</Label>
-            <Input value={form.merchant_code} onChange={(e) => setForm({ ...form, merchant_code: e.target.value.toUpperCase() })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Brand name</Label>
-            <Input value={form.brand_name} onChange={(e) => setForm({ ...form, brand_name: e.target.value })} placeholder="(optional)" />
-          </div>
-          <div className="space-y-1.5 col-span-2">
-            <Label>Legal name</Label>
-            <Input value={form.legal_name} onChange={(e) => setForm({ ...form, legal_name: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Business type</Label>
-            <select
-              className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-              value={form.business_type}
-              onChange={(e) => setForm({ ...form, business_type: e.target.value })}
-            >
-              {["PRIVATE_LIMITED","PUBLIC_LIMITED","LLP","PARTNERSHIP","SOLE_PROPRIETOR","TRUST"].map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>MCC</Label>
-            <Input value={form.category_mcc} onChange={(e) => setForm({ ...form, category_mcc: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Contact email</Label>
-            <Input type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Contact phone</Label>
-            <Input value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} />
-          </div>
-          <div className="space-y-1.5 col-span-2">
-            <Label>Website</Label>
-            <Input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
-          </div>
-          <div className="space-y-1.5 col-span-2">
-            <Label>Registered address</Label>
-            <Input value={form.registered_address} onChange={(e) => setForm({ ...form, registered_address: e.target.value })} />
-          </div>
-          <div className="space-y-1.5 col-span-2">
-            <Label>Merchant <span className="font-normal text-[color:var(--color-text-muted)]">— map this branch under a provider for traceability (optional)</span></Label>
-            <select
-              className="flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]"
-              value={form.provider_id}
-              onChange={(e) => setForm({ ...form, provider_id: e.target.value })}
-            >
-              <option value="">— Direct (no provider) —</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>{p.code} — {p.legal_name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Creating…" : "Submit application"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"] as const;
-
-export default function MerchantsPage() {
-  const canCreate = useCan("merchants", "create");
-  const canAssignProvider = useCan("providers", "create"); // assign endpoint is super-admin only
-  const sp = useSearchParams();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [assignFor, setAssignFor] = useState<Merchant | null>(null);
-
-  useEffect(() => { if (sp.get("new") === "1" && canCreate) setCreateOpen(true); }, [sp, canCreate]);
-
-  const q = useQuery({
-    queryKey: ["merchants"],
-    queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[]; funnel: FunnelRow[] },
-  });
-
-  const cols: Column<Merchant>[] = [
-    { key: "merchant_code", header: "Code",
-      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/merchants/${r.id}`}>{r.merchant_code}</Link> },
-    { key: "legal_name", header: "Legal name" },
-    { key: "business_type", header: "Type", render: (r) => r.business_type ?? "—" },
+  const cols: Column<Provider>[] = [
+    { key: "code", header: "Code",
+      render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/merchants/${r.id}`}>{r.code}</Link> },
+    { key: "legal_name", header: "Legal name",
+      render: (r) => <Link className="hover:underline" href={`/merchants/${r.id}`}>{r.legal_name}</Link> },
+    { key: "kind", header: "Kind" },
+    { key: "services", header: "Services", render: (r) => <ServicesBadge services={r.services ?? "UNSET"} /> },
+    { key: "payin_flow", header: "Pay-in flow",
+      render: (r) => r.services === "PAYOUT" ? <span className="text-[color:var(--color-text-muted)]">—</span>
+        : <FlowBadge flow={r.payin_flow ?? "UNSET"} active={r.payin_active_flow} /> },
+    { key: "kyc_status", header: "KYC", render: (r) => <Badge variant={statusVariant(r.kyc_status)}>{r.kyc_status}</Badge> },
+    { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+    { key: "merchant_count", header: "Bankers" },
     { key: "contact_email", header: "Contact" },
-    { key: "risk_tier", header: "Risk", render: (r) => r.risk_tier ? <Badge variant={statusVariant(r.risk_tier)}>{r.risk_tier}</Badge> : "—" },
-    { key: "stage", header: "Stage", render: (r) => <Badge variant={statusVariant(r.stage)}>{r.stage}</Badge> },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
 
-  const funnel = q.data?.funnel ?? [];
-  const allMerchants = q.data?.merchants ?? [];
+  const rows = q.data?.providers ?? [];
 
   return (
     <>
       <PageHeader
-        title="Bankers"
-        description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
-        icon={Store}
+        title="Merchants"
+        description="Sub-admin reseller entities and their KYC lifecycle (PRODUCT_VISION §3.1)."
+        icon={UserPlus}
       />
-      {funnel.length > 0 && (
-        <Card className="mb-4">
-          <CardHeader>
-            <CardTitle className="text-base">Onboarding funnel</CardTitle>
-            <CardDescription>Quick visual of where bankers sit. Use filter chips below the toolbar to drill in.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              {STAGE_ORDER.map((stage) => {
-                const row = funnel.find((f) => f.stage === stage);
-                const n = row?.n ?? 0;
-                return (
-                  <div key={stage} className="rounded-md border p-3">
-                    <Badge variant={statusVariant(stage)}>{stage}</Badge>
-                    <div className="mt-1 text-xl font-semibold tabular-nums">{n}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
       <DataView
-        rows={allMerchants}
+        rows={rows}
         columns={cols}
         rowKey={(r) => r.id}
         loading={q.isLoading}
+        search={{ placeholder: "Search by code, name, contact…", fields: ["code", "legal_name", "contact_email"] }}
+        filters={[
+          { key: "kyc:pending",  label: "KYC pending",   predicate: (r) => r.kyc_status === "PENDING" || r.kyc_status === "IN_REVIEW" },
+          { key: "kyc:approved", label: "KYC approved",  predicate: (r) => r.kyc_status === "APPROVED" },
+          { key: "kyc:rejected", label: "KYC rejected",  predicate: (r) => r.kyc_status === "REJECTED" },
+          { key: "active",       label: "Active",        predicate: (r) => r.status === "ACTIVE" },
+          { key: "suspended",    label: "Suspended",     predicate: (r) => r.status === "SUSPENDED" },
+          { key: "svc:payin",    label: "Takes pay-ins", predicate: (r) => r.services === "PAYIN" || r.services === "BOTH" },
+          { key: "svc:payout",   label: "Sends payouts", predicate: (r) => r.services === "PAYOUT" || r.services === "BOTH" },
+          { key: "svc:unset",    label: "Nothing selected", predicate: (r) => (r.services ?? "UNSET") === "UNSET" },
+        ]}
         href={(r) => `/merchants/${r.id}`}
-        search={{ placeholder: "Search by code, name, contact…", fields: ["merchant_code", "legal_name", "contact_email", "business_type"] }}
-        filters={STAGE_ORDER.map((s) => ({ key: s, label: s, predicate: (r: Merchant) => r.stage === s }))}
-        modes={["table", "kanban"]}
-        kanbanColumn={(r) => r.stage}
-        kanbanColumns={STAGE_ORDER.map((s) => ({ key: s, label: s }))}
-        renderCard={(r) => (
-          <Link href={`/merchants/${r.id}`} className="block rounded-md border bg-[color:var(--color-surface)] p-2 text-sm hover:bg-[color:var(--color-surface-muted)]">
-            <div className="flex items-center justify-between">
-              <Badge variant="brand">{r.merchant_code}</Badge>
-              {r.risk_tier && <Badge variant={statusVariant(r.risk_tier)}>{r.risk_tier}</Badge>}
-            </div>
-            <div className="mt-1 truncate font-medium">{r.legal_name}</div>
-            <div className="mt-0.5 truncate text-xs text-[color:var(--color-text-muted)]">{r.contact_email}</div>
-          </Link>
-        )}
-        fab={canCreate ? { label: "Onboard banker", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
+        fab={canCreate ? { label: "Merchant", icon: Plus, onClick: () => setCreateOpen(true) } : undefined}
         refresh={() => q.refetch()}
-        savedViewKey="merchants"
-        emptyTitle="No bankers onboarded yet"
-        emptyDescription="Submit the first application to kick off the 6-stage pipeline."
+        savedViewKey="providers"
+        emptyTitle="No merchants yet"
+        emptyDescription="Onboard your first reseller to start the KYC lifecycle."
+        bulkActions={canUpdate || canDelete ? [
+          ...(canUpdate ? [{ label: "Suspend", icon: Archive, variant: "secondary" as const, disabled: bulkBusy,
+            onClick: (ids: string[]) => {
+              if (!ids.length) return;
+              if (!confirm(`Suspend ${ids.length} merchant${ids.length === 1 ? "" : "s"}? They stop transacting until reactivated.`)) return;
+              runBulk(ids, "suspended", (id) => fetch(`/api/providers/${id}`, {
+                method: "PATCH", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "SUSPENDED" }),
+              }));
+            } }] : []),
+          ...(canDelete ? [{ label: "Delete", icon: Trash2, variant: "danger" as const, disabled: bulkBusy,
+            onClick: (ids: string[]) => {
+              if (!ids.length) return;
+              // Named codes, not just a count: this is irreversible, and "18 selected" is easy to
+              // mis-read after filtering. Approved merchants and any row with settlement history
+              // are refused by the API and reported back as skipped.
+              const codes = rows.filter((r) => ids.includes(r.id)).map((r) => r.code);
+              const shown = codes.slice(0, 8).join(", ") + (codes.length > 8 ? `, +${codes.length - 8} more` : "");
+              if (!confirm(
+                `Permanently delete ${ids.length} merchant${ids.length === 1 ? "" : "s"}?\n\n${shown}\n\n`
+                + "This cannot be undone. Their bankers are unmapped but not deleted. "
+                + "Merchants with approved KYC or settlement history will be skipped — terminate those instead.",
+              )) return;
+              runBulk(ids, "deleted", (id) => fetch(`/api/providers/${id}`, { method: "DELETE" }));
+            } }] : []),
+        ] : []}
         rowActions={(r) => (
           <RowActions
             openHref={`/merchants/${r.id}`}
             actions={[
-              { label: "Open detail", icon: ExternalLink, onClick: () => (window.location.href = `/merchants/${r.id}`) },
-              ...(canAssignProvider ? [{ label: "Assign banker", icon: Link2, onClick: () => setAssignFor(r) }] : []),
+              ...(canUpdate ? [ACT.edit(() => (window.location.href = `/merchants/${r.id}?tab=settings`))] : []),
+              ...(canUpdate && r.status === "ACTIVE"
+                ? [{ label: "Suspend", icon: Archive, onClick: () => patch.mutate({ id: r.id, body: { status: "SUSPENDED" } }) }]
+                : canUpdate && r.status === "SUSPENDED"
+                ? [{ label: "Reactivate", icon: Pencil, onClick: () => patch.mutate({ id: r.id, body: { status: "ACTIVE" } }) }]
+                : []),
+              ...(canDelete ? [ACT.remove(() => {
+                if (confirm(`Terminate ${r.code}? This is reversible via reactivate.`))
+                  patch.mutate({ id: r.id, body: { status: "TERMINATED" } });
+              })] : []),
             ]}
           />
         )}
       />
-      <OnboardDialog open={createOpen} onOpenChange={setCreateOpen} />
-      {assignFor && (
-        <AssignProviderDialog
-          merchantId={assignFor.id}
-          merchantCode={assignFor.merchant_code}
-          open={!!assignFor}
-          onOpenChange={(o) => { if (!o) setAssignFor(null); }}
-        />
-      )}
+      <MerchantWizard mode="create" open={createOpen} onOpenChange={setCreateOpen} />
     </>
   );
 }

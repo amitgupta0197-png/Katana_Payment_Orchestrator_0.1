@@ -21,6 +21,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 import { TestEventButton } from "@/components/portal/test-event-button";
+import { usePortal } from "@/components/portal/portal-frame";
+import { PaymentStatus } from "@/components/portal/plain-status";
+import { PaidButton } from "@/components/portal/paid-button";
+
+/** A merchant or banker reads Paid / Waiting / Failed / Expired; staff keep the v2 words. */
+function DeskStatus({ status }: { status: string }) {
+  return usePortal() ? <PaymentStatus status={status} /> : <Badge variant={statusVariant(status)}>{status}</Badge>;
+}
 
 interface Hit {
   id: string; order_id: string; reference: string; status: string; amount: number;
@@ -58,9 +66,10 @@ export function OrderSearch({ base }: { base: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
+  // Before anything is searched, the newest orders.
   const res = useQuery({
     queryKey: ["order-desk:search", q],
-    enabled: q.length >= 3,
+    enabled: q.length >= 3 || q === "",
     queryFn: () => getJson<{ orders: Hit[] }>(`/api/portal/orders?q=${encodeURIComponent(q)}`),
   });
   const hits = res.data?.orders ?? [];
@@ -72,30 +81,32 @@ export function OrderSearch({ base }: { base: string }) {
   return (
     <>
       <PageHeader title="Orders" icon={Search}
-        description="Find any order by its Katana order id, your own reference, or the bank reference (RRN)." />
+        description="Your newest orders. Search by your order number, Katana's order id or the bank reference (UTR)." />
       <Card>
         <CardContent className="pt-6">
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); setQ(text.trim()); }}>
             <Input autoFocus value={text} onChange={(e) => setText(e.target.value)}
-              placeholder="KTN_…  ·  your reference  ·  12-digit RRN" aria-label="Order id, reference or bank reference" />
+              placeholder="Order number, KTN_… or 12-digit UTR" aria-label="Order number, order id or bank reference" />
             <Button type="submit" disabled={text.trim().length < 3}><Search className="h-4 w-4" /> Search</Button>
           </form>
-          {q.length >= 3 && (
+          {(q.length >= 3 || q === "") && (
             <div className="mt-4">
+              {q === "" && hits.length > 0 && <p className="mb-2 text-sm text-[color:var(--color-text-muted)]">Newest orders</p>}
               {res.isLoading ? <p className="text-sm text-[color:var(--color-text-muted)]">Searching…</p>
                 : res.error ? <p className="text-sm text-[color:var(--color-danger)]">{(res.error as Error).message}</p>
-                : hits.length === 0 ? <p className="text-sm text-[color:var(--color-text-muted)]">No order matches “{q}”.</p>
+                : hits.length === 0 ? <p className="text-sm text-[color:var(--color-text-muted)]">{q ? `No order matches “${q}”.` : "No orders yet."}</p>
                 : (
                   <ul className="divide-y divide-[color:var(--color-border)] rounded-md border">
                     {hits.map((h) => (
-                      <li key={h.id}>
-                        <Link href={`${base}/${h.order_id}`} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm hover:bg-[color:var(--color-surface-muted)]">
-                          <Badge variant={statusVariant(h.status)}>{h.status}</Badge>
+                      <li key={h.id} className="flex flex-wrap items-center gap-2 pr-3 hover:bg-[color:var(--color-surface-muted)]">
+                        <Link href={`${base}/${h.order_id}`} className="flex min-h-12 min-w-0 flex-1 flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                          <DeskStatus status={h.status} />
                           <span className="font-medium tabular-nums">{formatAmount(h.amount)}</span>
                           <span className="font-mono text-xs">{h.reference}</span>
                           {!h.livemode && <Badge variant="warning">TEST</Badge>}
                           <span className="ml-auto text-xs text-[color:var(--color-text-muted)]">{h.merchant_id} · {formatDateTime(h.created_at)}</span>
                         </Link>
+                        <PaidButton txnid={h.reference} status={h.status} compact />
                       </li>
                     ))}
                   </ul>
@@ -218,8 +229,9 @@ export function OrderTimelineView({ id, base }: { id: string; base: string }) {
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-3xl font-semibold tabular-nums">{formatAmount(o.amount)}</span>
-            <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
+            <DeskStatus status={o.status} />
             {!o.livemode && <Badge variant="warning">TEST</Badge>}
+            <PaidButton txnid={o.reference} status={o.status} className="ml-auto" />
             {o.previous_status && <span className="text-xs text-[color:var(--color-text-muted)]">paid after it had {o.previous_status === "EXPIRED" ? "expired" : "failed"}</span>}
           </div>
           <div className="mt-3 grid grid-cols-1 gap-x-8 lg:grid-cols-2">
@@ -232,7 +244,7 @@ export function OrderTimelineView({ id, base }: { id: string; base: string }) {
             <div>
               <Row label="Created">{formatDateTime(o.created_at)}</Row>
               <Row label={o.status === "PENDING" ? "Expires" : "Paid at"}>{formatDateTime(o.status === "PENDING" ? o.expires_at : o.paid_at)}</Row>
-              <Row label="Bank reference (RRN)">
+              <Row label="Bank reference (UTR)">
                 {o.rrn ? <><span className="font-mono text-xs">{o.rrn}</span><CopyBtn value={o.rrn} /></> : "—"}
                 {o.rrn && o.rrn_is_synthetic && <div className="text-xs text-[color:var(--color-warning)]">made by Katana: not on a bank statement</div>}
               </Row>
@@ -254,7 +266,7 @@ export function OrderTimelineView({ id, base }: { id: string; base: string }) {
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[color:var(--color-brand)]" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <Badge variant={statusVariant(s.to)}>{s.to}</Badge>
+                        <DeskStatus status={s.to} />
                         <span>{s.label}</span>
                       </div>
                       <div className="mt-0.5 text-xs text-[color:var(--color-text-muted)]">

@@ -27,7 +27,7 @@ export default function ProviderHelpPage() {
         <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {[
             { href: "/merchant-portal/leads", label: "Add a banker lead", icon: UserPlus },
-            { href: "/merchant-portal/merchants", label: "Your bankers", icon: Store },
+            { href: "/merchant-portal/bankers", label: "Your bankers", icon: Store },
             { href: "/merchant-portal/transactions", label: "Transactions & reimbursement", icon: Receipt },
             { href: "/merchant-portal/sub-mids", label: "Request a Sub-MID", icon: CreditCard },
             { href: "/merchant-portal/commission", label: "Commission", icon: Percent },

@@ -1,129 +1,68 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  Swords, LayoutDashboard, UserPlus, Store, CreditCard,
-  Percent, FileCheck2, LifeBuoy, LogOut, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
-  FileSpreadsheet, GitMerge, Search, Webhook, ScrollText,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { ModeSwitch } from "@/components/layout/mode-switch";
-import { TestModeBanner } from "@/components/layout/test-mode-banner";
-import { PortalMobileNav } from "@/components/layout/portal-mobile-nav";
+// The merchant portal (PROVIDER persona). Its menu, in a handful of groups; the frame, search and
+// phone tab bar are shared with the banker portal (components/portal/portal-frame).
 
-const NAV = [
-  { href: "/merchant-portal",            label: "Dashboard",  icon: LayoutDashboard, exact: true  },
-  { href: "/merchant-portal/leads",      label: "Leads",      icon: UserPlus,        exact: false },
-  { href: "/merchant-portal/merchants",  label: "Bankers",  icon: Store,           exact: false },
-  { href: "/merchant-portal/transactions", label: "Transactions", icon: Receipt,     exact: false },
-  { href: "/merchant-portal/orders",     label: "Orders",     icon: Search,          exact: false },
-  { href: "/merchant-portal/reconciliation", label: "Reconciliation", icon: GitMerge, exact: false },
-  { href: "/merchant-portal/statements", label: "Statements", icon: FileSpreadsheet, exact: false },
-  { href: "/merchant-portal/settlements", label: "Settlements", icon: Banknote,      exact: false },
-  { href: "/merchant-portal/chargebacks", label: "Chargebacks", icon: ShieldAlert,   exact: false },
-  { href: "/merchant-portal/sub-mids",   label: "Sub-MIDs",   icon: CreditCard,      exact: false },
-  // The vendor registry page has existed all along but was never linked, so it was
-  // reachable only by typing the URL.
-  { href: "/merchant-portal/vendors",    label: "Vendors",    icon: Contact,         exact: false },
-  { href: "/merchant-portal/commission", label: "Commission", icon: Percent,         exact: false },
-  { href: "/merchant-portal/kyc",        label: "KYC",        icon: FileCheck2,      exact: false },
-  { href: "/merchant-portal/integration", label: "Integration", icon: Plug,          exact: false },
-  { href: "/merchant-portal/webhooks",   label: "Webhooks & keys", icon: Webhook,    exact: false },
-  { href: "/merchant-portal/api-log",    label: "API log",    icon: ScrollText,      exact: false },
-  { href: "/merchant-portal/tickets",    label: "Support",    icon: LifeBuoy,        exact: false },
-  { href: "/merchant-portal/help",       label: "Help & guide", icon: HelpCircle,    exact: false },
+import {
+  Store, CreditCard, Percent, FileCheck2, LifeBuoy, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
+  FileSpreadsheet, GitMerge, Search, Webhook, ScrollText, Sparkles, UserPlus, Wallet, Briefcase, Code2, BarChart3, KeyRound,
+} from "lucide-react";
+import { PortalFrame, type NavGroup } from "@/components/portal/portal-frame";
+import { allowsPayin, type MerchantServicesSetting } from "@/lib/merchant-services";
+
+const B = "/merchant-portal";
+
+// Pages that are about pay-ins only. A merchant onboarded for payouts only (lib/merchant-services)
+// takes none, so its portal leaves them out; the pages themselves stay reachable and empty.
+const PAYIN_ONLY = new Set([`${B}/orders`, `${B}/reconciliation`, `${B}/chargebacks`, `${B}/sub-mids`]);
+
+const GROUPS: NavGroup[] = [
+  { id: "payments", label: "Payments", icon: Receipt, items: [
+    { href: `${B}/orders`, label: "Orders", icon: Search },
+    { href: `${B}/transactions`, label: "Transactions", icon: Receipt },
+    { href: `${B}/reconciliation`, label: "Matching", icon: GitMerge },
+    { href: `${B}/statements`, label: "Statements", icon: FileSpreadsheet },
+    { href: `${B}/chargebacks`, label: "Chargebacks", icon: ShieldAlert },
+    { href: `${B}/reports`, label: "Reports", icon: BarChart3 },
+  ] },
+  { id: "money", label: "Money", icon: Wallet, items: [
+    { href: `${B}/settlements`, label: "Settlements", icon: Banknote },
+    { href: `${B}/commission`, label: "Commission", icon: Percent },
+  ] },
+  { id: "business", label: "Business", icon: Briefcase, items: [
+    { href: `${B}/bankers`, label: "Bankers", icon: Store },
+    // In the main menu, not behind "Developer tools": issuing a Key + Salt is the first thing a
+    // merchant is told to do, and with the switch off by default nobody could find it (2026-10-03).
+    { href: `${B}/keys`, label: "Key + Salt", icon: KeyRound },
+    { href: `${B}/leads`, label: "Leads", icon: UserPlus },
+    { href: `${B}/vendors`, label: "Vendors", icon: Contact },
+    { href: `${B}/sub-mids`, label: "Sub-MIDs", icon: CreditCard },
+    { href: `${B}/kyc`, label: "Documents (KYC)", icon: FileCheck2 },
+  ] },
+  { id: "help", label: "Help", icon: HelpCircle, items: [
+    { href: `${B}/assistant`, label: "Assistant", icon: Sparkles },
+    { href: `${B}/tickets`, label: "Support tickets", icon: LifeBuoy },
+    { href: `${B}/help`, label: "Guide", icon: HelpCircle },
+  ] },
 ];
 
+const DEV: NavGroup = { id: "developers", label: "Developers", icon: Code2, items: [
+  { href: `${B}/integration`, label: "Integration", icon: Plug },
+  { href: `${B}/webhooks`, label: "Webhooks & keys", icon: Webhook },
+  { href: `${B}/api-log`, label: "API log", icon: ScrollText },
+] };
+
 export function ProviderPortalShell({
-  children, scopeLabel, email, fullName, livemode,
-}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string; livemode: boolean }) {
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  };
-
+  children, scopeLabel, email, fullName, livemode, services = "UNSET", assistant = false,
+}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string; livemode: boolean; services?: MerchantServicesSetting; assistant?: boolean }) {
+  // The support assistant is listed once it is open to merchants (lib/support-bot/scope).
+  const keep = (href: string) => (allowsPayin(services) || !PAYIN_ONLY.has(href)) && (assistant || !href.endsWith("/assistant"));
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => keep(i.href)) })).filter((g) => g.items.length);
   return (
-    <div className="flex min-h-screen">
-      <aside
-        aria-label="Merchant navigation"
-        className="hidden md:flex md:w-60 md:flex-col md:border-r md:bg-[color:var(--color-surface)]"
-      >
-        <div className="flex h-16 items-center gap-3 px-5 border-b">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[color:var(--color-brand)] text-[color:var(--color-brand-fg)]">
-            <Swords className="h-4 w-4" />
-          </span>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold leading-tight">Katana</span>
-            <span className="text-xs text-[color:var(--color-text-muted)] leading-tight">
-              Merchant portal
-            </span>
-          </div>
-        </div>
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]"
-                    : "text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)] hover:bg-[color:var(--color-surface-muted)]"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="flex-1 truncate">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="border-t px-5 py-3 text-xs text-[color:var(--color-text-subtle)]">
-          v0.1.0 · merchant
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col min-w-0">
-        <header
-          role="banner"
-          className="flex h-16 items-center justify-between gap-2 border-b bg-[color:var(--color-surface)] px-4 sm:gap-4 sm:px-6"
-        >
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <PortalMobileNav nav={NAV} subtitle="Merchant portal" />
-            <span className="truncate text-sm font-semibold">{scopeLabel}</span>
-            <Badge variant="brand" className="hidden uppercase tracking-wide sm:inline-flex">Merchant</Badge>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <div className="hidden sm:flex flex-col items-end leading-tight text-xs">
-              <span className="font-medium text-[color:var(--color-text)]">{fullName}</span>
-              <span className="text-[color:var(--color-text-muted)]">{email}</span>
-            </div>
-            <ModeSwitch initialLivemode={livemode} />
-            <ThemeToggle />
-            <Button variant="secondary" size="sm" onClick={logout}>
-              <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Logout</span>
-            </Button>
-          </div>
-        </header>
-        <TestModeBanner livemode={livemode} />
-        <main
-          role="main"
-          className="flex-1 overflow-y-auto bg-[color:var(--color-surface-muted)] px-4 py-5 sm:px-6 sm:py-8"
-        >
-          <div className="mx-auto max-w-7xl">{children}</div>
-        </main>
-      </div>
-    </div>
+    <PortalFrame base={B} subtitle="Merchant portal" badge="Merchant" groups={groups} devGroup={DEV}
+      paymentsHref={allowsPayin(services) ? `${B}/orders` : `${B}/transactions`} assistant={assistant}
+      scopeLabel={scopeLabel} email={email} fullName={fullName} livemode={livemode}>
+      {children}
+    </PortalFrame>
   );
 }

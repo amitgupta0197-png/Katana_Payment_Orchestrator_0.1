@@ -49,6 +49,17 @@ export async function searchOrders(q: string, scope: PortalScope): Promise<Order
   return r.map(hit);
 }
 
+/** The newest orders of the bankers in scope, for the order list before anything is searched. */
+export async function recentOrders(scope: PortalScope, limit = 25): Promise<OrderHit[]> {
+  if (scope.codes && !scope.codes.length) return [];
+  const r = await rows<any>("vendorGateway", `
+    SELECT ${HIT_COLS} FROM vendor_payin_orders o
+     WHERE vendor = 'KATANA' AND ($1::text[] IS NULL OR merchant_id = ANY($1::text[]))
+     ORDER BY o.created_at DESC LIMIT ${Math.min(Math.max(limit, 1), 100)}
+  `, [scope.codes]);
+  return r.map(hit);
+}
+
 export interface TimelineStep {
   at: string;
   from: V2Status | null;

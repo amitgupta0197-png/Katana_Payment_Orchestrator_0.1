@@ -106,7 +106,7 @@ function SubmitUtrDialog({ settlement, onClose, onDone }: { settlement: Settleme
           </div>
         )}
         <div className="space-y-3">
-          <div><Label className="text-xs">UTR / RRN</Label><Input value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="bank reference of your payment" /></div>
+          <div><Label className="text-xs">UTR (bank reference)</Label><Input value={utr} onChange={(e) => setUtr(e.target.value)} placeholder="bank reference of your payment" /></div>
           <div><Label className="text-xs">Note (optional)</Label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
         </div>
         <DialogFooter>

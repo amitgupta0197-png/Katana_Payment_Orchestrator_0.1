@@ -14,7 +14,7 @@
 //   PAYU_SHA512: sha512(key|txnid|amount|productinfo|firstname|email|udf1..5||||||salt)   (older pairs)
 //
 // Refusals a merchant can act on carry a `code`: the flow codes above, LIVE_MODE_NOT_ACTIVATED,
-// MERCHANT_BLOCKED / MERCHANT_SUSPENDED (403), and the limit codes of lib/payin-limits — 422
+// MERCHANT_BLOCKED / MERCHANT_SUSPENDED / PAYIN_NOT_ENABLED (403), and the limit codes of lib/payin-limits — 422
 // with `field`, `limit` and `actual`, or 429 RATE_LIMITED with a Retry-After header.
 //
 // Every answer carries an X-Request-Id header: the caller's own when it sent one, else one made

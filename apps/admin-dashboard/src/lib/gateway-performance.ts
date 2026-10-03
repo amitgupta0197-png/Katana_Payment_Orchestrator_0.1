@@ -20,6 +20,7 @@
 
 import { rows } from "@/lib/pg";
 import { setAlert } from "@/lib/ops-alert";
+import { confirmWindowSeconds } from "@/lib/katana-pay";
 
 export interface GatewayPerformance {
   gateway: string;
@@ -158,6 +159,10 @@ export interface GatewayHealth {
   /** Paid over all orders of the window, 0 to 1; null with no orders. */
   pct_confirmed: number | null;
   median_confirm_latency_minutes: number | null;
+  /** 95 in 100 paid orders were confirmed within this many minutes: what the confirmation window has to cover. */
+  p95_confirm_latency_minutes?: number | null;
+  /** The confirmation window set for this gateway (lib/katana-pay), in minutes; 0 when it has none. */
+  confirm_window_minutes?: number;
   webhooks_received_last_24h: number;
   /** Paid after expiring, over paid; null with no paid orders. */
   pct_revived_after_expiry: number | null;
@@ -194,7 +199,9 @@ export async function gatewayHealth(hours = 24): Promise<GatewayHealth[]> {
              COUNT(*) FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED'))::text AS paid,
              COUNT(*) FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED') AND p.meta ? 'revived_from_expired')::text AS revived,
              (percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (COALESCE(i.confirmed_at, p.updated_at) - p.created_at)) / 60.0)
-                FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED')))::text AS median_min
+                FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED')))::text AS median_min,
+             (percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (COALESCE(i.confirmed_at, p.updated_at) - p.created_at)) / 60.0)
+                FILTER (WHERE p.status IN ('SUCCESS','SUCCEEDED')))::text AS p95_min
         FROM katana_intent_orders i JOIN vendor_payin_orders p ON p.id = i.order_id
        WHERE i.livemode AND i.gateway IS NOT NULL AND p.created_at > now() - make_interval(hours => $1::int)
        GROUP BY 1`, [hours]),
@@ -216,6 +223,8 @@ export async function gatewayHealth(hours = 24): Promise<GatewayHealth[]> {
       gateway_name: name, orders_last_24h: n, paid_last_24h: paid,
       pct_confirmed: rate(paid, n),
       median_confirm_latency_minutes: o?.median_min != null ? Math.round(Number(o.median_min) * 10) / 10 : null,
+      p95_confirm_latency_minutes: o?.p95_min != null ? Math.round(Number(o.p95_min) * 10) / 10 : null,
+      confirm_window_minutes: Math.round(confirmWindowSeconds({ gateway: { provider: name } }) / 6) / 10,
       webhooks_received_last_24h: Number(h?.n ?? 0),
       pct_revived_after_expiry: rate(Number(o?.revived ?? 0), paid),
       last_webhook_at: h?.last_at ? new Date(h.last_at).toISOString() : null,

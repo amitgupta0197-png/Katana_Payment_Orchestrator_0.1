@@ -4,6 +4,7 @@
 // (Katana Pay / vendor PG / PayU / Cashfree / Razorpay …) for the provider's
 // assigned merchants. Backed by /api/merchant-portal/transactions.
 
+import { PaymentStatus } from "@/components/portal/plain-status";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -126,7 +127,7 @@ export default function ProviderTransactionsPage() {
     { key: "channel", header: "Rail", render: (r) => <Badge variant="brand">{railLabel(r.channel)}</Badge> },
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
-    { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+    { key: "status", header: "Status", render: (r) => <PaymentStatus status={r.status} /> },
   ];
 
   const creditCols: Column<Credit>[] = [

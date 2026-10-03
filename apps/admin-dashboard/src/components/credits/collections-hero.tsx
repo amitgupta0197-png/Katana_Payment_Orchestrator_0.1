@@ -148,7 +148,7 @@ export function CollectionsHero() {
           {/* Named, never folded into the day's takings: a credit with no RRN is a claim the
               phone made, not money the network has confirmed. */}
           <Tile
-            label="Awaiting RRN"
+            label="Waiting for bank reference"
             value={awaitingN > 0 ? `${formatAmount(awaitingAmt)} (${awaitingN})` : "none"}
             tone={awaitingN > 0 ? "warning" : "default"}
             href="/banker-portal/transactions"

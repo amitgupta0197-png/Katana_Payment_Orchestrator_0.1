@@ -1,4 +1,4 @@
-import {
+import { ListChecks,
   LayoutDashboard,
   BookOpen,
   GitMerge,
@@ -28,6 +28,7 @@ import {
   Sliders,
   ScrollText,
   Headphones,
+  Bot,
   Rocket,
   FileSearch,
   Briefcase,
@@ -80,7 +81,7 @@ const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
-  SUPPORT:    ["/", "/orders", "/api-log", "/payin-data", "/payout-data", "/summary", "/security"],
+  SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
 // Resolve the nav a given persona should see. SUPER_ADMIN/ADMIN see everything;
@@ -98,11 +99,12 @@ export const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live", group: "Overview", personas: SHARED_PERSONAS },
   { href: "/admin-log", label: "Admin Log", icon: ScrollText, status: "live", group: "Overview" },
 
-  { href: "/providers",        label: "Merchants",       icon: UserPlus, status: "live", group: "Payment Management" },
+  { href: "/merchants",        label: "Merchants",       icon: UserPlus, status: "live", group: "Payment Management" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
-  { href: "/merchants",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
+  { href: "/bankers",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management" },
   { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
   // Pay-in flows: the P2P / Intent / Both bifurcation, and one sub-module per flow.
+  { href: "/merchant-readiness", label: "Merchant readiness", icon: ListChecks, status: "live", group: "Payment Management" },
   { href: "/payin-flows",        label: "Pay-in Flows",    icon: ArrowLeftRight, status: "live", group: "Payment Management" },
   { href: "/payin-flows/p2p",    label: "P2P Pay-ins",     icon: Smartphone,     status: "live", group: "Payment Management" },
   { href: "/payin-flows/intent", label: "Intent Pay-ins",  icon: Building2,      status: "live", group: "Payment Management" },
@@ -157,6 +159,8 @@ export const navItems: NavItem[] = [
   { href: "/cases", label: "Compliance Cases", icon: Briefcase, status: "live", group: "Risk & Compliance" },
 
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
+  // Staff test it here; merchants and bankers use it from their portals once SUPPORT_BOT_PORTALS is on (lib/support-bot).
+  { href: "/support-bot", label: "Support assistant", icon: Bot, status: "live", group: "Operations", personas: ["SUPER_ADMIN", "ADMIN", "SUPPORT"] },
   { href: "/payouts", label: "Payouts & Beneficiaries", icon: Send, status: "live", group: "Operations" },
   { href: "/status-intelligence", label: "Status Intelligence", icon: Activity, status: "live", group: "Operations" },
   { href: "/transaction-intel", label: "Transaction Intel", icon: ShieldAlert, status: "live", group: "Operations" },

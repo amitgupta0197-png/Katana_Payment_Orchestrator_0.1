@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { rows, pgError } from "@/lib/pg";
-import { resolveKatanaStatus, genRrn } from "@/lib/katana-pay";
+import { resolveKatanaStatus, orderExpirySeconds, genRrn } from "@/lib/katana-pay";
 import { sendPayinCallback } from "@/lib/merchant-callback";
 import { beat } from "@/lib/jobs";
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   try {
     const pending = await rows<any>("vendorGateway", `
-      SELECT id::text, amount, status, livemode,
+      SELECT id::text, amount, status, livemode, meta,
              EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds
         FROM vendor_payin_orders
        WHERE vendor = 'KATANA' AND status NOT IN ('SUCCESS','SUCCEEDED','FAILED','EXPIRED')
@@ -32,8 +32,10 @@ export async function POST(req: Request) {
     let settled = 0, failed = 0, expired = 0, swept = 0;
     for (const o of pending) {
       const amountMinor = Math.round(Number(o.amount) * 100);
-      // Sandbox amount rules apply to test orders only; a live order only ever expires here.
-      const d = resolveKatanaStatus(o.status, amountMinor, o.age_seconds, o.livemode !== false);
+      // Sandbox amount rules apply to test orders only; a live order only ever expires here,
+      // a gateway order after its confirmation window as well (orderExpirySeconds).
+      const live = o.livemode !== false;
+      const d = resolveKatanaStatus(o.status, amountMinor, o.age_seconds, live, orderExpirySeconds(o.meta, live));
       if (!d.changed) continue;
       const rrn = d.status === "SUCCESS" ? genRrn(o.id) : null;
       // The list above is a snapshot: an order confirmed since then is final and must not be

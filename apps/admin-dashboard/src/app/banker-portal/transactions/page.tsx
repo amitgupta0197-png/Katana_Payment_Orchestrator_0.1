@@ -1,5 +1,6 @@
 "use client";
 
+import { PaymentStatus } from "@/components/portal/plain-status";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Receipt } from "lucide-react";
@@ -12,6 +13,7 @@ import { CreditDetail, hasCreditDetail } from "@/components/credits/credit-detai
 import { LiveCaptureStrip } from "@/components/credits/live-capture-strip";
 import { paymentAppOf, PAYMENT_APP_DOT } from "@/lib/payment-app";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { verificationLabel } from "@/lib/credit-verification";
 
 interface Order {
   id: string; client_ref: string; txn_id?: string; amount: number; currency: string;
@@ -137,7 +139,7 @@ export default function TransactionsPage() {
       r.payer_name ? <span>{r.payer_name}</span>
         : r.payer_vpa ? <span className="font-mono text-xs">{r.payer_vpa}</span>
         : "—" },
-    { key: "utr", header: "UTR / RRN", render: (r) => r.utr ? <span className="font-mono text-xs">{r.utr}</span> : <span className="text-[color:var(--color-text-subtle)]">pending</span> },
+    { key: "utr", header: "UTR (bank reference)", render: (r) => r.utr ? <span className="font-mono text-xs">{r.utr}</span> : <span className="text-[color:var(--color-text-subtle)]">pending</span> },
     { key: "outcome", header: "Status", render: (r) => {
       // matched      - tied to a Katana order, which is now confirmed
       // verified     - carries the UPI network's own 12-digit reference: a real transfer,
@@ -145,7 +147,7 @@ export default function TransactionsPage() {
       // awaiting     - attributed, reference not in yet; usually seconds
       // vpa mismatch - the payment named a payee VPA that is not this banker's: real problem
       const v = r.verification ?? (r.outcome === "CONFIRMED" ? "matched" : "awaiting");
-      const label = v === "vpa_mismatch" ? "VPA mismatch" : v === "awaiting" ? "awaiting RRN" : v;
+      const label = verificationLabel(v);
       const variant = v === "matched" || v === "verified" ? "success" : v === "vpa_mismatch" ? "danger" : "default";
       return <Badge variant={variant}>{label}</Badge>;
     } },
@@ -189,7 +191,7 @@ export default function TransactionsPage() {
     { key: "amount", header: "Amount", render: (r) => formatAmount(r.amount, r.currency) },
     { key: "method", header: "Method" },
     { key: "selected_rail", header: "Rail", render: (r) => r.selected_rail ?? "—" },
-    { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+    { key: "status", header: "Status", render: (r) => <PaymentStatus status={r.status} /> },
     { key: "created_at", header: "Created", render: (r) => formatDateTime(r.created_at) },
   ];
 
@@ -212,7 +214,7 @@ export default function TransactionsPage() {
               {creditSummary
                 ? `${creditSummary.today_count} today · ${formatAmount(creditSummary.today_verified_amount ?? 0)} verified`
                   + ((creditSummary.today_awaiting_amount ?? 0) > 0
-                      ? ` · ${formatAmount(creditSummary.today_awaiting_amount ?? 0)} awaiting RRN (not counted)`
+                      ? ` · ${formatAmount(creditSummary.today_awaiting_amount ?? 0)} waiting for bank reference (not counted)`
                       : "")
                 : "Live feed from your collection phone."}
             </p>

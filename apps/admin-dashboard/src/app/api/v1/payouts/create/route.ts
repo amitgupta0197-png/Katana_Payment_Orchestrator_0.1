@@ -15,7 +15,9 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { toMinor } from "@/lib/money";
 import { createPayout } from "@/lib/fifo-payout";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 import { authPayoutRequest, parseMerchantBody, payoutView, PAYOUT_VIEW_COLS } from "@/lib/payout-api";
+import { merchantSafeError } from "@/lib/merchant-safe";
 
 export const dynamic = "force-dynamic";
 
@@ -44,13 +46,20 @@ export async function POST(req: Request) {
     const beneficiary = body.beneficiary_ref ?? body.beneficiary_id!;
     const auth = await authPayoutRequest(body.key, body.hash, [body.txnid, body.amount, beneficiary, body.rail, body.purpose]);
     if (!auth.ok) return NextResponse.json({ error: auth.error, code: auth.code }, { status: auth.status });
+    // Said before the beneficiary is looked up, so a pay-in only account gets the real reason
+    // (lib/merchant-services). createPayout checks it again for every other caller.
+    const off = await serviceRefusal(auth.merchantCode, "PAYOUT");
+    if (off) return NextResponse.json(off, { status: 403 });
 
     let beneficiaryId = body.beneficiary_id;
     if (body.beneficiary_ref) {
+      // A test key and a live key each have their own beneficiaries (fifo 0020).
       beneficiaryId = (await rows<{ id: string }>("fifo",
-        `SELECT id::text FROM fifo_beneficiaries WHERE merchant_id=$1 AND merchant_ref=$2`,
-        [auth.merchantCode, body.beneficiary_ref]))[0]?.id;
-      if (!beneficiaryId) return NextResponse.json({ error: `no beneficiary with beneficiary_ref ${body.beneficiary_ref}` }, { status: 404 });
+        `SELECT id::text FROM fifo_beneficiaries WHERE merchant_id=$1 AND merchant_ref=$2 AND livemode=$3`,
+        [auth.merchantCode, body.beneficiary_ref, auth.livemode]))[0]?.id;
+      if (!beneficiaryId) return NextResponse.json({
+        error: `no beneficiary with beneficiary_ref ${body.beneficiary_ref}${auth.livemode ? "" : " added with your test key"}`,
+      }, { status: 404 });
     }
 
     const amountMinor = toMinor(body.amount, "INR");
@@ -61,7 +70,8 @@ export async function POST(req: Request) {
       purpose: body.purpose, rail: body.rail, merchantTxnId: body.txnid,
       livemode: auth.livemode, callbackUrl: body.notify_url, actor: `api:${body.key}`,
     });
-    if (r.error) return NextResponse.json({ error: r.error }, { status: r.status ?? 400 });
+    // The reason can name the merchant's payout gateway ("insufficient … payout balance"): scrubbed.
+    if (r.error) return NextResponse.json({ error: merchantSafeError(r.error, "api/v1/payouts/create"), ...(r.code ? { code: r.code } : {}) }, { status: r.status ?? 400 });
 
     const row = (await rows<any>("fifo", `SELECT ${PAYOUT_VIEW_COLS} FROM fifo_orders WHERE id=$1::uuid`, [r.order.id]))[0];
     const reused = !!r.order.idempotent;

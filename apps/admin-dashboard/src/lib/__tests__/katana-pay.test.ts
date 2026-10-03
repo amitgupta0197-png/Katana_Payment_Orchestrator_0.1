@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   buildKatanaSignString, decideKatanaStatus, resolveKatanaStatus, signKatanaHash, verifyKatanaHash, payinCallbackSent, PENDING_EXPIRY_SECONDS,
+  gatewayCheckNote, confirmWindowSeconds, orderExpirySeconds, inConfirmWindow, CONFIRM_WINDOW_MAX_SECONDS,
 } from "@/lib/katana-pay";
 
 test("a live order never changes state on its amount", () => {
@@ -24,6 +25,44 @@ test("a terminal status is final; a pending order expires after the limit", () =
   assert.equal(resolveKatanaStatus("PENDING", 10000, PENDING_EXPIRY_SECONDS - 1).status, "PENDING");
   const e = resolveKatanaStatus("PENDING", 10000, PENDING_EXPIRY_SECONDS);
   assert.deepEqual([e.status, e.changed], ["EXPIRED", true]);
+});
+
+test("the confirmation window is off until set, and only a live gateway order has one", () => {
+  const gw = { gateway: { provider: "PAYU" } };
+  assert.equal(confirmWindowSeconds(gw, true, {}), 0);
+  assert.equal(orderExpirySeconds(gw, true, {}), PENDING_EXPIRY_SECONDS);
+  const env = { PAYIN_CONFIRM_WINDOW_SECONDS: "1800" };
+  assert.equal(confirmWindowSeconds(gw, true, env), 1800);
+  assert.equal(confirmWindowSeconds({}, true, env), 0);            // P2P: no gateway to wait for
+  assert.equal(confirmWindowSeconds(null, true, env), 0);
+  assert.equal(confirmWindowSeconds(gw, false, env), 0);           // a test order
+  assert.equal(orderExpirySeconds(gw, true, env), PENDING_EXPIRY_SECONDS + 1800);
+});
+
+test("a gateway's own window wins, and a bad or huge value is not trusted", () => {
+  const gw = (provider: string) => ({ gateway: { provider } });
+  const env = { PAYIN_CONFIRM_WINDOW_SECONDS: "1800", PAYIN_CONFIRM_WINDOW_SECONDS_PAYU: "7200", PAYIN_CONFIRM_WINDOW_SECONDS_CASHFREE: "0" };
+  assert.equal(confirmWindowSeconds(gw("payu"), true, env), 7200);
+  assert.equal(confirmWindowSeconds(gw("CASHFREE"), true, env), 0);   // switched off for this one
+  assert.equal(confirmWindowSeconds(gw("RAZORPAY"), true, env), 1800);
+  assert.equal(confirmWindowSeconds(gw("PAYU"), true, { PAYIN_CONFIRM_WINDOW_SECONDS: "soon" }), 0);
+  assert.equal(confirmWindowSeconds(gw("PAYU"), true, { PAYIN_CONFIRM_WINDOW_SECONDS: "-5" }), 0);
+  assert.equal(confirmWindowSeconds(gw("PAYU"), true, { PAYIN_CONFIRM_WINDOW_SECONDS: "999999" }), CONFIRM_WINDOW_MAX_SECONDS);
+});
+
+test("in the window the order stays pending and the customer's time is over; after it, it expires", () => {
+  const gw = { gateway: { provider: "PAYU" } };
+  const env = { PAYIN_CONFIRM_WINDOW_SECONDS: "1800" };
+  const limit = orderExpirySeconds(gw, true, env);
+  assert.equal(resolveKatanaStatus("PENDING", 10000, PENDING_EXPIRY_SECONDS, true, limit).status, "PENDING");
+  assert.equal(resolveKatanaStatus("PENDING", 10000, limit - 1, true, limit).status, "PENDING");
+  assert.equal(resolveKatanaStatus("PENDING", 10000, limit, true, limit).status, "EXPIRED");
+  assert.equal(inConfirmWindow("PENDING", PENDING_EXPIRY_SECONDS - 1, gw, true, env), false);
+  assert.equal(inConfirmWindow("PENDING", PENDING_EXPIRY_SECONDS, gw, true, env), true);
+  assert.equal(inConfirmWindow("PENDING", limit, gw, true, env), false);
+  assert.equal(inConfirmWindow("SUCCESS", PENDING_EXPIRY_SECONDS + 5, gw, true, env), false);
+  assert.equal(inConfirmWindow("PENDING", PENDING_EXPIRY_SECONDS + 5, gw, true, {}), false);   // no window set
+  assert.equal(inConfirmWindow("PENDING", PENDING_EXPIRY_SECONDS + 5, {}, true, env), false);  // P2P
 });
 
 test("a status callback is sent once per status: an expired or failed order paid afterwards is still told Captured", () => {
@@ -51,4 +90,17 @@ test("the callback hash is SHA256 over the sorted KEY=value pairs joined by ~, p
   assert.ok(verifyKatanaHash(body, "salt", want.toLowerCase()));
   assert.ok(!verifyKatanaHash(body, "other-salt", want));
   assert.ok(!verifyKatanaHash({ ...body, AMOUNT: "101" }, "salt", want));
+});
+
+test("a staff refresh says what the gateway answered when nothing changed", () => {
+  assert.match(gatewayCheckNote({ status: "UNKNOWN", reason: "still pending" }), /payment is PENDING/);
+  assert.match(gatewayCheckNote({ status: "UNKNOWN", reason: "lookup_failed", lookupError: "lookup failed: HTTP 500" }), /no usable answer: lookup failed: HTTP 500/);
+  assert.match(gatewayCheckNote({ status: "UNKNOWN", reason: "not_found_at_gateway" }), /no order under this reference/);
+  assert.match(gatewayCheckNote({ status: "UNKNOWN", reason: "no_gateway_credentials" }), /could not be asked/);
+  // Paid at the gateway but refused by the confirmation (lib/katana-order): the refusal is shown.
+  assert.match(gatewayCheckNote({ status: "SUCCESS", reason: "duplicate UTR — already used by order ORD-9" }), /went through, but it was not applied: duplicate UTR — already used by order ORD-9/);
+  assert.match(gatewayCheckNote({ status: "UNKNOWN", reason: "amount mismatch: 200000, order 2000" }), /not applied: amount mismatch/);
+  // A failure never moves an expired order.
+  assert.match(gatewayCheckNote({ status: "FAILED", reason: "order already EXPIRED" }), /payment failed; the order was left as it is \(order already EXPIRED\)/);
+  assert.match(gatewayCheckNote({ status: "UNKNOWN" }), /no final answer/);
 });

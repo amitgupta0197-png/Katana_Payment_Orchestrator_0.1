@@ -13,7 +13,12 @@ const PG_USER = process.env.PG_USER ?? "sixsenai";
 // Fails closed in production if the DB password is unset or the committed default (audit H3).
 const PG_PASSWORD = requireSecret("PG_PASSWORD", process.env.PG_PASSWORD, "sixsenai_pg_2024_secure");
 
-const pools = new Map<string, Pool>();
+// One set of pools per process. Kept on globalThis because `next dev` re-evaluates this module
+// for every route it recompiles: a module-level Map then gave each route its own pools, and a
+// few dozen page loads used up Postgres's 100 connections ("too many clients already").
+// Wherever the module is evaluated once this is the same single Map as before.
+const poolHolder = globalThis as unknown as { __katanaPgPools?: Map<string, Pool> };
+const pools = (poolHolder.__katanaPgPools ??= new Map<string, Pool>());
 
 export type DbKey =
   | "ledger"

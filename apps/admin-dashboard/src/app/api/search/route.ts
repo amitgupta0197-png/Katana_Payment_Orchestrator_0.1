@@ -37,7 +37,7 @@ export async function GET(req: Request) {
     if (g.session.persona === "PROVIDER") { where += " AND id = $4::uuid"; scoped.push(g.session.scope_id); }
     const r = await rows<any>("provider",
       `SELECT id::text, code, legal_name FROM providers WHERE ${where} LIMIT 5`, scoped).catch(() => []);
-    for (const p of r) hits.push({ kind: "provider", id: p.id, title: p.code, subtitle: p.legal_name, href: `/providers/${p.id}` });
+    for (const p of r) hits.push({ kind: "provider", id: p.id, title: p.code, subtitle: p.legal_name, href: `/merchants/${p.id}` });
   }
 
   // Merchants — SUPER_ADMIN + PROVIDER (via mapping) + MERCHANT (own).
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     const r = await rows<any>("merchant",
       `SELECT id::text, merchant_code, legal_name FROM merchants WHERE merchant_code ILIKE $1 OR legal_name ILIKE $2 LIMIT 5`,
       [like, like]).catch(() => []);
-    for (const m of r) hits.push({ kind: "merchant", id: m.id, title: m.merchant_code, subtitle: m.legal_name, href: `/merchants/${m.id}` });
+    for (const m of r) hits.push({ kind: "merchant", id: m.id, title: m.merchant_code, subtitle: m.legal_name, href: `/bankers/${m.id}` });
   } else if (g.session.persona === "MERCHANT") {
     const r = await rows<any>("merchant",
       `SELECT id::text, merchant_code, legal_name FROM merchants WHERE merchant_code = $1 LIMIT 1`,

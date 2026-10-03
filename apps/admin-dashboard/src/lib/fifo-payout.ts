@@ -12,11 +12,12 @@ import { postJournal } from "@/lib/ledger";
 import { transition, recordEvent, recordFraudAlert } from "@/lib/fifo";
 import { isAllowedNetwork, lockUsdtRate, computeUsdtAmount, ALLOWED_USDT_NETWORKS } from "@/lib/fifo-usdt";
 import { finalizeSettlementBatch, rejectSettlementBatch } from "@/lib/fifo-settlement";
-import { activePayoutProvider, prodEnabled, type PayoutRail } from "@/lib/payout-providers";
+import { activePayoutProvider, prodEnabled, sandboxPayout, type PayoutRail } from "@/lib/payout-providers";
 import { dispatchProviderPayout } from "@/lib/provider-payout-order";
 import { sendPayoutCallback } from "@/lib/payout-api";
 import { checkPayoutPolicy, getPayoutPolicy, isMerchantSuspended } from "@/lib/payout-policy";
 import { openText, sealOptional } from "@/lib/sealed-text";
+import { serviceRefusal } from "@/lib/merchant-services-store";
 
 // High-value payouts (>= this, in minor units) require maker-checker approval.
 export const HIGH_VALUE_PAYOUT_MINOR = BigInt(process.env.FIFO_HIGH_VALUE_PAYOUT_MINOR ?? "5000000"); // ₹50,000
@@ -40,20 +41,28 @@ export async function merchantPayableMinor(merchantId: string): Promise<bigint> 
 export interface CreateBeneficiaryInput {
   merchantId: string; beneficiaryName: string; bankName?: string; accountNumber?: string;
   ifsc?: string; upiId?: string; walletAddress?: string; network?: string; createdBy?: string;
-  /** Merchant's own reference (API registrations); unique per merchant. */
+  /** Merchant's own reference (API registrations); unique per merchant and mode. */
   merchantRef?: string;
+  /**
+   * false: registered with a TEST key. Approved at once and payable in test mode only (the payout
+   * sandbox); no maker-checker, because no money can reach it. Default true: waits for approval.
+   */
+  livemode?: boolean;
 }
 
 export async function createBeneficiary(input: CreateBeneficiaryInput): Promise<{ id: string }> {
   const { last4 } = maskAccount(input.accountNumber);
+  const test = input.livemode === false;
   const r = (await rows<{ id: string }>("fifo", `
     INSERT INTO fifo_beneficiaries
-      (merchant_id, beneficiary_name, bank_name, account_number, account_last4, ifsc, upi_id, wallet_address, network, created_by, merchant_ref)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      (merchant_id, beneficiary_name, bank_name, account_number, account_last4, ifsc, upi_id, wallet_address, network, created_by, merchant_ref,
+       livemode, status, approved_by, approved_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,CASE WHEN $12 THEN NULL ELSE now() END)
     RETURNING id::text
   `, [input.merchantId, input.beneficiaryName, input.bankName ?? null, sealOptional(input.accountNumber), last4,
       input.ifsc ?? null, input.upiId ?? null, input.walletAddress ?? null, input.network ?? null, input.createdBy ?? null,
-      input.merchantRef ?? null]))[0];
+      input.merchantRef ?? null, !test, test ? "APPROVED" : "PENDING", test ? "system:test-mode" : null]))[0];
+  if (test) return r;
 
   // Maker-checker record (BRD §9). Wallet adds are the more sensitive USDT path.
   await rows("fifo", `
@@ -121,7 +130,7 @@ function pickRail(b: { account_number: string | null; ifsc: string | null; upi_i
   return { rail };
 }
 
-export async function createPayout(input: CreatePayoutInput): Promise<{ order?: any; error?: string; status?: number }> {
+export async function createPayout(input: CreatePayoutInput): Promise<{ order?: any; error?: string; status?: number; code?: string }> {
   if (input.amountMinor <= 0n) return { error: "amount must be > 0", status: 400 };
 
   if (input.merchantTxnId) {
@@ -131,26 +140,34 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
 
   if (await isMerchantSuspended(input.merchantId))
     return { error: "payouts are suspended for this merchant", status: 403 };
+  // A merchant onboarded for pay-ins only sends no payouts (lib/merchant-services).
+  const off = await serviceRefusal(input.merchantId, "PAYOUT");
+  if (off) return { ...off, status: 403 };
 
   // Beneficiary must exist, belong to the merchant, and be APPROVED (whitelisted).
   const b = (await rows<any>("fifo", `
-    SELECT id::text, status, beneficiary_name, wallet_address, network, account_number, ifsc, upi_id FROM fifo_beneficiaries
+    SELECT id::text, status, beneficiary_name, wallet_address, network, account_number, ifsc, upi_id, livemode FROM fifo_beneficiaries
      WHERE id=$1::uuid AND merchant_id=$2
   `, [input.beneficiaryId, input.merchantId]))[0];
   if (!b) return { error: "beneficiary not found for merchant", status: 404 };
   b.account_number = openText(b.account_number);   // sealed at rest (lib/sealed-text)
   if (b.status !== "APPROVED") return { error: `beneficiary not whitelisted (status=${b.status})`, status: 409 };
+  // One added with a test key was never approved by a person: it can only be paid in test mode.
+  if (b.livemode === false && input.livemode !== false)
+    return { error: "this beneficiary was added with a test key and can only receive test payouts", status: 409 };
 
   const mode = (input.settlementMode ?? (b.wallet_address ? "USDT" : "BANK")).toUpperCase();
+  if (input.livemode === false && mode === "USDT")
+    return { error: "test payouts are bank or UPI only", status: 400 };
 
   // A merchant with a connected payout gateway pays from their own gateway account: its
   // balance is the limit, not Katana's payable ledger (which gateway pay-ins don't credit).
-  const provider = mode === "USDT" ? null : await activePayoutProvider(input.merchantId);
+  let provider = mode === "USDT" ? null : await activePayoutProvider(input.merchantId);
+  // A test key must never move real money. It goes to the gateway's sandbox when the merchant has
+  // sandbox (TEST) payout credentials, and otherwise to Katana's own payout sandbox, where the
+  // amount decides the result (lib/payout-providers/sandbox).
+  if (input.livemode === false && provider?.creds.env !== "TEST") provider = sandboxPayout();
   const pname = provider?.connector.name;
-  // A test key must never move real money: it needs the gateway's sandbox credentials, and a
-  // live key must not land in a sandbox.
-  if (input.livemode === false && provider?.creds.env !== "TEST")
-    return { error: "test payouts need sandbox (TEST) payout gateway credentials for this merchant", status: 409 };
   if (input.livemode === true && provider && provider.creds.env !== "PROD")
     return { error: `this merchant's ${pname} payout credentials are TEST; use a test key`, status: 409 };
   if (provider && provider.creds.env === "PROD" && !prodEnabled(provider.connector.id))
@@ -226,8 +243,9 @@ export async function createPayout(input: CreatePayoutInput): Promise<{ order?: 
   await transition({ orderId: o.id, to: "VALIDATED", reason: "beneficiary whitelisted + balance ok", actor: input.actor });
 
   // High-value payouts, and every payout of a MAKER_CHECKER merchant, wait for a second person.
+  // A test payout moves no money, so it never joins the approval queue.
   const highValue = input.amountMinor >= HIGH_VALUE_PAYOUT_MINOR;
-  if (highValue || policy.approval_rule === "MAKER_CHECKER") {
+  if (livemode && (highValue || policy.approval_rule === "MAKER_CHECKER")) {
     await transition({ orderId: o.id, to: "HOLD", actorKind: "system", reason: highValue
       ? `high-value payout — awaiting maker-checker (>= ${HIGH_VALUE_PAYOUT_MINOR})`
       : "merchant policy: every payout needs maker-checker approval" });

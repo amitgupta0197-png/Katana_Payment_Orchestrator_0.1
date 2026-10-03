@@ -13,9 +13,14 @@
 //
 // Storage: merchantservice_db.merchant_live_activation (merchant migration 0009), keyed by
 // merchant_code — what keys, orders and credits are stamped with. Deliberately imports nothing but
-// lib/pg: the key and webhook helpers import this module to gate themselves.
+// lib/pg and the modules that themselves import only lib/pg (the flow and services stores): the
+// key and webhook helpers import this module to gate themselves.
 
 import { rows } from "@/lib/pg";
+import { getEffectiveFlow } from "@/lib/payin-flow-store";
+import { getProviderServices } from "@/lib/merchant-services-store";
+import { flowReadiness } from "@/lib/payin-flow-api";
+import { liveChecklistNeeds } from "@/lib/merchant-services";
 
 export type ActivationStatus = "NOT_REQUESTED" | "REQUESTED" | "ACTIVATED" | "REJECTED";
 export const ACTIVATION_STATUSES: ActivationStatus[] = ["NOT_REQUESTED", "REQUESTED", "ACTIVATED", "REJECTED"];
@@ -132,15 +137,22 @@ export function minTestPayments(): number {
 export const autoActivate = () => process.env.LIVE_AUTO_ACTIVATE === "1";
 
 export interface ChecklistItem {
-  key: "onboarding" | "settlement_vpa" | "webhook_url" | "test_payment";
+  key: "onboarding" | "settlement_vpa" | "payin_gateway" | "webhook_url" | "test_payment" | "test_payout";
   label: string;
   done: boolean;
   hint: string;
 }
 
+// The checklist asks for what the banker's merchant was onboarded for (lib/merchant-services):
+// a P2P banker its settlement UPI ID, an Intent banker its pay-in gateway, a pay-out only banker
+// a test payout instead of a test payment. A banker nobody chose for keeps the checklist it
+// always had.
 async function checklist(code: string): Promise<ChecklistItem[]> {
+  const flow = await getEffectiveFlow(code).catch(() => null);
+  const services = await getProviderServices(flow?.providerId).catch(() => "UNSET" as const);
+  const needs = liveChecklistNeeds(services, flow ? { flow: flow.flow, active: flow.active } : { flow: "UNSET", active: null });
   // A lookup that fails reads as "not done": the checklist may under-report, never over-report.
-  const [merchant, cfg, testPayin, testCheckout] = await Promise.all([
+  const [merchant, cfg, testPayin, testCheckout, ready, testPayout] = await Promise.all([
     rows<{ stage: string; webhook_url: string | null }>("merchant",
       `SELECT stage, webhook_url FROM merchants WHERE merchant_code = $1`, [code]).catch(() => []),
     rows<{ vpa: string | null; vpas: unknown }>("merchant",
@@ -151,6 +163,12 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
        WHERE merchant_id = $1 AND livemode = false AND status IN ('SUCCESS', 'SUCCEEDED')`, [code]).catch(() => []),
     rows<{ n: number }>("checkout", `
       SELECT COUNT(*)::int AS n FROM checkout_orders WHERE merchant_id = $1 AND livemode = false AND status = 'SUCCESS'`, [code]).catch(() => []),
+    needs.payinGateway ? flowReadiness([code]).catch(() => null) : null,
+    needs.testPayout
+      ? rows<{ n: number }>("fifo", `
+          SELECT COUNT(*)::int AS n FROM fifo_orders
+           WHERE merchant_id = $1 AND direction = 'PAYOUT' AND livemode = false AND status IN ('COMPLETED', 'SETTLED')`, [code]).catch(() => [])
+      : [],
   ]);
   const need = minTestPayments();
   const tests = (testPayin[0]?.n ?? 0) + (testCheckout[0]?.n ?? 0);
@@ -158,25 +176,34 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
   const c = cfg[0];
   const extraVpas = Array.isArray(c?.vpas) && c.vpas.some((v) => typeof v === "string" && v.trim());
 
-  return [
+  const items: (ChecklistItem | false)[] = [
     {
       key: "onboarding", label: "Onboarding approved", done: m?.stage === "LIVE",
       hint: "Katana finishes KYB, screening and bank verification, then approves the account.",
     },
-    {
+    needs.settlementVpa && {
       key: "settlement_vpa", label: "Settlement UPI ID saved", done: !!c?.vpa?.trim() || extraVpas,
       hint: "The UPI ID your live payments are paid to. Your Katana account manager sets it.",
+    },
+    needs.payinGateway && {
+      key: "payin_gateway", label: "Payment processor connected", done: !!ready?.get(code)?.intent,
+      hint: "Your live payments are taken by a payment processor. Your Katana account manager connects it.",
     },
     {
       key: "webhook_url", label: "Webhook URL set", done: !!m?.webhook_url?.trim(),
       hint: "Where Katana posts payment results for your server. Set it under Return & webhook URLs.",
     },
-    {
+    needs.testPayment && {
       key: "test_payment", done: tests >= need,
       label: need === 1 ? "A test payment succeeded" : `${need} test payments succeeded (${Math.min(tests, need)} so far)`,
       hint: "Create an order with your test key and open its payment page: tap Simulate success, or send an amount ending in .99.",
     },
+    needs.testPayout && {
+      key: "test_payout", label: "A test payout succeeded", done: (testPayout[0]?.n ?? 0) > 0,
+      hint: "Send a payout with your test key: an amount ending in .99 succeeds at once. No money moves.",
+    },
   ];
+  return items.filter((i): i is ChecklistItem => !!i);
 }
 
 export interface ActivationState {

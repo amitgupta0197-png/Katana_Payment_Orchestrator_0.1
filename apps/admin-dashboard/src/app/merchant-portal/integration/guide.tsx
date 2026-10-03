@@ -28,7 +28,7 @@ function Copyable({ value }: { value: string }) {
 }
 
 /** One Key + Salt card per banker mapped to this merchant — the same card the banker's detail page shows. */
-function BankerCredentials() {
+export function BankerCredentials() {
   const q = useQuery({
     queryKey: ["mp:integration-bankers"],
     queryFn: async () => {
@@ -44,7 +44,7 @@ function BankerCredentials() {
     return (
       <Card className="mb-4"><CardContent className="p-4 text-sm">
         No banker is set up under this account yet, so there is nothing to issue a Key for. Add one under{" "}
-        <Link className="text-[color:var(--color-brand)] hover:underline" href="/merchant-portal/merchants">Bankers</Link>, or ask your Katana account manager.
+        <Link className="text-[color:var(--color-brand)] hover:underline" href="/merchant-portal/bankers">Bankers</Link>, or ask your Katana account manager.
       </CardContent></Card>
     );
   return (

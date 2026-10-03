@@ -136,8 +136,9 @@ Authorization: Bearer sk_live_…</pre>
   <tr><td><code>PENDING</code></td><td>The order was created and is waiting for the payment.</td><td>Yes.</td></tr>
   <tr><td><code>SUCCESS</code></td><td>The payment is confirmed.</td><td>No. This is final.</td></tr>
   <tr><td><code>FAILED</code></td><td>The payment was declined, or failed in a way that cannot be recovered.</td><td>Only to <code>SUCCESS</code>, if the customer tries again on the same order and pays.</td></tr>
-  <tr><td><code>EXPIRED</code></td><td>The customer's time ran out.</td><td>Only to <code>SUCCESS</code>: a payment the bank authorised late still counts.</td></tr>
+  <tr><td><code>EXPIRED</code></td><td>No payment was confirmed in time.</td><td>Only to <code>SUCCESS</code>: a payment the bank authorised late still counts.</td></tr>
 </table>
+<p>The customer has 15 minutes to pay. <code>expires_at</code> is when a <code>PENDING</code> order is given up on and you are told <code>EXPIRED</code>. For an order paid on a payment processor's page that can be later than the 15 minutes: once the customer's time is over the order may be kept <code>PENDING</code> for a further period while the payment is confirmed, and in that period the customer cannot start a new payment on it. <code>expires_at</code> already includes that period, so wait for it, or for the webhook, before you treat the order as unpaid.</p>
 <div class="note warnbox">An order told <code>EXPIRED</code> or <code>FAILED</code> can become <code>SUCCESS</code> afterwards. You are then sent <code>payment.success</code> with <code>"previous_status": "EXPIRED"</code> (or <code>"FAILED"</code>). Do not treat an expiry as the last word on money: read the order before you refuse to deliver.</div>
 <p><code>rrn</code> is the bank's reference for the payment. When <code>rrn_is_synthetic</code> is <code>true</code>, the bank gave Katana no reference and the value was made by Katana: it identifies the payment to Katana support, but it does not appear on a bank statement.</p>
 <p><code>gateway</code> is always <code>null</code>.</p>
@@ -224,6 +225,7 @@ if not (fresh and hmac.compare_digest(expected, sig["v1"])):
 <tr><td><code>UNAUTHORIZED</code></td><td>401</td><td>The API key is missing, unknown or revoked.</td></tr>
 <tr><td><code>MERCHANT_BLOCKED</code></td><td>403</td><td>The account is blocked and takes no orders.</td></tr>
 <tr><td><code>MERCHANT_SUSPENDED</code></td><td>403</td><td>The account is suspended or terminated.</td></tr>
+<tr><td><code>PAYIN_NOT_ENABLED</code></td><td>403</td><td>The account is set up for payouts only and takes no pay-in orders.</td></tr>
 <tr><td><code>LIVE_MODE_NOT_ACTIVATED</code></td><td>403</td><td>A live key was used before live mode was activated.</td></tr>
 <tr><td><code>ORDER_NOT_FOUND</code></td><td>404</td><td>No order with that id or reference belongs to this key.</td></tr>
 <tr><td><code>REFERENCE_REUSED</code></td><td>409</td><td>The reference already belongs to an order with a different amount.</td></tr>

@@ -41,7 +41,14 @@ test("a pending order: minor units, no event, no bank reference, no gateway", ()
     event: null, event_id: null, order_id: v2OrderId(ID), reference: "inv-1001", status: "PENDING",
     amount: 200000, currency: "INR", rrn: null, rrn_is_synthetic: false, paid_at: null, gateway: null,
   });
-  assert.equal(v2ExpiresAt(order()), "2026-10-02T14:15:00.000Z");
+  assert.equal(v2ExpiresAt(order(), {}), "2026-10-02T14:15:00.000Z");
+});
+
+test("expires_at is when the order is told EXPIRED: a gateway order's includes its confirmation window", () => {
+  const env = { PAYIN_CONFIRM_WINDOW_SECONDS: "1800" };
+  assert.equal(v2ExpiresAt(order(), env), "2026-10-02T14:15:00.000Z");   // no gateway: the 15 minutes
+  assert.equal(v2ExpiresAt(order({ meta: { gateway: { provider: "PAYU" } } }), env), "2026-10-02T14:45:00.000Z");
+  assert.equal(v2ExpiresAt(order({ meta: { gateway: { provider: "PAYU" } }, livemode: false }), env), "2026-10-02T14:15:00.000Z");
 });
 
 test("a paid order carries its bank reference and when it was confirmed", () => {

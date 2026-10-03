@@ -24,6 +24,8 @@ export interface FlowsData {
   flow: OrderFlow | null;
   counts: { merchants: Record<PayinFlowSetting, number>; bankers: Record<PayinFlowSetting, number> };
   merchants: FlowMerchant[]; bankers: FlowBanker[];
+  /** Pay-out only merchants and their bankers, left out of both lists. */
+  payout_only?: { merchants: number; bankers: number };
 }
 
 /** The bifurcation, optionally narrowed to one flow (Both counts under each). */
@@ -51,7 +53,7 @@ export function FlowMerchantsTable({ rows, loading, refresh, viewKey, showFilter
 }) {
   const [edit, setEdit] = useState<FlowMerchant | null>(null);
   const cols: Column<FlowMerchant>[] = [
-    { key: "name", header: "Merchant", render: (r) => <Link className="font-medium text-[color:var(--color-brand)] hover:underline" href={`/providers/${r.id}`}>{r.name}</Link> },
+    { key: "name", header: "Merchant", render: (r) => <Link className="font-medium text-[color:var(--color-brand)] hover:underline" href={`/merchants/${r.id}`}>{r.name}</Link> },
     { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.code}</span> },
     { key: "flow", header: "Pay-in flow", render: (r) => <FlowBadge flow={r.flow} active={r.active} /> },
     { key: "bankers", header: "Bankers", render: (r) => <span className="tabular-nums">{r.bankers}</span> },
@@ -86,7 +88,7 @@ export function FlowBankersTable({ rows, loading, refresh, viewKey, showFilters,
   const [edit, setEdit] = useState<FlowBanker | null>(null);
   const ready = (ok: boolean, need: string) => ok ? <Badge variant="success">Ready</Badge> : <Badge variant="warning">{need}</Badge>;
   const cols: Column<FlowBanker>[] = [
-    { key: "name", header: "Banker", render: (r) => <Link className="font-medium text-[color:var(--color-brand)] hover:underline" href={`/merchants/${r.id}`}>{r.name}</Link> },
+    { key: "name", header: "Banker", render: (r) => <Link className="font-medium text-[color:var(--color-brand)] hover:underline" href={`/bankers/${r.id}`}>{r.name}</Link> },
     { key: "merchant_code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.merchant_code}</span> },
     { key: "provider_name", header: "Merchant", render: (r) => r.provider_name ?? <span className="text-[color:var(--color-text-muted)]">not mapped</span> },
     { key: "flow", header: "Pay-in flow", render: (r) => (
