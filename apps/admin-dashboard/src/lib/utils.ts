@@ -55,6 +55,7 @@ const RAIL_LABELS: Record<string, string> = {
   KATANA_PO: "Katana Pay Payout",
   QUICKPAY: "Vendor PG",
   QUICKPAY_PO: "Vendor PG Payout",
+  UPI_DIRECT: "Paid to UPI ID",
 };
 
 export function railLabel(code: string | null | undefined): string {

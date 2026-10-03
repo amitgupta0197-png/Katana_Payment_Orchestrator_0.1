@@ -21,9 +21,9 @@
 import { parsePayinChannel, type PayinChannel } from "@/lib/payin-channel";
 
 /** Midnight IST at the start of the given YYYY-MM-DD, as a timestamptz. */
-const IST_DAY_START = (p: string) => `(${p}::date)::timestamp AT TIME ZONE 'Asia/Kolkata'`;
+export const IST_DAY_START = (p: string) => `(${p}::date)::timestamp AT TIME ZONE 'Asia/Kolkata'`;
 /** Midnight IST at the START OF THE NEXT DAY — so a `to` date is inclusive of its own day. */
-const IST_DAY_END = (p: string) => `(${p}::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'`;
+export const IST_DAY_END = (p: string) => `(${p}::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata'`;
 
 export interface TxnWindow {
   /** Merchant codes to scope to, or null for an unscoped (SUPER_ADMIN) view. */

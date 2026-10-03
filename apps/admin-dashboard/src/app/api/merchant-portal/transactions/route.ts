@@ -2,6 +2,9 @@
 // assigned merchants (for reimbursement). Unions checkout_orders (PayU / Cashfree
 // / Razorpay / … via selected_rail) and vendor_payin_orders (Katana Pay / vendor PG).
 //
+// Money paid straight to a banker's UPI ID with no order (lib/merchant-credits) is a row too
+// (source UPI_CREDIT, P2P), so the tiles count what the banker's own page shows.
+//
 // Every row carries its pay-in channel (INTENT / P2P / UNCLASSIFIED, lib/payin-channel) and the
 // totals are also returned per channel; ?channel= narrows the whole response to one.
 //
@@ -19,6 +22,7 @@ import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { CHECKOUT_ORDER_CHANNEL, PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
 import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
+import { unlinkedCredits } from "@/lib/merchant-credits";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +60,7 @@ export async function GET(req: Request) {
              id::text AS ref, created_at
         FROM checkout_orders ${co.where}
        ORDER BY created_at DESC LIMIT 500
-    `, co.args).catch(() => [])).map((r): Txn => ({ ...r, channel_type: CHECKOUT_ORDER_CHANNEL }));
+    `, co.args).catch(logged("checkout"))).map((r): Txn => ({ ...r, channel_type: CHECKOUT_ORDER_CHANNEL }));
 
     const payin = (await rows<Txn>("vendorGateway", `
       SELECT 'PAYIN' AS source, merchant_id, vendor AS channel,
@@ -64,9 +68,11 @@ export async function GET(req: Request) {
              order_id AS ref, created_at, channel_type
         FROM vendor_payin_orders ${vp.where}
        ORDER BY created_at DESC LIMIT 500
-    `, vp.args).catch(() => [])).map((r) => ({ ...r, channel_type: payinChannelOf(r.channel_type) }));
+    `, vp.args).catch(logged("payin"))).map((r) => ({ ...r, channel_type: payinChannelOf(r.channel_type) }));
 
-    const all = [...checkout, ...payin];
+    const credits: Txn[] = await unlinkedCredits(window);
+
+    const all = [...checkout, ...payin, ...credits];
     // A provider never sees which gateway took a payment (lib/merchant-safe).
     if (!seesGatewayNames(s.persona)) for (const t of all) t.channel = merchantSafeChannel(t.channel);
 
@@ -135,6 +141,10 @@ function buildDaySeries(all: Txn[], days = 14) {
   }
   return buckets;
 }
+
+// A source that fails reads as empty, but never silently: an empty dashboard with nothing in the
+// log is how a broken query looks like a quiet day.
+const logged = (what: string) => (e: unknown) => { console.warn(`[merchant-portal/transactions] ${what}:`, (e as Error).message); return []; };
 
 function empty() {
   return { gross: 0, success_count: 0, failed_count: 0, pending_count: 0, total_count: 0 };

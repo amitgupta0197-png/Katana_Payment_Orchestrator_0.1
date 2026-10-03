@@ -15,6 +15,7 @@ import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { CHECKOUT_ORDER_CHANNEL, payinChannelOf } from "@/lib/payin-channel";
 import { merchantSafeChannel, seesGatewayNames } from "@/lib/merchant-safe";
+import { unlinkedCredits } from "@/lib/merchant-credits";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,14 @@ export async function GET(req: Request) {
        ORDER BY created_at DESC LIMIT 10000
     `, vp.args).catch(() => []);
 
-    const all = [...checkout, ...payin]
+    // Money paid straight to a UPI ID with no order, as on the screen (lib/merchant-credits).
+    const credits: Row[] = (await unlinkedCredits(window, 10_000)).map((c) => ({
+      source: c.source, merchant_id: c.merchant_id, channel: c.channel, method: c.method, status: c.status,
+      amount: c.amount, ref: "", txn_id: c.ref, created_at: c.created_at, channel_type: c.channel_type,
+      provider_payment_id: null, bank_ref_num: c.utr, vpa: c.payer_vpa, payment_type: "UPI", bank_name: null, customer_email: null,
+    }));
+
+    const all = [...checkout, ...payin, ...credits]
       .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
     // A provider never sees which gateway took a payment (lib/merchant-safe).
     if (!seesGatewayNames(s.persona)) for (const r of all as { channel?: string | null }[]) r.channel = merchantSafeChannel(r.channel);
