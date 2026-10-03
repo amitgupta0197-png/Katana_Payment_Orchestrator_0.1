@@ -622,6 +622,7 @@ function ProofUpload({ orderId, onSubmitted }: { orderId: string; onSubmitted: (
   const [utr, setUtr] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = async () => {
@@ -633,11 +634,21 @@ function ProofUpload({ orderId, onSubmitted }: { orderId: string; onSubmitted: (
       if (utr.trim()) fd.append("utr", utr.trim());
       const r = await fetch(`/api/pay-status/${orderId}/proof`, { method: "POST", body: fd });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Upload failed. Try again.");
+      // Say so at once: the status that moves this screen on can take a moment to arrive.
+      setSent(true);
       onSubmitted();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
 
+  if (sent) {
+    return (
+      <div className="kp-rise kp-glass mt-4 flex items-center gap-2.5 rounded-3xl p-4 text-sm">
+        <FileCheck2 className="h-4 w-4 shrink-0 text-emerald-300" />
+        <span>Screenshot sent. We&apos;re matching it with the payment; this screen updates once it&apos;s confirmed.</span>
+      </div>
+    );
+  }
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="kp-dim mt-4 flex w-full items-center justify-center gap-2 text-xs font-medium hover:text-white">

@@ -32,12 +32,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // Long-poll: hold until terminal (payment received / failed / expired) or the
     // budget elapses, bailing immediately if the client navigates away.
     if (wait && !payload.terminal) {
+      // ANSWER AS SOON AS ANYTHING THE PAGE SHOWS CHANGES, not only at a final status. Waiting for
+      // "paid / failed / expired" alone held a customer's screenshot upload behind a 25-second
+      // poll: the page kept showing the upload form after the server had the file, and the
+      // customer sent it four times (2026-10-03).
+      const shown = (p: typeof payload) => JSON.stringify(p && [p.status, p.proof_submitted, p.held, p.confirming, p.rrn, p.expires_at]);
+      const before = shown(payload);
       const deadline = Date.now() + WAIT_BUDGET_MS;
       while (Date.now() < deadline && !payload.terminal && !req.signal.aborted) {
         await sleep(WAIT_TICK_MS);
         const next = await readOrderStatus(id);
         if (!next) break;
         payload = next;
+        if (shown(payload) !== before) break;
       }
     }
 
