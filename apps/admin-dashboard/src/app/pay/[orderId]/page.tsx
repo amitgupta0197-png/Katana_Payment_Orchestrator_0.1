@@ -118,6 +118,15 @@ function PaymentInner({ orderId }: { orderId: string }) {
           <p className="kp-dim mx-auto mt-2 max-w-[30ch] text-sm">
             Check the link, or go back to the merchant and start the payment again.
           </p>
+          {/* A payment link carries Katana's order id. A merchant's own order number in its place is
+              the common integration slip (a test page built /pay/ORD_… on 2026-10-03), so say so
+              for whoever built the link; a customer can ignore it. */}
+          {!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId) && (
+            <p className="kp-dim mx-auto mt-6 max-w-[38ch] text-xs">
+              For the developer: this address has your own order number. Send the customer to the
+              <span className="font-mono"> pay_url </span>returned when the order was created.
+            </p>
+          )}
         </div>
       </Screen>
     );
