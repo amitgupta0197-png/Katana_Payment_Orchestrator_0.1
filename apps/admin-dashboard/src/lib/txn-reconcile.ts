@@ -389,8 +389,8 @@ export async function ingestTxnAlert(
   if (utr && /^\d{12}$/.test(utr)) {
     // Target the BEST stored copy (confirmed > real-amount > earliest) — the one the
     // feed shows — so a repair lands on the visible row, not another junk duplicate.
-    const dupRrn = await rows<{ id: string; amount: number }>("vendorGateway", `
-      SELECT id::text, amount::float AS amount FROM vendor_txn_alerts
+    const dupRrn = await rows<{ id: string; amount: number; has_details: boolean }>("vendorGateway", `
+      SELECT id::text, amount::float AS amount, (details IS NOT NULL) AS has_details FROM vendor_txn_alerts
        WHERE direction = 'CREDIT' AND utr = $1
          AND created_at >= now() - ($2 || ' hours')::interval
        ORDER BY (outcome = 'CONFIRMED') DESC, (amount > 0) DESC, created_at ASC LIMIT 1
@@ -408,6 +408,15 @@ export async function ingestTxnAlert(
            WHERE id = $1::uuid
         `, [dupRrn[0].id, amount.toFixed(2), payerName, input.payer_vpa ?? null]).catch(() => {});
         dupDetail += ` · repaired ₹0 original to ${amount.toFixed(2)}`;
+      }
+      // A re-read that brings the payment's detail block fills it in on the row we show, when
+      // that row has none (the first sighting was a push, or a read before the screen loaded).
+      if (!dupRrn[0].has_details && input.details && Object.keys(input.details).length) {
+        await rows("vendorGateway", `
+          UPDATE vendor_txn_alerts SET details = $2::jsonb, detail = COALESCE(detail,'') || ' · details added by re-read'
+           WHERE id = $1::uuid AND details IS NULL
+        `, [dupRrn[0].id, JSON.stringify(input.details)]).catch(() => {});
+        dupDetail += " · details added to the original";
       }
     }
   }
@@ -738,10 +747,14 @@ export async function ingestTxnAlert(
           payee_vpa        = COALESCE(payee_vpa, $8),
           payee_vpa_source = CASE WHEN payee_vpa IS NULL AND $8::text IS NOT NULL
                                   THEN 'STATED' ELSE payee_vpa_source END,
+          -- And the detail block. The payment push lands first and has none; the screen read
+          -- that brings the RRN is the one that read the payment's details, and leaving them on
+          -- a row nobody shows is why a hands-free capture had no "Details" (2026-10-03).
+          details    = COALESCE(details, $9::jsonb),
           detail     = COALESCE(detail,'') || ' · +' || $7
         WHERE id = $1::uuid
       `, [tgtId, rrn, orderRef, payerName, input.payer_vpa ?? null, input.bank ?? null, source,
-          statedPayee]).catch(() => {});
+          statedPayee, input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null]).catch(() => {});
       // An on-demand capture request against this credit is now fulfilled — close it so
       // the dashboard button clears and the agent stops re-issuing it.
       if (rrn) await closeCaptureRequest(tgtId);
