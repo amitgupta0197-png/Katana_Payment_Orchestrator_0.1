@@ -128,9 +128,10 @@ object Prefs {
     const val APP_AIRTEL = "AIRTEL"
     const val APP_GPAY = "GPAY"
     const val APP_PHONEPE = "PHONEPE"
+    const val APP_PINELABS = "PINELABS"
     fun captureApps(ctx: Context): Set<String> =
         sp(ctx).getStringSet("capture_apps", null)?.toSet()
-            ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY, APP_PHONEPE)
+            ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY, APP_PHONEPE, APP_PINELABS)
     fun captureAppOn(ctx: Context, app: String): Boolean = captureApps(ctx).contains(app)
     fun setCaptureApp(ctx: Context, app: String, on: Boolean) {
         val next = captureApps(ctx).toMutableSet().also { if (on) it.add(app) else it.remove(app) }
@@ -219,6 +220,18 @@ object Prefs {
     fun setEmailConnected(ctx: Context, email: String, connected: Boolean) {
         sp(ctx).edit().putString("email_addr", email.trim()).putBoolean("email_connected", connected).apply()
     }
+
+    // The device id this phone's own signing key (DeviceKey) is enrolled under, or null when
+    // it is not enrolled. Tied to the id because the id can be edited: a renamed phone is a
+    // new device to the server and enrols again.
+    fun keyEnrolledFor(ctx: Context): String? = sp(ctx).getString("key_enrolled_for", null)
+    fun setKeyEnrolled(ctx: Context, deviceId: String?) {
+        sp(ctx).edit().putString("key_enrolled_for", deviceId).putBoolean("key_conflict", false).apply()
+    }
+    // The server refused the key: this device id already has another one (the agent was
+    // reinstalled, or the id is in use on a second phone). Staff reset it.
+    fun keyConflict(ctx: Context): Boolean = sp(ctx).getBoolean("key_conflict", false)
+    fun setKeyConflict(ctx: Context, v: Boolean) = sp(ctx).edit().putBoolean("key_conflict", v).apply()
 
     fun save(ctx: Context, baseUrl: String, deviceId: String, merchantCode: String, enabled: Boolean) {
         sp(ctx).edit()

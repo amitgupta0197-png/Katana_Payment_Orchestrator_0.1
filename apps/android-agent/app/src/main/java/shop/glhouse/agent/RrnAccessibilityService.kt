@@ -135,6 +135,8 @@ class RrnAccessibilityService : AccessibilityService() {
 
     // ---- detail-capture state ----
     private val attempts = HashMap<String, Int>()
+    /** Copy taps already made on the current visit to each payment; see retryPaytmCopy. */
+    private val copyTaps = HashMap<String, Int>()
     // How many times we have scrolled a payment's detail screen looking for its RRN Copy link.
     // Paytm renders that block below the fold, so it has to be scrolled to before it exists as a
     // laid-out node — and a screen that never yields one must give up rather than scroll forever.
@@ -202,6 +204,11 @@ class RrnAccessibilityService : AccessibilityService() {
         // Copy link is considered to have stopped moving.
         private const val SETTLE_MS = 260L
         private const val SETTLE_TRIES = 4
+        /** Re-sweeps for a payment counted but not yet drawn, spaced LATE_ROW_WAIT_MS apart (growing). */
+        private const val LATE_ROW_RETRIES = 3
+        private const val LATE_ROW_WAIT_MS = 2_500L
+        /** Copy taps on one screen before the payment is left for the next pass. */
+        private const val COPY_TAPS = 3
         // Long enough for a swipe to dispatch, land and re-lay-out the detail before the next
         // accessibility event is allowed to act on it.
         private const val SCROLL_WAIT_MS = 1200L
@@ -329,7 +336,10 @@ class RrnAccessibilityService : AccessibilityService() {
         fun requestDeepSweep() {
             deepSweep = true; forceResweep = true; openedFullList = false
             // The same request arms PhonePe, whose list has its own below-the-fold backlog.
-            instance?.let { it.ppDeep = true; it.ppLastSweep = 0L; it.ppSweeping = false }
+            instance?.let {
+                it.ppDeep = true; it.ppLastSweep = 0L; it.ppSweeping = false
+                it.plDeep = true
+            }
         }
 
         /**
@@ -362,6 +372,33 @@ class RrnAccessibilityService : AccessibilityService() {
         }
 
         const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
+        const val PINELABS_PKG = "com.pinelabs.pinelabsone"
+
+        // Pine Labs One timings. Every row costs an open + read + back (as on GPay), so the list
+        // is only swept when its own "N Transactions" header says something arrived.
+        // How often a parked phone refreshes the list. Pine Labs One posted no notification for
+        // a QR payment (2026-10-01), so this refresh is the ONLY thing that finds a new payment
+        // and its interval is the floor on how late a capture can be.
+        private const val PL_REFRESH_MS = 12_000L
+        private const val PL_SETTLE_MS = 2_500L          // the refreshed list is given this long to land
+        private const val PL_DETAIL_WAIT_MS = 6_000L     // "the row never opened" watchdog
+        private const val PL_DETAIL_DEADLINE_MS = 9_000L // one payment may hold the screen this long
+        // Consecutive already-held payments that end an ordinary sweep. Rows are newest-first and
+        // are walked in order, so two in a row is where the new ones stop.
+        private const val PL_STOP_AFTER_OLD = 2
+        // Each scroll brings up about five rows. The ordinary limit only matters on a first run,
+        // when nothing is held yet and the old-streak can never end the sweep.
+        private const val PL_MAX_SCROLLS = 12
+        private const val PL_DEEP_SCROLLS = 150
+        // No row opened or returned from for this long = the sweep was interrupted mid-flight.
+        private const val PL_STALL_MS = 30_000L
+        // A list still showing yesterday is left and re-entered at most this often.
+        private const val PL_REENTER_MS = 10 * 60_000L
+        // After three sweeps in a row that could not be carried out, leave the screen alone
+        // this long before trying again.
+        private const val PL_BACKOFF_MS = 2 * 60_000L
+        private const val R_OVERLAP = 3   // a row this sweep already opened, seen again after a scroll
+        private const val R_SKIP = 4      // read, but not a payment to capture (card, failed, unreadable)
         @Volatile private var lastGpayLaunch = 0L
         // The list is stale at the moment the push arrives, so a notification-armed sweep
         // must refresh it first — see gpayTryRefresh.
@@ -390,6 +427,8 @@ class RrnAccessibilityService : AccessibilityService() {
         // alike, and only GPay needs its list refreshed afterwards.
         private val pendingCaptures = ArrayDeque<Pair<PendingIntent, String>>()
         @Volatile private var captureBusy = false
+        /** When a Paytm RRN was last read off the clipboard; see handleList. */
+        @Volatile var lastPaytmCaptureAt = 0L
         /**
          * Which capture currently holds the slot. Every release stamps a new generation, so a
          * timer armed for an EARLIER payment can no longer end a LATER one. Harmless while the
@@ -414,6 +453,8 @@ class RrnAccessibilityService : AccessibilityService() {
         // rendering a detail screen is not cut off, short enough that one unreadable payment
         // cannot stall a burst.
         private const val CAPTURE_DEADLINE_MS = 8_000L   // give up on one payment, move on
+        /** How long a push-opened Paytm screen gets to become the payment before we look. */
+        private const val PAYTM_LANDING_CHECK_MS = 3_500L
         // Bound, not a policy: at roughly three seconds a payment this is over ten minutes of
         // backlog, and anything beyond it is recovered by the list sweep instead.
         private const val CAPTURE_QUEUE_MAX = 200        // bound: never grow without limit
@@ -483,6 +524,14 @@ class RrnAccessibilityService : AccessibilityService() {
                 Log.w("RRNCAP", "${app.lowercase()}: queued intent failed: ${e.javaClass.simpleName}"); false
             }
             if (!ok) requestAppCapture(ctx, app)
+            // WHERE DID THE PUSH TAKE US? Paytm 9.46's payment push does not always open that
+            // payment: it can land on the home screen, which then sits still, so no accessibility
+            // event ever arrives to tell the engine to look, and the payment waited out the whole
+            // deadline and was only captured when someone touched the phone (2026-10-03 13:41,
+            // RRN read three minutes later). So look ourselves once the screen has had time to
+            // open: a payment's own screen is captured as before, anything else hands over to
+            // the list sweep at once.
+            if (ok && app == Prefs.APP_PAYTM) pump.postDelayed({ instance?.checkPaytmLanding(gen) }, PAYTM_LANDING_CHECK_MS)
             // Never let one unreadable payment wedge the queue — but only ever end the payment
             // this timer was armed for (see captureGen).
             pump.postDelayed({
@@ -491,6 +540,9 @@ class RrnAccessibilityService : AccessibilityService() {
                     Prefs.bump(ctx, "capture_timeout")
                     captureBusy = false; captureGen++
                     pumpCaptures(ctx)
+                    // A still screen sends no events, so the sweep armed for this payment would
+                    // otherwise wait for a touch. Read the screen now.
+                    if (app == Prefs.APP_PAYTM) pump.postDelayed({ instance?.kickPaytm() }, 300L)
                 }
             }, CAPTURE_DEADLINE_MS)
         }
@@ -523,6 +575,28 @@ class RrnAccessibilityService : AccessibilityService() {
          * next payment starts about three seconds after this one — roughly three times the
          * throughput, with no change to what is captured.
          */
+        /**
+         * The Copy tap for [masked] did not reach the clipboard. Tap it again on the same screen
+         * rather than leave the payment: a missed tap is usually timing (the screen still easing
+         * after the scroll), and the next tap lands. Live 2026-10-03 14:19: one tap, the clipboard
+         * still held the previous payment's RRN, and the payment was abandoned. Returns false once
+         * the taps are spent, and the caller then gives the payment up as before.
+         */
+        fun retryPaytmCopy(masked: String): Boolean {
+            val svc = instance ?: return false
+            val n = svc.copyTaps.getOrDefault(masked, 0) + 1
+            if (n >= COPY_TAPS) { svc.copyTaps.remove(masked); return false }
+            svc.copyTaps[masked] = n
+            Log.d("RRNCAP", "copy missed for $masked -> tapping again ($n/${COPY_TAPS - 1})")
+            svc.main.postDelayed({
+                // The attempt this tap spent is given back: it was the tap that failed, not the payment.
+                svc.attempts[masked] = (svc.attempts.getOrDefault(masked, 1) - 1).coerceAtLeast(0)
+                svc.detailBusyUntil = 0L
+                svc.kickPaytm()
+            }, 700L)
+            return true
+        }
+
         fun onPaytmCaptureDone(ctx: Context) {
             instance?.leavePaytmDetailNow()
             // A backlog gets the short pause: nothing has to settle, because the next payment's
@@ -541,10 +615,13 @@ class RrnAccessibilityService : AccessibilityService() {
             forceResweep = true
             if (app == Prefs.APP_GPAY) gpayRefreshPending = true
             // Paytm ships under two package names; open whichever this phone actually has.
-            val pkg = if (app == Prefs.APP_GPAY) GPAY_PKG
-                else listOf("com.paytm.business", "net.one97.paytm.merchant")
+            val pkg = when (app) {
+                Prefs.APP_GPAY -> GPAY_PKG
+                Prefs.APP_PINELABS -> PINELABS_PKG
+                else -> listOf("com.paytm.business", "net.one97.paytm.merchant")
                     .firstOrNull { runCatching { ctx.packageManager.getLaunchIntentForPackage(it) }.getOrNull() != null }
                     ?: "com.paytm.business"
+            }
             try {
                 val i = ctx.packageManager.getLaunchIntentForPackage(pkg)
                 if (i == null) { Log.w("RRNCAP", "$pkg not installed; cannot auto-open"); return }
@@ -554,9 +631,11 @@ class RrnAccessibilityService : AccessibilityService() {
                 // the notification row is already uploaded, so no payment is lost either way.
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 ctx.startActivity(i)
-                Log.d("RRNCAP", "gpay: opened by credit notification -> sweep armed")
+                Log.d("RRNCAP", "${app.lowercase()}: opened by credit notification -> sweep armed")
+                // The app may already have been on screen and not change at all; look ourselves.
+                if (app == Prefs.APP_PAYTM) for (d in longArrayOf(2_500L, 6_000L)) pump.postDelayed({ instance?.kickPaytm() }, d)
             } catch (e: Exception) {
-                Log.w("RRNCAP", "gpay: auto-open failed: ${e.message}")
+                Log.w("RRNCAP", "${app.lowercase()}: auto-open failed: ${e.message}")
             }
         }
     }
@@ -592,10 +671,14 @@ class RrnAccessibilityService : AccessibilityService() {
                     // events at all and the engine looked broken when it had simply never been
                     // called (2026-08-22).
                     "com.phonepe.app.business",
+                    PINELABS_PKG,
                 )
             }
         } catch (e: Exception) { Log.w(TAG, "setServiceInfo failed: ${e.message}") }
         Log.d(TAG, "service connected (sdk=${Build.VERSION.SDK_INT}); watching ${serviceInfo?.packageNames?.joinToString()}")
+        // A service that (re)starts while Pine Labs is already open on a still screen receives no
+        // event to wake it — the list would sit unread until someone touched the phone.
+        main.postDelayed({ plTickNow() }, 2_000L)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -613,8 +696,36 @@ class RrnAccessibilityService : AccessibilityService() {
             "com.apbl.merchant"  -> if (Prefs.captureAppOn(this, Prefs.APP_AIRTEL)) handleAirtel(root)   // Airtel Payments Bank Merchant
             "com.google.android.apps.nbu.paisa.merchant" -> if (Prefs.captureAppOn(this, Prefs.APP_GPAY)) handleGpay(root)  // Google Pay for Business
             "com.phonepe.app.business" -> if (Prefs.captureAppOn(this, Prefs.APP_PHONEPE)) handlePhonePe(root)  // PhonePe for Business
+            PINELABS_PKG -> if (Prefs.captureAppOn(this, Prefs.APP_PINELABS)) handlePinelabs(root)  // Pine Labs One
             else -> return
         }
+    }
+
+    /** Run the Paytm engine on whatever is on screen now, without waiting for an event. */
+    fun kickPaytm() {
+        val root = rootInActiveWindow ?: return
+        val pkg = root.packageName?.toString()
+        if (pkg != "com.paytm.business" && pkg != "net.one97.paytm.merchant") return
+        if (!Prefs.captureAppOn(this, Prefs.APP_PAYTM)) return
+        handlePaytm(root)
+    }
+
+    /**
+     * The push for payment [gen] was sent [PAYTM_LANDING_CHECK_MS] ago. If its screen is the
+     * payment (it has the RRN block), the detail engine has it. Otherwise the push landed somewhere
+     * else: release the slot now rather than at the deadline, and sweep the list for the payment.
+     */
+    fun checkPaytmLanding(gen: Int) {
+        if (!captureBusy || gen != captureGen) return
+        val root = rootInActiveWindow ?: return
+        val pkg = root.packageName?.toString()
+        if (pkg != "com.paytm.business" && pkg != "net.one97.paytm.merchant") return
+        val texts = ArrayList<Pair<String, AccessibilityNodeInfo>>().also { flatten(root, it) }.map { it.first }
+        if (texts.any { it.equals("RRN", true) }) return
+        Log.d(TAG, "paytm: the push did not open the payment -> sweeping the list for it")
+        forceResweep = true
+        onCaptureFinished(applicationContext, 200L)
+        main.postDelayed({ kickPaytm() }, 300L)
     }
 
     private fun handlePaytm(root: AccessibilityNodeInfo) {
@@ -728,6 +839,40 @@ class RrnAccessibilityService : AccessibilityService() {
      * stamp yesterday's evening payments as today's future. Anything landing more than ten
      * minutes ahead of now is therefore read as the previous day.
      */
+    /**
+     * When a Paytm payment happened, from its detail screen's "Paid at …" line, as ISO-8601.
+     *
+     * Paytm captures carried no time of their own, so the dashboard filed each one under the
+     * moment its RRN was read: a 12:12 PM payment read by a sweep at 12:58 showed as 12:58
+     * (2026-10-03). The line reads like "Paid at 12:12 PM, 03 Oct 2026"; the date and the seconds
+     * are optional, and with no date the time is taken as today's (yesterday's if that would be
+     * in the future).
+     */
+    private fun paytmEventTime(paidAt: String): String? {
+        val t = Regex("(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s?([AP]M)", RegexOption.IGNORE_CASE).find(paidAt) ?: return null
+        var hour = t.groupValues[1].toIntOrNull()?.rem(12) ?: return null
+        if (t.groupValues[4].equals("PM", true)) hour += 12
+        val minute = t.groupValues[2].toIntOrNull() ?: return null
+        val second = t.groupValues[3].toIntOrNull() ?: 0
+        val cal = java.util.Calendar.getInstance()
+        val d = Regex("(\\d{1,2})\\s+([A-Za-z]{3})[A-Za-z]*,?\\s+(\\d{4})").find(paidAt)
+        if (d != null) {
+            val day = runCatching {
+                java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.US).parse("${d.groupValues[1]} ${d.groupValues[2]} ${d.groupValues[3]}")
+            }.getOrNull() ?: return null
+            cal.time = day
+        }
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+        cal.set(java.util.Calendar.MINUTE, minute)
+        cal.set(java.util.Calendar.SECOND, second)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        if (d == null && cal.timeInMillis > System.currentTimeMillis() + 10 * 60_000L)
+            cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+        return runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).format(cal.time)
+        }.getOrNull()
+    }
+
     private fun phonepeEventTime(paidAt: String): String? {
         val m = Regex("^([0-9]{1,2}):([0-9]{2})\\s?([AP]M)$", RegexOption.IGNORE_CASE)
             .find(paidAt.trim()) ?: return null
@@ -992,6 +1137,695 @@ class RrnAccessibilityService : AccessibilityService() {
                 }
             }
         }
+    }
+
+    // -------------------------------------------------------------- Pine Labs
+    //
+    // Pine Labs One (com.pinelabs.pinelabsone) is a FLUTTER app, so — as with GPay — the screen
+    // text arrives as content-descriptions and is read with flattenAll. Verified against device
+    // dumps of v4.8.0 (OnePlus 8, Android 13), 2026-10-01.
+    //
+    // WHERE THE RRN IS. Not on the list: a "Payments - Transactions" row says only
+    //
+    //     "₹ 1.00\nSuccess\n01 Oct | 09:32 PM"
+    //
+    // and not on the detail screen as it opens either. "Transaction details" shows the Pine Labs
+    // Transaction ID (10 digits, not a UPI reference) straight away; the RRN sits in a collapsed
+    // "More Details" section, which has to be tapped open before these nodes exist at all:
+    //
+    //     "Customer VPA\nRRN"   "ra**********@ptaxis"   "627446282719"
+    //
+    // So every payment costs an open, a tap on More Details, a read and a BACK.
+    //
+    // A ROW HAS NO IDENTITY ON THE LIST. Ten payments taken in the same minute for the same
+    // amount are ten identical rows, so "have I already read this one?" cannot be answered
+    // without opening it. The Transaction ID answers it the moment the detail appears — before
+    // anything is expanded — and is what the ledger remembers (RrnStore.recordRow). That keeps
+    // re-opening a held payment to about two seconds, and it is why the sweep is not run on a
+    // timer: the list's own "N Transactions" header says when something has arrived.
+    //
+    // WHAT THIS ENGINE PRESSES: "View all transactions" (Home), the list's refresh icon, a
+    // payment row, "More Details", and BACK. Nothing else — in particular never "Send by email",
+    // "View Chargeslip" or "Order Payment QR". Each is pressed as an action on its own node, not
+    // at a coordinate, so a layout shift cannot move a different control under the tap.
+    private val plAmountRx = Regex("^(?:₹|Rs\\.?|INR)\\s?[0-9][0-9,]*(?:\\.[0-9]{1,2})?$", RegexOption.IGNORE_CASE)
+    // "01 Oct | 09:32 PM" — the last line of a list row.
+    private val plRowWhenRx = Regex("^\\d{1,2}\\s+[A-Za-z]{3,9}\\s*\\|\\s*\\d{1,2}:\\d{2}")
+    private val plCountRx = Regex("^([0-9][0-9,]*)\\s+Transactions?$", RegexOption.IGNORE_CASE)
+    // The list's date selector, "01 Oct 2026".
+    private val plDateRx = Regex("^\\d{1,2}\\s+[A-Za-z]{3}\\s+\\d{4}$")
+    // A row that says it was not paid is never opened: there is no credit behind it to find.
+    private val plNotPaidRx = Regex("fail|declin|pending|cancel|void|refund|revers|expire|time[d ]?\\s?out", RegexOption.IGNORE_CASE)
+    // "Oct 01, 2026 … 21:32" on the detail screen. The clock is 24-hour there even though the
+    // list's is 12-hour; the AM/PM group is kept in case a build renders it the other way.
+    private val plWhenRx = Regex("([A-Za-z]{3,9})\\s+(\\d{1,2}),\\s*(\\d{4})\\D{0,6}(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])?")
+    // Labels on the detail screen. They come in pairs — one node "Transaction ID\nProduct", then
+    // one node per value — or, for a full-width field, as a single "Transaction mode\nSQR" node.
+    private val plLabels = mapOf(
+        "transaction id" to "transaction_id", "product" to "product",
+        "store name" to "store_name", "transaction type" to "transaction_type",
+        "acquirer" to "acquirer", "pos ids" to "pos_id",
+        "tid" to "tid", "hardware model" to "hardware_model",
+        "transaction mode" to "transaction_mode",
+        "customer vpa" to "customer_vpa", "rrn" to "rrn",
+        "mid" to "mid", "store city" to "store_city",
+        "batch no" to "batch_no", "status" to "settlement_status",
+        "host transaction id" to "host_transaction_id",
+    )
+
+    // ---- Pine Labs list sweep ----
+    private var plSweeping = false
+    private var plSweepDeep = false         // this sweep ignores the old-streak and walks far
+    /** A backfill was asked for: the next sweep is a deep one. */
+    private var plDeep = false
+    /** Sweep even though the header count has not moved (push, "Get RRN", backfill). */
+    private var plForce = false
+    private var plPos = 0                   // index into the rows currently on screen
+    private var plScrolls = 0
+    private var plOldStreak = 0
+    private var plPassFresh = 0             // rows on this screenful that were not overlap
+    private var plFirstAfterScroll = false
+    private var plCaptured = 0
+    private var plAborts = 0
+    private var plBackoffUntil = 0L
+    private val plSweepIds = HashSet<String>()   // Transaction IDs finished with in this sweep
+    private var plSweepHead: String? = null
+    /** The list header ("date|count|total") as of the last completed sweep. */
+    private var plBaseline: String? = null
+    private var plLastProgress = 0L
+    private var plLastRefresh = 0L
+    private var plSettleUntil = 0L
+    private var plLastNav = 0L
+    private var plLastReenter = 0L
+    private var plTickPending = false
+    private var plFromTick = false
+    private var plOpenGen = 0               // invalidates stale watchdog timers
+    private var plOpenRetries = 0
+    private var plRowRetried = false
+    private var plAutoNav = false           // the sweep opened the detail now on screen
+    private var plDetailReached = false
+    private var plBackScheduled = false
+    private var plBackAttempts = 0
+    private var plWaitChecks = 0
+    private var plLastResult = R_UNKNOWN
+    // ---- the detail being read (assembled across reads: Flutter only publishes what is rendered)
+    private var plDetailTxn: String? = null
+    private var plDetailDone = false
+    private var plDetailOverlap = false
+    private val plFields = LinkedHashMap<String, String>()
+    private var plDetailGen = 0
+    private var plDetailBusyUntil = 0L
+    private var plExpandClicks = 0
+    private var plDetailScrolls = 0
+    private var plDetailRereads = 0
+    private var plPollPending = false
+    private var plPolls = 0
+
+    private fun plRowKey(txnId: String) = "pinelabs|$txnId"
+
+    private fun handlePinelabs(root: AccessibilityNodeInfo) {
+        if (!Prefs.enabled(this)) return
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        flattenAll(root, nodes)
+        val onDetail = nodes.any { it.first.trim().equals("Transaction details", true) }
+        if (onDetail) { plHandleDetail(nodes); return }
+        val onList = nodes.any { it.first.trim().startsWith("Payments - Transactions", true) }
+        // Back on the list: whatever was being read on a detail is over, and opening the same
+        // payment again is a fresh attempt. Only a positively identified list resets it — a
+        // half-drawn frame in the middle of a read must not, or the read would start over and
+        // tap More Details shut.
+        if (onList) { plDetailTxn = null; plPolls = 0 }
+        if (!autoModeEnabled()) return
+        if (onList) plHandleList(root, nodes) else plMaybeOpenList(nodes)
+    }
+
+    /**
+     * Keep looking while nothing on screen is changing.
+     *
+     * Accessibility events describe CHANGE. A parked phone sitting on a list that has finished
+     * loading emits none, so an engine that only ever runs from events would refresh once and
+     * then never again. One self-rescheduling timer stands in for the missing events.
+     */
+    private fun plScheduleTick() {
+        if (plTickPending) return
+        plTickPending = true
+        main.postDelayed({
+            plTickPending = false
+            plTickNow()
+        }, PL_REFRESH_MS)
+    }
+
+    /** Look at Pine Labs now, as the timer rather than as a reaction to something on screen. */
+    private fun plTickNow() {
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != PINELABS_PKG || !Prefs.captureAppOn(this, Prefs.APP_PINELABS)) return
+        plFromTick = true
+        try { handlePinelabs(root) } finally { plFromTick = false }
+    }
+
+    /** Somewhere in Pine Labs other than the list or a payment: get to the list. */
+    private fun plMaybeOpenList(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        if (plSweeping) return
+        val now = System.currentTimeMillis()
+        if (now - plLastNav < 8_000L) return
+        val viewAll = nodes.firstOrNull { it.first.trim().equals("View all transactions", true) }
+        if (viewAll != null) {
+            plLastNav = now
+            plDetailTxn = null
+            plClick(viewAll.second)
+            Log.d(TAG, "pinelabs: home -> transactions list")
+            return
+        }
+        // Another tab (MPR, UPI, Support) is somewhere the merchant chose to be — the UPI tab is
+        // the QR a customer scans — so it is only left when a payment is known to be waiting.
+        if (!plForce && !forceResweep) return
+        val home = nodes.firstOrNull { it.first.trim().startsWith("Home\nTab", true) } ?: return
+        plLastNav = now
+        plClick(home.second)
+        Log.d(TAG, "pinelabs: a payment is waiting -> home tab")
+    }
+
+    /** "date|count|total" from the list's summary card, or null when it is scrolled out of view. */
+    private fun plListHead(nodes: List<Pair<String, AccessibilityNodeInfo>>): Triple<String, Int, String>? {
+        val texts = nodes.map { it.first.trim() }
+        val count = texts.firstNotNullOfOrNull { plCountRx.find(it)?.groupValues?.get(1) }
+            ?.replace(",", "")?.toIntOrNull() ?: return null
+        // NO DATE, NO LIST. The count can be on screen while the rest is not — mid-refresh, or
+        // under something drawn over the list — and a header read in that state differs from
+        // the baseline for no reason. On 2026-10-01 that started a sweep on a list whose rows
+        // would not open, and a minute went by before the payment that HAD arrived was read.
+        val date = texts.firstOrNull { plDateRx.matches(it) } ?: return null
+        val total = texts.firstOrNull { plAmountRx.matches(it) } ?: ""
+        return Triple(date, count, "$date|$count|$total")
+    }
+
+    private fun plHandleList(root: AccessibilityNodeInfo, nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        val now = System.currentTimeMillis()
+        if (forceResweep) { forceResweep = false; plForce = true }
+        if (plDeep) plForce = true
+        if (plSweeping) {
+            if (now - plLastProgress <= PL_STALL_MS) return
+            Log.w(TAG, "pinelabs: sweep stalled; resetting")
+            plSweeping = false; plAutoNav = false
+        }
+        plScheduleTick()
+
+        val head = plListHead(nodes)
+        if (head == null) {
+            // Scrolled down — by a finished sweep's rewind falling short, or by hand. New
+            // payments arrive at the top, so return there, but only from the timer: while
+            // someone is scrolling, events are flowing and this must not fight them.
+            if (plFromTick && plScrollList(root, forward = false)) main.postDelayed({ plTickNow() }, 600)
+            return
+        }
+        val (date, count, headKey) = head
+
+        // PAST MIDNIGHT THE LIST IS STILL YESTERDAY'S. The date is chosen when the screen is
+        // opened, so a phone parked overnight would watch a day that can no longer change.
+        // Leaving and re-entering picks today. A backfill is exempt: walking an earlier date is
+        // exactly what one may be for.
+        val today = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US).format(java.util.Date())
+        if (date.isNotEmpty() && !date.equals(today, true) && !plDeep && now - plLastReenter > PL_REENTER_MS) {
+            plLastReenter = now; plLastNav = 0L; plForce = true
+            Log.d(TAG, "pinelabs: list shows $date, not today -> re-entering")
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            return
+        }
+
+        // REFRESH BEFORE READING. The list is fetched when it is opened and does not update
+        // itself; a forced pass (a push, "Get RRN") may jump the interval but not hammer it.
+        val due = now - plLastRefresh >= PL_REFRESH_MS || (plForce && now - plLastRefresh >= 5_000L)
+        if (due) {
+            plLastRefresh = now
+            val btn = plRefreshNode(root, nodes)
+            if (btn != null && btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                plSettleUntil = now + PL_SETTLE_MS
+                main.postDelayed({ plNudge() }, PL_SETTLE_MS + 300)
+                return
+            }
+        }
+        if (now < plSettleUntil || now < plBackoffUntil) return
+        if (!plForce && headKey == plBaseline) return      // nothing has arrived since the last sweep
+
+        if (plRows(nodes).isEmpty()) {
+            if (count == 0) { plBaseline = headKey; plForce = false; plDeep = false }
+            return
+        }
+        plSweeping = true
+        plSweepDeep = plDeep
+        plDeep = false; plForce = false
+        plSweepHead = headKey
+        plPos = 0; plScrolls = 0; plOldStreak = 0; plPassFresh = 0; plCaptured = 0
+        plFirstAfterScroll = false; plOpenRetries = 0; plRowRetried = false
+        plSweepIds.clear()
+        plLastProgress = now
+        Log.d(TAG, "pinelabs: ${if (plSweepDeep) "deep sweep" else "sweep"} — list shows $count payment(s) for ${date.ifEmpty { "?" }}")
+        plOpenNext()
+    }
+
+    /** Re-read the list ourselves once a refresh has landed, rather than wait for an event. */
+    private fun plNudge() {
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != PINELABS_PKG) return
+        handlePinelabs(root)
+    }
+
+    /**
+     * The list's refresh icon. It carries no label at all, so it is found by where it is: the
+     * unlabelled clickable on the same line as, and to the right of, "Transactions from all
+     * stores". Anything that does not sit on that line is not it.
+     */
+    private fun plRefreshNode(root: AccessibilityNodeInfo, nodes: List<Pair<String, AccessibilityNodeInfo>>): AccessibilityNodeInfo? {
+        val label = nodes.firstOrNull { it.first.trim().startsWith("Transactions from", true) }?.second ?: return null
+        val lr = Rect().also { label.getBoundsInScreen(it) }
+        if (lr.height() <= 0) return null
+        var best: AccessibilityNodeInfo? = null
+        fun walk(n: AccessibilityNodeInfo?) {
+            if (n == null) return
+            if (n.isClickable && n.contentDescription.isNullOrBlank() && n.text.isNullOrBlank()) {
+                val r = Rect().also { n.getBoundsInScreen(it) }
+                if (r.left >= lr.right && r.height() in 1..lr.height() * 3 && r.centerY() in lr.top..lr.bottom) best = n
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        walk(root)
+        return best
+    }
+
+    /**
+     * The payment rows fully on screen, top (newest) to bottom.
+     *
+     * A row at the edge of the viewport reports bounds clipped to it — the fourth row of the
+     * first screen is 43px tall instead of 216 — so "as tall as the others" is what separates a
+     * row that can be opened from a sliver of one.
+     */
+    private fun plRows(nodes: List<Pair<String, AccessibilityNodeInfo>>): List<AccessibilityNodeInfo> {
+        val hits = ArrayList<Pair<Rect, AccessibilityNodeInfo>>()
+        for ((raw, n) in nodes) {
+            val lines = raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+            if (lines.size < 2 || !plAmountRx.matches(lines.first())) continue
+            if (lines.none { plRowWhenRx.containsMatchIn(it) }) continue
+            if (lines.any { plNotPaidRx.containsMatchIn(it) }) continue
+            val r = Rect().also { n.getBoundsInScreen(it) }
+            if (r.width() <= 0 || r.height() <= 0) continue
+            hits.add(r to n)
+        }
+        val full = hits.maxOfOrNull { it.first.height() } ?: return emptyList()
+        return hits.filter { it.first.height() >= full * 0.8f }.sortedBy { it.first.top }.map { it.second }
+    }
+
+    /**
+     * Press a Pine Labs control: an action on the node itself where it advertises one, a tap at
+     * its centre otherwise (Flutter reports clickability inconsistently — see findGpayRowNodes).
+     */
+    private fun plClick(node: AccessibilityNodeInfo): Boolean {
+        if (isMoneyControl(node)) return false
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        val r = Rect().also { node.getBoundsInScreen(it) }
+        if (r.width() <= 0 || r.height() <= 0) return false
+        tap(r.exactCenterX(), r.exactCenterY())
+        return true
+    }
+
+    /**
+     * Scroll the list by its own scroll action rather than a swipe.
+     *
+     * Flutter answers the action by moving 80% of the viewport and stopping dead — no fling — so
+     * consecutive screens always overlap by a row. A swipe's travel depends on its velocity, and
+     * on a list of identical rows an overshoot is a payment skipped with nothing to show for it.
+     */
+    private fun plScrollList(root: AccessibilityNodeInfo?, forward: Boolean): Boolean {
+        var target: AccessibilityNodeInfo? = null
+        fun walk(n: AccessibilityNodeInfo?) {
+            if (n == null || target != null) return
+            if (n.isScrollable) { target = n; return }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        walk(root)
+        val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+        return target?.performAction(action) == true
+    }
+
+    private fun plOpenNext() {
+        if (!plSweeping) return
+        val root = rootInActiveWindow
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        if (root != null) flattenAll(root, nodes)
+        val onList = root?.packageName?.toString() == PINELABS_PKG &&
+            nodes.any { it.first.trim().startsWith("Payments - Transactions", true) }
+        val rows = if (onList) plRows(nodes) else emptyList()
+        if (rows.isEmpty()) {
+            // The list has not settled yet (the previous detail is still closing) — retry.
+            if (plOpenRetries++ < 6) main.postDelayed({ plOpenNext() }, 500)
+            else plEndSweep(false, "the list never settled")
+            return
+        }
+        plOpenRetries = 0
+        plLastProgress = System.currentTimeMillis()
+
+        if (plPos >= rows.size) {
+            // This screenful is done. A screen that held nothing but rows already opened in this
+            // sweep means the scroll did not bring anything new up: the end of the list.
+            val limit = if (plSweepDeep) PL_DEEP_SCROLLS else PL_MAX_SCROLLS
+            if (plScrolls > 0 && plPassFresh == 0) { plEndSweep(true, "end of the list"); return }
+            if (plScrolls >= limit) { plEndSweep(true, "scroll limit"); return }
+            if (!plScrollList(root, forward = true)) { plEndSweep(true, "the list does not scroll"); return }
+            plScrolls++; plPos = 0; plPassFresh = 0; plFirstAfterScroll = true
+            main.postDelayed({ plOpenNext() }, 900)
+            return
+        }
+
+        plAutoNav = true
+        plBackScheduled = false
+        plDetailReached = false
+        plLastResult = R_UNKNOWN
+        val gen = ++plOpenGen
+        plClick(rows[plPos])
+        // Watchdog: a row that never opened is retried once with twice the patience before it
+        // is given up on, exactly as on GPay — a slow phone misses the first deadline routinely.
+        val wait = if (plRowRetried) PL_DETAIL_WAIT_MS * 2 else PL_DETAIL_WAIT_MS
+        main.postDelayed({
+            if (gen == plOpenGen && plSweeping && !plDetailReached) {
+                plAutoNav = false
+                if (!plRowRetried) {
+                    plRowRetried = true
+                    Log.w(TAG, "pinelabs: row #$plPos did not open; retrying once")
+                    plOpenNext()
+                } else {
+                    // Twice is not a slow phone. Something is over the list, or it is mid-reload;
+                    // the rows below will not open either, and trying each of them is what cost a
+                    // minute on 2026-10-01. Stop, and let the next refresh start a clean sweep.
+                    Log.w(TAG, "pinelabs: row #$plPos did not open twice")
+                    plEndSweep(false, "rows would not open")
+                }
+            }
+        }, wait)
+    }
+
+    /** What this read of the detail screen states, by field. */
+    private fun plReadFields(nodes: List<Pair<String, AccessibilityNodeInfo>>): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        for (i in nodes.indices) {
+            val parts = nodes[i].first.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+            if (parts.isEmpty()) continue
+            val keys = parts.map { plLabels[it.lowercase(java.util.Locale.US)] }
+            when {
+                // "Customer VPA\nRRN" — every line a label; the values are the nodes that follow.
+                keys.all { it != null } -> for ((k, key) in keys.withIndex()) {
+                    val v = nodes.getOrNull(i + 1 + k)?.first?.trim() ?: break
+                    if (v.isEmpty() || v.contains('\n') || plLabels.containsKey(v.lowercase(java.util.Locale.US))) break
+                    out.putIfAbsent(key!!, v)
+                }
+                // "Transaction mode\nSQR" — label and value in one node.
+                parts.size == 2 && keys[0] != null -> out.putIfAbsent(keys[0]!!, parts[1])
+                // "UPI | Paper POS\nBatch status : \nClosed\nOct 01, 2026\n21:32"
+                parts.size > 2 && parts.any { it.startsWith("Batch status", true) } -> {
+                    out.putIfAbsent("mode", parts[0])
+                    plWhenRx.find(parts.joinToString(" "))?.let { out.putIfAbsent("paid_at", it.value) }
+                }
+                parts.size == 1 && plAmountRx.matches(parts[0]) -> out.putIfAbsent("amount", parts[0])
+                parts.size == 1 && parts[0].equals("Success", true) -> out.putIfAbsent("status", "Success")
+                // The block at the foot of the screen, once it is scrolled to.
+                parts.size >= 2 && parts[0].equals("Payment status", true) -> {
+                    if (parts[1].equals("Success", true)) out.putIfAbsent("status", "Success")
+                    plWhenRx.find(parts.joinToString(" "))?.let { out.putIfAbsent("paid_at", it.value) }
+                }
+            }
+        }
+        return out
+    }
+
+    /** "Oct 01, 2026 … 21:32" -> "2026-10-01T21:32:00+05:30", in the phone's own zone. */
+    private fun plEventTime(paidAt: String?): String? {
+        val m = plWhenRx.find(paidAt ?: return null) ?: return null
+        val (mon, day, year, hh, mm, ampm) = m.destructured
+        var hour = hh.toIntOrNull() ?: return null
+        if (ampm.isNotEmpty()) { hour %= 12; if (ampm.equals("PM", true)) hour += 12 }
+        return runCatching {
+            val t = java.text.SimpleDateFormat("MMM d yyyy H:m", java.util.Locale.US)
+                .parse("${mon.take(3)} $day $year $hour:$mm") ?: return null
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).format(t)
+        }.getOrNull()
+    }
+
+    /**
+     * Read one payment's detail screen, opening "More Details" to reach the RRN.
+     *
+     * Runs whoever opened the screen — the sweep, or the merchant tapping a payment by hand —
+     * and only goes BACK afterwards if it was the sweep.
+     */
+    private fun plHandleDetail(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        plPollDetail()
+        val seen = plReadFields(nodes)
+        val txn = seen["transaction_id"]?.takeIf { it.any(Char::isDigit) }
+        if (txn != null && txn != plDetailTxn) {
+            // A payment we were not already reading.
+            plDetailTxn = txn
+            plDetailDone = false
+            plFields.clear()
+            plExpandClicks = 0; plDetailScrolls = 0; plDetailRereads = 0; plDetailBusyUntil = 0L
+            plDetailOverlap = plSweeping && plSweepIds.contains(txn)
+            Log.d(TAG, "pinelabs: reading payment $txn")
+            Prefs.bump(this, "capture_try")
+            val gen = ++plDetailGen
+            main.postDelayed({
+                if (gen == plDetailGen && !plDetailDone) plGiveUp("ran out of time on the detail screen")
+            }, PL_DETAIL_DEADLINE_MS)
+        }
+        // The Transaction ID is at the top of the screen. Until it has been read once there is
+        // no telling which payment this is; after that a read that has scrolled past it is
+        // still the same payment.
+        if (plAutoNav && !plDetailReached) {
+            plDetailReached = true
+            // Whatever this screen turns out to be, the sweep must not be left standing on it.
+            val opened = plOpenGen
+            main.postDelayed({
+                if (opened == plOpenGen && plSweeping && plAutoNav && !plBackScheduled) {
+                    noteCaptureFail("pinelabs: the detail screen could not be read")
+                    plDetailDone = true; plDetailGen++
+                    plLastResult = R_SKIP
+                    plLeaveDetail()
+                }
+            }, PL_DETAIL_DEADLINE_MS + 1_000L)
+        }
+        val current = plDetailTxn ?: return
+        if (plDetailDone) return
+        for ((k, v) in seen) plFields.putIfAbsent(k, v)
+
+        // Seen again after a scroll: this sweep has already dealt with it, however that went.
+        if (plDetailOverlap) { plFinishDetail(R_OVERLAP); return }
+        if (RrnStore.isRowCaptured(plRowKey(current))) { plFinishDetail(R_OLD); return }
+        // Katana reconciles UPI credits. A card swipe has an RRN of its own, but it is not one
+        // any order is waiting on — remember it so it is never opened twice, and move on.
+        val mode = plFields["mode"]
+        if (mode != null && !mode.startsWith("UPI", true)) {
+            RrnStore.recordRow(plRowKey(current))
+            Log.d(TAG, "pinelabs: $current is \"$mode\", not UPI -> skipped")
+            plFinishDetail(R_SKIP)
+            return
+        }
+
+        val rrn = plFields["rrn"]?.filter { it.isDigit() }?.takeIf { rrn12.matches(it) }
+        if (rrn != null) { plCapture(current, rrn); return }
+
+        val now = System.currentTimeMillis()
+        if (now < plDetailBusyUntil) return
+        val labelUp = nodes.any { (t, _) -> t.split('\n').any { it.trim().equals("RRN", true) } }
+        val more = nodes.firstOrNull { it.first.trim().startsWith("More Details", true) }?.second
+        when {
+            // The label is rendered and its value is not, yet: look again before moving anything.
+            labelUp && plDetailRereads < 2 -> { plDetailRereads++; plRereadDetail(350) }
+            // MORE DETAILS IS A TOGGLE — a second tap closes it again. So it is tapped once, and
+            // a second time only after scrolling has shown that the first changed nothing.
+            more != null && plExpandClicks == 0 -> {
+                plExpandClicks++
+                plClick(more)
+                plRereadDetail(600)
+            }
+            // Flutter publishes only what is rendered: the section may be open below the fold,
+            // or "More Details" itself may not be on screen yet.
+            plDetailScrolls < 3 -> {
+                plDetailScrolls++; plDetailRereads = 0
+                plDetailBusyUntil = now + 1_500L
+                val gen = plDetailGen
+                swipeUp { if (gen == plDetailGen) plRereadDetail(250) }
+            }
+            more != null && plExpandClicks < 2 -> {
+                plExpandClicks++; plDetailRereads = 0
+                plClick(more)
+                plRereadDetail(600)
+            }
+            else -> plGiveUp("no RRN under More Details")
+        }
+    }
+
+    /**
+     * KEEP LOOKING AT THE DETAIL SCREEN UNTIL IT HAS BEEN READ.
+     *
+     * The screen opens empty — "We are fetching your data" — and fills in a moment later, and
+     * Flutter does not reliably raise an accessibility event when it does. Waiting for one meant
+     * looking once at the empty screen and then sitting out the whole deadline: on 2026-10-01
+     * nine payments in a row were opened and abandoned this way, while the one left on screen
+     * after the sweep gave up was read the instant something else nudged the engine.
+     *
+     * Bounded, so a screen that never loads is not polled for as long as it is left open.
+     */
+    private fun plPollDetail() {
+        if (plPollPending) return
+        if (plDetailTxn != null && plDetailDone) return     // read and finished with
+        if (plPolls >= 80) return
+        plPollPending = true; plPolls++
+        main.postDelayed({
+            plPollPending = false
+            val root = rootInActiveWindow ?: return@postDelayed
+            if (root.packageName?.toString() == PINELABS_PKG && Prefs.captureAppOn(this, Prefs.APP_PINELABS))
+                handlePinelabs(root)
+        }, 400)
+    }
+
+    /** Look at the detail again after [delayMs], without waiting for an event to prompt it. */
+    private fun plRereadDetail(delayMs: Long) {
+        plDetailBusyUntil = System.currentTimeMillis() + delayMs
+        val gen = plDetailGen
+        main.postDelayed({
+            if (gen != plDetailGen || plDetailDone) return@postDelayed
+            plDetailBusyUntil = 0L
+            val root = rootInActiveWindow ?: return@postDelayed
+            if (root.packageName?.toString() == PINELABS_PKG) handlePinelabs(root)
+        }, delayMs)
+    }
+
+    private fun plCapture(txnId: String, rrn: String) {
+        // Only a payment the screen itself calls successful is a credit.
+        if (plFields["status"] != "Success") {
+            Log.d(TAG, "pinelabs: $txnId is not marked Success -> not captured")
+            plFinishDetail(R_SKIP)
+            return
+        }
+        // WHAT THE SCREEN STATED, KEPT VERBATIM — the dashboard's Details view shows this as is.
+        // The customer's VPA arrives masked ("ra**********@ptaxis"), so it is recorded here and
+        // deliberately NOT sent as the payer VPA: a masked handle matches nobody.
+        val stated = LinkedHashMap<String, String>()
+        for ((k, v) in plFields) if (k != "rrn" && k != "status" && v.isNotBlank()) stated[k] = v
+        stated["rrn"] = rrn
+        stated["captured_from"] = "Pine Labs One · Transaction details"
+        val amount = plFields["amount"] ?: ""
+        val paidAt = plFields["paid_at"] ?: ""
+        val fresh = RrnStore.record(RrnRecord(
+            rrn = rrn, capturedAt = System.currentTimeMillis(),
+            amount = amount, payer = "", upiId = "",
+            paidAt = paidAt, maskedRef = rrn, bank = "PINELABS",
+            details = stated,
+            eventTime = plEventTime(paidAt),
+        ))
+        RrnStore.recordRow(plRowKey(txnId))
+        if (fresh) {
+            plCaptured++
+            Prefs.bump(this, "capture_ok")
+            Log.d(TAG, "pinelabs: RRN $rrn amount=$amount at=$paidAt txn=$txnId")
+            AlertStore.log(applicationContext, "${nowTag()} 🌲 pinelabs: captured $amount · RRN $rrn")
+        } else Log.d(TAG, "pinelabs: RRN $rrn already captured")
+        plFinishDetail(if (fresh) R_NEW else R_OLD)
+    }
+
+    private fun plGiveUp(reason: String) {
+        if (plDetailDone) return
+        noteCaptureFail("pinelabs: $reason")
+        plFinishDetail(R_SKIP)
+    }
+
+    /** This payment is finished with, one way or another. Leave it if the sweep opened it. */
+    private fun plFinishDetail(result: Int) {
+        if (plDetailDone) return
+        plDetailDone = true
+        plDetailGen++          // cancels the deadline and any pending re-read
+        plLastResult = result
+        if (plSweeping) plDetailTxn?.let { plSweepIds.add(it) }
+        plLeaveDetail()
+    }
+
+    /** BACK to the list — only ever from a detail the sweep itself opened. */
+    private fun plLeaveDetail() {
+        if (!plAutoNav || !plSweeping || plBackScheduled) return
+        plBackScheduled = true
+        main.postDelayed({
+            plBackAttempts = 0; plWaitChecks = 0
+            plPressBackThenVerify()
+        }, 300)
+    }
+
+    private fun plPressBackThenVerify() {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        main.postDelayed({ plVerifyOnList() }, 700)
+    }
+
+    private fun plVerifyOnList() {
+        if (!plSweeping) return
+        val root = rootInActiveWindow
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>()
+        if (root != null) flattenAll(root, nodes)
+        val onDetail = nodes.any { it.first.trim().equals("Transaction details", true) }
+        val onList = nodes.any { it.first.trim().startsWith("Payments - Transactions", true) }
+        when {
+            onDetail && plBackAttempts < 3 -> { plBackAttempts++; plPressBackThenVerify() }
+            onList -> plOnReturned()
+            root?.packageName?.toString() == PINELABS_PKG && plWaitChecks < 6 -> {
+                plWaitChecks++; main.postDelayed({ plVerifyOnList() }, 500)   // mid-transition
+            }
+            else -> plEndSweep(false, "could not get back to the list")
+        }
+    }
+
+    private fun plOnReturned() {
+        if (!plSweeping) return
+        plAutoNav = false
+        plBackScheduled = false
+        plLastProgress = System.currentTimeMillis()
+        when (plLastResult) {
+            R_NEW -> { plOldStreak = 0; plPassFresh++ }
+            R_OLD -> { plOldStreak++; plPassFresh++ }
+            R_OVERLAP -> {}
+            else -> plPassFresh++
+        }
+        if (plFirstAfterScroll) {
+            plFirstAfterScroll = false
+            // The first row after a scroll should be one already opened. If it is not, the list
+            // moved further than a screen and a payment between the two may have gone unread.
+            if (plLastResult != R_OVERLAP)
+                Log.w(TAG, "pinelabs: no overlap after scroll #$plScrolls — a row may have been passed over")
+        }
+        if (!plSweepDeep && plOldStreak >= PL_STOP_AFTER_OLD) { plEndSweep(true, "reached payments already held"); return }
+        plRowRetried = false
+        plPos++
+        plOpenNext()
+    }
+
+    private fun plEndSweep(completed: Boolean, why: String) {
+        plSweeping = false
+        plAutoNav = false
+        Log.d(TAG, "pinelabs: sweep ${if (completed) "done" else "abandoned"} ($why) — $plCaptured captured, $plScrolls scroll(s)")
+        // The header this sweep started from becomes the baseline, so the engine goes quiet
+        // until the count moves again. An abandoned sweep leaves it unset and is retried at the
+        // next refresh — the payments it was started for are still unread, so the baseline must
+        // NOT be advanced past them. Three in a row earns a pause instead, so a list that cannot
+        // be walked is not driven every few seconds all day.
+        if (completed) { plBaseline = plSweepHead; plAborts = 0 }
+        else if (++plAborts >= 3) {
+            plAborts = 0
+            plBackoffUntil = System.currentTimeMillis() + PL_BACKOFF_MS
+            noteCaptureFail("pinelabs: sweep abandoned ($why)")
+        }
+        // New payments arrive at the top; never leave the engine watching the bottom of the day.
+        plRewind(if (plScrolls > 0) plScrolls + 1 else 0)
+        plScheduleTick()
+    }
+
+    private fun plRewind(remaining: Int) {
+        if (remaining <= 0 || plSweeping) return
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != PINELABS_PKG) return
+        if (!plScrollList(root, forward = false)) return
+        main.postDelayed({ plRewind(remaining - 1) }, 300)
     }
 
     // ------------------------------------------------------------- Google Pay
@@ -2027,7 +2861,13 @@ class RrnAccessibilityService : AccessibilityService() {
     // ------------------------------------------------------------------ list
 
     private fun handleList(ordered: List<Pair<String, AccessibilityNodeInfo>>) {
-        val count = parseCount(ordered.map { it.first })
+        var count = parseCount(ordered.map { it.first })
+        // A SWEEP ASKED FOR BY A PAYMENT PUSH RUNS ON ANY SCREEN THAT SHOWS PAYMENTS. The count
+        // ("₹… from N Payment, Today") is how a quiet screen tells us something is new, but this
+        // home screen does not always show it: scrolled a little, it starts at the payment rows
+        // (OnePlus, Paytm 9.46, 2026-10-03), and the armed sweep then never began. A push already
+        // told us a payment is new, so the rows are enough.
+        if (count < 0 && forceResweep && findRowNodes(ordered).isNotEmpty()) count = maxOf(handledCount, 0)
         if (count < 0) return // not the payments list (no "N Payments" header)
         if (sweeping) return  // a sweep is already running; the pump drives it
         // The notification queue is draining: each queued payment opens its own detail directly,
@@ -2072,7 +2912,13 @@ class RrnAccessibilityService : AccessibilityService() {
 
         // On-demand "Get RRN": re-sweep the currently-visible rows now (dedupe still skips
         // ones we already captured, so this only retries the still-missing RRNs).
-        if (forceResweep) { forceResweep = false; baselineDone = false }
+        // A push-armed sweep expects a new payment only if the push did not already capture it:
+        // after a capture through the push it is a safety pass, and must not re-sweep waiting for a
+        // payment that is already held (2026-10-03 14:46: four needless passes after a capture).
+        if (forceResweep) {
+            forceResweep = false; baselineDone = false
+            sweepExpectsNew = System.currentTimeMillis() - lastPaytmCaptureAt > 15_000L
+        }
 
         if (!baselineDone) {
             baselineDone = true
@@ -2084,6 +2930,7 @@ class RrnAccessibilityService : AccessibilityService() {
         if (count > handledCount) {
             Log.d(TAG, "auto: ${count - handledCount} new payment(s) (count=$count); sweeping")
             handledCount = count
+            sweepExpectsNew = true
             startSweep()
         }
     }
@@ -2098,6 +2945,7 @@ class RrnAccessibilityService : AccessibilityService() {
         // depth belongs to the sweep that actually walks the list.
         sweepIsDeep = deepSweep
         deepSweep = false
+        sweepFoundNew = false
         sweptKeys.clear()
         sweepScrolls = 0
         oldStreak = 0
@@ -2286,8 +3134,25 @@ class RrnAccessibilityService : AccessibilityService() {
      * A sweep that scrolled must scroll back: Paytm shows new payments at the TOP, so a list left
      * scrolled down would leave both the merchant and the next sweep looking at old rows.
      */
+    /** This sweep was started because a payment is known to be new (the count rose, or a push). */
+    private var sweepExpectsNew = false
+    /** This sweep opened a payment we did not already hold. */
+    private var sweepFoundNew = false
+    /** Re-sweeps spent waiting for a new payment's row to be drawn; see endSweep. */
+    private var lateRowRetries = 0
+
     private fun endSweep(count: Int, why: String) {
         sweeping = false
+        // THE COUNT CAN ARRIVE BEFORE THE ROW. Paytm raises "N Payment, Today" first and draws the
+        // new payment's row a moment later, so a sweep started on the count can find only rows it
+        // already holds and stop, leaving the payment for a person to open (2026-10-03 14:17: count
+        // 4 -> 5, four known rows, nothing captured). Look again shortly, a bounded number of times.
+        if (sweepExpectsNew && !sweepFoundNew && lateRowRetries < LATE_ROW_RETRIES) {
+            lateRowRetries++
+            Log.d(TAG, "auto: expected a new payment and found none -> looking again ($lateRowRetries/$LATE_ROW_RETRIES)")
+            main.postDelayed({ forceResweep = true; kickPaytm() }, LATE_ROW_WAIT_MS * lateRowRetries)
+        } else lateRowRetries = 0
+        sweepExpectsNew = false
         // A deep sweep is a one-shot request, not a mode: the next ordinary sweep must go back to
         // stopping at the boundary or every new payment would re-walk the entire day.
         if (sweepIsDeep) { sweepIsDeep = false; openedFullList = false; Log.d(TAG, "auto: deep sweep finished") }
@@ -2324,6 +3189,7 @@ class RrnAccessibilityService : AccessibilityService() {
         if (!sweeping) return
         // EITHER OUTCOME MEANS THIS ROW IS DEALT WITH — captured just now, or already held. Both
         // are worth remembering, because both make re-opening it on the next pass pointless.
+        if (lastOpenResult == R_NEW) sweepFoundNew = true
         if (lastOpenResult == R_OLD || lastOpenResult == R_NEW) RrnStore.recordRow(openingRowKey)
         openingRowKey = null
 
@@ -2768,6 +3634,7 @@ class RrnAccessibilityService : AccessibilityService() {
             putExtra("payer", payer)
             putExtra("upiId", upiId)
             putExtra("paidAt", paidAt)
+            paytmEventTime(paidAt)?.let { putExtra("eventTime", it) }
             // The detail block is read HERE, while the payment's screen is still up: the reader
             // activity comes to the foreground on top of it and can no longer see it.
             putExtra("details", detailsJson)

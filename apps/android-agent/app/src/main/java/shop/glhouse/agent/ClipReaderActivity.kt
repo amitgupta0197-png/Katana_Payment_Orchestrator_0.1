@@ -45,6 +45,7 @@ class ClipReaderActivity : Activity() {
         val full = readClipboard()
         if (full != null && matchesMask(full, masked)) {
             Prefs.bump(applicationContext, "capture_ok")
+            RrnAccessibilityService.lastPaytmCaptureAt = System.currentTimeMillis()
             RrnStore.record(
                 RrnRecord(
                     rrn = full,
@@ -57,6 +58,9 @@ class ClipReaderActivity : Activity() {
                     // Everything the Paytm payment screen stated, snapshotted by the service before
                     // this activity took the foreground (which hides that screen from us).
                     details = parseDetails(intent.getStringExtra("details")),
+                    // When the payment happened, as its screen stated it; without it the
+                    // dashboard files the payment under the moment this capture ran.
+                    eventTime = intent.getStringExtra("eventTime"),
                 )
             )
             done()
@@ -77,6 +81,12 @@ class ClipReaderActivity : Activity() {
             // What the clipboard actually held is the whole diagnosis and it must travel: empty
             // means the Copy tap never landed, another payment's reference means the burst raced,
             // and a non-numeric value means Paytm's layout moved and we tapped the wrong control.
+            // Tap again before giving up: the service re-reads the payment and taps Copy anew.
+            if (RrnAccessibilityService.retryPaytmCopy(masked)) {
+                Log.d(TAG, "copy missed (got=$full); the service will tap again")
+                finish()
+                return
+            }
             Prefs.bump(applicationContext, "capture_noclip")
             val got = when {
                 full == null -> "empty/non-numeric"

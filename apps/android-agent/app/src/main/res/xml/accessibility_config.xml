@@ -3,7 +3,8 @@
      (masked-RRN tap/copy engine) and Airtel Payments Bank Merchant (com.apbl.merchant,
      which shows the full RRN unmasked on its reports list — read directly), PhonePe for Business
      (com.phonepe.app.business, whose History list prints "UTR: <12 digits>" on every row — read
-     directly, no navigation at all). canTakeScreenshot
+     directly, no navigation at all) and Pine Labs One (com.pinelabs.pinelabsone, whose RRN is on
+     each payment's detail screen under "More Details" — opened, read, and left). canTakeScreenshot
      lets the Paytm engine locate the blue "Copy" link by colour; canPerformGestures issues the tap. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewScrolled"
@@ -13,5 +14,5 @@
     android:canPerformGestures="true"
     android:canTakeScreenshot="true"
     android:notificationTimeout="100"
-    android:packageNames="net.one97.paytm.merchant,com.paytm.business,com.apbl.merchant,com.google.android.apps.nbu.paisa.merchant,com.phonepe.app.business"
+    android:packageNames="net.one97.paytm.merchant,com.paytm.business,com.apbl.merchant,com.google.android.apps.nbu.paisa.merchant,com.phonepe.app.business,com.pinelabs.pinelabsone"
     android:description="@string/accessibility_desc" />

@@ -18,9 +18,12 @@ import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-// Uploads captured credit alerts + heartbeats to the orchestrator. Requests are signed with
-// HMAC-SHA256 over "${timestamp}.${payload}" (x-timestamp + x-signature headers), using the
-// AGENT_SIGNING_SECRET shared with the server — the server rejects unsigned/forged requests.
+// Uploads captured credit alerts + heartbeats to the orchestrator. Every request is signed with
+// this phone's own key (DeviceKey: x-device-id + x-device-signature over
+// "${deviceId}.${timestamp}.${payload}"), which the server knows once the phone has enrolled it
+// (ensureEnrolled). Until the server stops accepting it, the request also carries the older
+// signature made with the secret every agent shares (x-signature, HMAC-SHA256 over
+// "${timestamp}.${payload}"), so a phone that has not managed to enrol yet loses nothing.
 // Failed alert uploads are persisted to OutboxStore and retried, so a real bank credit is
 // never lost to a transient network/server issue.
 object AlertUploader {
@@ -63,7 +66,7 @@ object AlertUploader {
         val body = buildAlertBody(ctx, txn, source, sender)
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/txn-alert"
         val tag = "${time.format(Date())} ${summary(txn, source)}"
-        client.newCall(alertRequest(url, body)).enqueue(object : Callback {
+        client.newCall(alertRequest(ctx, url, body)).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 OutboxStore.enqueue(ctx, body)
                 AlertStore.log(ctx, "$tag ⏳ queued — ${e.message}")
@@ -119,15 +122,66 @@ object AlertUploader {
     // Signed request builder. The timestamp is bound into the signature so a captured request
     // can't be replayed with a fresh timestamp. `signed` is the exact bytes the server verifies:
     // the raw body for POSTs, the query string (incl. leading '?') for the capture-rrn GET.
-    private fun signedBuilder(url: String, signed: String): Request.Builder {
+    private fun signedBuilder(ctx: Context, url: String, signed: String): Request.Builder {
         val ts = (System.currentTimeMillis() / 1000L).toString()
-        return Request.Builder().url(url)
-            .header("x-timestamp", ts)
-            .header("x-signature", hmacHex("$ts.$signed"))
+        val deviceId = Prefs.deviceId(ctx)
+        val b = Request.Builder().url(url).header("x-timestamp", ts)
+        // A header must be ASCII and a device id need not be ("author 😎"), so it goes
+        // percent-encoded (URLEncoder writes a space as "+", which only a form decodes back).
+        DeviceKey.sign(ctx, "$deviceId.$ts.$signed")?.let {
+            b.header("x-device-id", enc(deviceId).replace("+", "%20")).header("x-device-signature", it)
+        }
+        if (BuildConfig.AGENT_SIGNING_SECRET.isNotBlank()) b.header("x-signature", hmacHex("$ts.$signed"))
+        return b
     }
 
-    private fun alertRequest(url: String, body: String): Request =
-        signedBuilder(url, body).post(body.toRequestBody(JSON)).build()
+    private fun alertRequest(ctx: Context, url: String, body: String): Request =
+        signedBuilder(ctx, url, body).post(body.toRequestBody(JSON)).build()
+
+    // ── Enrolling this phone's key ───────────────────────────────────────────────────────
+    // Sent until the server has the key, then not again. The server keeps the first key a
+    // device id presents, so a phone whose agent was reinstalled (new key, same id) is refused
+    // with 409 until staff reset it; that is said once in the log and retried at intervals.
+    private val enrolling = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var lastEnrolTry = 0L
+    private const val ENROL_RETRY_MS = 60_000L
+    private const val ENROL_CONFLICT_RETRY_MS = 10 * 60_000L
+
+    fun ensureEnrolled(ctx: Context) {
+        val deviceId = Prefs.deviceId(ctx)
+        if (Prefs.keyEnrolledFor(ctx) == deviceId) return
+        val wait = if (Prefs.keyConflict(ctx)) ENROL_CONFLICT_RETRY_MS else ENROL_RETRY_MS
+        if (System.currentTimeMillis() - lastEnrolTry < wait) return
+        if (!enrolling.compareAndSet(false, true)) return
+        lastEnrolTry = System.currentTimeMillis()
+        val app = ctx.applicationContext
+        Thread {
+            try {
+                val body = JSONObject().apply {
+                    put("device_id", deviceId)
+                    put("install_id", Prefs.installId(app))
+                    put("public_key", DeviceKey.publicKey(app))
+                    put("hardware_backed", DeviceKey.inKeystore(app))
+                }.toString()
+                val url = Prefs.baseUrl(app).trimEnd('/') + "/api/v1/device/enroll"
+                client.newCall(alertRequest(app, url, body)).execute().use { resp ->
+                    when {
+                        resp.isSuccessful -> {
+                            Prefs.setKeyEnrolled(app, deviceId)
+                            AlertStore.log(app, "${time.format(Date())} ✓ this phone's signing key is enrolled")
+                        }
+                        resp.code == 409 -> {
+                            if (!Prefs.keyConflict(app))
+                                AlertStore.log(app, "${time.format(Date())} ⚠ signing key refused — ask support to reset this device's key")
+                            Prefs.setKeyConflict(app, true)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Network or Keystore trouble: tried again after ENROL_RETRY_MS.
+            } finally { enrolling.set(false) }
+        }.start()
+    }
 
     // DEBUG: upload a dump of the current accessibility screen (text + class + bounds) so
     // the real layout of an app we can't ADB-inspect (Airtel blocks USB debugging) can be
@@ -140,7 +194,7 @@ object AlertUploader {
             put("label", label)
             put("body", dump)
         }.toString()
-        client.newCall(alertRequest(url, payload)).enqueue(object : Callback {
+        client.newCall(alertRequest(ctx, url, payload)).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {}
             override fun onResponse(call: Call, response: Response) { response.close() }
         })
@@ -159,7 +213,7 @@ object AlertUploader {
         val url = "$base/api/v1/capture-rrn?device_id=${enc(Prefs.deviceId(ctx))}&merchant_id=${enc(merchant)}"
         // Sign the query string (incl. leading '?') — the server verifies over URL.search.
         val query = url.substring(url.indexOf('?'))
-        val req = signedBuilder(url, query).get().build()
+        val req = signedBuilder(ctx, url, query).get().build()
         return try {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return emptyList()
@@ -176,8 +230,8 @@ object AlertUploader {
     private fun enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 
     // Blocking POST (for the background worker / outbox flush). Returns true on 2xx.
-    private fun postSync(url: String, body: String): Boolean = try {
-        client.newCall(alertRequest(url, body)).execute().use { it.isSuccessful }
+    private fun postSync(ctx: Context, url: String, body: String): Boolean = try {
+        client.newCall(alertRequest(ctx, url, body)).execute().use { it.isSuccessful }
     } catch (e: Exception) { false }
 
     // Retry queued alerts. Re-enqueues any that still fail. Safe to call from a
@@ -186,7 +240,7 @@ object AlertUploader {
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/txn-alert"
         var sent = 0
         for (body in OutboxStore.drain(ctx)) {
-            if (postSync(url, body)) sent++ else OutboxStore.enqueue(ctx, body)
+            if (postSync(ctx, url, body)) sent++ else OutboxStore.enqueue(ctx, body)
         }
         if (sent > 0) AlertStore.log(ctx, "${time.format(Date())} ✓ flushed $sent queued")
         return sent
@@ -245,8 +299,9 @@ object AlertUploader {
     // false on a network error — so the UI can tell "can't reach server" apart from
     // "reached, merchant not recognized".
     fun heartbeat(ctx: Context, notifAccess: Boolean, cb: ((Boolean) -> Unit)? = null) {
+        ensureEnrolled(ctx)
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/device/heartbeat"
-        client.newCall(alertRequest(url, heartbeatBody(ctx, notifAccess))).enqueue(object : Callback {
+        client.newCall(alertRequest(ctx, url, heartbeatBody(ctx, notifAccess))).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Prefs.setReachable(ctx, false); cb?.invoke(false)
             }
@@ -259,17 +314,21 @@ object AlertUploader {
 
     // Blocking heartbeat for the worker.
     fun heartbeatSync(ctx: Context, notifAccess: Boolean) {
+        ensureEnrolled(ctx)
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/device/heartbeat"
         try {
-            client.newCall(alertRequest(url, heartbeatBody(ctx, notifAccess))).execute().use { saveMerchantStatus(ctx, it) }
+            client.newCall(alertRequest(ctx, url, heartbeatBody(ctx, notifAccess))).execute().use { saveMerchantStatus(ctx, it) }
             Prefs.setReachable(ctx, true)
         } catch (e: Exception) { Prefs.setReachable(ctx, false) }
     }
 
     private fun saveMerchantStatus(ctx: Context, resp: Response) {
-        if (Prefs.merchantCode(ctx).isBlank()) return
         runCatching {
             val o = JSONObject(resp.body?.string() ?: "")
+            // The server says whether it recognised this phone by its own key. If it did not
+            // (the key was reset, or never arrived), enrol again.
+            if (o.has("own_key") && !o.optBoolean("own_key")) Prefs.setKeyEnrolled(ctx, null)
+            if (Prefs.merchantCode(ctx).isBlank()) return
             Prefs.setMerchantStatus(ctx, o.optBoolean("merchant_known", false), o.optString("merchant_name", ""))
         }
     }
@@ -285,7 +344,7 @@ object AlertUploader {
             if (appPassword.isNotBlank()) put("app_password", appPassword.trim())
         }.toString()
         val url = Prefs.baseUrl(ctx).trimEnd('/') + "/api/v1/device/email-config"
-        client.newCall(alertRequest(url, body)).enqueue(object : Callback {
+        client.newCall(alertRequest(ctx, url, body)).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) { cb(false, e.message ?: "network error") }
             override fun onResponse(call: Call, response: Response) {
                 response.use {

@@ -10,8 +10,11 @@ plugins {
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply { if (keystorePropsFile.exists()) load(keystorePropsFile.inputStream()) }
 
-// HMAC key the agent signs device requests with. MUST equal the server's
-// AGENT_SIGNING_SECRET. Hoisted out of defaultConfig so the release guard below can see it.
+// The HMAC key every agent shares. MUST equal the server's AGENT_SIGNING_SECRET. From v3.11 a
+// phone also signs with a key of its own (DeviceKey.kt) and this one is only the fallback
+// until that key is enrolled; once the server is set to AGENT_SHARED_KEY_ACCEPTED=0 it does
+// nothing, and the next release should stop compiling it in. Hoisted out of defaultConfig so
+// the release guard below can see it.
 val DEV_SIGNING_SECRET = "dev-agent-signing-secret"
 val agentSigningSecret: String = (keystoreProps["agentSigningSecret"] as String?)
     ?: (project.findProperty("agentSigningSecret") as String?)
@@ -25,8 +28,8 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 122
-        versionName = "3.08"
+        versionCode = 129
+        versionName = "3.15"
 
         buildConfigField("String", "AGENT_SIGNING_SECRET", "\"$agentSigningSecret\"")
     }

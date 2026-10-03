@@ -80,6 +80,8 @@ class MainActivity : AppCompatActivity() {
         b.appGpaySwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_GPAY, v) }
         b.appPhonepeSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_PHONEPE)
         b.appPhonepeSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PHONEPE, v) }
+        b.appPinelabsSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_PINELABS)
+        b.appPinelabsSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PINELABS, v) }
         b.autoCaptureSwitch.isChecked = Prefs.autoCapture(this)
         b.autoCaptureSwitch.setOnCheckedChangeListener { _, v -> Prefs.setAutoCapture(this, v) }
         b.keepAwakeSwitch.isChecked = Prefs.keepAwake(this)
@@ -179,6 +181,7 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_AIRTEL -> "com.apbl.merchant"
         Prefs.APP_GPAY -> RrnAccessibilityService.GPAY_PKG
         Prefs.APP_PHONEPE -> "com.phonepe.app.business"
+        Prefs.APP_PINELABS -> RrnAccessibilityService.PINELABS_PKG
         else -> null
     }
 
@@ -192,6 +195,7 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_AIRTEL -> "Airtel"
         Prefs.APP_GPAY -> "Google Pay"
         Prefs.APP_PHONEPE -> "PhonePe"
+        Prefs.APP_PINELABS -> "Pine Labs"
         else -> app
     }
 
@@ -200,6 +204,7 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_AIRTEL -> "Airtel Merchant"
         Prefs.APP_GPAY -> "Google Pay Business"
         Prefs.APP_PHONEPE -> "PhonePe Business"
+        Prefs.APP_PINELABS -> "Pine Labs One"
         else -> app
     }
 
@@ -213,6 +218,7 @@ class MainActivity : AppCompatActivity() {
             b.appAirtelSwitch to Prefs.APP_AIRTEL,
             b.appGpaySwitch to Prefs.APP_GPAY,
             b.appPhonepeSwitch to Prefs.APP_PHONEPE,
+            b.appPinelabsSwitch to Prefs.APP_PINELABS,
         )
         pairs.forEach { (sw, _) -> sw.setOnCheckedChangeListener(null) }
         pairs.forEach { (sw, app) -> sw.isChecked = Prefs.captureAppOn(this, app) }
@@ -408,7 +414,12 @@ class MainActivity : AppCompatActivity() {
             append("Merchant  ").append(mLabel).append('\n')
             append("Device    ").append(Prefs.deviceId(this@MainActivity)).append('\n')
             append("Endpoint  ").append(Prefs.baseUrl(this@MainActivity)).append('\n')
-            append("Version   ").append(BuildConfig.VERSION_NAME)
+            append("Version   ").append(BuildConfig.VERSION_NAME).append('\n')
+            append("Key       ").append(when {
+                Prefs.keyEnrolledFor(this@MainActivity) == Prefs.deviceId(this@MainActivity) -> "enrolled"
+                Prefs.keyConflict(this@MainActivity) -> "refused — ask support to reset this device's key"
+                else -> "not enrolled yet"
+            })
             if (!charging) append('\n').append("⚠ Not charging — the screen will sleep and capture stops with it.")
         }
     }

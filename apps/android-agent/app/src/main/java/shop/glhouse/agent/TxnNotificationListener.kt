@@ -153,6 +153,7 @@ class TxnNotificationListener : NotificationListenerService() {
         "com.paytm.business", "net.one97.paytm.merchant" -> Prefs.APP_PAYTM
         "com.phonepe.app.business" -> Prefs.APP_PHONEPE
         "com.apbl.merchant" -> Prefs.APP_AIRTEL
+        RrnAccessibilityService.PINELABS_PKG -> Prefs.APP_PINELABS
         else -> null
     }
 
@@ -172,12 +173,25 @@ class TxnNotificationListener : NotificationListenerService() {
         val app = when (sbn.packageName) {
             RrnAccessibilityService.GPAY_PKG -> Prefs.APP_GPAY
             "com.paytm.business", "net.one97.paytm.merchant" -> Prefs.APP_PAYTM
+            RrnAccessibilityService.PINELABS_PKG -> Prefs.APP_PINELABS
             else -> return
         }
+        // A GROUP SUMMARY IS NOT A PAYMENT. Paytm bundles its payment pushes under a summary that
+        // repeats the latest one's text but carries no intent (seen on Paytm 9.46, 2026-10-03), so
+        // every payment fired twice: once to open it, once to reopen the app on top of that.
+        if (sbn.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0) return
         // Marketing pushes ("Setup for ₹1 · Soundbox rental") must not send the phone hunting.
         if (!Regex("(payment received|received|credited|deposited|you got)", RegexOption.IGNORE_CASE)
                 .containsMatchIn(content)) return
         if (TxnParser.isSettlement(content)) return
+        // Pine Labs: where its push's own intent lands has not been observed, so it is not
+        // followed. The app is brought forward instead and the engine refreshes and sweeps the
+        // list — which is where a new payment is found either way.
+        if (app == Prefs.APP_PINELABS) {
+            AlertStore.log(applicationContext, "${nowTag()} 🎯 pinelabs: opening the list to read the new payment's RRN")
+            RrnAccessibilityService.requestAppCapture(applicationContext, app)
+            return
+        }
         AlertStore.log(applicationContext, "${nowTag()} 🎯 ${app.lowercase()}: opening the payment to read its RRN")
         RrnAccessibilityService.enqueueCapture(applicationContext, sbn.notification?.contentIntent, app)
     }

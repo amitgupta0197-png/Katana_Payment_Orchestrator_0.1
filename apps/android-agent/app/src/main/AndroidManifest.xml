@@ -25,7 +25,7 @@
          same call RrnAccessibilityService.requestAppCapture uses to bring the payment app
          forward after a push — so that path was quietly degraded too.
 
-         Declared package-by-package rather than with QUERY_ALL_PACKAGES: these five are the only
+         Declared package-by-package rather than with QUERY_ALL_PACKAGES: these six are the only
          apps this agent ever needs to see, and the broad permission is both unnecessary here and
          a Play policy question we have no reason to invite. -->
     <queries>
@@ -34,6 +34,7 @@
         <package android:name="com.apbl.merchant" />
         <package android:name="com.google.android.apps.nbu.paisa.merchant" />
         <package android:name="com.phonepe.app.business" />
+        <package android:name="com.pinelabs.pinelabsone" />
     </queries>
 
     <application

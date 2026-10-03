@@ -2,7 +2,7 @@
 
 > **The current, maintained guide is `apps/admin-dashboard/public/katana-agent-guide.html`**
 > (published at `https://katanapay.co/katana-agent-guide.html`; the old PDF link redirects there).
-> It covers every capture rail — Paytm, Airtel, Google Pay and PhonePe — the optional email
+> It covers every capture rail — Paytm, Airtel, Google Pay, PhonePe and Pine Labs — the optional email
 > channel, and the v3.x home screen. There is no PDF any more: edit the HTML only.
 >
 > The notes below are the older Paytm-only version, kept for reference.
