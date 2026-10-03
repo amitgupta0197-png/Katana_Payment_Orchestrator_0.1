@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { ModeSwitch } from "@/components/layout/mode-switch";
 import { TestModeBanner } from "@/components/layout/test-mode-banner";
+import { AssistantLauncher } from "@/components/portal/assistant-launcher";
 
 export type Icon = React.ComponentType<{ className?: string }>;
 export interface NavLink { href: string; label: string; icon: Icon }
@@ -129,9 +130,11 @@ export function PortalSearchBox({ base, className, autoFocus, initial = "" }: { 
   );
 }
 
-export function PortalFrame({ base, subtitle, badge, groups, devGroup, paymentsHref, assistant, scopeLabel, email, fullName, livemode, children }: {
+export function PortalFrame({ base, subtitle, badge, groups, devGroup, paymentsHref, assistant, floatingAssistant = false, scopeLabel, email, fullName, livemode, children }: {
   base: PortalInfo["base"]; subtitle: string; badge: string;
   groups: NavGroup[]; devGroup: NavGroup | null; paymentsHref: string; assistant: boolean;
+  /** A floating "Ask Katana" button on every page (components/portal/assistant-launcher). */
+  floatingAssistant?: boolean;
   scopeLabel: string; email: string; fullName: string; livemode: boolean; children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -193,6 +196,8 @@ export function PortalFrame({ base, subtitle, badge, groups, devGroup, paymentsH
             <div className="mx-auto max-w-7xl">{children}</div>
           </main>
         </div>
+
+        {assistant && floatingAssistant && <AssistantLauncher base={base} />}
 
         {/* Phone: a tab bar for the things people do most, and the full menu in a drawer. */}
         <nav aria-label="Quick" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-[color:var(--color-surface)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">

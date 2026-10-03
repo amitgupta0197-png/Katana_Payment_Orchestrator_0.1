@@ -14,7 +14,8 @@ interface PortalList {
   conversations: Conversation[]; questions_left_today: number;
 }
 
-export function PortalAssistant() {
+/** `compact`: inside the floating panel (components/portal/assistant-launcher), no page header. */
+export function PortalAssistant({ compact = false }: { compact?: boolean } = {}) {
   const qc = useQueryClient();
   // Handed over by another page: Home's actions and the "customer says they paid" button.
   const params = useSearchParams();
@@ -31,11 +32,26 @@ export function PortalAssistant() {
   });
 
   if (list.error) {
+    if (compact) return <p className="p-4 text-sm text-[color:var(--color-text-muted)]">{list.error.message}</p>;
     return (
       <>
         <PageHeader title="Assistant" icon={Sparkles} description="Help with payments, webhooks and payouts." />
         <p className="text-sm text-[color:var(--color-text-muted)]">{list.error.message}</p>
       </>
+    );
+  }
+
+  if (compact) {
+    return (
+      <AssistantChat
+        staff={false}
+        name={list.data?.name ?? null}
+        configured={list.data?.configured ?? true}
+        conversations={list.data?.conversations ?? []}
+        onAnswered={() => qc.invalidateQueries({ queryKey: ["support-bot", "list", "portal"] })}
+        heightClass="h-full"
+        compact
+      />
     );
   }
 

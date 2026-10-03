@@ -60,7 +60,7 @@ export function ProviderPortalShell({
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => keep(i.href)) })).filter((g) => g.items.length);
   return (
     <PortalFrame base={B} subtitle="Merchant portal" badge="Merchant" groups={groups} devGroup={DEV}
-      paymentsHref={allowsPayin(services) ? `${B}/orders` : `${B}/transactions`} assistant={assistant}
+      paymentsHref={allowsPayin(services) ? `${B}/orders` : `${B}/transactions`} assistant={assistant} floatingAssistant
       scopeLabel={scopeLabel} email={email} fullName={fullName} livemode={livemode}>
       {children}
     </PortalFrame>

@@ -231,13 +231,15 @@ export interface AssistantChatProps {
   onPickConversation?: (c: Conversation) => void;
   /** Tailwind height of the panel; the staff page has a picker above it. */
   heightClass?: string;
+  /** In a narrow panel (the floating assistant): earlier questions stay a drawer at every width. */
+  compact?: boolean;
   /** A question handed over by another page (?ask=), ready to send. */
   initialText?: string;
   /** Ask for the customer's payment screenshot (the "customer says they paid" button). */
   nudgeScreenshot?: boolean;
 }
 
-export function AssistantChat({ staff, scope, name, banner, conversations, configured, onAnswered, onPickConversation, heightClass = "h-[calc(100dvh-11rem)]", initialText = "", nudgeScreenshot = false }: AssistantChatProps) {
+export function AssistantChat({ staff, scope, name, banner, conversations, configured, onAnswered, onPickConversation, heightClass = "h-[calc(100dvh-11rem)]", initialText = "", nudgeScreenshot = false, compact = false }: AssistantChatProps) {
   const qc = useQueryClient();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [text, setText] = useState(initialText);
@@ -354,14 +356,15 @@ export function AssistantChat({ staff, scope, name, banner, conversations, confi
   const greeting = name ? `Hi ${name}, what went wrong?` : "Hi, what went wrong?";
 
   return (
-    <div className={cn("relative grid min-h-[30rem] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border bg-[color:var(--color-surface)] shadow-sm lg:grid-cols-[16.5rem_minmax(0,1fr)]", heightClass)}>
+    <div className={cn("relative grid min-h-[30rem] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border bg-[color:var(--color-surface)] shadow-sm", !compact && "lg:grid-cols-[16.5rem_minmax(0,1fr)]", compact && "min-h-0 rounded-none border-0 shadow-none", heightClass)}>
       {/* Conversations */}
       <aside className={cn(
-        "absolute inset-y-0 left-0 z-20 flex w-72 min-h-0 flex-col border-r bg-[color:var(--color-surface)] p-3 transition-transform lg:static lg:w-auto lg:translate-x-0",
+        "absolute inset-y-0 left-0 z-20 flex w-72 min-h-0 flex-col border-r bg-[color:var(--color-surface)] p-3 transition-transform",
+        !compact && "lg:static lg:w-auto lg:translate-x-0",
         historyOpen ? "translate-x-0 shadow-xl" : "-translate-x-full")}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <Button size="sm" className="flex-1" onClick={startNew} disabled={staff && !scope}><Plus className="h-4 w-4" /> New question</Button>
-          <button className={cn("rounded-md p-1.5 lg:hidden", MUTED)} onClick={() => setHistoryOpen(false)} aria-label="Close history"><X className="h-4 w-4" /></button>
+          <button className={cn("rounded-md p-1.5", !compact && "lg:hidden", MUTED)} onClick={() => setHistoryOpen(false)} aria-label="Close history"><X className="h-4 w-4" /></button>
         </div>
         <div className={`mb-1 px-1 text-xs ${MUTED}`}>Earlier questions</div>
         <div className="-mx-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
@@ -379,7 +382,7 @@ export function AssistantChat({ staff, scope, name, banner, conversations, confi
           {!conversations.length && <p className={`px-2 text-xs ${MUTED}`}>Nothing yet. Your questions will be kept here.</p>}
         </div>
       </aside>
-      {historyOpen && <button aria-label="Close history" className="absolute inset-0 z-10 bg-black/20 lg:hidden" onClick={() => setHistoryOpen(false)} />}
+      {historyOpen && <button aria-label="Close history" className={cn("absolute inset-0 z-10 bg-black/20", !compact && "lg:hidden")} onClick={() => setHistoryOpen(false)} />}
 
       {/* Thread */}
       <section
@@ -388,7 +391,7 @@ export function AssistantChat({ staff, scope, name, banner, conversations, confi
         onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
         onDrop={(e) => { e.preventDefault(); setDragging(false); void addFiles(e.dataTransfer.files); }}>
         <header className="flex items-center gap-3 border-b px-4 py-3">
-          <button className={cn("rounded-md p-1.5 lg:hidden", MUTED)} onClick={() => setHistoryOpen(true)} aria-label="Earlier questions"><History className="h-4 w-4" /></button>
+          <button className={cn("rounded-md p-1.5", !compact && "lg:hidden", MUTED)} onClick={() => setHistoryOpen(true)} aria-label="Earlier questions"><History className="h-4 w-4" /></button>
           <Orb busy={busy} size={30} />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold">Katana assistant</div>

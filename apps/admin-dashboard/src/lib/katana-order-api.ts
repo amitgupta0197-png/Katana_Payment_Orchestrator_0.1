@@ -20,6 +20,7 @@
 // Every answer carries an X-Request-Id header: the caller's own when it sent one, else one made
 // here. It is kept on the order and in its status history, so one id follows the payment.
 
+import { describeOrderRequestError, signingRuleFor } from "@/lib/order-request-errors";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -103,14 +104,15 @@ interface Seen { merchant: string | null; livemode: boolean | null; body: unknow
 
 async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen: Seen): Promise<NextResponse> {
   const WHERE = api.where;
-  let body;
-  try {
-    const raw = await parseBody(req);
-    seen.body = raw;
-    body = schema.parse(raw);
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+  let raw: Record<string, unknown>;
+  try { raw = await parseBody(req); } catch {
+    return NextResponse.json({ error: "invalid request: send a JSON or form body", code: "INVALID_REQUEST", missing: [], invalid: [], hints: [] }, { status: 400 });
   }
+  seen.body = raw;
+  const parsed = schema.safeParse(raw);
+  // Says which fields are missing or wrong, and names a field sent under another gateway's name.
+  if (!parsed.success) return NextResponse.json(describeOrderRequestError(raw, parsed.error), { status: 400 });
+  const body = parsed.data;
   const amountStr = typeof body.amount === "number" ? body.amount.toString() : body.amount;
 
   try {
@@ -128,7 +130,9 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
       txnId: body.txnid, amount: amountStr,
       productinfo: body.productinfo, firstname: body.firstname, email: body.email,
     }, body.hash);
-    if (!ok) return NextResponse.json({ error: "signature mismatch" }, { status: 401 });
+    // The error text stays "signature mismatch" (merchants and the support assistant match on it);
+    // the hint says what is signed, which is in the public guide and reveals no secret.
+    if (!ok) return NextResponse.json({ error: "signature mismatch", code: "SIGNATURE_MISMATCH", hint: signingRuleFor(creds.scheme) }, { status: 401 });
 
     // 3. create the pay-in (idempotent on txnid) and return the deeplink response.
     const amount = Number(amountStr);
