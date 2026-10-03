@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { Receipt, TrendingUp, Store, Network, Download, X } from "lucide-react";
+import { Receipt, TrendingUp, Store, Network, Download, X, Wallet, Activity } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,8 @@ import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
 import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
 import type { PayinChannel } from "@/lib/payin-channel";
+import { verificationLabel, verificationVariant, type CreditVerification } from "@/lib/credit-verification";
+import type { BankerHealth, HealthState } from "@/lib/integration-health-rules";
 
 // The server reads a date as an IST calendar day, so the presets have to be built in IST
 // too — on a phone set to another zone, `new Date()` would otherwise offer "today" as a
@@ -33,6 +35,22 @@ interface ByMerchant { merchant_id: string; gross: number; count: number; succes
 interface ByChannel { channel: string; gross: number; count: number }
 interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string; channel_type: PayinChannel }
 interface Data { merchants: string[]; totals: Totals; by_merchant: ByMerchant[]; by_channel: ByChannel[]; by_channel_type?: Record<PayinChannel, Totals>; recent: Txn[] }
+
+// Money the bankers' collection phones saw land on their UPI IDs (/api/merchant-portal/vpa-transactions).
+// Most of it is paid straight to a UPI ID with no order, so it never appears in the order list
+// above; this is the same feed the banker sees on its own Transactions page.
+interface Credit { id: string; merchant_id: string | null; amount: number; utr: string | null; payer_name: string | null; payer_vpa: string | null; matched_order_ref: string | null; outcome: string; event_time: string | null; created_at: string; verification?: CreditVerification }
+interface Credits { recent: Credit[]; totals: { count: number; verifiedAmount?: number; awaitingAmount?: number; verified?: number; awaitingRrn?: number }; truncated?: boolean }
+
+/** The IST calendar day of a timestamp, as YYYY-MM-DD: what the date filter compares against. */
+const istDayOf = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(iso));
+
+const HEALTH: Record<HealthState, { label: string; variant: "success" | "warning" | "danger" | "default" }> = {
+  OK: { label: "Healthy", variant: "success" },
+  ATTENTION: { label: "Needs a look", variant: "warning" },
+  FAILING: { label: "Failing", variant: "danger" },
+  IDLE: { label: "No traffic", variant: "default" },
+};
 
 const successRate = (t?: Totals) => {
   const done = (t?.success_count ?? 0) + (t?.failed_count ?? 0);
@@ -59,9 +77,31 @@ export default function ProviderTransactionsPage() {
     queryFn: async () => (await fetch(`/api/merchant-portal/transactions${qs ? `?${qs}` : ""}`).then(async (r) => {
       const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
     })) as Data,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
   const d = q.data;
+
+  const creditsQ = useQuery({
+    queryKey: ["pp:credits"],
+    queryFn: async () => (await fetch("/api/merchant-portal/vpa-transactions").then(async (r) => {
+      const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
+    })) as Credits,
+    refetchInterval: 15_000,
+  });
+  // The credit feed has no date parameter; the window is applied here, on the IST day the money arrived.
+  const credits = (creditsQ.data?.recent ?? []).filter((c) => {
+    const day = istDayOf(c.event_time ?? c.created_at);
+    return (!from || day >= from) && (!to || day <= to);
+  });
+  const creditsVerified = credits.filter((c) => c.verification === "verified" || c.verification === "matched");
+
+  const healthQ = useQuery({
+    queryKey: ["pp:integration-health"],
+    queryFn: async () => (await fetch("/api/portal/integration-health").then(async (r) => {
+      const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
+    })) as { bankers: BankerHealth[] },
+    refetchInterval: 30_000,
+  });
   const t = d?.totals;
 
   const setRange = (f: string, tt: string) => { setFrom(f); setTo(tt); };
@@ -87,6 +127,38 @@ export default function ProviderTransactionsPage() {
     { key: "method", header: "Method", render: (r) => r.method || "—" },
     { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
     { key: "status", header: "Status", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+  ];
+
+  const creditCols: Column<Credit>[] = [
+    { key: "created_at", header: "When", render: (r) => <span className="text-xs">{formatDateTime(r.event_time ?? r.created_at)}</span> },
+    { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id ?? "—"}</span> },
+    { key: "amount", header: "Amount", render: (r) => <span className="font-medium tabular-nums">{formatAmount(r.amount)}</span> },
+    { key: "payer_name", header: "From", render: (r) => r.payer_name || "—" },
+    { key: "utr", header: "Bank reference (UTR)", render: (r) => <span className="font-mono text-xs">{r.utr || "—"}</span> },
+    { key: "matched_order_ref", header: "Order", render: (r) => <span className="font-mono text-xs">{r.matched_order_ref || "—"}</span> },
+    { key: "verification", header: "Status", render: (r) => {
+      const v = r.verification ?? (r.outcome === "CONFIRMED" ? "matched" : "awaiting");
+      return <Badge variant={verificationVariant(v)}>{verificationLabel(v)}</Badge>;
+    } },
+  ];
+
+  const healthCols: Column<BankerHealth>[] = [
+    { key: "code", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.code}</span> },
+    { key: "state", header: "Health", render: (r) => <Badge variant={HEALTH[r.state].variant}>{HEALTH[r.state].label}</Badge> },
+    { key: "api", header: "API requests (24h)", render: (r) => (
+      <span className="tabular-nums">{r.api.requests}{r.api.refused > 0 && <span className="text-[color:var(--color-danger)]"> · {r.api.refused} refused</span>}</span>
+    ) },
+    { key: "callbacks", header: "Payment messages", render: (r) => (
+      <span className="tabular-nums">
+        {r.callbacks.delivered} delivered
+        {r.callbacks.retrying > 0 && <span className="text-[color:var(--color-warning)]"> · {r.callbacks.retrying} retrying</span>}
+        {r.callbacks.failed > 0 && <span className="text-[color:var(--color-danger)]"> · {r.callbacks.failed} failed</span>}
+      </span>
+    ) },
+    { key: "capture", header: "Last money on UPI ID", render: (r) => (
+      <span className="text-xs">{r.capture.last_credit_at ? `${formatDateTime(r.capture.last_credit_at)} · ${r.capture.today} today` : "—"}</span>
+    ) },
+    { key: "note", header: "", render: (r) => <span className="text-xs text-[color:var(--color-text-muted)]">{r.note ?? ""}</span> },
   ];
 
   return (
@@ -194,7 +266,18 @@ export default function ProviderTransactionsPage() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4" /> Integration health</CardTitle>
+          <CardDescription>Per banker: API requests accepted, payment messages reaching its server, and the last money on its UPI IDs.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable columns={healthCols} rows={healthQ.data?.bankers ?? []} rowKey={(r) => r.code} loading={healthQ.isLoading}
+            emptyState={healthQ.isError ? "Could not load integration health." : "No bankers yet."} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Recent transactions</CardTitle>
           {/* Say which window is on screen — every figure above is scoped to it too, so a
@@ -209,6 +292,21 @@ export default function ProviderTransactionsPage() {
           <DataTable columns={recentCols} rows={d?.recent ?? []} rowKey={(r) => `${r.source}:${r.ref}`} loading={q.isLoading}
             onRowClick={(r) => { if (r.source === "CHECKOUT") router.push(`/merchant-portal/transactions/${r.ref}`); }}
             emptyState={filtered || channel ? "No transactions match this filter." : "No transactions yet."} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Wallet className="h-4 w-4" /> Money received on UPI IDs</CardTitle>
+          <CardDescription>
+            {`Payments your bankers' collection phones saw arrive${filtered ? ` · ${windowLabel}` : ", newest first"}. `}
+            {`${creditsVerified.length} of ${credits.length} confirmed by a bank reference · ${formatAmount(creditsVerified.reduce((a, c) => a + Number(c.amount || 0), 0))}.`}
+            {" Live money only."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable columns={creditCols} rows={credits.slice(0, 200)} rowKey={(r) => r.id} loading={creditsQ.isLoading}
+            emptyState={creditsQ.isError ? "Could not load money received." : filtered ? "No money received in this window." : "No money received yet."} />
         </CardContent>
       </Card>
     </>
