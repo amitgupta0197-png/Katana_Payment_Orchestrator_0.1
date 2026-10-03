@@ -14,6 +14,9 @@ import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { IS_COLLECTION } from "@/lib/settlement-credit";
 import { paymentAppOf } from "@/lib/payment-app";
+import { seesGatewayNames } from "@/lib/merchant-safe";
+import { possibleOrders } from "@/lib/credit-link";
+import { openOrdersForLinking } from "@/lib/credit-link-store";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +41,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
        ORDER BY COALESCE(event_time, created_at) DESC LIMIT 100
     `, [scope.code]);
 
+    // Staff: for a payment no order took, the open orders it could belong to (lib/credit-link), so it
+    // can be linked by hand when the reconciler would not choose between two of the same amount.
+    const staff = seesGatewayNames(g.session.persona);
+    const open = staff ? await openOrdersForLinking(scope.code).catch(() => []) : [];
+    const linkable = (c: any) => !c.matched_order_ref && c.outcome !== "CONFIRMED" && c.outcome !== "DUPLICATE";
+
     return NextResponse.json({
       merchant_code: scope.code,
+      can_link: staff,
       credits: credits.map(({ bank, sender, source, ...c }: any) => ({
         ...c, source, app: paymentAppOf({ bank, sender, source }).label,
+        ...(staff && linkable(c) ? {
+          possible_orders: possibleOrders({ amount: c.amount, received_at: c.received_at }, open)
+            .map((o) => ({ id: o.id, order_id: o.order_id, created_at: o.created_at, status: o.status })),
+        } : {}),
       })),
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

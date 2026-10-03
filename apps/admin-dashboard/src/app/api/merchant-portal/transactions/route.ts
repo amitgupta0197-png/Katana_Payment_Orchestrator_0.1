@@ -26,7 +26,8 @@ import { unlinkedCredits } from "@/lib/merchant-credits";
 
 export const dynamic = "force-dynamic";
 
-const SUCCESS = new Set(["SUCCESS", "SUCCEEDED"]);
+// RECEIVED is money with no order (lib/merchant-credits): collected, so it counts in the gross.
+const SUCCESS = new Set(["SUCCESS", "SUCCEEDED", "RECEIVED"]);
 const FAILED = new Set(["FAILED", "EXPIRED"]);
 
 interface Txn { source: string; merchant_id: string; channel: string; method: string; status: string; amount: number; ref: string; created_at: string; channel_type: PayinChannel }

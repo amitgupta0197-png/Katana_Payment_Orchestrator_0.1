@@ -8,8 +8,9 @@
 // Only credits NO order accounts for are returned: one linked to an order (outcome CONFIRMED, or a
 // matched_order_id) is already in the list as that order, and adding it would count it twice.
 // Collections only (lib/settlement-credit), live only: a credit is real money, and a test-mode
-// screen has none. Status: a 12-digit bank reference proves it (SUCCESS); without one, or paid to a
-// UPI ID that is not the banker's, it is not counted as collected yet (PENDING), as on the banker page.
+// screen has none. Status: a 12-digit bank reference proves it (RECEIVED: money in, but no order to
+// call Paid); without one, or paid to a UPI ID that is not the banker's, it is not counted as collected
+// yet (PENDING), as on the banker page.
 
 import { rows } from "@/lib/pg";
 import { IS_COLLECTION } from "@/lib/settlement-credit";
@@ -23,7 +24,8 @@ export interface CreditTxn {
   merchant_id: string;
   channel: string;
   method: string;
-  status: "SUCCESS" | "PENDING";
+  /** RECEIVED: proven by its bank reference, but no order accounts for it. PENDING: no reference yet. */
+  status: "RECEIVED" | "PENDING";
   amount: number;
   /** The bank reference (UTR) when there is one, else the credit's id. */
   ref: string;
@@ -77,7 +79,7 @@ export async function unlinkedCredits(w: TxnWindow, limit = 2000): Promise<Credi
     const v = verificationOf(a, vpasOf.get(code) ?? []);
     return {
       source: "UPI_CREDIT", merchant_id: code, channel: P2P_CHANNEL_ID, method: "UPI",
-      status: v === "verified" || v === "matched" ? "SUCCESS" : "PENDING",
+      status: v === "verified" || v === "matched" ? "RECEIVED" : "PENDING",
       amount: Number(a.amount) || 0, ref: a.utr || a.id, created_at: new Date(a.at).toISOString(),
       channel_type: "P2P", utr: a.utr, payer_vpa: a.payer_vpa,
     };

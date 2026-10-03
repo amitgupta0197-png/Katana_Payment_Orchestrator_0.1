@@ -4,6 +4,7 @@
 // merchant, their mode (QR/non-QR), active receiver VPA + backup-pool health,
 // with a one-click VPA failover and the shareable pay link. Admin-visible.
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, ExternalLink, SkipForward, QrCode, Smartphone, RefreshCw, Banknote, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
@@ -214,9 +215,63 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
   );
 }
 
+interface PossibleOrder { id: string; order_id: string; created_at: string; status: string }
 interface CapturedCredit {
   id: string; amount: number; utr: string; app: string; source: string; payer_name: string;
   outcome: string; matched_order_ref: string; received_at: string;
+  /** Staff only: open orders this payment could belong to (lib/credit-link). */
+  possible_orders?: PossibleOrder[];
+}
+
+/**
+ * The Order cell of a payment no order took. With open orders of its amount from just before it
+ * (lib/credit-link), staff pick the one it paid: the reconciler will not choose between two of the
+ * same amount. Linking confirms that order with this payment's bank reference.
+ */
+function LinkCell({ merchantId, credit }: { merchantId: string; credit: CapturedCredit }) {
+  const qc = useQueryClient();
+  const [asking, setAsking] = useState<string | null>(null);
+  const link = useMutation({
+    mutationFn: async (orderId: string) => {
+      const r = await fetch(`/api/merchants/${merchantId}/credits/${credit.id}/link`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_id: orderId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Could not link");
+      return d as { order_id: string };
+    },
+    onSuccess: (d) => {
+      toast.success(`Linked to ${d.order_id}; the order is now paid`);
+      setAsking(null);
+      qc.invalidateQueries({ queryKey: ["merchant", merchantId, "credits"] });
+      qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] });
+    },
+    onError: (e: Error) => toast.error("Not linked", { description: e.message }),
+  });
+  const options = credit.possible_orders ?? [];
+  if (!options.length)
+    return <Badge variant="default" title="Paid straight to the QR — no open Katana order of this amount was waiting for it">No order</Badge>;
+  return (
+    <div className="space-y-1.5">
+      <Badge variant="warning" title="More than one open order had this amount, so it was not linked by itself">
+        {options.length === 1 ? "1 possible order" : `${options.length} possible orders`}
+      </Badge>
+      {options.map((o) => (
+        <div key={o.id} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-mono">{o.order_id}</span>
+          <span className="text-[color:var(--color-text-muted)]">{formatDateTime(o.created_at)}</span>
+          {asking === o.id ? (
+            <>
+              <Button size="sm" disabled={link.isPending} onClick={() => link.mutate(o.id)}>{link.isPending ? "Linking…" : "Confirm link"}</Button>
+              <Button size="sm" variant="ghost" disabled={link.isPending} onClick={() => setAsking(null)}>Cancel</Button>
+            </>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setAsking(o.id)}>Link</Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -248,7 +303,7 @@ export function MerchantCapturedCreditsCard({ merchantId }: { merchantId: string
       key: "matched_order_ref", header: "Order",
       render: (c) => c.matched_order_ref
         ? <span className="font-mono text-xs">{c.matched_order_ref}</span>
-        : <Badge variant="default" title="Paid straight to the QR — no Katana order was waiting for it">No order</Badge>,
+        : <LinkCell merchantId={merchantId} credit={c} />,
     },
   ];
 

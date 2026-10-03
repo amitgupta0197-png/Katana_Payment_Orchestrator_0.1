@@ -13,6 +13,9 @@ const PAYMENT: Record<string, PlainStatus> = {
   FAILED: { word: "Failed", tone: "danger", meaning: "The payment did not go through." },
   EXPIRED: { word: "Expired", tone: "neutral", meaning: "No payment came in time." },
   REFUNDED: { word: "Refunded", tone: "neutral", meaning: "The money was sent back to the customer." },
+  // Money proven by its bank reference that no order accounts for (lib/merchant-credits). Not
+  // "Paid": an order list beside it can still say Waiting, and the two must not seem to disagree.
+  RECEIVED: { word: "Received, no order", tone: "info", meaning: "The money came in to your UPI ID, but it is not linked to an order." },
 };
 
 /** Every pay-in status Katana stores or reports, in the four (five) words merchants see. */
@@ -22,6 +25,7 @@ export function plainPaymentStatus(raw: string | null | undefined): PlainStatus 
   if (["FAILED", "FAILURE", "DECLINED", "ERROR", "REJECTED", "CANCELLED", "CANCELED"].includes(s)) return PAYMENT.FAILED;
   if (["EXPIRED", "TIMEOUT", "TIMED_OUT", "ABANDONED"].includes(s)) return PAYMENT.EXPIRED;
   if (["REFUNDED", "REVERSED", "PARTIALLY_REFUNDED"].includes(s)) return PAYMENT.REFUNDED;
+  if (s === "RECEIVED") return PAYMENT.RECEIVED;
   return PAYMENT.PENDING;
 }
 

@@ -44,7 +44,7 @@ export function verificationOf(r: VerifiableCredit, vpas: string[]): CreditVerif
 export function verificationLabel(v: CreditVerification): string {
   // The words merchants read (lib/plain-words): no "VPA", no "RRN".
   return v === "vpa_mismatch" ? "Paid to a different UPI ID" : v === "awaiting" ? "Waiting for bank reference"
-    : v === "matched" ? "Linked to an order" : "Confirmed by bank";
+    : v === "matched" ? "Linked to an order" : "Confirmed by bank, no order";
 }
 
 export function verificationVariant(v: CreditVerification): "success" | "danger" | "warning" {
