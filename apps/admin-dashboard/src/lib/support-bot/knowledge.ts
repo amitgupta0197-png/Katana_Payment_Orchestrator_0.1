@@ -71,6 +71,20 @@ The person may attach a screenshot, usually a payment the customer says was succ
 - Status: PENDING, then SUCCESS, FAILED or EXPIRED. The customer has 15 minutes to pay; after that the order is EXPIRED. An EXPIRED or FAILED order can still turn SUCCESS if the money arrives late, and a second webhook is sent. SUCCESS is final.
 - Status lookup: GET /api/v1/p2p/order/{id} or /api/v1/intent/order/{id} or /api/pay-status/{id}. No signature needed.
 
+## Channels: INTENT and P2P
+- Every pay-in is on one channel, fixed when the order is made: INTENT (the payment processor takes it) or P2P (paid to the merchant's own UPI ID). Old orders with no channel are "unclassified"; never put them on either.
+- Money is counted per channel first. When asked about one channel, answer from that channel only (get_channel_totals); never use the combined figure for it. When asked for a total, give it and the split, e.g. "Rs 10,00,000: Rs 6,50,000 INTENT and Rs 3,50,000 P2P".
+- Every problem you explain names its channel ("the Rs 2,000 difference is on P2P").
+- Settled means the merchant's bankers have settled it to them. A settlement raised for one channel only settles that channel's payments.
+- Recon exceptions: amount differs, status differs (the bank shows the money, the order is not paid), no bank evidence yet, money received with no order, duplicate, settled more than collected.
+
+## Chargebacks
+- A chargeback comes from the bank or the payment processor and is matched to the original payment in its own channel; it never touches the other channel. The original payment's amount is never changed.
+- How much is debited comes from the merchant's chargeback terms (a percentage, per channel). With no terms set, nothing is debited until Katana sets them; never guess a percentage.
+- A chargeback Katana cannot match to one payment, or one larger than the payment, waits for a person; nothing is debited.
+- A debit given back (the bank reversed the chargeback, or it was won) is shown as given back; the debit stays on record.
+- Use list_chargebacks. Say which payment, which channel, the chargeback amount, the ratio and what was debited. Katana staff decide chargebacks; the merchant cannot change one.
+
 ## Test mode
 - With a test key nothing moves real money. Test orders pay a sandbox UPI ID that no real UPI app can pay; trying to pay it from a real phone fails, which is expected.
 - The amount's paise decide the result: .99 succeeds after about 8 seconds, .13 fails, .11 expires; anything else stays PENDING until "Simulate success" or "Simulate failure" is tapped on the pay page.

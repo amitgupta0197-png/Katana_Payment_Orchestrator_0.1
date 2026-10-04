@@ -20,6 +20,8 @@ import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant, railLabel } from "@/lib/utils";
 import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
 import type { PayinChannel } from "@/lib/payin-channel";
+import type { ChannelAccount } from "@/lib/channel-accounts";
+import { ChannelAccountsTable } from "@/components/payin/channel-accounts";
 import { verificationLabel, verificationVariant, type CreditVerification } from "@/lib/credit-verification";
 import type { BankerHealth, HealthState } from "@/lib/integration-health-rules";
 
@@ -81,6 +83,15 @@ export default function ProviderTransactionsPage() {
     refetchInterval: 15_000,
   });
   const d = q.data;
+
+  // Katana Pay's accounts per channel: fees, chargebacks, net, settled and variance (lib/channel-accounts).
+  const accQ = useQuery({
+    queryKey: ["pp:channel-accounts", from, to],
+    queryFn: async () => (await fetch(`/api/merchant-portal/channel-accounts${from || to ? `?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}` : ""}`).then(async (r) => {
+      const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d;
+    })) as { channels: Record<PayinChannel, ChannelAccount>; total: ChannelAccount; livemode: boolean },
+    refetchInterval: 30_000,
+  });
 
   const creditsQ = useQuery({
     queryKey: ["pp:credits"],
@@ -225,6 +236,10 @@ export default function ProviderTransactionsPage() {
           };
         })} />
       )}
+
+      <ChannelAccountsTable channels={accQ.data?.channels} total={accQ.data?.total} selected={channel} loading={accQ.isLoading}
+        livemode={accQ.data?.livemode !== false} title="Katana Pay accounts by channel"
+        description="Katana Pay pay-ins only, each channel from its own pay-ins; All is their sum. Chargebacks and their debits are on the Chargebacks page." />
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>

@@ -86,6 +86,20 @@ async function cleanup() {
   await quiet(rows("fifo", `DELETE FROM fifo_order_events WHERE order_id IN (SELECT id FROM fifo_orders WHERE merchant_id = ANY($1::text[]))`, [codes]));
   await quiet(rows("fifo", `DELETE FROM fifo_orders WHERE merchant_id = ANY($1::text[])`, [codes]));
   await quiet(rows("fifo", `DELETE FROM fifo_beneficiaries WHERE merchant_id = ANY($1::text[])`, [codes]));
+  // Chargebacks: postings and events are append-only by trigger, lifted for the e2e bankers' rows only.
+  await quiet((async () => {
+    await rows("vendorGateway", `ALTER TABLE payin_chargeback_postings DISABLE TRIGGER payin_chargeback_postings_locked_trg`);
+    await rows("vendorGateway", `ALTER TABLE payin_chargeback_events DISABLE TRIGGER payin_chargeback_events_locked_trg`);
+    try {
+      await rows("vendorGateway", `DELETE FROM payin_chargeback_postings WHERE merchant_id = ANY($1::text[])`, [codes]);
+      await rows("vendorGateway", `DELETE FROM payin_chargeback_events WHERE chargeback_id IN (SELECT id FROM payin_chargebacks WHERE merchant_id = ANY($1::text[]) OR bank_ref LIKE 'E2E-CB-%')`, [codes]);
+    } finally {
+      await rows("vendorGateway", `ALTER TABLE payin_chargeback_postings ENABLE TRIGGER payin_chargeback_postings_locked_trg`);
+      await rows("vendorGateway", `ALTER TABLE payin_chargeback_events ENABLE TRIGGER payin_chargeback_events_locked_trg`);
+    }
+    await rows("vendorGateway", `DELETE FROM payin_chargebacks WHERE merchant_id = ANY($1::text[]) OR bank_ref LIKE 'E2E-CB-%'`, [codes]);
+    await rows("vendorGateway", `DELETE FROM payin_chargeback_rules WHERE note = 'e2e terms'`);
+  })());
   await quiet(rows("vendorGateway", `DELETE FROM vendor_payin_orders WHERE merchant_id = ANY($1::text[])`, [codes]));
   await quiet(rows("audit", `DELETE FROM api_request_log WHERE merchant_id = ANY($1::text[])`, [codes]));
   await quiet(rows("merchant", `DELETE FROM support_bot_conversations WHERE merchant_code = ANY($1::text[])`, [codes]));
@@ -466,6 +480,60 @@ for (const [i, c] of COMBOS.entries()) {
       assert.equal(mTxns.status, 200, JSON.stringify(mTxns.body));
       assert.ok(mTxns.body.recent.some((t: { ref: string }) => t.ref === general.body.order.order_id), "merchant sees its banker's order");
       assert.equal((await api("GET", "/api/merchant-portal/vpa-transactions", undefined, providerLogin)).status, 200);
+
+      // ── 5d. Channel accounting: every figure per channel, All their sum; reconciliation inside
+      //        the channel, with its CSV keeping the channel and the state.
+      const testCookie = `${providerLogin}; katana_mode=test`;
+      const acc = await api("GET", "/api/merchant-portal/channel-accounts", undefined, testCookie);
+      assert.equal(acc.status, 200, JSON.stringify(acc.body));
+      const ch = acc.body.channels;
+      assert.ok(ch.P2P.paid.count >= 1, "the paid test order is P2P");
+      assert.equal(acc.body.total.paid.count, ch.INTENT.paid.count + ch.P2P.paid.count + ch.UNCLASSIFIED.paid.count, "All is the sum of the channels");
+      assert.equal(acc.body.total.settled, null, "test mode has no settlement");
+      const recon = await api("GET", "/api/merchant-portal/reconciliation?channel=P2P", undefined, testCookie);
+      assert.equal(recon.status, 200, JSON.stringify(recon.body));
+      const ro = recon.body.orders.find((o: { order_id: string }) => o.order_id === general.body.order.order_id);
+      assert.ok(ro, "the paid order is in the P2P reconciliation");
+      assert.equal(ro.channel_type, "P2P");
+      assert.ok(["MATCHED", "MISSING_EXTERNAL"].includes(ro.recon), ro.recon);
+      assert.equal((await api("GET", "/api/merchant-portal/reconciliation?channel=INTENT", undefined, testCookie)).body.orders
+        .some((o: { order_id: string }) => o.order_id === general.body.order.order_id), false, "and not in the INTENT one");
+      const csvRes = await fetch(`${BASE}/api/merchant-portal/reconciliation?format=csv`, { headers: { cookie: testCookie } });
+      const csvText = await csvRes.text();
+      assert.match(csvRes.headers.get("content-type") ?? "", /text\/csv/);
+      assert.ok(csvText.includes("Channel") && csvText.includes("Reconciliation") && csvText.includes(general.body.order.order_id));
+
+      // ── 5e. A chargeback the bank reports on that order: matched in its channel, no debit
+      //        without terms, the terms' share once they are set, and a reversal as a new entry.
+      const rec = await api("POST", "/api/chargebacks", {
+        source: "BANK", bank_ref: `E2E-CB-${RUN}-${i}`, order_ref: general.body.order.order_id, banker: bankerCode,
+        amount: 10, reason_code: "10.4", livemode: false,
+      });
+      assert.equal(rec.status, 201, JSON.stringify(rec.body));
+      const cbRow = rec.body.results[0].chargeback;
+      assert.deepEqual([cbRow.state, cbRow.channel, cbRow.order_ref, cbRow.debited], ["CB_RULE_EXCEPTION", "P2P", general.body.order.order_id, 0]);
+      const rule = await api("POST", "/api/chargebacks/rules", { provider_id: providerId, channel_type: "P2P", debit_percent: 50, note: "e2e terms" });
+      assert.equal(rule.status, 201, JSON.stringify(rule.body));
+      const ruled = await api("POST", `/api/chargebacks/${cbRow.id}`, { action: "reevaluate" });
+      assert.deepEqual([ruled.status, ruled.body.chargeback.state, ruled.body.chargeback.debited], [200, "CB_PARTIAL_DEBIT", 5], JSON.stringify(ruled.body));
+      for (const [who, cookie] of [["banker", bankerLogin], ["merchant", providerLogin]] as const) {
+        const l = await api("GET", "/api/chargebacks", undefined, `${cookie}; katana_mode=test`);
+        assert.equal(l.status, 200, `${who}: ${JSON.stringify(l.body)}`);
+        const mine = l.body.chargebacks.find((x: { id: string }) => x.id === cbRow.id);
+        assert.ok(mine, `${who} sees the chargeback on its banker`);
+        assert.deepEqual([mine.debit_ratio, mine.channel, "source_name" in mine, "state_note" in mine], ["50%", "P2P", false, false]);
+        assert.equal(l.body.totals.P2P.count >= 1, true);
+        assert.equal((await api("POST", `/api/chargebacks/${cbRow.id}`, { action: "dismiss", note: "not mine" }, cookie)).status, 403, `${who} cannot act`);
+        const terms = await api("GET", "/api/chargebacks/rules", undefined, cookie);
+        assert.ok(terms.body.rules.some((r: { debit_ratio: string; channel: string }) => r.debit_ratio === "50%" && r.channel === "P2P"), `${who} sees its terms`);
+      }
+      const back = await api("POST", `/api/chargebacks/${cbRow.id}`, { action: "reverse", kind: "REPRESENTMENT_WON", note: "e2e won at the bank" });
+      assert.deepEqual([back.body.chargeback.state, back.body.postings.map((x: { kind: string }) => x.kind)],
+        ["CB_REVERSED", ["CHARGEBACK_DEBIT", "CHARGEBACK_REVERSAL"]], JSON.stringify(back.body));
+      // The bot's channel and chargeback lookups run on this banker and name no gateway.
+      const totals = await call("get_channel_totals", { days: 7 });
+      assert.ok("INTENT" in totals && "P2P" in totals && "all_channels_sum" in totals);
+      await call("list_chargebacks", { limit: 5 });
       assert.equal((await api("GET", "/api/portal/integration-health")).status, 403, "staff have gateway health instead");
 
       // Key + Salt: in the merchant portal's main menu, and its card reads the merchant's own banker.

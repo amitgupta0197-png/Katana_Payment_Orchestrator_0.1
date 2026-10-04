@@ -21,7 +21,7 @@ const GROUPS: NavGroup[] = [
     { href: `${B}/orders`, label: "Orders", icon: Search },
     { href: `${B}/transactions`, label: "Transactions", icon: Receipt },
     { href: `${B}/statements`, label: "Statements", icon: FileSpreadsheet },
-    { href: `${B}/disputes`, label: "Disputes", icon: ShieldAlert },
+    { href: `${B}/disputes`, label: "Chargebacks", icon: ShieldAlert },
     { href: `${B}/reports`, label: "Reports", icon: BarChart3 },
   ] },
   { id: "money", label: "Money", icon: Wallet, items: [

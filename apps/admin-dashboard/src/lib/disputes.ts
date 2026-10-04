@@ -32,6 +32,8 @@ export interface OpenDisputeInput {
   currency: string;
   deadline?: Date;
   openedBy?: string | null;
+  /** The pay-in channel of the transaction; a checkout order is INTENT (a gateway takes it). */
+  channelType?: "INTENT" | "P2P" | "UNCLASSIFIED";
 }
 
 export async function openDispute(input: OpenDisputeInput): Promise<{
@@ -57,14 +59,14 @@ export async function openDispute(input: OpenDisputeInput): Promise<{
   const d = await rows<{ dispute_id: string }>("riskVelocity", `
     INSERT INTO disputes
       (txn_id, order_id, merchant_id, reason_code, amount_minor, currency,
-       status, deadline_at, hold_journal_id, opened_by)
-    VALUES ($1, $2::uuid, $3, $4, $5, $6, 'DISPUTE_OPEN', $7, $8::uuid, $9)
+       status, deadline_at, hold_journal_id, opened_by, channel_type)
+    VALUES ($1, $2::uuid, $3, $4, $5, $6, 'DISPUTE_OPEN', $7, $8::uuid, $9, $10)
     RETURNING dispute_id::text
   `, [
     input.txnId, input.orderId ?? null, input.merchantId, input.reasonCode,
     amt.toString(), input.currency,
     input.deadline ?? new Date(Date.now() + 14 * 86400 * 1000),
-    j.journal_id, input.openedBy ?? null,
+    j.journal_id, input.openedBy ?? null, input.channelType ?? "INTENT",
   ]);
   return { dispute_id: d[0].dispute_id, hold_journal_id: j.journal_id, status: "DISPUTE_OPEN" };
 }

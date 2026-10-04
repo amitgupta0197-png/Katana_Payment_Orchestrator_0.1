@@ -4,6 +4,8 @@
 
 import { rows } from "@/lib/pg";
 import { branchKeysForMerchant } from "@/lib/provider-integration";
+import { bankerCoverage, coverageArgs, coverageCte, COVERED_SQL } from "@/lib/banker-settled";
+import { payinChannelOf } from "@/lib/payin-channel";
 
 export const SETTLEMENT_STATUSES = ["REQUESTED", "UTR_SUBMITTED", "VERIFIED", "REJECTED", "REVIEW", "CANCELLED"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
@@ -76,4 +78,36 @@ export async function branchesForProvider(providerId: string): Promise<
     out.set(m.merchant_code, { merchant_code: m.merchant_code, merchant_id: m.id, name: m.brand_name || m.legal_name || m.merchant_code });
   }
   return [...out.values()];
+}
+
+// The same receivable per pay-in channel: what each channel collected, how much of it the
+// banker's verified settlements cover (a settlement of that channel first, then one raised for
+// both, oldest first — lib/banker-settled), and what is still outstanding. The channels add up
+// to the banker's total.
+export async function outstandingByChannel(providerId: string, merchantKey: string): Promise<
+  Record<"INTENT" | "P2P" | "UNCLASSIFIED", { collected: number; settled: number; outstanding: number }>
+> {
+  const out = {
+    INTENT: { collected: 0, settled: 0, outstanding: 0 },
+    P2P: { collected: 0, settled: 0, outstanding: 0 },
+    UNCLASSIFIED: { collected: 0, settled: 0, outstanding: 0 },
+  };
+  const keys = await branchKeysForMerchant(merchantKey);
+  const cover = await bankerCoverage(providerId, keys);
+  const r = await rows<{ channel_type: string; collected: number; settled: number }>("vendorGateway", `
+    WITH ${coverageCte(1).trim()}
+    SELECT c0.channel_type, SUM(c0.amount)::float AS collected,
+           COALESCE(SUM(c0.amount) FILTER (WHERE ${COVERED_SQL}), 0)::float AS settled
+      FROM cover0 c0 JOIN cover c ON c.id = c0.id
+     GROUP BY 1
+  `, coverageArgs(cover)).catch(() => []);
+  for (const x of r) {
+    const k = payinChannelOf(x.channel_type);
+    out[k] = {
+      collected: Math.round(x.collected * 100) / 100,
+      settled: Math.round(x.settled * 100) / 100,
+      outstanding: Math.max(0, Math.round((x.collected - x.settled) * 100) / 100),
+    };
+  }
+  return out;
 }

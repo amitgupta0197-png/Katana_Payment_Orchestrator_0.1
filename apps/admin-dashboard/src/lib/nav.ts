@@ -78,9 +78,9 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/orders", "/gateway-health", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
-  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/fifo-reports", "/fifo-controls", "/security"],
-  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
+  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/security"],
+  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
@@ -154,6 +154,8 @@ export const navItems: NavItem[] = [
   { href: "/risk/aml", label: "AML / Sanctions", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/risk/payin-flags", label: "Pay-in flags", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/disputes", label: "Disputes", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
+  // Banker-side chargebacks on Katana Pay pay-ins (lib/chargebacks-store); rules on its Rules tab.
+  { href: "/chargebacks", label: "Chargebacks", icon: ShieldAlert, status: "live", group: "Risk & Compliance" },
   { href: "/kyb", label: "KYB", icon: FileCheck2, status: "live", group: "Risk & Compliance" },
   { href: "/forensics", label: "Forensics", icon: FileSearch, status: "live", group: "Risk & Compliance" },
   { href: "/cases", label: "Compliance Cases", icon: Briefcase, status: "live", group: "Risk & Compliance" },

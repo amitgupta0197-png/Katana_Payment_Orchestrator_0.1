@@ -4,13 +4,14 @@
 // merchant ordered, what the gateway reported, what the bank shows, and whether it settled.
 // Backed by /api/merchant-portal/reconciliation.
 //
-// A gateway SUCCESS and an actual bank credit are evidenced independently. A paid order with
-// no bank reference is shown as "awaiting evidence", never as reconciled.
+// Reconciliation is channel-first (lib/payin-recon): every figure is worked out per channel and
+// "All" is their sum. A gateway SUCCESS and an actual bank credit are evidenced independently. A
+// paid order with no bank reference is "awaiting bank evidence", never matched.
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { GitMerge, Activity, ChevronRight, X } from "lucide-react";
+import { GitMerge, Activity, ChevronRight, X, Download } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,29 +21,38 @@ import { Label } from "@/components/ui/label";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { cn, formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
-import { ChannelBadge, ChannelCards, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
+import { ChannelBadge, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
+import { ChannelAccountsTable } from "@/components/payin/channel-accounts";
 import type { PayinChannel } from "@/lib/payin-channel";
+import type { ChannelAccount } from "@/lib/channel-accounts";
+import { RECON_EXCEPTIONS, RECON_HELP, RECON_LABEL, reconVariant, type ReconState } from "@/lib/payin-recon";
 
 // The server reads a date as an IST calendar day, so the presets are built in IST too.
 const istDay = (offsetDays = 0) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" })
     .format(new Date(Date.now() - offsetDays * 86_400_000));
 
-type ReconState = "RECONCILED" | "AWAITING_EVIDENCE" | "NEEDS_REVIEW" | "PENDING" | "NOT_PAID";
 type StageKey = "order" | "gateway" | "credit" | "settled";
 
 interface Bucket { count: number; amount: number }
 interface TimelineEvent { at: string; title: string; detail: string }
 interface Order {
   id: string; order_id: string; txn_id: string | null; merchant_id: string | null; amount: number;
-  status: string; gateway: string | null; recon: ReconState; bank_ref: string | null;
+  status: string; gateway: string | null; recon: ReconState; variance: number; credit_amount: number | null; bank_ref: string | null;
   evidence: string | null; settled: boolean; created_at: string; timeline: TimelineEvent[];
   channel_type: PayinChannel; channel_id: string | null;
 }
 interface Data {
-  stages: ({ key: StageKey } & Bucket)[];
+  stages: ({ key: StageKey } & Omit<Bucket, "count"> & { count: number | null })[];
   states: Record<ReconState, Bucket>;
   by_channel?: Record<PayinChannel, Record<ReconState, Bucket>>;
+  accounts?: { channels: Record<PayinChannel, ChannelAccount>; total: ChannelAccount };
+  panel?: { expected: number; observed: number; matched: number; unmatched: number; duplicates: number; callbacks_missing: number; settlement_variance: number; variance: number };
+  exceptions?: {
+    missing_internal: { ref: string; merchant_id: string; amount: number; utr: string | null; created_at: string; channel_type: PayinChannel }[];
+    settlement: { banker: string; channel: PayinChannel; collected: number; settled: number; excess: number }[];
+  };
+  livemode?: boolean;
   orders: Order[];
   truncated: boolean;
 }
@@ -55,16 +65,9 @@ const STAGES: { key: StageKey; label: string; hint: string; explain: string }[] 
   { key: "credit", label: "Bank evidence", hint: "UTR or money seen arriving",
     explain: "Proves the money actually landed: a UTR or RRN stated for the payment, or a bank-credit alert matched to the order. A paid order without it is awaiting evidence." },
   { key: "settled", label: "Settled", hint: "By the banker",
-    explain: "Proves the banker has settled the payment to you, on INTENT and P2P alike: the banker's verified settlements cover the order. Settlements are lump sums, so they are applied to each banker's paid orders oldest first." },
+    explain: "Proves the banker has settled the payment to you, on INTENT and P2P alike: the banker's verified settlements cover the order. Settlements are lump sums, applied to each banker's paid orders oldest first, inside the channel a settlement was raised for; one raised for both channels covers what is left." },
 ];
 
-const RECON: Record<ReconState, { label: string; variant: "success" | "warning" | "danger" | "info" | "default" }> = {
-  RECONCILED: { label: "Reconciled", variant: "success" },
-  AWAITING_EVIDENCE: { label: "Awaiting evidence", variant: "warning" },
-  NEEDS_REVIEW: { label: "Needs review", variant: "warning" },
-  PENDING: { label: "Pending", variant: "info" },
-  NOT_PAID: { label: "Not paid", variant: "default" },
-};
 
 const EVIDENCE: Record<string, string> = {
   BANK_CREDIT: "bank credit matched", WEBHOOK: "gateway reference", MANUAL: "operator reference",
@@ -111,7 +114,8 @@ export default function ProviderReconciliationPage() {
   const d = q.data;
   const st = d?.states;
   const stageOf = (k: StageKey) => d?.stages.find((x) => x.key === k) ?? { count: 0, amount: 0 };
-  const created = stageOf("order").count;
+  const created = stageOf("order").count ?? 0;
+  const csvHref = `/api/merchant-portal/reconciliation?${new URLSearchParams({ ...Object.fromEntries(params), format: "csv" }).toString()}`;
   const setRange = (f: string, t: string) => { setFrom(f); setTo(t); };
 
   const cols: Column<Order>[] = [
@@ -131,25 +135,30 @@ export default function ProviderReconciliationPage() {
         : r.evidence === "BANK_CREDIT" ? <span className="text-xs">bank credit matched</span> : "—" },
     { key: "recon", header: "Recon", render: (r) => (
         <span className="inline-flex items-center gap-1.5">
-          <Badge variant={RECON[r.recon].variant}>{RECON[r.recon].label}</Badge>
+          <Badge variant={reconVariant(r.recon)}>{RECON_LABEL[r.recon]}</Badge>
           {r.settled && <Badge variant="default">settled</Badge>}
         </span>
       ) },
     { key: "created_at", header: "Time", render: (r) => <span className="text-xs tabular-nums">{formatDateTime(r.created_at)}</span> },
   ];
 
+  // The exceptions, each with its count; a row filters the evidence table (or the panel below it).
   const monitor: { label: string; value: number; tone?: string; state?: ReconState; href?: string }[] = [
-    { label: "Reconciled", value: st?.RECONCILED.count ?? 0, tone: "text-[color:var(--color-success)]", state: "RECONCILED" },
-    { label: "Paid, awaiting bank evidence", value: st?.AWAITING_EVIDENCE.count ?? 0, tone: "text-[color:var(--color-warning)]", state: "AWAITING_EVIDENCE" },
-    { label: "Needs review (hold / payer proof)", value: st?.NEEDS_REVIEW.count ?? 0, tone: "text-[color:var(--color-warning)]", state: "NEEDS_REVIEW" },
-    { label: "Pending", value: st?.PENDING.count ?? 0, state: "PENDING" },
-    { label: "Failed / expired", value: st?.NOT_PAID.count ?? 0, tone: "text-[color:var(--color-danger)]", state: "NOT_PAID" },
-    // Captured credits are the P2P rail, so they have no place in an INTENT-only view.
+    ...RECON_EXCEPTIONS
+      // Captured credits are the P2P rail, so they have no place in an INTENT-only view.
+      .filter((k) => !(channel === "INTENT" && k === "MISSING_INTERNAL"))
+      .map((k) => ({ label: RECON_LABEL[k], value: st?.[k]?.count ?? 0, state: k,
+        tone: reconVariant(k) === "danger" ? "text-[color:var(--color-danger)]" : "text-[color:var(--color-warning)]" })),
+    { label: RECON_LABEL.MATCHED, value: st?.MATCHED.count ?? 0, tone: "text-[color:var(--color-success)]", state: "MATCHED" },
+    { label: RECON_LABEL.PENDING, value: st?.PENDING.count ?? 0, state: "PENDING" },
+    { label: "Failed / expired", value: st?.NOT_PAID.count ?? 0, state: "NOT_PAID" },
     ...(channel === "INTENT" ? [] : [
       { label: "P2P payments waiting for bank reference", value: vpa.data?.totals?.awaitingRrn ?? 0, tone: "text-[color:var(--color-warning)]", href: "/merchant-portal" },
       { label: "P2P paid to a different UPI ID", value: vpa.data?.totals?.vpaMismatch ?? 0, tone: "text-[color:var(--color-danger)]", href: "/merchant-portal" },
     ]),
   ];
+  const panel = d?.panel;
+  const showsOrders = state !== "MISSING_INTERNAL" && state !== "SETTLEMENT_MISMATCH";
 
   return (
     <>
@@ -157,7 +166,12 @@ export default function ProviderReconciliationPage() {
         title="Reconciliation"
         description="Order, gateway and bank evidence for every Katana Pay pay-in across your bankers."
         icon={GitMerge}
-        actions={<Badge variant={q.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary" size="sm"><a href={csvHref}><Download className="h-4 w-4" /> CSV</a></Button>
+            <Badge variant={q.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge>
+          </div>
+        }
       />
 
       <Card className="mb-6">
@@ -193,29 +207,37 @@ export default function ProviderReconciliationPage() {
 
       {/* Paid and proven are reported side by side, never added together. */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Gross pay-in" value={formatAmount(stageOf("gateway").amount)} sublabel={`${stageOf("gateway").count} successful`} variant="success" loading={q.isLoading} />
-        <KpiTile label="Reconciled" value={formatAmount(st?.RECONCILED.amount ?? 0)} sublabel={`${st?.RECONCILED.count ?? 0} with bank evidence`} variant="success" loading={q.isLoading} />
-        <KpiTile label="Awaiting evidence" value={formatAmount(st?.AWAITING_EVIDENCE.amount ?? 0)} sublabel={`${st?.AWAITING_EVIDENCE.count ?? 0} paid, no bank reference`}
-          variant={(st?.AWAITING_EVIDENCE.count ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
-        <KpiTile label="Settled" value={formatAmount(stageOf("settled").amount)} sublabel={`${stageOf("settled").count} settled by banker`} loading={q.isLoading} />
+        <KpiTile label="Gross pay-in" value={formatAmount(stageOf("gateway").amount)} sublabel={`${stageOf("gateway").count ?? 0} successful`} variant="success" loading={q.isLoading} />
+        <KpiTile label="Matched" value={formatAmount(st?.MATCHED.amount ?? 0)} sublabel={`${st?.MATCHED.count ?? 0} with bank evidence`} variant="success" loading={q.isLoading} />
+        <KpiTile label="Recon variance" value={formatAmount(panel?.variance ?? 0)} sublabel="money in exceptions"
+          variant={(panel?.variance ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} />
+        <KpiTile label="Settled" value={d?.livemode === false ? "—" : formatAmount(stageOf("settled").amount)} sublabel={d?.livemode === false ? "live money only" : "covered by bankers' settlements"} loading={q.isLoading} />
       </div>
 
       {/* Reconciliation is per channel first; these are each rail's own figures for the window. */}
-      {!channel && (
-        <ChannelCards loading={q.isLoading} cards={(["INTENT", "P2P", "UNCLASSIFIED"] as PayinChannel[]).map((c) => {
-          const b = d?.by_channel?.[c];
-          const n = (k: ReconState) => b?.[k]?.count ?? 0;
-          return {
-            channel: c, headline: (b?.RECONCILED.amount ?? 0) + (b?.AWAITING_EVIDENCE.amount ?? 0), headlineLabel: "Gross successful pay-in",
-            hidden: c === "UNCLASSIFIED" && !b?.RECONCILED.count && !b?.AWAITING_EVIDENCE.count && !b?.PENDING.count && !b?.NEEDS_REVIEW.count && !b?.NOT_PAID.count,
-            stats: [
-              { label: "Reconciled", value: n("RECONCILED") },
-              { label: "Awaiting evidence", value: n("AWAITING_EVIDENCE") },
-              { label: "Pending / review", value: n("PENDING") + n("NEEDS_REVIEW") },
-              { label: "Failed / expired", value: n("NOT_PAID") },
-            ],
-          };
-        })} />
+      <ChannelAccountsTable channels={d?.accounts?.channels} total={d?.accounts?.total} selected={channel} loading={q.isLoading} livemode={d?.livemode !== false} />
+
+      {panel && (
+        <Card className="mb-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Reconciliation{channel ? ` · ${channel}` : ""}</CardTitle>
+            <CardDescription>Expected is what pay-ins say was paid; observed is what bank evidence proves.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
+              {([
+                ["Expected", formatAmount(panel.expected)], ["Observed", formatAmount(panel.observed)],
+                ["Matched", panel.matched], ["Unmatched", panel.unmatched],
+                ["Duplicates", panel.duplicates], ["Status not sent to your server", panel.callbacks_missing],
+                ["Settlement variance", formatAmount(panel.settlement_variance)], ["Recon variance", formatAmount(panel.variance)],
+              ] as [string, React.ReactNode][]).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between gap-2 border-b border-[color:var(--color-border)] py-1">
+                  <dt className="text-[color:var(--color-text-muted)]">{k}</dt><dd className="font-medium tabular-nums">{q.isLoading ? "—" : v}</dd>
+                </div>
+              ))}
+            </dl>
+          </CardContent>
+        </Card>
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -228,7 +250,7 @@ export default function ProviderReconciliationPage() {
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {STAGES.map((s, i) => {
                 const b = stageOf(s.key);
-                const pct = created > 0 && s.key !== "order" ? Math.round((b.count / created) * 100) : null;
+                const pct = created > 0 && s.key !== "order" && b.count != null ? Math.round((b.count / created) * 100) : null;
                 return (
                   <button
                     key={s.key}
@@ -245,8 +267,8 @@ export default function ProviderReconciliationPage() {
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">
                       {String(i + 1).padStart(2, "0")} · {s.label}
                     </div>
-                    <div className="mt-1 text-2xl font-semibold tabular-nums">{q.isLoading ? "—" : b.count}</div>
-                    <div className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{formatAmount(b.amount)}</div>
+                    <div className="mt-1 text-2xl font-semibold tabular-nums">{q.isLoading ? "—" : b.count ?? formatAmount(b.amount)}</div>
+                    <div className="text-xs text-[color:var(--color-text-muted)] tabular-nums">{b.count == null ? "settled" : formatAmount(b.amount)}</div>
                     <div className="mt-0.5 text-[10px] text-[color:var(--color-text-subtle)]">{pct !== null ? `${pct}% of created` : s.hint}</div>
                   </button>
                 );
@@ -262,7 +284,7 @@ export default function ProviderReconciliationPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Exception monitor</CardTitle>
-            <CardDescription>Select a row to filter the evidence table.</CardDescription>
+            <CardDescription>Select a row to filter the evidence below.</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col text-sm">
@@ -277,7 +299,7 @@ export default function ProviderReconciliationPage() {
                 );
                 const row = "flex w-full items-center justify-between gap-3 border-b border-[color:var(--color-border)] py-2 text-left hover:text-[color:var(--color-brand)]";
                 return (
-                  <li key={m.label} className="last:[&>*]:border-0">
+                  <li key={m.label} className="last:[&>*]:border-0" title={m.state ? RECON_HELP[m.state] : undefined}>
                     {m.href
                       ? <Link href={m.href} className={row}>{body}</Link>
                       : <button type="button" aria-pressed={state === m.state} onClick={() => setState(state === m.state ? "" : m.state!)}
@@ -290,15 +312,69 @@ export default function ProviderReconciliationPage() {
         </Card>
       </div>
 
-      <Card>
+      {state === "MISSING_INTERNAL" && (
+        <Card className="mb-6">
+          <CardHeader className="flex flex-row items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">{RECON_LABEL.MISSING_INTERNAL}</CardTitle>
+              <CardDescription>{RECON_HELP.MISSING_INTERNAL} Ask Katana support to link it to its order.</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setState("")}><X className="h-4 w-4" /> Clear</Button>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={[
+                { key: "created_at", header: "Received", render: (r) => <span className="text-xs tabular-nums">{formatDateTime(r.created_at)}</span> },
+                { key: "channel_type", header: "Channel", render: (r) => <ChannelBadge channel={r.channel_type} /> },
+                { key: "merchant_id", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.merchant_id}</span> },
+                { key: "utr", header: "Bank reference (UTR)", render: (r) => <span className="font-mono text-xs">{r.utr ?? "—"}</span> },
+                { key: "amount", header: "Amount", render: (r) => <span className="tabular-nums">{formatAmount(r.amount)}</span> },
+              ]}
+              rows={d?.exceptions?.missing_internal ?? []}
+              rowKey={(r) => r.ref}
+              loading={q.isLoading}
+              emptyState="All money that arrived has an order."
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {state === "SETTLEMENT_MISMATCH" && (
+        <Card className="mb-6">
+          <CardHeader className="flex flex-row items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">{RECON_LABEL.SETTLEMENT_MISMATCH}</CardTitle>
+              <CardDescription>{RECON_HELP.SETTLEMENT_MISMATCH} All time, live money: a settlement is not tied to a day.</CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setState("")}><X className="h-4 w-4" /> Clear</Button>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={[
+                { key: "banker", header: "Banker", render: (r) => <span className="font-mono text-xs">{r.banker}</span> },
+                { key: "channel", header: "Channel", render: (r) => <ChannelBadge channel={r.channel} /> },
+                { key: "collected", header: "Collected", render: (r) => <span className="tabular-nums">{formatAmount(r.collected)}</span> },
+                { key: "settled", header: "Settled", render: (r) => <span className="tabular-nums">{formatAmount(r.settled)}</span> },
+                { key: "excess", header: "Settled over", render: (r) => <span className="tabular-nums text-[color:var(--color-danger)]">{formatAmount(r.excess)}</span> },
+              ]}
+              rows={d?.exceptions?.settlement ?? []}
+              rowKey={(r) => `${r.banker}|${r.channel}`}
+              loading={q.isLoading}
+              emptyState="No banker has settled more than its channel collected."
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {showsOrders && <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base">Transaction evidence</CardTitle>
             <CardDescription>
-              {state ? `${RECON[state].label} · ` : ""}Newest first. Select a row for its evidence timeline.
+              {state ? `${RECON_LABEL[state]} · ` : ""}Newest first. Select a row for its evidence timeline.
             </CardDescription>
           </div>
-          {state && <Button variant="ghost" size="sm" onClick={() => setState("")}><X className="h-4 w-4" /> {RECON[state].label}</Button>}
+          {state && <Button variant="ghost" size="sm" onClick={() => setState("")}><X className="h-4 w-4" /> {RECON_LABEL[state]}</Button>}
         </CardHeader>
         <CardContent>
           <DataTable
@@ -329,7 +405,7 @@ export default function ProviderReconciliationPage() {
             </p>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </>
   );
 }

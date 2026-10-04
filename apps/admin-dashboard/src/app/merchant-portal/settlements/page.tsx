@@ -6,6 +6,7 @@
 // is reduced when the provider verifies.
 
 import { useEffect, useState } from "react";
+import { ChannelBadge, ChannelSwitch, type ChannelFilter } from "@/components/payin/channel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote, Plus, Trash2, Power, Landmark, Activity, Clock, Download, Bell } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import { SettlementActionBar, SettlementTimeline, SettlementNotifications } from
 interface Benef { id: string; label?: string; beneficiary_name: string; account_number?: string; ifsc?: string; bank_name?: string; vpa?: string; transfer_mode: string; active: boolean }
 interface Settlement {
   id: string; merchant_key: string; branch_name?: string; amount: number; currency: string; status: string;
+  channel_type?: "INTENT" | "P2P" | null;
   gross_amount?: number | null; net_amount?: number | null; charges?: { total_charges?: number } | null;
   settle_mode?: "BANK" | "USDT"; usdt_network?: string | null; wallet_address?: string | null;
   usdt_rate?: number | null; usdt_quantity?: number | null; tx_hash?: string | null; request_ref?: string | null;
@@ -87,6 +89,7 @@ export default function MerchantSettlementsPage() {
   const cols: Column<Settlement>[] = [
     { key: "ref", header: "Request ID", render: (r) => <span className="font-mono text-xs">{r.request_ref ?? r.id.slice(0, 8)}</span> },
     { key: "merchant_key", header: "Banker", render: (r) => <span className="font-medium">{r.branch_name ?? r.merchant_key}</span> },
+    { key: "channel_type", header: "Channel", render: (r) => r.channel_type ? <ChannelBadge channel={r.channel_type} /> : <span className="text-xs text-[color:var(--color-text-muted)]">Both</span> },
     { key: "amount", header: "Gross", render: (r) => <span className="tabular-nums">{formatAmount(r.gross_amount ?? r.amount, r.currency)}</span> },
     { key: "net", header: "Net payable", render: (r) => (
       <span className="tabular-nums font-medium">
@@ -300,6 +303,8 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
   const [priority, setPriority] = useState("NORMAL");
   const [reqDate, setReqDate] = useState("");
   const [internalRef, setInternalRef] = useState("");
+  // Which pay-in channel this settlement covers. "" = both (applied after the channel ones).
+  const [channel, setChannel] = useState<ChannelFilter>("");
 
   // §14: the branch's self-declared capacity, shown as a hint when raising.
   const capacity = useQuery({
@@ -323,9 +328,12 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
 
   // Prefill amount from the branch's AVAILABLE balance (collected − settled − in-flight).
   const outstanding = useQuery({
-    queryKey: ["outstanding", providerId, branch],
+    queryKey: ["outstanding", providerId, branch, channel],
     enabled: !!branch,
-    queryFn: async () => (await fetch(`/api/settlements/outstanding?provider=${providerId}&branch=${encodeURIComponent(branch)}`).then((r) => r.json())) as { collected: number; settled: number; blocked: number; outstanding: number },
+    queryFn: async () => (await fetch(`/api/settlements/outstanding?provider=${providerId}&branch=${encodeURIComponent(branch)}${channel ? `&channel=${channel}` : ""}`).then((r) => r.json())) as {
+      collected: number; settled: number; blocked: number; outstanding: number;
+      by_channel?: Record<"INTENT" | "P2P" | "UNCLASSIFIED", { collected: number; settled: number; outstanding: number }>;
+    },
   });
   useEffect(() => { if (outstanding.data) setAmount(String(outstanding.data.outstanding)); }, [outstanding.data]);
 
@@ -355,6 +363,7 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider_id: providerId, merchant_key: branch, amount: Number(amount), note: note || undefined,
+          channel_type: channel || undefined,
           settle_mode: mode, priority,
           requested_date: reqDate || undefined, internal_ref: internalRef || undefined,
           ...(mode === "BANK"
@@ -367,7 +376,7 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
     onSuccess: (d: any) => {
       toast.success(`Settlement raised${d?.settlement?.request_ref ? ` — ${d.settlement.request_ref}` : ""}`,
         { description: mode === "USDT" ? "Routed to your branch for USDT processing." : "The branch can now pay and submit a UTR." });
-      onOpenChange(false); setBranch(""); setAmount(""); setPayTo(""); setNote(""); setWallet(""); setMode("BANK");
+      onOpenChange(false); setBranch(""); setAmount(""); setPayTo(""); setNote(""); setWallet(""); setMode("BANK"); setChannel("");
       qc.invalidateQueries({ queryKey: ["settlements"] });
     },
     onError: (e: Error) => toast.error("Couldn’t raise", { description: e.message }),
@@ -384,9 +393,21 @@ function RaiseDialog({ open, onOpenChange, providerId, branches, beneficiaries }
               {branches.map((m) => <option key={m.merchant_code} value={m.merchant_code}>{m.legal_name ? `${m.legal_name} (${m.merchant_code})` : m.merchant_code}</option>)}
             </select>
           </div>
+          <div><Label className="text-xs">Pay-ins this settles</Label>
+            <div><ChannelSwitch value={channel} onChange={setChannel} /></div>
+            <p className="mt-1 text-[11px] text-[color:var(--color-text-muted)]">
+              {channel ? `Applied only to the banker's ${channel} pay-ins, oldest first.` : "Applied to both channels, after any settlement raised for one channel."}
+            </p>
+          </div>
           {branch && outstanding.data && (
             <div className="rounded-md border bg-[color:var(--color-surface-muted)] p-2 text-xs text-[color:var(--color-text-muted)]">
-              Collected {formatAmount(outstanding.data.collected)} · settled {formatAmount(outstanding.data.settled)} · in-flight {formatAmount(outstanding.data.blocked ?? 0)} · <span className="font-medium text-[color:var(--color-text)]">available {formatAmount(outstanding.data.outstanding)}</span>
+              {channel ? `${channel}: ` : ""}Collected {formatAmount(outstanding.data.collected)} · settled {formatAmount(outstanding.data.settled)}{!channel ? ` · in-flight ${formatAmount(outstanding.data.blocked ?? 0)}` : ""} · <span className="font-medium text-[color:var(--color-text)]">available {formatAmount(outstanding.data.outstanding)}</span>
+              {!channel && outstanding.data.by_channel && (
+                <div className="mt-1">
+                  {(["INTENT", "P2P", "UNCLASSIFIED"] as const).filter((c) => c !== "UNCLASSIFIED" || outstanding.data!.by_channel![c].collected > 0)
+                    .map((c) => `${c === "UNCLASSIFIED" ? "Unclassified" : c} ${formatAmount(outstanding.data!.by_channel![c].outstanding)}`).join(" · ")} outstanding
+                </div>
+              )}
             </div>
           )}
           {branch && branchCap && (

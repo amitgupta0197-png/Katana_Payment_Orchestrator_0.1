@@ -2,6 +2,8 @@
 //   GET  — scoped list (SUPER_ADMIN: all; PROVIDER: own; MERCHANT/branch: addressed
 //          to it). Optional ?provider= &branch= &status= filters for admin/provider.
 //   POST — a provider RAISES a settlement to a branch. SUPER_ADMIN + PROVIDER.
+//          `channel_type` (INTENT / P2P) says which pay-in channel it settles; left out, it
+//          settles both (provider 0020, lib/banker-settled).
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -36,7 +38,7 @@ async function enrich(list: any[]): Promise<any[]> {
 
 const SELECT = `
   SELECT id::text, provider_id::text, merchant_key, beneficiary_id::text, beneficiary_snapshot,
-         amount::float AS amount, currency, purpose, status, utr, transfer_mode, note,
+         amount::float AS amount, currency, purpose, status, utr, transfer_mode, note, channel_type,
          requested_by, requested_at, utr_submitted_by, utr_submitted_at,
          verified_by, verified_at, review_by, review_at, review_note, updated_at, created_at
     FROM provider_branch_settlements`;
@@ -75,6 +77,7 @@ const createSchema = z.object({
   beneficiary_id: z.string().uuid(),
   purpose: z.string().max(60).optional(),
   note: z.string().max(500).optional(),
+  channel_type: z.enum(["INTENT", "P2P"]).nullish(),
 });
 
 export async function POST(req: Request) {
@@ -101,15 +104,15 @@ export async function POST(req: Request) {
     const purpose = body.purpose || purposeForAmount(body.amount);
     const ins = await rows<any>("provider", `
       INSERT INTO provider_branch_settlements
-        (provider_id, merchant_key, beneficiary_id, beneficiary_snapshot, amount, purpose, transfer_mode, note, status, requested_by)
-      VALUES ($1::uuid,$2,$3::uuid,$4::jsonb,$5,$6,$7,$8,'REQUESTED',$9)
-      RETURNING id::text, provider_id::text, merchant_key, amount::float AS amount, currency, status, purpose, created_at
-    `, [providerId, body.merchant_key, ben.id, JSON.stringify(ben), body.amount, purpose, ben.transfer_mode, body.note ?? null, s.email]);
+        (provider_id, merchant_key, beneficiary_id, beneficiary_snapshot, amount, purpose, transfer_mode, note, status, requested_by, channel_type)
+      VALUES ($1::uuid,$2,$3::uuid,$4::jsonb,$5,$6,$7,$8,'REQUESTED',$9,$10)
+      RETURNING id::text, provider_id::text, merchant_key, amount::float AS amount, currency, status, purpose, channel_type, created_at
+    `, [providerId, body.merchant_key, ben.id, JSON.stringify(ben), body.amount, purpose, ben.transfer_mode, body.note ?? null, s.email, body.channel_type ?? null]);
 
     await rows("provider", `
       INSERT INTO provider_audit_logs (provider_id, actor, action, payload)
       VALUES ($1::uuid, $2, 'provider.settlement.raised', $3::jsonb)
-    `, [providerId, s.email, JSON.stringify({ branch: body.merchant_key, amount: body.amount, purpose })]).catch(() => {});
+    `, [providerId, s.email, JSON.stringify({ branch: body.merchant_key, amount: body.amount, purpose, channel_type: body.channel_type ?? null })]).catch(() => {});
 
     return NextResponse.json({ settlement: ins[0] });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }

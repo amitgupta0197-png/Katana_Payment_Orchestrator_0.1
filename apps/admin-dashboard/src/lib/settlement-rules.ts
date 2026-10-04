@@ -2,7 +2,9 @@
 // compute the deduction breakdown (gross → upline/Katana/downline charges → net).
 //
 // Resolution: most specific ACTIVE rule wins:
-//   (provider, branch) > (provider, all branches) > (global default) > zero-charge.
+//   (provider, branch) > (provider, all branches) > (global default) > zero-charge,
+// and at each of those a rule for the settlement's own pay-in channel beats one for both
+// (provider 0020; the same order lib/channel-fees uses for the per-channel fee figures).
 // Every settlement snapshots the breakdown + rule id/version at raise time, so later
 // pricing changes never affect history (BRD §6).
 
@@ -42,9 +44,10 @@ const ZERO: Omit<SettlementRule, "id"> & { id: null } = {
 };
 
 // Most specific rule active at `at` (default now). Specificity = branch match first,
-// then provider-wide, then global; newest effective_from breaks ties.
+// then provider-wide, then global, then the channel's own rate; newest effective_from breaks ties.
+// `channel` null = a settlement for both channels, which only a rate for both applies to.
 export async function resolveRule(
-  providerId: string, merchantKey: string, at?: Date,
+  providerId: string, merchantKey: string, at?: Date, channel: "INTENT" | "P2P" | null = null,
 ): Promise<SettlementRule | (typeof ZERO)> {
   const t = (at ?? new Date()).toISOString();
   const r = await rows<SettlementRule>("provider", `
@@ -57,11 +60,13 @@ export async function resolveRule(
        AND (effective_to IS NULL OR effective_to > $3::timestamptz)
        AND (provider_id IS NULL OR provider_id = $1::uuid)
        AND (merchant_key IS NULL OR merchant_key = $2)
+       AND (channel_type IS NULL OR channel_type = $4)
      ORDER BY (provider_id IS NOT NULL AND merchant_key IS NOT NULL) DESC,
               (provider_id IS NOT NULL) DESC,
+              (channel_type IS NOT NULL) DESC,
               effective_from DESC
      LIMIT 1
-  `, [providerId, merchantKey, t]).catch(() => []);
+  `, [providerId, merchantKey, t, channel]).catch(() => []);
   return r[0] ?? ZERO;
 }
 

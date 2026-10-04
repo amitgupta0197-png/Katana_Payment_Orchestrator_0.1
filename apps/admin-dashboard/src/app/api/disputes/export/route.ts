@@ -18,7 +18,7 @@ interface Row {
   dispute_id: string; txn_id: string; order_id: string | null; merchant_id: string;
   reason_code: string; amount_minor: string; currency: string; status: string;
   deadline_at: string | null; opened_at: string; opened_by: string;
-  resolved_at: string | null; resolved_by: string; resolution_notes: string;
+  resolved_at: string | null; resolved_by: string; resolution_notes: string; channel_type: string;
 }
 
 // Every currency Katana handles today is 2-decimal. A zero-decimal currency (JPY)
@@ -33,6 +33,7 @@ const COLUMNS: CsvColumn<Row>[] = [
   { header: "Opened", value: (r) => r.opened_at },
   { header: "Transaction ref", value: (r) => r.txn_id, ref: true },
   { header: "Banker", value: (r) => r.merchant_id },
+  { header: "Channel", value: (r) => r.channel_type },
   { header: "Reason code", value: (r) => r.reason_code },
   { header: "Amount", value: (r) => major(r.amount_minor) },
   { header: "Currency", value: (r) => r.currency },
@@ -67,6 +68,7 @@ export async function GET(req: Request) {
 
     const list = await rows<Row>("riskVelocity", `
       SELECT dispute_id::text, txn_id, order_id::text, merchant_id, reason_code,
+             COALESCE(channel_type, 'INTENT') AS channel_type,   -- disputes are on checkout orders, which a gateway takes
              amount_minor::text, currency, status, deadline_at,
              opened_at, COALESCE(opened_by,'') AS opened_by,
              resolved_at, COALESCE(resolved_by,'') AS resolved_by,

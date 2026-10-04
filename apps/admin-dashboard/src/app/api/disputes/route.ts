@@ -32,6 +32,7 @@ export async function GET(req: Request) {
     if (status) { params.push(status); where.push(`status = $${params.length}`); }
     const disputes = await rows<any>("riskVelocity", `
       SELECT dispute_id::text, txn_id, order_id::text, merchant_id, reason_code,
+             COALESCE(channel_type, 'INTENT') AS channel_type,   -- disputes are on checkout orders, which a gateway takes
              amount_minor::text, currency, status, deadline_at,
              opened_at, COALESCE(opened_by,'') AS opened_by,
              resolved_at, COALESCE(resolved_by,'') AS resolved_by,

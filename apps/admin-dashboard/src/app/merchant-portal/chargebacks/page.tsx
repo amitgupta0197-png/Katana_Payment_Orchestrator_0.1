@@ -1,10 +1,12 @@
 "use client";
 
-// Chargebacks for the provider's assigned bankers. Read-only: a provider can see
-// what is disputed and export it, but opening and resolving disputes stays with
-// Katana admin, which is where the evidence and the acquirer relationship live.
+// Chargebacks for the provider's assigned bankers. Read-only: a provider can see what was
+// charged back, what was debited under its terms and why, and export it; recording and deciding
+// chargebacks stays with Katana staff, where the evidence and the bank relationship live.
 //
-// Backed by /api/disputes, which scopes PROVIDER to its own mapped merchants.
+// The banker-side chargebacks on Katana Pay pay-ins come from /api/chargebacks (components/
+// chargebacks). Card disputes on checkout orders (/api/disputes, scoped to the provider's own
+// bankers) are listed below them when there are any.
 
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert, Download, Clock } from "lucide-react";
@@ -15,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { KpiTile } from "@/components/world-class/kpi-tile";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
+import { ChargebacksList } from "@/components/chargebacks/chargebacks-list";
 
 interface Dispute {
   dispute_id: string; txn_id: string; order_id: string | null; merchant_id: string;
@@ -29,6 +32,16 @@ const rupees = (minor: string) => Number(minor || 0) / 100;
 const isOpen = (d: Dispute) => !/^(WON|LOST|RESOLVED|CLOSED|ACCEPTED)$/i.test(d.status);
 
 export default function ChargebacksPage() {
+  return (
+    <>
+      <PageHeader title="Chargebacks" description="Chargebacks your bankers' banks reported, matched to the original payment in its own channel." icon={ShieldAlert} />
+      <ChargebacksList />
+      <CardDisputes />
+    </>
+  );
+}
+
+function CardDisputes() {
   const q = useQuery({
     queryKey: ["pp:disputes"],
     queryFn: async () => (await fetch("/api/disputes").then(async (r) => {
@@ -66,14 +79,16 @@ export default function ChargebacksPage() {
     },
   ];
 
+  // Only shown when there are card disputes: most merchants have none.
+  if (!list.length) return null;
   return (
-    <>
-      <PageHeader title="Chargebacks" description="Disputes raised against your bankers' transactions." icon={ShieldAlert}
-        actions={
-          <Button variant="secondary" size="sm" asChild>
-            <a href="/api/disputes/export"><Download className="h-4 w-4" /> Download CSV</a>
-          </Button>
-        } />
+    <div className="mt-6">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-base font-semibold">Card disputes</h2>
+        <Button variant="secondary" size="sm" asChild>
+          <a href="/api/disputes/export"><Download className="h-4 w-4" /> Download CSV</a>
+        </Button>
+      </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile label="Open" value={open.length} icon={ShieldAlert} variant={open.length > 0 ? "warning" : "default"} loading={q.isLoading} />
@@ -84,14 +99,14 @@ export default function ChargebacksPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">All chargebacks</CardTitle>
+          <CardTitle className="text-base">All card disputes</CardTitle>
           <CardDescription>Newest first. Contact your Katana account manager to contest one.</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable columns={cols} rows={list} rowKey={(r) => r.dispute_id} loading={q.isLoading}
-            emptyState={q.error ? String(q.error.message) : "No chargebacks — nothing has been disputed."} />
+            emptyState={q.error ? String(q.error.message) : "No card disputes."} />
         </CardContent>
       </Card>
-    </>
+    </div>
   );
 }

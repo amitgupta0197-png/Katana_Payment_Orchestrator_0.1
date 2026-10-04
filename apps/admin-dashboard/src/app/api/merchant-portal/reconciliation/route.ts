@@ -1,19 +1,23 @@
 // GET /api/merchant-portal/reconciliation — the evidence chain behind each Katana Pay pay-in
-// for the provider's bankers: order → gateway result → bank evidence → settlement.
+// for the provider's bankers: order → gateway result → bank evidence → settlement, reconciled
+// INSIDE each pay-in channel (lib/payin-recon).
 //
-// SETTLED means the banker has settled the order to the merchant, on INTENT and P2P alike:
-// the banker's verified settlements cover it, oldest order first (lib/banker-settled).
+// SETTLED means the banker has settled the order to the merchant: a verified settlement of the
+// order's own channel covers it, or one raised for both channels does (lib/banker-settled).
 //
-// A pay-in is RECONCILED only when two things agree: the order is paid, and there is bank
-// evidence for it that Katana did not make up — a UTR/RRN stated by the gateway, ops or the
-// payer's proof, or a bank-credit alert matched to the order. `vendor_payin_orders.rrn` is
-// deliberately NOT that evidence: an order confirmed without a reference gets a generated one
-// (genRrn), so it is always filled on a paid order and proves nothing.
+// States: MATCHED, AMOUNT_MISMATCH, STATUS_MISMATCH, MISSING_EXTERNAL, MISSING_INTERNAL, DUPLICATE,
+// SETTLEMENT_MISMATCH, MANUAL_REVIEW, plus PENDING / NOT_PAID for orders not decided yet.
+// MISSING_INTERNAL rows are money with no order (lib/merchant-credits) and SETTLEMENT_MISMATCH
+// rows are bankers that settled more to a channel than it collected; both come back in
+// `exceptions`, not in `orders`.
 //
 // Optional ?from=&to= are IST calendar days, the same window the transactions page takes.
-// ?state= narrows the rows (not the totals) to one reconciliation state. ?channel= narrows
-// everything to one pay-in channel; `by_channel` always carries the per-channel totals of the
-// window, so the consolidated view can show which rail a variance belongs to.
+// ?state= narrows the rows (not the totals) to one reconciliation state. ?channel= narrows the
+// rows and the headline totals to one pay-in channel; `by_channel` and `accounts` always carry
+// every channel, so the consolidated view can show which rail a variance belongs to.
+//
+// ?format=csv downloads the rows (up to 5,000, and the money with no order) with their channel and
+// reconciliation state, under the same filters.
 //
 // PROVIDER only (middleware restricts /api/merchant-portal/* to PROVIDER persona).
 
@@ -24,45 +28,20 @@ import { txnConditions, txnWindowFromUrl } from "@/lib/txn-window";
 import { getLivemode } from "@/lib/mode";
 import { PAYIN_CHANNELS, payinChannelOf, type PayinChannel } from "@/lib/payin-channel";
 import { seesGatewayNames } from "@/lib/merchant-safe";
-import { bankerCoverage, coverageArgs, coverageCte, settlementCovering, COVERED_SQL } from "@/lib/banker-settled";
+import { coverageArgs, settlementCovering } from "@/lib/banker-settled";
+import { channelAccounts, emptyAccount, reconBaseSql, type ChannelAccount } from "@/lib/channel-accounts";
+import { ORDER_RECON_STATES, RECON_STATES, parseReconState, type ReconState } from "@/lib/payin-recon";
+import { unlinkedCredits } from "@/lib/merchant-credits";
 import { formatAmount } from "@/lib/utils";
+import { csvResponse, datedFilename, toCsv } from "@/lib/csv";
+import { RECON_LABEL } from "@/lib/payin-recon";
 
 export const dynamic = "force-dynamic";
-
-const STATES = ["RECONCILED", "AWAITING_EVIDENCE", "NEEDS_REVIEW", "PENDING", "NOT_PAID"] as const;
-type ReconState = (typeof STATES)[number];
 
 const ROW_LIMIT = 100;
 
 interface Bucket { count: number; amount: number }
 interface TimelineEvent { at: string; title: string; detail: string }
-
-const PAID = `o.status IN ('SUCCESS','SUCCEEDED')`;
-
-// One row per pay-in with its reconciliation state. The alert join is a single pass over the
-// matched credits rather than a lookup per order. `coverAt` is the position of the banker
-// settlement parameters (coverageArgs); without it the query does not ask what is settled.
-const base = (where: string, coverAt?: number) => `
-  WITH ${coverAt ? `${coverageCte(coverAt).trim()},` : ""} base AS (
-    SELECT o.id, o.order_id, o.vendor_txn_id, o.merchant_id, o.amount::float AS amount, o.status,
-           o.channel, o.channel_type, o.channel_id, o.meta, o.created_at, o.updated_at,
-           ${coverAt ? COVERED_SQL : "false"} AS settled,
-           ${coverAt ? "c.cum" : "NULL::float"} AS settle_cum,
-           CASE
-             WHEN ${PAID} AND (COALESCE(o.meta->'confirmation'->>'utr','') <> '' OR a.matched_order_id IS NOT NULL) THEN 'RECONCILED'
-             WHEN ${PAID} THEN 'AWAITING_EVIDENCE'
-             WHEN o.status IN ('FAILED','EXPIRED') THEN 'NOT_PAID'
-             WHEN o.meta->>'hold' = 'true' OR o.meta->>'review' = 'PROOF_SUBMITTED' THEN 'NEEDS_REVIEW'
-             ELSE 'PENDING'
-           END AS recon
-      FROM vendor_payin_orders o
-      LEFT JOIN (
-        SELECT DISTINCT matched_order_id FROM vendor_txn_alerts
-         WHERE outcome = 'CONFIRMED' AND matched_order_id IS NOT NULL
-      ) a ON a.matched_order_id = o.id
-      ${coverAt ? "LEFT JOIN cover c ON c.id = o.id" : ""}
-      ${where}
-  )`;
 
 // Who confirmed an order, without printing an operator's email or a device id to a merchant.
 function actorLabel(by: unknown): string {
@@ -87,55 +66,33 @@ export async function GET(req: Request) {
     if (scoped && !codes.length) return NextResponse.json(emptyResponse());
 
     const url = new URL(req.url);
-    const stateParam = url.searchParams.get("state")?.toUpperCase() ?? "";
-    const state = (STATES as readonly string[]).includes(stateParam) ? (stateParam as ReconState) : null;
+    const state = parseReconState(url.searchParams.get("state"));
+    const csv = url.searchParams.get("format") === "csv";
+    const limit = csv ? 5000 : ROW_LIMIT;
 
     // The reconciliation state is derived, not a column, so it is never passed as `status`.
     const window = { ...txnWindowFromUrl(url, scoped ? codes : null, await getLivemode()), status: null };
     const extra = ["o.vendor = 'KATANA'", ...(scoped ? [] : ["o.merchant_id IS NOT NULL"])];
     const { where, args } = txnConditions("o.", window, extra, "channel_type");
 
-    // Per-channel totals of the whole window, whatever channel is selected.
-    const all = txnConditions("o.", { ...window, channel: null }, extra);
-    const perChannel = await rows<{ channel_type: string; recon: ReconState; n: number; amount: number }>("vendorGateway", `
-      ${base(all.where)}
-      SELECT channel_type, recon, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amount
-        FROM base GROUP BY channel_type, recon
-    `, all.args);
+    // Every channel's accounts for the window; a provider sees its own settlements only.
+    const acc = await channelAccounts({ window, providerId: scoped ? s.scope_id ?? null : null, extra: scoped ? [] : ["o.merchant_id IS NOT NULL"] });
+    const cover = acc.coverage;
     const byChannel = Object.fromEntries(PAYIN_CHANNELS.map((c) => [c,
-      Object.fromEntries(STATES.map((k) => [k, { count: 0, amount: 0 }]))])) as Record<PayinChannel, Record<ReconState, Bucket>>;
-    for (const r of perChannel) byChannel[payinChannelOf(r.channel_type)][r.recon] = { count: r.n, amount: r.amount };
+      Object.fromEntries(RECON_STATES.map((k) => [k, { count: acc.channels[c].recon[k].count, amount: acc.channels[c].recon[k].amount }]))])) as Record<PayinChannel, Record<ReconState, Bucket>>;
+    const shown: ChannelAccount = window.channel ? acc.channels[window.channel] : acc.total;
+    const by = Object.fromEntries(RECON_STATES.map((k) => [k, { count: shown.recon[k].count, amount: shown.recon[k].amount }])) as Record<ReconState, Bucket>;
 
-    // What each banker has settled to the merchant; a provider sees its own settlements only.
-    const cover = await bankerCoverage(scoped ? s.scope_id ?? null : null, scoped ? codes : null);
     const coverAt = args.length + 1;
-    const withCover = [...args, ...coverageArgs(cover)];
-
-    const agg = await rows<{ recon: ReconState; n: number; amount: number; settled_n: number; settled_amount: number }>("vendorGateway", `
-      ${base(where, coverAt)}
-      SELECT recon, COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS amount,
-             COUNT(*) FILTER (WHERE settled)::int AS settled_n,
-             COALESCE(SUM(amount) FILTER (WHERE settled),0)::float AS settled_amount
-        FROM base GROUP BY recon
-    `, withCover);
-
-    const by = Object.fromEntries(STATES.map((k) => [k, { count: 0, amount: 0 }])) as Record<ReconState, Bucket>;
-    const settled: Bucket = { count: 0, amount: 0 };
-    for (const r of agg) {
-      by[r.recon] = { count: r.n, amount: r.amount };
-      settled.count += r.settled_n; settled.amount += r.settled_amount;
-    }
-    const sum = (...keys: ReconState[]): Bucket => keys.reduce(
-      (a, k) => ({ count: a.count + by[k].count, amount: Math.round((a.amount + by[k].amount) * 100) / 100 }),
-      { count: 0, amount: 0 });
-
-    const list = await rows<any>("vendorGateway", `
-      ${base(where, coverAt)}
+    const withCover = window.livemode ? [...args, ...coverageArgs(cover)] : args;
+    const orderState = state && (ORDER_RECON_STATES as readonly string[]).includes(state) ? state : null;
+    const list = state && !orderState ? [] : await rows<any>("vendorGateway", `
+      ${reconBaseSql(where, window.livemode ? coverAt : undefined)}
       SELECT id::text, order_id, vendor_txn_id, merchant_id, amount, status, channel, channel_type, channel_id, meta,
-             created_at, updated_at, settled, settle_cum, recon
-        FROM base ${state ? `WHERE recon = $${withCover.length + 1}` : ""}
-       ORDER BY created_at DESC LIMIT ${ROW_LIMIT}
-    `, state ? [...withCover, state] : withCover);
+             created_at, updated_at, settled, cum_ch, cum_rest, by_channel, recon, variance, credit_amount
+        FROM base ${orderState ? `WHERE recon = $${withCover.length + 1}` : ""}
+       ORDER BY created_at DESC LIMIT ${limit}
+    `, orderState ? [...withCover, orderState] : withCover);
 
     // The bank-credit alerts matched to the orders on this page — the independent evidence.
     const alerts = list.length ? await rows<any>("vendorGateway", `
@@ -197,11 +154,14 @@ export async function GET(req: Request) {
         at: meta.settlement.at, title: "Paid out to banker",
         detail: "The gateway reported the payment paid out to the banker's receiving account.",
       });
-      const paidBy = o.settled === true ? settlementCovering(cover, o.merchant_id, o.settle_cum) : null;
+      const paidBy = o.settled === true
+        ? settlementCovering(cover, o.merchant_id, { channel: o.channel_type, by_channel: o.by_channel, cum_ch: o.cum_ch, cum_rest: o.cum_rest })
+        : null;
       if (paidBy) events.push({
         at: paidBy.at, title: "Settled by banker",
-        detail: `Covered by the banker's verified settlement of ${formatAmount(paidBy.amount)}`
-          + `${paidBy.utr ? ` · UTR ${paidBy.utr}` : ""}. Settlements are applied to the banker's paid orders oldest first.`,
+        detail: `Covered by the banker's verified ${paidBy.channel ? `${paidBy.channel} ` : ""}settlement of ${formatAmount(paidBy.amount)}`
+          + `${paidBy.utr ? ` · UTR ${paidBy.utr}` : ""}. Settlements are applied to the banker's paid orders oldest first`
+          + `${paidBy.channel ? `, inside the channel they were raised for.` : "."}`,
       });
       events.sort((a, b) => a.at.localeCompare(b.at));
 
@@ -209,23 +169,78 @@ export async function GET(req: Request) {
         id: o.id, order_id: o.order_id, txn_id: o.vendor_txn_id ?? null, merchant_id: o.merchant_id ?? null,
         amount: o.amount, status: o.status, gateway: named ? meta.gateway?.provider ?? null : null,
         channel_type: payinChannelOf(o.channel_type), channel_id: named ? o.channel_id ?? null : null,
-        recon: o.recon as ReconState, bank_ref: bankRef, evidence, settled: o.settled === true,
+        recon: o.recon as ReconState, variance: Number(o.variance) || 0,
+        credit_amount: o.credit_amount == null ? null : Number(o.credit_amount),
+        bank_ref: bankRef, evidence, settled: o.settled === true,
         created_at: new Date(o.created_at).toISOString(), timeline: events,
       };
     });
 
-    const paid = sum("RECONCILED", "AWAITING_EVIDENCE");
+    // Money with no order, and over-settled bankers: exceptions that are not one order.
+    const credits = !state || state === "MISSING_INTERNAL"
+      ? (await unlinkedCredits({ ...window, status: "RECEIVED" }, limit)).map((c) => ({
+          ref: c.ref, merchant_id: c.merchant_id, amount: c.amount, utr: c.utr, created_at: c.created_at, channel_type: c.channel_type,
+        }))
+      : [];
+    const settlement = acc.settlement_exceptions.filter((x) => !window.channel || x.channel === window.channel);
+
+    if (csv) {
+      type R = { kind: string; channel: string; banker: string | null; order: string; txn: string; amount: number; status: string;
+                 recon: string; variance: number; bank_ref: string; settled: string; at: string };
+      const out: R[] = [
+        ...orders.map((o) => ({
+          kind: "Pay-in", channel: o.channel_type, banker: o.merchant_id, order: o.order_id, txn: o.txn_id ?? "", amount: o.amount,
+          status: o.status, recon: o.recon, variance: o.variance, bank_ref: o.bank_ref ?? "", settled: window.livemode ? (o.settled ? "yes" : "no") : "",
+          at: o.created_at,
+        })),
+        ...(window.channel === "INTENT" ? [] : credits).map((c) => ({
+          kind: "Received, no order", channel: c.channel_type, banker: c.merchant_id, order: "", txn: "", amount: c.amount,
+          status: "RECEIVED", recon: "MISSING_INTERNAL", variance: c.amount, bank_ref: c.utr ?? "", settled: "", at: c.created_at,
+        })),
+      ];
+      return csvResponse(datedFilename("reconciliation"), toCsv<R>([
+        { header: "Type", value: (r) => r.kind },
+        { header: "Channel", value: (r) => r.channel },
+        { header: "Banker", value: (r) => r.banker ?? "" },
+        { header: "Merchant order", value: (r) => r.order },
+        { header: "Katana txn", value: (r) => r.txn },
+        { header: "Amount", value: (r) => r.amount },
+        { header: "Status", value: (r) => r.status },
+        { header: "Reconciliation", value: (r) => r.recon },
+        { header: "Reconciliation (words)", value: (r) => RECON_LABEL[r.recon as ReconState] ?? r.recon },
+        { header: "Variance", value: (r) => r.variance },
+        { header: "Bank reference (UTR)", value: (r) => r.bank_ref, ref: true },
+        { header: "Settled", value: (r) => r.settled },
+        { header: "Time", value: (r) => r.at },
+      ], out));
+    }
+
+    const paidCount = shown.paid.count, paidAmount = shown.paid.amount;
+    const evidenced = by.MATCHED;
     return NextResponse.json({
       stages: [
-        { key: "order",   ...sum(...STATES) },
-        { key: "gateway", ...paid },
-        { key: "credit",  ...by.RECONCILED },
-        { key: "settled", ...settled },
+        { key: "order",   count: ORDER_RECON_STATES.reduce((a, k) => a + by[k].count, 0), amount: Math.round(ORDER_RECON_STATES.reduce((a, k) => a + by[k].amount, 0) * 100) / 100 },
+        { key: "gateway", count: paidCount, amount: paidAmount },
+        { key: "credit",  ...evidenced },
+        { key: "settled", count: null, amount: shown.settled ?? 0 },
       ],
       states: by,
       by_channel: byChannel,
+      accounts: { channels: acc.channels, total: acc.total },
+      panel: {
+        expected: paidAmount,
+        observed: evidenced.amount,
+        matched: evidenced.count,
+        unmatched: by.MISSING_EXTERNAL.count + by.MISSING_INTERNAL.count + by.STATUS_MISMATCH.count + by.AMOUNT_MISMATCH.count,
+        duplicates: by.DUPLICATE.count,
+        callbacks_missing: shown.callbacks_missing,
+        settlement_variance: by.SETTLEMENT_MISMATCH.amount,
+        variance: shown.variance,
+      },
+      exceptions: { missing_internal: credits, settlement },
       channel: window.channel ?? null,
       state,
+      livemode: window.livemode,
       orders,
       // True when the window holds more orders than the page shows; totals always cover all of it.
       truncated: orders.length >= ROW_LIMIT,
@@ -235,10 +250,14 @@ export async function GET(req: Request) {
 
 function emptyResponse() {
   const zero = { count: 0, amount: 0 };
+  const acc = emptyAccount();
   return {
     stages: ["order", "gateway", "credit", "settled"].map((key) => ({ key, ...zero })),
-    states: Object.fromEntries(STATES.map((k) => [k, zero])),
-    by_channel: Object.fromEntries(PAYIN_CHANNELS.map((c) => [c, Object.fromEntries(STATES.map((k) => [k, zero]))])),
-    channel: null, state: null, orders: [], truncated: false,
+    states: Object.fromEntries(RECON_STATES.map((k) => [k, zero])),
+    by_channel: Object.fromEntries(PAYIN_CHANNELS.map((c) => [c, Object.fromEntries(RECON_STATES.map((k) => [k, zero]))])),
+    accounts: { channels: Object.fromEntries(PAYIN_CHANNELS.map((c) => [c, acc])), total: acc },
+    panel: { expected: 0, observed: 0, matched: 0, unmatched: 0, duplicates: 0, callbacks_missing: 0, settlement_variance: 0, variance: 0 },
+    exceptions: { missing_internal: [], settlement: [] },
+    channel: null, state: null, livemode: true, orders: [], truncated: false,
   };
 }

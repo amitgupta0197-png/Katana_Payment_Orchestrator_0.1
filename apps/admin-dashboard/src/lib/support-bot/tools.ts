@@ -21,6 +21,10 @@ import { settlementVpasFor } from "@/lib/settlement-vpa";
 import { traceRows } from "@/lib/payment-search";
 import { v2OrderId, v2Status } from "@/lib/webhook-v2";
 import { diagnoseOrderSignature, parseHashHint, type OrderFields } from "@/lib/support-bot/signature";
+import { channelAccounts, type ChannelAccount } from "@/lib/channel-accounts";
+import { RECON_LABEL, RECON_STATES } from "@/lib/payin-recon";
+import { chargebackProblems, listChargebacks } from "@/lib/chargebacks-store";
+import { merchantChargeback } from "@/lib/chargeback-view";
 
 export interface ToolContext {
   /** The bankers every lookup is limited to. Never empty when a tool runs. */
@@ -86,6 +90,18 @@ export const SUPPORT_BOT_TOOLS: Tool[] = [
     strict: true,
   },
   {
+    name: "get_channel_totals",
+    description: "The account's live pay-in money per channel (INTENT and P2P) for the last N days, each channel worked out from its own pay-ins: paid, pending, failed, success rate, fees by the rate card, chargeback debits, net, settled and unsettled, and the reconciliation exceptions (amount or status differs, no bank evidence, money with no order, duplicates, over-settlement). \"all\" is the sum of the channels. Use it for any question about totals, balances, settlement, fees or variance.",
+    input_schema: obj({ days: { type: "integer", description: "How many days back, including today: 1 to 90." } }, ["days"]),
+    strict: true,
+  },
+  {
+    name: "list_chargebacks",
+    description: "The account's chargebacks, newest first: which pay-in each is against and its channel, the bank's reference, the chargeback amount, the debit ratio under the merchant's terms, the calculated and posted debit, what was given back, the reason, the state and whether its chain is reconciled.",
+    input_schema: obj({ limit: { type: "integer", description: "How many, 1 to 20." } }, ["limit"]),
+    strict: true,
+  },
+  {
     name: "list_recent_payouts",
     description: "The account's most recent payouts, newest first: payout id, txnid, status, amount, rail, test or live, bank reference and failure reason.",
     input_schema: obj({ limit: { type: "integer", description: "How many, 1 to 20." } }, ["limit"]),
@@ -102,6 +118,8 @@ export const TOOL_STEP_LABEL: Record<string, string> = {
   find_payment: "Tracing the payment",
   list_webhook_deliveries: "Checking your webhooks",
   list_recent_payouts: "Checking your payouts",
+  get_channel_totals: "Adding up your money by channel",
+  list_chargebacks: "Checking your chargebacks",
 };
 
 const clampLimit =(v: unknown) => Math.min(Math.max(Math.trunc(Number(v) || 10), 1), 20);
@@ -331,6 +349,52 @@ async function findPayment(ctx: ToolContext, input: { utr?: string | null; amoun
   };
 }
 
+// Every figure per channel; "all" only as their sum (design: never combine INTENT and P2P when a
+// channel is asked about).
+async function getChannelTotals(ctx: ToolContext, input: { days?: number }) {
+  const days = Math.min(Math.max(Math.trunc(Number(input.days) || 7), 1), 90);
+  const day = (back: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(Date.now() - back * 86_400_000));
+  const from = day(days - 1), to = day(0);
+  const acc = await channelAccounts({ window: { codes: ctx.codes, from, to, status: null, livemode: true, channel: null }, providerId: null });
+  const view = (a: ChannelAccount) => ({
+    paid: a.paid, pending: a.pending, failed_or_expired: a.failed, success_rate_percent: a.success_rate,
+    received_with_no_order_rupees: a.received_no_order, gross_rupees: a.gross,
+    fees_rupees: a.fee_rated ? a.fees : null, fees_note: a.fee_rated ? undefined : "no rate card set for this channel",
+    chargeback_debits_rupees: a.chargeback_debits, net_rupees: a.net, settled_rupees: a.settled, unsettled_rupees: a.unsettled,
+    recon_variance_rupees: a.variance,
+    exceptions: Object.fromEntries(RECON_STATES.filter((k) => k !== "MATCHED" && k !== "PENDING" && k !== "NOT_PAID" && a.recon[k].count > 0)
+      .map((k) => [RECON_LABEL[k], { count: a.recon[k].count, rupees: a.recon[k].amount }])),
+    chargebacks: { count: a.chargebacks.count, rupees: a.chargebacks.amount, debited_net_rupees: a.chargebacks.net_debited, not_decided: a.chargebacks.open },
+  });
+  const u = acc.channels.UNCLASSIFIED;
+  return {
+    period: `${from} to ${to} (India time), live money`,
+    INTENT: view(acc.channels.INTENT),
+    P2P: view(acc.channels.P2P),
+    ...(u.paid.count + u.pending.count + u.failed.count > 0 ? { UNCLASSIFIED_old_orders: view(u) } : {}),
+    all_channels_sum: view(acc.total),
+  };
+}
+
+async function listChargebacksTool(ctx: ToolContext, input: { limit?: number }) {
+  const list = await listChargebacks({ codes: ctx.codes, livemode: true, limit: clampLimit(input.limit) });
+  const several = ctx.codes.length > 1;
+  return {
+    count: list.length,
+    chargebacks: list.map((c) => {
+      const v = merchantChargeback(c, chargebackProblems(c));
+      return {
+        ...(several ? { account: accountOf(ctx, c.merchant_id) } : {}),
+        reference: v.cb_ref, channel: v.channel, received_at: ist(v.received_at), banks_reference: v.bank_ref,
+        payment: v.order_ref ? { txnid: v.order_ref, amount_rupees: v.order_amount, utr: v.original_ref ?? v.order_utr } : null,
+        chargeback_rupees: v.amount, reason: [v.reason_code, v.reason].filter(Boolean).join(" ") || null,
+        debit_ratio: v.debit_ratio, calculated_debit_rupees: v.calculated_debit, debited_rupees: v.debited, given_back_rupees: v.reversed,
+        state: v.state_label, what_it_means: v.explanation, chain_reconciled: v.reconciled,
+      };
+    }),
+  };
+}
+
 const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown>> = {
   get_account_setup: getAccountSetup,
   list_recent_requests: listRecentRequests,
@@ -339,6 +403,8 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   find_payment: findPayment,
   list_webhook_deliveries: listWebhookDeliveries,
   list_recent_payouts: listRecentPayouts,
+  get_channel_totals: getChannelTotals,
+  list_chargebacks: listChargebacksTool,
 };
 
 /** Run one tool for the bot. Never throws: a failure is returned as an error result. */
