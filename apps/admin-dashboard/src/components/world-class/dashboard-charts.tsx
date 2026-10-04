@@ -6,6 +6,8 @@
 //   - Onboarding funnel by stage (bars)
 // Driven by /api/admin/charts.
 
+import type { ReactNode } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -18,7 +20,11 @@ interface ChartData {
 
 const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "MID_ISSUANCE", "CONFIG", "LIVE"];
 
-export function DashboardCharts() {
+/**
+ * `funnel` replaces the funnel card's body (the cockpit's tabbed TSP / Banker / Merchant funnel);
+ * `statusHref` makes each donut slice a link. Without them it renders as before.
+ */
+export function DashboardCharts({ funnel, statusHref }: { funnel?: ReactNode; statusHref?: (slice: "success" | "pending" | "failed") => string } = {}) {
   const q = useQuery({
     queryKey: ["admin:charts"],
     queryFn: async () => (await fetch("/api/admin/charts").then((r) => r.json())) as ChartData,
@@ -44,11 +50,11 @@ export function DashboardCharts() {
           <CardDescription>Across all orders.</CardDescription>
         </CardHeader>
         <CardContent>
-          {d ? <StatusDonut status={d.status} /> : <ChartSkeleton h={180} />}
+          {d ? <StatusDonut status={d.status} statusHref={statusHref} /> : <ChartSkeleton h={180} />}
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-3">
+      {funnel ? <Card className="lg:col-span-3">{funnel}</Card> : <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle className="text-base">Banker onboarding funnel</CardTitle>
           <CardDescription>Bankers by stage.</CardDescription>
@@ -56,7 +62,7 @@ export function DashboardCharts() {
         <CardContent>
           {d ? <FunnelBars funnel={d.funnel} /> : <ChartSkeleton h={140} />}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -110,11 +116,11 @@ function AreaChart({ series }: { series: Day[] }) {
   );
 }
 
-function StatusDonut({ status }: { status: { success: number; pending: number; failed: number } }) {
+function StatusDonut({ status, statusHref }: { status: { success: number; pending: number; failed: number }; statusHref?: (slice: "success" | "pending" | "failed") => string }) {
   const segs = [
-    { label: "Success", v: status.success, color: "var(--color-success)" },
-    { label: "Pending", v: status.pending, color: "var(--color-warning)" },
-    { label: "Failed", v: status.failed, color: "var(--color-danger)" },
+    { key: "success" as const, label: "Success", v: status.success, color: "var(--color-success)" },
+    { key: "pending" as const, label: "Pending", v: status.pending, color: "var(--color-warning)" },
+    { key: "failed" as const, label: "Failed", v: status.failed, color: "var(--color-danger)" },
   ];
   const total = segs.reduce((a, s) => a + s.v, 0);
   const R = 52, C = 2 * Math.PI * R, cx = 70, cy = 70, sw = 16;
@@ -132,7 +138,7 @@ function StatusDonut({ status }: { status: { success: number; pending: number; f
               transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="butt" />
           );
           acc += frac;
-          return el;
+          return statusHref ? <Link key={s.label} href={statusHref(s.key)} aria-label={`${s.label} orders`}>{el}</Link> : el;
         })}
         <text x={cx} y={cy - 2} textAnchor="middle" fontSize="22" fontWeight="700" fill="var(--color-text)">{total}</text>
         <text x={cx} y={cy + 16} textAnchor="middle" fontSize="10" fill="var(--color-text-muted)">orders</text>
@@ -141,7 +147,9 @@ function StatusDonut({ status }: { status: { success: number; pending: number; f
         {segs.map((s) => (
           <li key={s.label} className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
-            <span className="text-[color:var(--color-text-muted)]">{s.label}</span>
+            {statusHref
+              ? <Link href={statusHref(s.key)} className="text-[color:var(--color-text-muted)] hover:underline">{s.label}</Link>
+              : <span className="text-[color:var(--color-text-muted)]">{s.label}</span>}
             <span className="font-medium tabular-nums">{s.v}</span>
           </li>
         ))}
@@ -150,11 +158,11 @@ function StatusDonut({ status }: { status: { success: number; pending: number; f
   );
 }
 
-function FunnelBars({ funnel }: { funnel: { stage: string; n: number }[] }) {
+export function FunnelBars({ funnel, order = STAGE_ORDER, label }: { funnel: { stage: string; n: number }[]; order?: readonly string[]; label?: (stage: string) => string }) {
   const map = new Map(funnel.map((f) => [f.stage, f.n]));
-  const data = STAGE_ORDER.map((stage) => ({ stage, n: map.get(stage) ?? 0 }));
+  const data = order.map((stage) => ({ stage, n: map.get(stage) ?? 0 }));
   // include any non-canonical stages too
-  for (const f of funnel) if (!STAGE_ORDER.includes(f.stage)) data.push({ stage: f.stage, n: f.n });
+  for (const f of funnel) if (!order.includes(f.stage)) data.push({ stage: f.stage, n: f.n });
   const max = Math.max(1, ...data.map((d) => d.n));
 
   return (
@@ -174,7 +182,7 @@ function FunnelBars({ funnel }: { funnel: { stage: string; n: number }[] }) {
                 }}
               />
             </div>
-            <div className="text-center text-[10px] uppercase tracking-wide text-[color:var(--color-text-muted)]">{d.stage}</div>
+            <div className="text-center text-[10px] uppercase tracking-wide text-[color:var(--color-text-muted)]">{label ? label(d.stage) : d.stage}</div>
           </div>
         );
       })}

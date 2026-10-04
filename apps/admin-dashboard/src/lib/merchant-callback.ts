@@ -7,7 +7,8 @@
 // should respond HTTP 200.
 //
 // Target precedence: the per-order notify_url (passed at order creation) → the
-// merchant's configured webhook_url. Delivery + retries go through the existing
+// merchant's configured webhook_url (with, between the two, the banker's per-flow callback URL
+// for the order's channel when one is set: lib/integration). Delivery + retries go through the existing
 // webhook_outbox engine; we also kick an immediate dispatch so the first attempt
 // is instant. Idempotent per status: meta.callback (sent_at + status) guards against
 // double-sends, while an EXPIRED order revived by a late payment is still told "Captured".
@@ -29,6 +30,8 @@ import { enqueue, dispatchPending, deliverNow } from "@/lib/webhook-outbox";
 import { KATANA_TERMINAL } from "@/lib/katana-pay";
 import { webhookDelivery } from "@/lib/webhook-settings";
 import { newEventId, v2Body, v2Status, wantsEvent } from "@/lib/webhook-v2";
+import { chooseCallbackTarget, payinCallbackFlow } from "@/lib/integration";
+import { flowCallbackUrl } from "@/lib/integration-callback-url";
 
 async function merchantWebhookUrl(merchantCode: string): Promise<string | null> {
   const r = await rows<{ webhook_url: string | null }>(
@@ -43,7 +46,7 @@ async function merchantWebhookUrl(merchantCode: string): Promise<string | null> 
 export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boolean; reason?: string }> {
   const cur = (await rows<any>("vendorGateway", `
     SELECT id::text, order_id, merchant_id, pay_id, vendor_txn_id, amount::float AS amount,
-           currency_code, status, COALESCE(rrn,'') AS rrn, meta, livemode, created_at, updated_at
+           currency_code, status, COALESCE(rrn,'') AS rrn, meta, livemode, created_at, updated_at, channel_type
       FROM vendor_payin_orders WHERE id = $1::uuid AND vendor = 'KATANA'
   `, [orderRowId]).catch(() => []))[0];
   if (!cur) return { sent: false, reason: "not found" };
@@ -64,8 +67,14 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   if (!merchantCode) return { sent: false, reason: "no merchant" };
 
   const delivery = await webhookDelivery(merchantCode).catch(() => null);
-  const target = (meta.notify_url && /^https?:\/\//i.test(meta.notify_url)) ? meta.notify_url
-    : delivery ? delivery.url : await merchantWebhookUrl(merchantCode);
+  // Per-flow callback URL (merchant 0019, lib/integration): the (signing) banker's URL for this
+  // order's channel, when one is set and not FAILED, comes after the order's own notify_url and
+  // before the banker's default. Without one this is exactly the target chosen before.
+  const flowUrl = await flowCallbackUrl(merchantCode, payinCallbackFlow(cur.channel_type));
+  const target = chooseCallbackTarget({
+    notifyUrl: typeof meta.notify_url === "string" ? meta.notify_url : null, flowUrl,
+    fallback: delivery ? delivery.url : await merchantWebhookUrl(merchantCode),
+  });
   if (!target) {
     // Record the attempt so ops can see "no callback target configured".
     await rows("vendorGateway", `UPDATE vendor_payin_orders SET meta = COALESCE(meta,'{}'::jsonb) || $2::jsonb WHERE id = $1::uuid`,

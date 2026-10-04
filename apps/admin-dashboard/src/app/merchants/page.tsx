@@ -22,6 +22,7 @@ import { MerchantWizard } from "@/components/merchant/onboarding-wizard";
 import { FlowBadge } from "@/components/payin/flow";
 import type { MerchantServicesSetting } from "@/lib/merchant-services";
 import type { OrderFlow, PayinFlowSetting } from "@/lib/payin-flow";
+import { HealthRing, useHealthScores } from "@/components/health/health-ring";
 
 interface Provider {
   services?: MerchantServicesSetting; payin_flow?: PayinFlowSetting; payin_active_flow?: OrderFlow | null;
@@ -92,7 +93,12 @@ export default function ProvidersPage() {
     else toast.error(`Nothing ${verb}`, { description: skipped.slice(0, 4).join(" · ") });
   };
 
+  // Health from the cache, one call for the whole list (staff only: hidden when not allowed).
+  const health = useHealthScores("MERCHANT", q.data ? q.data.providers.map((p) => p.id) : [], { enabled: !!q.data });
+
   const cols: Column<Provider>[] = [
+    ...(health.data === null ? [] : [{ key: "health", header: "Health",
+      render: (r: Provider) => <HealthRing type="MERCHANT" id={r.id} label={r.code} row={health.data?.get(r.id) ?? null} /> }]),
     { key: "code", header: "Code",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/merchants/${r.id}`}>{r.code}</Link> },
     { key: "legal_name", header: "Legal name",

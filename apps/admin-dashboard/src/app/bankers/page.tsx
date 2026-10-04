@@ -21,6 +21,7 @@ import { RowActions } from "@/components/world-class/row-actions";
 import { AssignProviderDialog } from "@/components/merchant/assign-provider";
 import { useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
+import { HealthRing, useHealthScores } from "@/components/health/health-ring";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -223,7 +224,12 @@ export default function MerchantsPage() {
     queryFn: async () => (await fetch("/api/merchants").then(async (r) => { const _d = await r.json().catch(() => null); if (!r.ok) throw new Error((_d && _d.error) || ("HTTP " + r.status)); return _d; })) as { merchants: Merchant[]; funnel: FunnelRow[] },
   });
 
+  // Health from the cache, one call for the whole list (staff only: hidden when not allowed).
+  const health = useHealthScores("BANKER", q.data ? q.data.merchants.map((m) => m.id) : [], { enabled: !!q.data });
+
   const cols: Column<Merchant>[] = [
+    ...(health.data === null ? [] : [{ key: "health", header: "Health",
+      render: (r: Merchant) => <HealthRing type="BANKER" id={r.id} label={r.merchant_code} row={health.data?.get(r.id) ?? null} /> }]),
     { key: "merchant_code", header: "Code",
       render: (r) => <Link className="text-[color:var(--color-brand)] hover:underline font-medium" href={`/bankers/${r.id}`}>{r.merchant_code}</Link> },
     { key: "legal_name", header: "Legal name" },

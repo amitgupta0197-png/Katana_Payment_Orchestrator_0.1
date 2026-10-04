@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText,
-  LayoutGrid, Smartphone, Landmark, Code2, UserCog, Zap, Hash,
+  LayoutGrid, Smartphone, Landmark, Code2, UserCog, Zap, Hash, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
@@ -40,6 +40,7 @@ import { FlowFitNote, PayinFlowCard } from "@/components/payin/flow";
 import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
 import { useAccess, useSeesGatewayNames } from "@/lib/use-access";
 import { BankerMids } from "@/components/merchant/banker-mids";
+import { IntegrationTab } from "@/components/integration/integration-tab";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -61,7 +62,7 @@ interface ApiKey {
 // Pay-ins are split by flow: P2P (paid to the banker's own UPI IDs, proven by a bank credit) and
 // Intent (a payment gateway takes and confirms the payment). Settings that apply to both stay on
 // Overview.
-const TAB_KEYS = ["overview", "p2p", "intent", "mids", "payouts", "developer", "account"] as const;
+const TAB_KEYS = ["overview", "p2p", "intent", "mids", "payouts", "integration", "developer", "account"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 // Links and bookmarks from before the split.
 const OLD_TAB: Record<string, TabKey> = { payments: "overview", collection: "p2p", gateways: "intent" };
@@ -582,6 +583,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
     // A TSP is a gateway's company, so the MIDs tab is staff only too.
     ...(named ? [{ key: "mids" as const, label: "MIDs", icon: Hash }] : []),
     ...(named ? [{ key: "payouts" as const, label: "Payouts", icon: Landmark }] : []),
+    // Callback URLs per flow, their checks and the integration score: staff only (lib/integration-store).
+    ...(named ? [{ key: "integration" as const, label: "Integration", icon: Activity }] : []),
     { key: "developer", label: "Developer", icon: Code2 },
     { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
   ];
@@ -744,6 +747,10 @@ export default function MerchantDetailView({ id }: { id: string }) {
             <PayoutGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             <PayoutPolicyCard merchantId={merchant.id} />
           </div>
+        </TabsContent>}
+
+        {named && <TabsContent value="integration">
+          <IntegrationTab merchantId={merchant.id} canEdit={canEditMids} onOpenTab={openTab} />
         </TabsContent>}
 
         <TabsContent value="developer">

@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { getLivemode } from "@/lib/mode";
+import { consoleExtras } from "@/lib/health-console";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,9 @@ export async function GET() {
       `SELECT COUNT(*)::int AS batches, COALESCE(SUM(net_amount)::float,0) AS net FROM settlement_batches WHERE batch_date >= $1`, [todayIso]), [{ batches: 0, net: 0 }]),
   ]);
 
+  // Health engine, flows and same-time-yesterday (additive; lib/health-console).
+  const extra = await consoleExtras(todayIso, livemode).catch(() => null);
+
   const txnCount = (todayOrders[0]?.n ?? 0) + (todayPayin[0]?.n ?? 0);
   const grossTotal = (todayOrders[0]?.gross ?? 0) + (todayPayin[0]?.gross ?? 0);
   const failedCount = (failedToday[0]?.n ?? 0) + (failedPayinToday[0]?.n ?? 0);
@@ -82,5 +86,6 @@ export async function GET() {
       settlement_batches: settlementToday[0]?.batches ?? 0,
       settlement_net:     settlementToday[0]?.net ?? 0,
     },
+    ...(extra ?? {}),
   });
 }

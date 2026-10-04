@@ -20,8 +20,11 @@ import { GrossByMethod } from "@/components/world-class/gross-by-method";
 import { AlertStrip, type AlertItem } from "@/components/world-class/alert-strip";
 import { ActivityFeed } from "@/components/world-class/activity-feed";
 import { formatAmount } from "@/lib/utils";
+import {
+  ActorHealthStrip, FlowHealthRow, HealthAlertsCard, IntegrationAlertsCard, TabbedFunnel, vsYesterday, type ConsoleExtras,
+} from "@/components/health/console-panels";
 
-interface Stats {
+interface Stats extends ConsoleExtras {
   providers: { total: number; kyc_pending: number };
   merchants: { total: number; by_stage: Record<string, number> };
   queue: { kyb_pending: number; maker_checker: number; disputes_open: number; risk_cases: number };
@@ -93,17 +96,27 @@ export default function SuperAdminCockpit() {
         </div>
       )}
 
+      {/* Health engine: who is live (lib/health-console). */}
+      <ActorHealthStrip s={s} loading={q.isLoading} />
+
       {/* Today KPIs */}
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--color-text-muted)]">Today so far</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Transactions" value={s?.today.transactions ?? 0} sublabel={`gross ${formatAmount(s?.today.gross ?? 0)}`} icon={Activity} loading={q.isLoading} href="/checkout" />
-        <KpiTile label="Success rate" value={successRate === null ? "—" : `${successRate}%`} sublabel={`${s?.today.failed ?? 0} failed`} variant={successVariant} loading={q.isLoading} href="/checkout?f=failed" />
-        <KpiTile label="Settlement batches" value={s?.today.settlement_batches ?? 0} sublabel={`net ${formatAmount(s?.today.settlement_net ?? 0)}`} icon={Banknote} loading={q.isLoading} href="/settlement" />
+        <KpiTile label="Transactions" value={s?.today.transactions ?? 0} trend={vsYesterday(s?.today.transactions, s?.yesterday?.transactions)} trendLabel="vs this time yesterday" sublabel={`gross ${formatAmount(s?.today.gross ?? 0)}`} icon={Activity} loading={q.isLoading} href="/checkout" />
+        <KpiTile label="Success rate" value={successRate === null ? "—" : `${successRate}%`} trend={successRate !== null && s?.yesterday?.success_rate != null ? Math.round((successRate - s.yesterday.success_rate) * 10) / 10 : undefined} trendLabel="vs this time yesterday" sublabel={`${s?.today.failed ?? 0} failed`} variant={successVariant} loading={q.isLoading} href="/checkout?f=failed" />
+        <KpiTile label="Settlement batches" value={s?.today.settlement_batches ?? 0} trend={vsYesterday(s?.today.settlement_batches, s?.yesterday?.settlement_batches)} trendLabel="vs this time yesterday" sublabel={`net ${formatAmount(s?.today.settlement_net ?? 0)}`} icon={Banknote} loading={q.isLoading} href="/settlement" />
         <KpiTile label="Approvals pending" value={s?.queue.maker_checker ?? 0} icon={ShieldCheck} variant={(s?.queue.maker_checker ?? 0) > 0 ? "warning" : "default"} loading={q.isLoading} href="/admin/maker-checker" />
       </div>
 
+      <FlowHealthRow s={s} loading={q.isLoading} />
+
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <HealthAlertsCard s={s} />
+        <IntegrationAlertsCard s={s} />
+      </div>
+
       {/* Infographics */}
-      <DashboardCharts />
+      <DashboardCharts funnel={<TabbedFunnel s={s} />} statusHref={(slice) => `/transactions?status=${slice.toUpperCase()}`} />
 
       {/* Gross by method × merchant */}
       <GrossByMethod />

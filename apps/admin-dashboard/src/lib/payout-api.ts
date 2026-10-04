@@ -29,6 +29,8 @@ import { isLiveActivated } from "@/lib/live-activation";
 import { signKatanaHash } from "@/lib/katana-pay";
 import { enqueue, dispatchPending } from "@/lib/webhook-outbox";
 import { stripGatewayNames } from "@/lib/merchant-safe";
+import { chooseCallbackTarget } from "@/lib/integration";
+import { flowCallbackUrl } from "@/lib/integration-callback-url";
 
 export function payoutSignature(creds: CheckoutCreds, fields: (string | null | undefined)[]): string {
   const parts = fields.map((f) => f ?? "");
@@ -138,7 +140,12 @@ export async function sendPayoutCallback(orderId: string): Promise<{ sent: boole
   const note = (reason: string, payload?: Record<string, unknown>) =>
     recordEvent({ orderId, from: o.status, to: o.status, actorKind: "system", reason, payload });
 
-  const target = (o.callback_url && /^https?:\/\//i.test(o.callback_url)) ? o.callback_url : await merchantWebhookUrl(o.merchant_id);
+  // The payout's own callback_url, else the banker's PAYOUT callback URL when one is set and not
+  // FAILED (merchant 0019, lib/integration), else its webhook URL, as before.
+  const target = chooseCallbackTarget({
+    notifyUrl: o.callback_url, flowUrl: await flowCallbackUrl(o.merchant_id, "PAYOUT"),
+    fallback: await merchantWebhookUrl(o.merchant_id),
+  });
   if (!target) { await note("no payout callback sent: no callback URL"); return { sent: false, reason: "no target" }; }
   const creds = await getCheckoutCreds(o.merchant_id, view.livemode).catch(() => null);
   // Never send an unsigned callback: the merchant couldn't tell it from a forgery.
