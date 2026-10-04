@@ -7,6 +7,10 @@
 //
 // Persona: SUPER_ADMIN only.
 // Self-approval guard: the checker must differ from the maker.
+//
+// Actions other than provider.* are applied by lib/maker-checker-actions (MID issuance, TSP
+// go-live / suspend / reactivate / permissions). The request is claimed first; if the change
+// cannot be applied, the claim is undone and the request stays PENDING.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -14,6 +18,8 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { wormAppend } from "@/lib/worm";
 import { publish } from "@/lib/events";
+import { MC_ACTIONS } from "@/lib/maker-checker-actions";
+import { ChainError } from "@/lib/chain-store";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +41,7 @@ export async function GET() {
              COALESCE(decision_notes,'') AS decision_notes,
              created_at, decided_at
         FROM maker_checker_requests
-       WHERE status IN ('APPROVED','REJECTED')
+       WHERE status IN ('APPROVED','REJECTED','EXPIRED')
        ORDER BY decided_at DESC LIMIT 50
     `);
     return NextResponse.json({ pending, recent });
@@ -72,13 +78,19 @@ export async function POST(req: Request) {
     if (r.maker_id === s.user_id)
       return NextResponse.json({ error: "maker cannot be the checker (self-approval blocked)" }, { status: 403 });
 
+    const handler = MC_ACTIONS[r.action];
+    const checker = { id: s.user_id, email: s.email };
+
     if (body.decision === "REJECTED") {
-      await rows("provider", `
+      const claimed = await rows("provider", `
         UPDATE maker_checker_requests
            SET status='REJECTED', checker_id=$1, checker_email=$2,
                decision_notes=$3, decided_at=now()
-         WHERE request_id=$4::uuid
+         WHERE request_id=$4::uuid AND status='PENDING'
+         RETURNING 1
       `, [s.user_id, s.email, body.notes ?? null, body.request_id]);
+      if (!claimed.length) return NextResponse.json({ error: "request was decided meanwhile" }, { status: 409 });
+      if (handler?.reject) await handler.reject(r, checker);
       await wormAppend({
         actorId: s.user_id, actorEmail: s.email,
         action: r.action + ".rejected",
@@ -132,11 +144,35 @@ export async function POST(req: Request) {
         entityType: "provider", entityId: r.resource_id, actorId: s.user_id,
         payload: { request_id: body.request_id, action: r.action, fields },
       });
+    } else if (handler) {
+      const claimed = await rows("provider", `
+        UPDATE maker_checker_requests
+           SET status='APPROVED', checker_id=$1, checker_email=$2, decision_notes=$3, decided_at=now()
+         WHERE request_id=$4::uuid AND status='PENDING'
+         RETURNING 1
+      `, [s.user_id, s.email, body.notes ?? null, body.request_id]);
+      if (!claimed.length) return NextResponse.json({ error: "request was decided meanwhile" }, { status: 409 });
+      try {
+        applied = await handler.apply(r, checker);
+      } catch (e) {
+        await rows("provider", `
+          UPDATE maker_checker_requests
+             SET status='PENDING', checker_id=NULL, checker_email=NULL, decision_notes=NULL, decided_at=NULL
+           WHERE request_id=$1::uuid AND status='APPROVED'
+        `, [body.request_id]);
+        if (e instanceof ChainError) return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        throw e;
+      }
+      await wormAppend({
+        actorId: s.user_id, actorEmail: s.email, action: r.action,
+        resourceType: r.resource_type, resourceId: r.resource_id,
+        before: null, after: { request_id: body.request_id, maker: r.maker_email, payload: r.payload, applied }, notes: body.notes,
+      });
     } else {
       return NextResponse.json({ error: `unsupported resource_type: ${r.resource_type}` }, { status: 400 });
     }
 
-    await rows("provider", `
+    if (!handler) await rows("provider", `
       UPDATE maker_checker_requests
          SET status='APPROVED', checker_id=$1, checker_email=$2,
              decision_notes=$3, decided_at=now()

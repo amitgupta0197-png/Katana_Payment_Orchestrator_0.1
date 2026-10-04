@@ -199,9 +199,14 @@ for (const [i, c] of COMBOS.entries()) {
     assert.deepEqual([flow.body.flow, flow.body.active], [c.flow ?? "UNSET", c.active]);
 
     // ── 2. The banker's onboarding. The KYB steps are not what is under test: overridden.
-    for (const step of ["step_application", "step_kyb_docs", "step_screening", "step_bank_verify", "step_config"]) {
+    // MID issuance fails its gate (the banker is on no TSP) and is overridden too; the chain has
+    // its own integration test (tests/integration/chain.test.ts).
+    for (const step of ["step_application", "step_kyb_docs", "step_screening", "step_bank_verify", "step_mid_issuance", "step_config"]) {
       const r = await api("POST", `/api/merchants/${bankerId}/advance`, { step, override: true, notes: "e2e: KYB is not under test" });
       assert.equal(r.status, 200, `${step}: ${JSON.stringify(r.body)}`);
+      if (step === "step_bank_verify") assert.equal(r.body.stage, "MID_ISSUANCE");
+      if (step === "step_mid_issuance")
+        assert.deepEqual([r.body.stage, r.body.gates?.[0]?.gate, r.body.gates?.[0]?.result], ["CONFIG", "MID_ISSUANCE", "FAIL"]);
     }
     // Before go-live the card says what is needed for this merchant's choice.
     const card = await api("GET", `/api/merchants/${bankerId}/onboarding-gates`);

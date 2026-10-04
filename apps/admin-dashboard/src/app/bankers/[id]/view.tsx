@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText,
-  LayoutGrid, Smartphone, Landmark, Code2, UserCog, Zap,
+  LayoutGrid, Smartphone, Landmark, Code2, UserCog, Zap, Hash,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
@@ -38,14 +38,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 import { FlowFitNote, PayinFlowCard } from "@/components/payin/flow";
 import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
-import { useSeesGatewayNames } from "@/lib/use-access";
+import { useAccess, useSeesGatewayNames } from "@/lib/use-access";
+import { BankerMids } from "@/components/merchant/banker-mids";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
   business_type?: string; category_mcc?: string; contact_email: string;
   stage: string; risk_tier?: string;
   step_application: boolean; step_kyb_docs: boolean; step_screening: boolean;
-  step_bank_verify: boolean; step_config: boolean; step_approval: boolean;
+  step_bank_verify: boolean; step_mid_issuance: boolean; step_config: boolean; step_approval: boolean;
   created_at: string; approved_at?: string; approved_by?: string;
 }
 interface SubMid {
@@ -60,7 +61,7 @@ interface ApiKey {
 // Pay-ins are split by flow: P2P (paid to the banker's own UPI IDs, proven by a bank credit) and
 // Intent (a payment gateway takes and confirms the payment). Settings that apply to both stay on
 // Overview.
-const TAB_KEYS = ["overview", "p2p", "intent", "payouts", "developer", "account"] as const;
+const TAB_KEYS = ["overview", "p2p", "intent", "mids", "payouts", "developer", "account"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 // Links and bookmarks from before the split.
 const OLD_TAB: Record<string, TabKey> = { payments: "overview", collection: "p2p", gateways: "intent" };
@@ -75,7 +76,8 @@ const STEPS = [
   { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic banker details captured." },
   { key: "step_kyb_docs",     stage_from: "DOCS_PENDING",  stage_to: "SCREENING",     label: "KYB documents",   description: "PAN, GST, CIN, MOA, AOA, board resolution, bank statement, MCC declaration uploaded." },
   { key: "step_screening",    stage_from: "SCREENING",     stage_to: "BANK_VERIFY",   label: "Screening",       description: "OFAC / UN / EU / FATF sanctions screening. Risk tier assigned." },
-  { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "CONFIG",        label: "Bank verify",     description: "Penny-drop on settlement account. Beneficiary name-match validated." },
+  { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "MID_ISSUANCE",  label: "Bank verify",     description: "Penny-drop on settlement account. Beneficiary name-match validated." },
+  { key: "step_mid_issuance", stage_from: "MID_ISSUANCE",  stage_to: "CONFIG",        label: "MID issuance",    description: "The banker's TSP and issuing bank recorded; the MIDs the bank issued entered and approved by a second person (MIDs tab)." },
   { key: "step_config",       stage_from: "CONFIG",        stage_to: "CONFIG",        label: "Configuration",   description: "Main MID created. Rails enabled. Webhook URL set." },
   { key: "step_approval",     stage_from: "CONFIG",        stage_to: "LIVE",          label: "Approval & go-live", description: "Super-Admin final review. Sub-MIDs settlement-enabled. API key issued." },
 ] as const;
@@ -501,6 +503,9 @@ function TestCheckoutCard({ merchant }: { merchant: Merchant }) {
 
 export default function MerchantDetailView({ id }: { id: string }) {
   const named = useSeesGatewayNames();
+  // Recording a banker's TSP, bank and MIDs is for Super Admin / Admin (lib/chain-store CHAIN_WRITE).
+  const persona = useAccess().data?.persona;
+  const canEditMids = persona === "SUPER_ADMIN" || persona === "ADMIN";
   const merchantQ = useQuery({
     queryKey: ["merchant", id],
     queryFn: async () => {
@@ -574,6 +579,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
     { key: "p2p", label: "P2P pay-ins", icon: Smartphone },
     { key: "intent", label: "Intent pay-ins", icon: Zap },
     // Which gateways a banker is connected to is for Katana staff only (lib/merchant-safe).
+    // A TSP is a gateway's company, so the MIDs tab is staff only too.
+    ...(named ? [{ key: "mids" as const, label: "MIDs", icon: Hash }] : []),
     ...(named ? [{ key: "payouts" as const, label: "Payouts", icon: Landmark }] : []),
     { key: "developer", label: "Developer", icon: Code2 },
     { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
@@ -668,6 +675,11 @@ export default function MerchantDetailView({ id }: { id: string }) {
                         <div className="min-w-0">
                           <div className={`text-sm ${isNext ? "font-semibold" : done ? "" : "text-[color:var(--color-text-muted)]"}`}>{step.label}</div>
                           <div className="text-xs text-[color:var(--color-text-muted)]">{step.description}</div>
+                          {isNext && named && step.key === "step_mid_issuance" && (
+                            <Button size="sm" variant="link" className="h-auto px-0 text-xs" onClick={() => openTab("mids")}>
+                              Open the MIDs tab <ArrowRight className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                       </li>
                     );
@@ -722,6 +734,10 @@ export default function MerchantDetailView({ id }: { id: string }) {
           <PayinOperationsCard merchantId={merchant.id} channel="INTENT" />
           <MerchantTransactionsCard merchantId={merchant.id} channel="INTENT" />
         </TabsContent>
+
+        {named && <TabsContent value="mids">
+          <BankerMids merchantId={merchant.id} canEdit={canEditMids} />
+        </TabsContent>}
 
         {named && <TabsContent value="payouts">
           <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">

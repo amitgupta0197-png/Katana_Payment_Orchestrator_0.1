@@ -16,7 +16,7 @@ interface ChartData {
   funnel: { stage: string; n: number }[];
 }
 
-const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"];
+const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "MID_ISSUANCE", "CONFIG", "LIVE"];
 
 export function DashboardCharts() {
   const q = useQuery({

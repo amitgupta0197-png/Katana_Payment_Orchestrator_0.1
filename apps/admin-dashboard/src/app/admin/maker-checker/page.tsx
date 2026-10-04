@@ -102,7 +102,9 @@ export default function MakerCheckerPage() {
     { key: "action", header: "Action", render: (r) => <Badge variant="warning">{r.action}</Badge> },
     { key: "resource_id", header: "Resource", render: (r) => <span className="font-mono text-xs">{r.resource_type}/{r.resource_id.slice(0, 8)}</span> },
     { key: "maker_email", header: "Maker", render: (r) => r.maker_email || r.maker_id },
-    { key: "payload", header: "Payload", render: (r) => <span className="font-mono text-xs">{JSON.stringify(r.payload).slice(0, 80)}</span> },
+    { key: "payload", header: "What", render: (r) => r.payload?.summary
+        ? <span className="text-sm">{r.payload.summary}</span>
+        : <span className="font-mono text-xs">{JSON.stringify(r.payload).slice(0, 80)}</span> },
     { key: "request_id", header: "Decide", render: (r) => (
       canDecide ? (
         <div className="flex gap-2">
@@ -118,8 +120,10 @@ export default function MakerCheckerPage() {
   const recentCols: Column<RecentRow>[] = [
     { key: "decided_at", header: "Decided", render: (r) => formatDateTime(r.decided_at) },
     { key: "action", header: "Action" },
-    { key: "resource_id", header: "Resource", render: (r) => <span className="font-mono text-xs">{r.resource_type}/{r.resource_id.slice(0, 8)}</span> },
-    { key: "status", header: "Decision", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
+    { key: "resource_id", header: "What", render: (r) => r.payload?.summary
+        ? <span className="text-sm">{r.payload.summary}</span>
+        : <span className="font-mono text-xs">{r.resource_type}/{r.resource_id.slice(0, 8)}</span> },
+    { key: "status", header: "Decision", render: (r) => <Badge variant={statusVariant(r.status)}>{r.status === "EXPIRED" ? "WITHDRAWN" : r.status}</Badge> },
     { key: "maker_email", header: "Maker" },
     { key: "checker_email", header: "Checker" },
     { key: "decision_notes", header: "Notes" },
@@ -129,7 +133,7 @@ export default function MakerCheckerPage() {
     <>
       <PageHeader
         title="Maker-checker queue"
-        description="Sensitive actions (KYC approval, merchant termination) require a second Super-Admin (BRD §4)."
+        description="Sensitive actions (KYC approval, merchant termination, MID issuance, TSP go-live and suspension) require a second Super-Admin (BRD §4)."
         icon={ShieldCheck}
         actions={<Badge variant="warning"><Clock className="h-3 w-3" /> {q.data?.pending.length ?? 0} pending</Badge>}
       />

@@ -9,6 +9,9 @@
 //   step_kyb_docs     DOCUMENTS    the documents the application calls for are uploaded
 //   step_screening    SCREENING    the business and its director are not on the sanctions or
 //                                  PEP lists Katana holds
+//   step_mid_issuance MID_ISSUANCE the banker is on a TSP with an issuing bank, and holds an
+//                                  ACTIVE MID for the flows it needs one for (lib/chain midGate)
+//   step_approval     SETUP        the banker is set up for what its merchant was onboarded for
 //
 // A gate answers PASS, REVIEW or FAIL:
 //
@@ -27,11 +30,12 @@ import { rows } from "@/lib/pg";
 import { safeFetch } from "@/lib/safe-fetch";
 import { screenName } from "@/lib/risk";
 import { bankerSetup } from "@/lib/merchant-setup";
+import { midGate, type Flow } from "@/lib/chain";
 import {
   aadhaarLast4Problem, gstinPan, gstinProblem, mccProblem, mccStanding, panProblem, prohibitedWords, tidyId,
 } from "@/lib/kyc-validators";
 
-export type GateName = "APPLICATION" | "WEBSITE" | "DOCUMENTS" | "SCREENING" | "SETUP";
+export type GateName = "APPLICATION" | "WEBSITE" | "DOCUMENTS" | "SCREENING" | "MID_ISSUANCE" | "SETUP";
 export type GateResult = "PASS" | "REVIEW" | "FAIL";
 
 export interface GateOutcome {
@@ -137,7 +141,12 @@ export async function gateDocuments(m: OnboardingSubject): Promise<GateOutcome> 
 
 /** The business and its director against the sanctions and PEP lists Katana holds. */
 export async function gateScreening(m: OnboardingSubject): Promise<GateOutcome> {
-  const names = [...new Set([m.legal_name, m.brand_name, m.director_name].map((n) => n?.trim()).filter((n): n is string => !!n))];
+  return screenNames([m.legal_name, m.brand_name, m.director_name]);
+}
+
+/** Screen names against the sanctions and PEP lists Katana holds (banker and TSP onboarding). */
+export async function screenNames(given: (string | null | undefined)[]): Promise<GateOutcome> {
+  const names = [...new Set(given.map((n) => n?.trim()).filter((n): n is string => !!n))];
   const hits: { name: string; source: string; kind: string }[] = [];
   for (const name of names) {
     const r = await screenName({ fullName: name });
@@ -171,13 +180,34 @@ export async function gateSetup(m: OnboardingSubject): Promise<GateOutcome> {
   };
 }
 
-export type OnboardingStep = "step_application" | "step_kyb_docs" | "step_screening" | "step_bank_verify" | "step_config" | "step_approval";
+/**
+ * MID issuance: the banker's TSP and issuing bank are recorded and the MIDs it needs are ACTIVE
+ * (each made active by a second person). See midGate in lib/chain for what is required.
+ */
+export async function gateMidIssuance(m: OnboardingSubject): Promise<GateOutcome> {
+  const [chain, flows] = await Promise.all([
+    rows<{ parent_tsp_id: string | null; issuing_bank_id: string | null }>("merchant",
+      `SELECT parent_tsp_id::text, issuing_bank_id::text FROM merchants WHERE id = $1::uuid`, [m.id]),
+    rows<{ flow: Flow }>("merchant", `SELECT DISTINCT flow FROM issued_mids WHERE merchant_id = $1::uuid AND status = 'ACTIVE'`, [m.id]),
+  ]);
+  const setup = m.merchant_code ? await bankerSetup(m.merchant_code).catch(() => null) : null;
+  const facts = {
+    hasTsp: !!chain[0]?.parent_tsp_id, hasBank: !!chain[0]?.issuing_bank_id, activeFlows: flows.map((f) => f.flow),
+    services: (setup?.services ?? "UNSET") as "PAYIN" | "PAYOUT" | "BOTH" | "UNSET",
+    payinFlow: (setup?.flow.flow ?? "UNSET") as "P2P" | "INTENT" | "BOTH" | "UNSET",
+  };
+  const g = midGate(facts);
+  return { gate: "MID_ISSUANCE", result: g.result, summary: g.summary, detail: { ...facts, missing: g.missing } };
+}
+
+export type OnboardingStep = "step_application" | "step_kyb_docs" | "step_screening" | "step_bank_verify" | "step_mid_issuance" | "step_config" | "step_approval";
 
 /** Run the gates of one onboarding step. Steps with no system check return none. */
 export async function runStepGates(step: OnboardingStep, m: OnboardingSubject): Promise<GateOutcome[]> {
   if (step === "step_application") return [gateApplication(m), await gateWebsite(m.website)];
   if (step === "step_kyb_docs") return [await gateDocuments(m)];
   if (step === "step_screening") return [await gateScreening(m)];
+  if (step === "step_mid_issuance") return [await gateMidIssuance(m)];
   if (step === "step_approval") return [await gateSetup(m)];
   return [];
 }

@@ -61,7 +61,7 @@ export default function ProviderHelpPage() {
           <CardTitle className="text-base">Dashboard — your portfolio at a glance</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>The dashboard shows live KPIs: mapped merchants (total / live / onboarding), Sub-MIDs (live + pending KYC), open KYB cases, and your MTD / YTD commission. The <strong>Insights</strong> charts show pay-in volume, status, collected ₹, and channel mix across your bankers. The <strong>onboarding funnel</strong> shows where each branch sits across the 6 stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE.</p>
+          <p>The dashboard shows live KPIs: mapped merchants (total / live / onboarding), Sub-MIDs (live + pending KYC), open KYB cases, and your MTD / YTD commission. The <strong>Insights</strong> charts show pay-in volume, status, collected ₹, and channel mix across your bankers. The <strong>onboarding funnel</strong> shows where each branch sits across the 7 stages: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → MID_ISSUANCE → CONFIG → LIVE.</p>
         </CardContent>
       </Card>
 

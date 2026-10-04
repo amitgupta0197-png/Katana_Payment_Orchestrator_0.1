@@ -207,7 +207,7 @@ function OnboardDialog({ open: controlledOpen, onOpenChange }: { open?: boolean;
   );
 }
 
-const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"] as const;
+const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "MID_ISSUANCE", "CONFIG", "LIVE"] as const;
 
 export default function MerchantsPage() {
   const canCreate = useCan("merchants", "create");
@@ -241,7 +241,7 @@ export default function MerchantsPage() {
     <>
       <PageHeader
         title="Bankers"
-        description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 6-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → CONFIG → LIVE."
+        description="Customer-of-our-customer entities (PRODUCT_VISION §3.3). 7-stage onboarding: APPLICATION → DOCS_PENDING → SCREENING → BANK_VERIFY → MID_ISSUANCE → CONFIG → LIVE."
         icon={Store}
       />
       {funnel.length > 0 && (

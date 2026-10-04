@@ -31,7 +31,7 @@ interface Stats {
   };
 }
 
-const STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"];
+const STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "MID_ISSUANCE", "CONFIG", "LIVE"];
 
 export default function SuperAdminCockpit() {
   const q = useQuery({
@@ -122,7 +122,7 @@ export default function SuperAdminCockpit() {
         <KpiTile label="Merchants" value={s?.providers.total ?? 0} icon={UserPlus} loading={q.isLoading} href="/merchants" />
         <KpiTile label="Bankers" value={s?.merchants.total ?? 0} icon={Store} loading={q.isLoading} href="/bankers" />
         <KpiTile label="Bankers live" value={s?.merchants.by_stage?.LIVE ?? 0} sublabel="reached LIVE stage" variant="success" loading={q.isLoading} href="/bankers?f=live" />
-        <KpiTile label="In onboarding" value={STAGES.filter(x => x !== "LIVE").reduce((sum, st) => sum + (s?.merchants.by_stage?.[st] ?? 0), 0)} sublabel="across 5 pre-live stages" loading={q.isLoading} href="/bankers" />
+        <KpiTile label="In onboarding" value={STAGES.filter(x => x !== "LIVE").reduce((sum, st) => sum + (s?.merchants.by_stage?.[st] ?? 0), 0)} sublabel="across 6 pre-live stages" loading={q.isLoading} href="/bankers" />
       </div>
 
       {/* Quick actions + Activity */}

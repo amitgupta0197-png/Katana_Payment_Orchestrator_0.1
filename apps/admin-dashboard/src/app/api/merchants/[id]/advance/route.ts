@@ -1,7 +1,8 @@
 // POST /api/merchants/[id]/advance — move a merchant to the next onboarding stage.
 //
 // SUPER_ADMIN can advance any stage. PROVIDER can advance APPLICATION + DOCS_PENDING
-// + BANK_VERIFY (the steps the provider drives, per §2.2). Each transition flips one
+// + BANK_VERIFY (the steps the provider drives, per §2.2). MID_ISSUANCE (between BANK_VERIFY
+// and CONFIG) is staff only. Each transition flips one
 // step boolean and updates `stage`; rejection sets stage='REJECTED'.
 //
 // The system's own checks for the step run first (lib/onboarding-gates) and are recorded. A
@@ -21,13 +22,16 @@ const STEP_TO_STAGE: Record<string, { from: string; to: string; persona_required
   step_application:  { from: "APPLICATION",  to: "DOCS_PENDING", persona_required: ["SUPER_ADMIN", "PROVIDER"] },
   step_kyb_docs:     { from: "DOCS_PENDING", to: "SCREENING",    persona_required: ["SUPER_ADMIN", "PROVIDER"] },
   step_screening:    { from: "SCREENING",    to: "BANK_VERIFY",  persona_required: ["SUPER_ADMIN"] },
-  step_bank_verify:  { from: "BANK_VERIFY",  to: "CONFIG",       persona_required: ["SUPER_ADMIN", "PROVIDER"] },
+  step_bank_verify:  { from: "BANK_VERIFY",  to: "MID_ISSUANCE", persona_required: ["SUPER_ADMIN", "PROVIDER"] },
+  // The MIDs the bank issued, through the banker's TSP (lib/chain). Staff only: a TSP is a
+  // gateway's company and is never shown to a merchant.
+  step_mid_issuance: { from: "MID_ISSUANCE", to: "CONFIG",       persona_required: ["SUPER_ADMIN"] },
   step_config:       { from: "CONFIG",       to: "CONFIG",       persona_required: ["SUPER_ADMIN"] },
   step_approval:     { from: "CONFIG",       to: "LIVE",         persona_required: ["SUPER_ADMIN"] },
 };
 
 const schema = z.object({
-  step: z.enum(["step_application","step_kyb_docs","step_screening","step_bank_verify","step_config","step_approval"]).optional(),
+  step: z.enum(["step_application","step_kyb_docs","step_screening","step_bank_verify","step_mid_issuance","step_config","step_approval"]).optional(),
   risk_tier: z.enum(["LOW","MEDIUM","HIGH"]).optional(),
   notes: z.string().optional().default(""),
   reject: z.boolean().optional(),

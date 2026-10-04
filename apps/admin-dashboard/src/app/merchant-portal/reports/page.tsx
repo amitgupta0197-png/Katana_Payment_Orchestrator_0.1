@@ -34,7 +34,7 @@ interface MerchantRow { id: string; merchant_code: string; stage: string; legal_
 interface SubMidRow { id: string; sub_mid_code: string; kyc_status: string; settlement_enabled: boolean }
 interface KybRow { id: string; status: string; merchant_id: string; opened_at: string }
 
-const PIPELINE_STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "CONFIG", "LIVE"];
+const PIPELINE_STAGES = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", "MID_ISSUANCE", "CONFIG", "LIVE"];
 
 /** Credits shown before the list has to be expanded — enough to fill a screen, not a page. */
 const VPA_PREVIEW = 12;

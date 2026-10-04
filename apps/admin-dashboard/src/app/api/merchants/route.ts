@@ -36,7 +36,7 @@ export async function GET() {
     const merchants = await rows<any>("merchant", `
       SELECT id, merchant_code, legal_name, brand_name, business_type, category_mcc,
              contact_email, stage, risk_tier,
-             step_application, step_kyb_docs, step_screening, step_bank_verify, step_config, step_approval,
+             step_application, step_kyb_docs, step_screening, step_bank_verify, step_mid_issuance, step_config, step_approval,
              created_at, approved_at, COALESCE(approved_by,'') AS approved_by
         FROM merchants
        WHERE ${where}

@@ -37,6 +37,7 @@ import { ListChecks, ArrowRightLeft,
   ArrowLeftRight,
   Smartphone,
   Building2,
+  Landmark,
   Search,
   type LucideIcon,
 } from "lucide-react";
@@ -50,7 +51,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   status: "live" | "read-only" | "scaffold";
-  group: "Overview" | "Payment Management" | "Money Movement" | "DT Business" | "Risk & Compliance" | "Operations" | "Admin";
+  group: "Overview" | "Provider Management" | "Payment Management" | "Money Movement" | "DT Business" | "Risk & Compliance" | "Operations" | "Admin";
   /** Personas that should see this nav entry. Defaults to SUPER_ADMIN only. */
   personas?: NavPersona[];
 }
@@ -79,8 +80,8 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement-engine", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
-  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/security"],
-  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
+  RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/tsps", "/banks", "/security"],
+  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/tsps", "/banks", "/security"],
   SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
@@ -98,6 +99,10 @@ export function personaNav(items: NavItem[], persona: NavPersona): NavItem[] {
 export const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, status: "live", group: "Overview", personas: SHARED_PERSONAS },
   { href: "/admin-log", label: "Admin Log", icon: ScrollText, status: "live", group: "Overview" },
+
+  // The chain a banker's MIDs come from: Bank → TSP → Banker (lib/chain). Staff only.
+  { href: "/tsps",  label: "TSPs / Providers", icon: Building2, status: "live", group: "Provider Management", personas: ["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "RISK", "OPERATOR", "FINANCE"] },
+  { href: "/banks", label: "Banks",            icon: Landmark,  status: "live", group: "Provider Management", personas: ["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "RISK", "OPERATOR", "FINANCE"] },
 
   { href: "/merchants",        label: "Merchants",       icon: UserPlus, status: "live", group: "Payment Management" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management" },
@@ -201,4 +206,4 @@ export const navItems: NavItem[] = [
   { href: "/fifo-controls",        label: "Banker Controls", icon: Sliders, status: "live", group: "Admin" },
 ];
 
-export const navGroups = ["Overview", "Payment Management", "Money Movement", "DT Business", "Risk & Compliance", "Operations", "Admin"] as const;
+export const navGroups = ["Overview", "Provider Management", "Payment Management", "Money Movement", "DT Business", "Risk & Compliance", "Operations", "Admin"] as const;
