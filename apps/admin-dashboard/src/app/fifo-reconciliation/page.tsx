@@ -80,9 +80,16 @@ export default function FifoReconciliationPage() {
       </div>
 
       {latest?.summary && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {Object.entries(latest.summary as Record<string, number>).map(([b, n]) => (
-            <Badge key={b} variant={bucketVariant(b)}>{b}: {n}</Badge>
+        <div className="mb-4 space-y-2">
+          {/* Counts per bucket; a gateway-payout run also stores its day range and per-gateway errors. */}
+          <div className="flex flex-wrap items-center gap-2">
+            {Object.entries(latest.summary as Record<string, unknown>).filter(([, n]) => typeof n === "number").map(([b, n]) => (
+              <Badge key={b} variant={bucketVariant(b)}>{b}: {n as number}</Badge>
+            ))}
+            {typeof latest.summary.range === "string" && <span className="text-xs text-[color:var(--color-text-muted)]">{latest.summary.range}</span>}
+          </div>
+          {latest.summary.errors && typeof latest.summary.errors === "object" && Object.entries(latest.summary.errors as Record<string, unknown>).map(([g, e]) => (
+            <div key={g} className="text-xs text-[color:var(--color-warning)]">{g}: {String(e)}</div>
           ))}
         </div>
       )}
