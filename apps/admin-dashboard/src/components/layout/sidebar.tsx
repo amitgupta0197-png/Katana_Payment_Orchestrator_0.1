@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { navGroups, navItems, personaNav, type NavPersona } from "@/lib/nav";
 
+/** A menu item is the page or a page under it: /settlement is not active on /settlement-engine. */
+const isActive = (href: string, pathname: string) =>
+  href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+
 // Shared nav body — used by the desktop sidebar AND the mobile drawer so the two never
 // drift. `onNavigate` lets the drawer close itself when a link is tapped.
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -54,7 +58,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {navGroups.map((group) => {
           const items = visibleItems.filter((i) => i.group === group);
           if (items.length === 0) return null;
-          const containsActive = items.some((i) => i.href === "/" ? pathname === "/" : pathname.startsWith(i.href));
+          const containsActive = items.some((i) => isActive(i.href, pathname));
           const isCollapsed = (collapsed[group] ?? true) && !containsActive;
           return (
             <div key={group}>
@@ -72,7 +76,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               <ul className="space-y-0.5">
                 {items.map((item) => {
                   const Icon = item.icon;
-                  const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                  const active = isActive(item.href, pathname);
                   return (
                     <li key={item.href}>
                       <Link

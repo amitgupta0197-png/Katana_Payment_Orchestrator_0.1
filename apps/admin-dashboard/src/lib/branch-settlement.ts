@@ -38,7 +38,8 @@ export async function branchCollectedSuccess(merchantKey: string): Promise<numbe
 // RECONCILED is the step after VERIFIED, so it counts too (as it does in lib/banker-settled).
 export async function branchVerifiedSettled(providerId: string, merchantKey: string): Promise<number> {
   const r = await rows<{ total: number }>("provider", `
-    SELECT COALESCE(SUM(amount),0)::float AS total
+    -- An engine-raised settlement pays its net but covers its gross less reserve (gross_amount).
+    SELECT COALESCE(SUM(COALESCE(gross_amount, amount)),0)::float AS total
       FROM provider_branch_settlements
      WHERE provider_id = $1::uuid AND merchant_key = $2 AND status IN ('VERIFIED','RECONCILED')
   `, [providerId, merchantKey]).catch(() => [{ total: 0 }]);

@@ -78,7 +78,7 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
-  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
+  FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement-engine", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
   SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
@@ -132,6 +132,7 @@ export const navItems: NavItem[] = [
   { href: "/payout", label: "Payouts (gRPC)", icon: Send, status: "live", group: "Money Movement" },
   { href: "/settlement", label: "Settlements", icon: Banknote, status: "live", group: "Money Movement" },
   { href: "/branch-settlements", label: "Banker Settlements", icon: Banknote, status: "live", group: "Money Movement" },
+  { href: "/settlement-engine", label: "Settlement Engine", icon: Banknote, status: "live", group: "Money Movement", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "FINANCE", "COMPLIANCE"] },
   { href: "/collections", label: "Collections", icon: Inbox, status: "live", group: "Money Movement" },
   { href: "/checkout", label: "Checkout", icon: CreditCard, status: "live", group: "Money Movement" },
   { href: "/routing", label: "Routing Engine", icon: Workflow, status: "live", group: "Money Movement" },

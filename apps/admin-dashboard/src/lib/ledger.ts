@@ -1,19 +1,20 @@
-// Double-entry ledger posting (BRD §10 P6).
+// Double-entry ledger posting (BRD §10 P6) — the system of record for settlement.
 //
-// BRD acceptance: "Total ledger debits must equal total credits for every
-// transaction group."
+// postJournal({ journal_type, narration, currency, ref, lines, idempotency_key })
+//   - every line positive, debits = credits PER CURRENCY (and the database checks the same at
+//     commit: ledger 0004's deferred constraint trigger)
+//   - ONE transaction: the header, every line and the hash-chain head commit together or not at all
+//   - posts are serialised per tenant (an advisory lock), so the hash chain never forks and an
+//     idempotency key is checked and claimed under the lock: a replay returns the first journal
+//   - accounts are (tenant, code, currency) and created on first use (ledger 0004)
+//   - posted rows are append-only (ledger 0004): a correction is a new, reversing journal
 //
-// postJournal({ journal_type, narration, currency, ref, lines })
-//   - validates sum(debit) === sum(credit) (in minor units)
-//   - upserts any missing account rows under the dot-namespace convention
-//   - inserts the journal_entries row + one ledger_lines row per line
-//   - returns { journal_id, total_minor }
-//
-// Idempotency: callers pass an `idempotency_key`. The DB-level
-// UNIQUE(tenant_id, idempotency_key) on journal_entries dedupes retries.
+// `idempotency_key` is required for anything posted by a job that may run twice (ledger-sync,
+// the settlement engine): the same key always means the same journal.
 
 import { createHash } from "crypto";
-import { rows } from "@/lib/pg";
+import type { PoolClient } from "pg";
+import { db, rows } from "@/lib/pg";
 
 export type JournalType =
   | "payment.success"
@@ -25,7 +26,16 @@ export type JournalType =
   | "settlement.batch"
   | "refund.posted"
   | "commission.payout"
-  | "payout.disbursed";
+  | "payout.disbursed"
+  // Settlement Engine (phase 1): money held by bankers for their merchants.
+  | "payin.collected"
+  | "chargeback.debit"
+  | "chargeback.reversal"
+  | "settlement.initiated"
+  | "settlement.settled"
+  | "settlement.reversed"
+  | "settlement.manual"
+  | "reserve.held";
 
 export type AccountType = "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" | "EQUITY";
 export type Side = "D" | "C";
@@ -45,8 +55,13 @@ export interface PostJournalInput {
   ref?: { type: string; id: string };
   merchant_id?: string | null;
   idempotency_key?: string;
+  metadata?: Record<string, unknown>;
+  /** When the money moved (a pay-in's paid time); default: now. Settlement cut-offs read it. */
+  value_at?: Date | string | null;
   lines: JournalLine[];
 }
+
+const TENANT = "tenant-default";
 
 // Default normal-balance for each type (used when auto-creating accounts).
 const NORMAL: Record<AccountType, Side> = {
@@ -57,17 +72,41 @@ function toBig(x: bigint | string | number): bigint {
   return typeof x === "bigint" ? x : BigInt(String(x));
 }
 
-async function ensureAccount(code: string, type: AccountType, currency: string): Promise<number> {
-  const found = await rows<{ id: number }>("ledger",
-    `SELECT id FROM accounts WHERE tenant_id='tenant-default' AND code=$1 LIMIT 1`,
-    [code]).catch(() => []);
-  if (found.length) return found[0].id;
-  const ins = await rows<{ id: number }>("ledger", `
+/** The account type a dot-namespaced code implies. */
+export function accountTypeOf(code: string): AccountType {
+  return code.startsWith("ASSETS.") ? "ASSET"
+    : code.startsWith("LIABILITIES.") ? "LIABILITY"
+    : code.startsWith("INCOME.") ? "INCOME"
+    : code.startsWith("EXPENSE.") ? "EXPENSE"
+    : code.startsWith("EQUITY.") ? "EQUITY"
+    : "ASSET";
+}
+
+/**
+ * Why a set of lines cannot be posted, or null. Pure: every amount positive, and debits equal
+ * credits in EACH currency (a journal that moves two currencies balances in both).
+ */
+export function journalProblem(lines: JournalLine[]): string | null {
+  if (!lines.length) return "no lines";
+  const net = new Map<string, bigint>();
+  for (const l of lines) {
+    const a = toBig(l.amount_minor);
+    if (a <= 0n) return `line amount must be > 0 (got ${a} on ${l.account_code})`;
+    if (l.side !== "D" && l.side !== "C") return `side must be D or C (got ${l.side})`;
+    net.set(l.currency, (net.get(l.currency) ?? 0n) + (l.side === "D" ? a : -a));
+  }
+  for (const [cur, diff] of net) if (diff !== 0n) return `unbalanced in ${cur} (debits - credits = ${diff})`;
+  return null;
+}
+
+async function ensureAccount(c: PoolClient, code: string, type: AccountType, currency: string): Promise<number> {
+  const r = await c.query<{ id: number }>(`
     INSERT INTO accounts (tenant_id, code, type, currency, normal_balance)
-    VALUES ('tenant-default', $1, $2, $3, $4)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (tenant_id, code, currency) DO UPDATE SET code = EXCLUDED.code
     RETURNING id
-  `, [code, type, currency, NORMAL[type]]);
-  return ins[0].id;
+  `, [TENANT, code, type, currency, NORMAL[type]]);
+  return r.rows[0].id;
 }
 
 export interface JournalResult {
@@ -78,84 +117,103 @@ export interface JournalResult {
 }
 
 export async function postJournal(input: PostJournalInput): Promise<JournalResult> {
-  if (!input.lines.length) throw new Error("postJournal: no lines");
+  const problem = journalProblem(input.lines);
+  if (problem) throw new Error(`postJournal: ${problem}`);
+  let totalDebit = 0n;
+  for (const l of input.lines) if (l.side === "D") totalDebit += toBig(l.amount_minor);
 
-  let totalDebit = 0n, totalCredit = 0n;
-  for (const l of input.lines) {
-    const a = toBig(l.amount_minor);
-    if (a <= 0n) throw new Error(`postJournal: line amount must be > 0 (got ${a})`);
-    if (l.side === "D") totalDebit += a; else totalCredit += a;
-  }
-  if (totalDebit !== totalCredit)
-    throw new Error(`postJournal: unbalanced (debit=${totalDebit} credit=${totalCredit})`);
+  const c = await db("ledger").connect();
+  try {
+    await c.query("BEGIN");
+    // One post at a time per tenant: the chain head is read and moved under this lock, and an
+    // idempotency key is looked up and claimed under it, so neither can race.
+    await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`ledger-post:${TENANT}`]);
 
-  // Idempotency: replay returns the original row.
-  if (input.idempotency_key) {
-    const dupe = await rows<any>("ledger",
-      `SELECT id::text FROM journal_entries WHERE tenant_id='tenant-default' AND idempotency_key=$1`,
-      [input.idempotency_key]).catch(() => []);
-    if (dupe.length) {
-      return { journal_id: dupe[0].id, total_minor: totalDebit.toString(), balanced: true, idempotent_replay: true };
+    if (input.idempotency_key) {
+      const dupe = await c.query<{ id: string; total: string }>(
+        `SELECT id::text, total_debit_minor::text AS total FROM journal_entries WHERE tenant_id = $1 AND idempotency_key = $2`,
+        [TENANT, input.idempotency_key]);
+      if (dupe.rows.length) {
+        await c.query("ROLLBACK");
+        return { journal_id: dupe.rows[0].id, total_minor: dupe.rows[0].total, balanced: true, idempotent_replay: true };
+      }
     }
+
+    const head = await c.query<{ last_entry_hash: string }>(
+      `SELECT last_entry_hash FROM hash_chain_head WHERE tenant_id = $1`, [TENANT]);
+    const prev = head.rows[0]?.last_entry_hash ?? "0".repeat(64);
+    const canonical = JSON.stringify({
+      t: input.journal_type, n: input.narration, c: input.currency,
+      r: input.ref ?? null, m: input.merchant_id ?? null, k: input.idempotency_key ?? null,
+      lines: input.lines.map((l) => ({ a: l.account_code, s: l.side, amt: toBig(l.amount_minor).toString(), c: l.currency })),
+    });
+    const hash = createHash("sha256").update(prev + "|" + canonical).digest("hex");
+
+    const j = await c.query<{ id: string }>(`
+      INSERT INTO journal_entries
+        (tenant_id, narration, currency, ref_type, ref_id,
+         idempotency_key, prev_hash, entry_hash, journal_type, merchant_id,
+         total_debit_minor, total_credit_minor, metadata, value_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::bigint, $11::bigint, $12::jsonb, COALESCE($13::timestamptz, now()))
+      RETURNING id::text
+    `, [
+      TENANT, input.narration, input.currency,
+      input.ref?.type ?? null, input.ref?.id ?? null,
+      input.idempotency_key ?? null, prev, hash,
+      input.journal_type, input.merchant_id ?? null,
+      totalDebit.toString(),
+      JSON.stringify({ source: "lib/ledger.ts", ...(input.metadata ?? {}) }),
+      input.value_at ? new Date(input.value_at).toISOString() : null,
+    ]);
+    const journalId = j.rows[0].id;
+
+    for (const l of input.lines) {
+      const accountId = await ensureAccount(c, l.account_code, l.account_type ?? accountTypeOf(l.account_code), l.currency);
+      const amt = toBig(l.amount_minor).toString();
+      await c.query(`
+        INSERT INTO ledger_lines (journal_id, tenant_id, account_id, side, amount, amount_minor, currency)
+        VALUES ($1::uuid, $2, $3, $4, $5::numeric, $6::bigint, $7)
+      `, [journalId, TENANT, accountId, l.side, amt, amt, l.currency]);
+    }
+
+    await c.query(`
+      INSERT INTO hash_chain_head (tenant_id, last_entry_hash, last_entry_id, updated_at)
+      VALUES ($1, $2, $3::uuid, now())
+      ON CONFLICT (tenant_id) DO UPDATE
+        SET last_entry_hash = EXCLUDED.last_entry_hash, last_entry_id = EXCLUDED.last_entry_id, updated_at = now()
+    `, [TENANT, hash, journalId]);
+
+    await c.query("COMMIT");   // the deferred balance check (ledger 0004) runs here
+    return { journal_id: journalId, total_minor: totalDebit.toString(), balanced: true };
+  } catch (err) {
+    await c.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    c.release();
   }
+}
 
-  // Hash chain seed.
-  const head = await rows<{ last_entry_hash: string }>("ledger",
-    `SELECT last_entry_hash FROM hash_chain_head WHERE tenant_id='tenant-default'`)
-    .catch(() => []);
-  const prev = head[0]?.last_entry_hash ?? "0".repeat(64);
+/** Balance of each account whose code starts with `prefix`, debits positive, per currency. */
+export async function balancesByPrefix(prefix: string): Promise<{ code: string; currency: string; balance_minor: bigint }[]> {
+  const r = await rows<{ code: string; currency: string; balance_minor: string }>("ledger", `
+    SELECT code, currency, balance_minor::text FROM account_balances
+     WHERE tenant_id = $1 AND code LIKE $2 ESCAPE '\\'
+  `, [TENANT, prefix.replace(/[\\%_]/g, (m) => "\\" + m) + "%"]);
+  return r.map((x) => ({ code: x.code, currency: x.currency, balance_minor: BigInt(x.balance_minor) }));
+}
 
-  const canonical = JSON.stringify({
-    t: input.journal_type, n: input.narration, c: input.currency,
-    r: input.ref ?? null, m: input.merchant_id ?? null,
-    lines: input.lines.map(l => ({ a: l.account_code, s: l.side, amt: toBig(l.amount_minor).toString(), c: l.currency })),
-  });
-  const hash = createHash("sha256").update(prev + "|" + canonical).digest("hex");
+/** One account's balance (debits positive), 0 when it has no lines yet. */
+export async function accountBalance(code: string, currency = "INR"): Promise<bigint> {
+  const r = await rows<{ b: string }>("ledger",
+    `SELECT balance_minor::text AS b FROM account_balances WHERE tenant_id = $1 AND code = $2 AND currency = $3`,
+    [TENANT, code, currency]);
+  return r[0] ? BigInt(r[0].b) : 0n;
+}
 
-  // Insert journal row.
-  const j = await rows<{ id: string }>("ledger", `
-    INSERT INTO journal_entries
-      (tenant_id, narration, currency, ref_type, ref_id,
-       idempotency_key, prev_hash, entry_hash, journal_type, merchant_id,
-       total_debit_minor, total_credit_minor, metadata)
-    VALUES ('tenant-default', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
-    RETURNING id::text
-  `, [
-    input.narration, input.currency,
-    input.ref?.type ?? null, input.ref?.id ?? null,
-    input.idempotency_key ?? null, prev, hash,
-    input.journal_type, input.merchant_id ?? null,
-    totalDebit.toString(), totalCredit.toString(),
-    JSON.stringify({ source: "lib/ledger.ts" }),
-  ]);
-  const journalId = j[0].id;
-
-  // Insert lines.
-  for (const l of input.lines) {
-    const acctType: AccountType = l.account_type
-      ?? (l.account_code.startsWith("ASSETS.") ? "ASSET"
-        : l.account_code.startsWith("LIABILITIES.") ? "LIABILITY"
-        : l.account_code.startsWith("INCOME.") ? "INCOME"
-        : l.account_code.startsWith("EXPENSE.") ? "EXPENSE"
-        : "ASSET");
-    const accountId = await ensureAccount(l.account_code, acctType, l.currency);
-    const amt = toBig(l.amount_minor);
-    await rows("ledger", `
-      INSERT INTO ledger_lines (journal_id, tenant_id, account_id, side, amount, amount_minor, currency)
-      VALUES ($1::uuid, 'tenant-default', $2, $3, $4, $5, $6)
-    `, [journalId, accountId, l.side, amt.toString(), amt.toString(), l.currency]);
-  }
-
-  // Update chain head.
-  await rows("ledger", `
-    INSERT INTO hash_chain_head (tenant_id, last_entry_hash, last_entry_id, updated_at)
-    VALUES ('tenant-default', $1, $2::uuid, now())
-    ON CONFLICT (tenant_id) DO UPDATE
-      SET last_entry_hash=EXCLUDED.last_entry_hash,
-          last_entry_id=EXCLUDED.last_entry_id, updated_at=now()
-  `, [hash, journalId]).catch(() => null);
-
-  return { journal_id: journalId, total_minor: totalDebit.toString(), balanced: true };
+/** Whether a journal with this idempotency key has been posted. */
+export async function journalPosted(key: string): Promise<boolean> {
+  const r = await rows("ledger", `SELECT 1 FROM journal_entries WHERE tenant_id = $1 AND idempotency_key = $2`, [TENANT, key]);
+  return r.length > 0;
 }
 
 // Read helpers used by /ledger UI.

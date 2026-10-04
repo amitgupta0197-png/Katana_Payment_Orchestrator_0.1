@@ -12,6 +12,7 @@ import { Banknote, Plus, Trash2, Power, Landmark, Activity, Clock, Download, Bel
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EngineSettlementSummary } from "@/components/settlement/engine-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,6 +135,8 @@ export default function MerchantSettlementsPage() {
         <Card><CardContent className="p-4"><div className="text-xs text-[color:var(--color-text-muted)]">Awaiting your confirmation</div><div className="text-2xl font-semibold tabular-nums">{pendingVerify}</div></CardContent></Card>
         <Card><CardContent className="p-4 flex items-center justify-between"><div><div className="text-xs text-[color:var(--color-text-muted)]">Live</div><div className="text-sm font-medium">10s refresh</div></div><Badge variant={settlements.isFetching ? "info" : "default"}><Activity className="h-3 w-3 mr-1" />live</Badge></CardContent></Card>
       </div>
+
+      <EngineSettlementSummary bankers={branches.data?.merchants ?? []} />
 
       <Card className="mb-6">
         <CardHeader><CardTitle className="text-base">Recent activity</CardTitle><CardDescription>Everything your bankers do lands here live — plus a toast the moment a status changes.</CardDescription></CardHeader>

@@ -91,7 +91,9 @@ export async function bankerCoverage(providerId: string | null, codes: string[] 
   for (const m of merchants) { bankerOf.set(m.id, m.merchant_code); bankerOf.set(m.merchant_code, m.merchant_code); }
 
   const raw = await rows<{ merchant_key: string; channel_type: string | null; amount: number; utr: string | null; at: string }>("provider", `
-    SELECT merchant_key, channel_type, amount::float AS amount, utr,
+    -- An engine-raised settlement (Settlement Engine) pays its net but covers the collections of its
+    -- gross less reserve, kept as gross_amount; one raised by hand has none and covers its amount.
+    SELECT merchant_key, channel_type, COALESCE(gross_amount, amount)::float AS amount, utr,
            COALESCE(verified_at, confirmed_at, updated_at) AS at
       FROM provider_branch_settlements
      WHERE status IN ${SETTLED_STATUSES}
