@@ -9,7 +9,7 @@ import { redactBody } from "@/lib/api-log";
 import { outcomeOf } from "@/lib/gateway-webhook-log";
 
 const account = (o: Partial<GoLiveRow> = {}): GoLiveRow => ({
-  merchant_id: "M1", gateway: "RAZORPAY", status: "VERIFYING",
+  merchant_id: "M1", gateway: "RAZORPAY", account: "gateway_mid", status: "VERIFYING",
   ping_ok: null, ping_http_status: null, ping_at: null, ping_by: null,
   webhook_order_id: null, webhook_txn_id: null, webhook_at: null, webhook_by: null,
   status_order_id: null, status_at: null, status_by: null,

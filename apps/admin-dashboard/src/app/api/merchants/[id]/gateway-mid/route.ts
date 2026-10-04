@@ -44,7 +44,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const hook = status.configured && !(status.gateway === "PAYU" && status.auth === "client_credentials");
     // Where a live account stands on the go-live checklist; null for one with no checklist.
     const golive = status.configured && status.env === "PROD" ? await getGoLive(code, status.gateway).catch(() => null) : null;
-    const accounts = await bankerGatewayAccounts(code).catch(() => []);
+    // Every processor account, each with where it stands on its own go-live checklist.
+    const accounts = await Promise.all((await bankerGatewayAccounts(code).catch(() => [])).map(async (a) => ({
+      ...a, golive: a.env === "PROD" ? (await getGoLive(code, a.gateway, a.vault_label).catch(() => null))?.status ?? null : null,
+    })));
     return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null, golive: golive ? { status: golive.status } : null, accounts });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
@@ -111,11 +114,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const after = await getGatewayMidStatus(code, label);
     // A live account goes on the go-live checklist (lib/gateway-golive) and takes only small
     // verification payments until it passes. One that was already live on this gateway is
-    // recorded as LIVE: rotating its credentials must not stop its payments.
+    // recorded as LIVE: rotating its credentials must not stop its payments. Each account has its
+    // own checklist (vendorGateway 0041): a second account on the same gateway starts VERIFYING.
     let golive = null;
     if (body.env === "PROD") {
       const alreadyLive = before.configured && before.env === "PROD" && before.gateway === def.id;
-      golive = await startVerifying(code, def.id, g.session.email, alreadyLive).catch(() => null);
+      golive = await startVerifying(code, def.id, g.session.email, alreadyLive, label).catch(() => null);
     }
     await wormAppend({
       actorId: g.session.user_id, actorEmail: g.session.email,

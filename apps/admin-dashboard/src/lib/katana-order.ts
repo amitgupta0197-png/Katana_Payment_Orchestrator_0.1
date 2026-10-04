@@ -19,7 +19,7 @@ import { allowsPayin } from "@/lib/merchant-services";
 import { getProviderServices } from "@/lib/merchant-services-store";
 import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
 import { getPayinLimits, getPayinUsage } from "@/lib/payin-limits-store";
-import { assertGoLiveAllows } from "@/lib/gateway-golive";
+import { AccountNotLiveError, assertGoLiveAllows } from "@/lib/gateway-golive";
 import { insertOrderWithinLimits, pickMidForOrder, recordCreateFailure, type MidPick } from "@/lib/mid-switch-store";
 import { NoMidAvailableError, type Mid } from "@/lib/mid-switch";
 
@@ -127,8 +127,10 @@ const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
 /**
  * Create a Katana Pay order. When the banker's MID switch (lib/mid-switch) picked a gateway
  * account and that account could not create the order, the order is tried again on the next
- * account the switch allows, and the failure counts against the first one's health. A banker
- * with one account, or none in the switch, gets the error as before.
+ * account the switch allows, and the failure counts against the first one's health. An account
+ * still on its go-live checklist that may not take this order (lib/gateway-golive) is passed over
+ * the same way, without counting against its health. A banker with one account, or none in the
+ * switch, gets the error as before.
  */
 export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
   const exclude = [...(input.excludeMids ?? [])];
@@ -136,9 +138,10 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     try {
       return await createKatanaOrderOnce({ ...input, excludeMids: exclude });
     } catch (err) {
-      const failed = (err as { failedMid?: Mid }).failedMid;
+      const skipped = (err as { skippedMid?: Mid }).skippedMid;
+      const failed = (err as { failedMid?: Mid }).failedMid ?? skipped;
       if (!failed || exclude.length >= 5) throw err;
-      await recordCreateFailure(failed, (err as Error).message);
+      if (!skipped) await recordCreateFailure(failed, (err as Error).message);
       exclude.push(failed.id);
       // No other account can take it: answer with what went wrong on this one, not "no account".
       const next = await pickMidForOrder(failed.banker_code, "GATEWAY", input.amount, exclude)
@@ -296,7 +299,14 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // A gateway account that is still on its go-live checklist takes a few small verification
   // payments and nothing else (lib/gateway-golive). An account with no checklist is not gated.
   const gatewayId = payuMid ? "PAYU" : (otherGw ?? linkGw)?.mid.gateway ?? null;
-  if (livemode && gatewayId && input.merchantId) await assertGoLiveAllows(input.merchantId, gatewayId, input.amount);
+  // Per account: the one the switch picked, else the banker's first (vendorGateway 0041). An account
+  // that may not take this order yet hands it to the next account in the switch.
+  if (livemode && gatewayId && input.merchantId) {
+    await assertGoLiveAllows(input.merchantId, gatewayId, input.amount, vaultLabel).catch((e) => {
+      if (gatewayPick && e instanceof AccountNotLiveError) throw Object.assign(e, { skippedMid: gatewayPick.mid });
+      throw e;
+    });
+  }
 
   let checkoutUrl: string | null = null;
   let merchantName: string | null = null;

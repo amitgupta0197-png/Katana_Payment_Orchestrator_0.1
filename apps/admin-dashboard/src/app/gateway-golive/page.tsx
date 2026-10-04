@@ -17,7 +17,8 @@ import { formatDateTime } from "@/lib/utils";
 
 interface Item { key: string; label: string; done: boolean; at: string | null; by: string | null; detail: string | null }
 interface Account {
-  merchant_id: string; gateway: string; status: "VERIFYING" | "LIVE"; created_at: string; created_by: string | null;
+  merchant_id: string; gateway: string; account: string; account_label: string; mid_code: string | null;
+  status: "VERIFYING" | "LIVE"; created_at: string; created_by: string | null;
   live_at: string | null; live_by: string | null; note: string | null; callback_url: string | null; sends_webhooks: boolean;
   credentials_match: boolean; checklist: Item[]; can_go_live: boolean;
 }
@@ -35,7 +36,7 @@ function AccountCard({ a }: { a: Account }) {
     mutationFn: async (action: Action) => {
       const r = await fetch("/api/ops/gateway-golive", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ merchant_id: a.merchant_id, gateway: a.gateway, action, note: note.trim() || undefined }),
+        body: JSON.stringify({ merchant_id: a.merchant_id, gateway: a.gateway, account: a.account, action, note: note.trim() || undefined }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "HTTP " + r.status);
@@ -54,6 +55,8 @@ function AccountCard({ a }: { a: Account }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-medium">{a.merchant_id}</span>
         <span className="text-sm">{a.gateway}</span>
+        {/* A banker can have several accounts on one gateway (MID switch); each has its own checklist. */}
+        <span className="text-xs text-[color:var(--color-text-muted)]">{a.account_label}{a.mid_code ? ` · MID ${a.mid_code}` : ""}</span>
         <Badge variant={live ? "success" : "warning"}>{a.status}</Badge>
         {!a.credentials_match && <Badge variant="danger">saved credentials no longer match</Badge>}
         <span className="ml-auto text-xs text-[color:var(--color-text-muted)]">
@@ -115,7 +118,7 @@ export default function GatewayGoLivePage() {
           {q.isLoading ? <p className="text-sm text-[color:var(--color-text-muted)]">Loading…</p>
             : q.error ? <p className="text-sm text-[color:var(--color-danger)]">{(q.error as Error).message}</p>
             : accounts.length === 0 ? <p className="py-6 text-center text-sm text-[color:var(--color-text-muted)]">No account is on the checklist.</p>
-            : <ul className="space-y-3">{accounts.map((a) => <AccountCard key={a.merchant_id + a.gateway} a={a} />)}</ul>}
+            : <ul className="space-y-3">{accounts.map((a) => <AccountCard key={a.merchant_id + a.gateway + a.account} a={a} />)}</ul>}
         </CardContent>
       </Card>
     </div>

@@ -87,3 +87,19 @@ test("the health screen counts the webhooks a gateway sent and when the last one
   // It took no orders, so its silence would not be an alert.
   assert.deepEqual([g!.orders_last_24h, g!.alerts], [0, []]);
 });
+
+test("each account on the same gateway has its own checklist (vendorGateway 0041)", opts, async () => {
+  await rows("vendorGateway", "DELETE FROM gateway_golive WHERE merchant_id = $1", [BANKER]);
+  const SECOND = "gateway_mid:itest-second";
+  // The first account was live before; a second account on the same gateway starts VERIFYING.
+  assert.equal((await startVerifying(BANKER, GW, BY, true))?.status, "LIVE");
+  assert.equal((await startVerifying(BANKER, GW, BY, false, SECOND))?.status, "VERIFYING");
+  // The first takes full payments; the second only verification payments.
+  await assertGoLiveAllows(BANKER, GW, 99_999);
+  await assert.rejects(() => assertGoLiveAllows(BANKER, GW, 99_999, SECOND), (e) => e instanceof AccountNotLiveError);
+  await assertGoLiveAllows(BANKER, GW, VERIFY_MAX_AMOUNT, SECOND);
+  // Setting the second live is its own record; the first is unchanged.
+  const refused = await setLive(BANKER, GW, BY, null, true, SECOND);
+  assert.ok(!refused.ok);
+  assert.deepEqual([(await getGoLive(BANKER, GW))?.status, (await getGoLive(BANKER, GW, SECOND))?.status], ["LIVE", "VERIFYING"]);
+});
