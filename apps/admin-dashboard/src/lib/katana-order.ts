@@ -22,6 +22,10 @@ import { getPayinLimits, getPayinUsage } from "@/lib/payin-limits-store";
 import { AccountNotLiveError, assertGoLiveAllows } from "@/lib/gateway-golive";
 import { insertOrderWithinLimits, pickMidForOrder, recordCreateFailure, type MidPick } from "@/lib/mid-switch-store";
 import { NoMidAvailableError, type Mid } from "@/lib/mid-switch";
+import { bankerOrder, passOverWords } from "@/lib/banker-switch";
+import { bankersWithKey, bankerToday, logSwitchEvent, noteTaken, switchForSigner } from "@/lib/banker-switch-store";
+import { LiveModeNotActivatedError } from "@/lib/live-activation";
+import { raiseAlert } from "@/lib/ops-alert";
 
 export interface CreateKatanaOrderInput {
   orderId: string;
@@ -48,6 +52,13 @@ export interface CreateKatanaOrderInput {
   apiVersion?: "v2";
   /** Internal: MIDs that could not create this order a moment ago (the switch tries the next one). */
   excludeMids?: string[];
+  /**
+   * The order was signed with a merchant's Key + Salt (the v1 and v2 order APIs): when the
+   * merchant's banker switch is on, another of its bankers may take it (lib/banker-switch).
+   */
+  routeAcrossBankers?: boolean;
+  /** Internal: the banker whose Key signed an order that `merchantId` is taking. */
+  signedBy?: string | null;
 }
 
 /**
@@ -94,6 +105,15 @@ export interface CreateKatanaOrderResult {
   checkoutUrl?: string | null;
   /** The gateway whose page that is (PAYU, RUBYVAULT, ISMARTPAY). */
   checkoutGateway?: string | null;
+  /** The banker the order belongs to (another of the merchant's bankers when the banker switch moved it). */
+  banker?: string | null;
+}
+
+/** The txnid is already an order on the banker the switch offered this one to (signed by another Key). */
+export class OrderRefTakenError extends Error {
+  readonly status = 409;
+  readonly code = "TXNID_IN_USE";
+  constructor(orderId: string) { super(`txnid ${orderId} is already used by another order`); }
 }
 
 function shortId(prefix: string) {
@@ -133,6 +153,80 @@ const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
  * switch, gets the error as before.
  */
 export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
+  if (input.routeAcrossBankers && input.merchantId) {
+    const sw = await switchForSigner(input.merchantId);
+    if (sw) return createAcrossBankers(input, input.merchantId, sw);
+  }
+  return createOnBanker(input);
+}
+
+/** Why an attempt on one banker is a reason to offer the order to the next one, or null when it is not. */
+function passOverCode(err: unknown): string | null {
+  if (err instanceof MerchantBlockedError) return err.code;          // blocked, suspended, pay-ins off
+  if (err instanceof PayinFlowError) return err.code;
+  if (err instanceof OrderRefTakenError) return err.code;
+  if (err instanceof PayinLimitError) return "LIMIT";
+  if (err instanceof NoMidAvailableError) return err.code;
+  if (err instanceof AccountNotLiveError) return err.code;
+  if (err instanceof LiveModeNotActivatedError) return "LIVE_MODE_NOT_ACTIVATED";
+  if (err instanceof PayuIntentError) return "PROCESSOR_ERROR";
+  if (err instanceof PayinSetupError) return "SETUP";
+  return null;
+}
+
+/**
+ * THE BANKER SWITCH (lib/banker-switch): the merchant's bankers are offered the order in the
+ * switch's order, and the first that can take it does. Each attempt is the whole order path of
+ * that banker (its block, live mode, flow, limits, MIDs), so nothing is checked twice or skipped.
+ * A replay signed with the same Key is answered first, from whichever banker took it.
+ */
+async function createAcrossBankers(
+  input: CreateKatanaOrderInput, signer: string, sw: NonNullable<Awaited<ReturnType<typeof switchForSigner>>>,
+): Promise<CreateKatanaOrderResult> {
+  const livemode = input.livemode !== false;
+  const prior = await readExistingOrder(input.orderId, signer, livemode);
+  if (prior) return prior;
+
+  const codes = sw.members.map((m) => m.banker_code);
+  const [withKey, today] = await Promise.all([bankersWithKey(codes, livemode), bankerToday(codes, livemode)]);
+  const order = bankerOrder(sw.members, sw.settings, new Date(), {
+    ordersToday: Object.fromEntries(Object.entries(today).map(([b, t]) => [b, t.orders])),
+  });
+  // Nobody in rotation: the order is the signer's, as without the switch.
+  if (!order.length) return createOnBanker(input);
+
+  const passed: { banker: string; code: string }[] = [];
+  let first: unknown = null;
+  for (const c of order) {
+    if (c.banker !== signer && !withKey.has(c.banker)) { passed.push({ banker: c.banker, code: "NO_KEY" }); continue; }
+    try {
+      const r = await createOnBanker({ ...input, merchantId: c.banker, signedBy: c.banker === signer ? null : signer });
+      if (!r.reused) {
+        await noteTaken(sw.providerId, c.banker, { how: c.how, signed_by: signer, txnid: input.orderId, passed_over: passed }).catch(() => {});
+        if (passed.length) await logSwitchEvent(sw.providerId, "PASSED_OVER", "switch", c.banker,
+          { txnid: input.orderId, signed_by: signer, passed_over: passed.map((p) => ({ ...p, why: passOverWords(p.code) })) }).catch(() => {});
+      }
+      return r;
+    } catch (err) {
+      const code = passOverCode(err);
+      if (!code) throw err;
+      passed.push({ banker: c.banker, code });
+      first ??= err;
+    }
+  }
+  await logSwitchEvent(sw.providerId, "NONE_AVAILABLE", "switch", null,
+    { txnid: input.orderId, signed_by: signer, passed_over: passed.map((p) => ({ ...p, why: passOverWords(p.code) })) }).catch(() => {});
+  await raiseAlert({
+    key: `banker-switch:none:${sw.providerId}`, severity: "WARN", repeatMinutes: 30,
+    title: "Banker switch: no banker could take an order",
+    body: passed.map((p) => `${p.banker} ${passOverWords(p.code)}`).join("; "),
+  }).catch(() => {});
+  if (first) throw first;
+  // Every banker in the order was passed over for having no Key: the signer's own path answers.
+  return createOnBanker(input);
+}
+
+async function createOnBanker(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
   const exclude = [...(input.excludeMids ?? [])];
   for (;;) {
     try {
@@ -232,7 +326,10 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // A REPLAYED ORDER IS ANSWERED FIRST, as the order it was created as. It is not checked
   // against today's limits or routed again, and its ref never reaches a gateway twice (a
   // gateway refuses a reused transaction id).
-  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+  // A replay is found by the Key that signed it: the signer's own, or the one that sent the order
+  // here through the banker switch (vendor_payin_orders_signer_mode_order_uk).
+  const signerKey = input.signedBy ?? input.merchantId ?? null;
+  const prior = await readExistingOrder(orderId, signerKey, livemode);
   if (prior) return prior;
 
   // THE MID SWITCH (lib/mid-switch): a banker with gateway accounts in its switch has this order
@@ -439,6 +536,8 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     notify_url: input.notifyUrl ?? null,   // per-order S2S callback target
     ...(input.requestId ? { request_id: input.requestId } : {}),   // also in the status history (vendorGateway 0033)
     ...(input.apiVersion ? { api_version: input.apiVersion } : {}),
+    // The banker switch sent it here: the Key that signed it, whose callback settings it keeps.
+    ...(input.signedBy ? { signed_by: input.signedBy } : {}),
     ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
     // The MID the switch picked (lib/mid-switch): its account is used for every later call about
     // this order (lib/gateway-creds orderVaultLabel), and why it was picked.
@@ -466,15 +565,16 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode,
-       channel_type, channel_id, requested_channel, payin_mid_id)
-    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14,$16::uuid)
-    ON CONFLICT (vendor, COALESCE(merchant_id, ''), livemode, order_id) DO NOTHING
+       channel_type, channel_id, requested_channel, payin_mid_id, signed_by)
+    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14,$16::uuid,$17)
+    -- Either key: this banker's own txnid (0026) or the signing Key's (0042).
+    ON CONFLICT DO NOTHING
     RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode,
               channel_type, channel_id
   `;
   const insertArgs = [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode,
-      payinChannel.type, payinChannel.id, midPick?.mid.id ?? null];
+      payinChannel.type, payinChannel.id, midPick?.mid.id ?? null, input.signedBy ?? null];
   // With a daily limit in force, or a MID with limits, the insert is made under the banker's and
   // the MID's locks, where the totals are read again: orders arriving together cannot pass a
   // limit between them.
@@ -484,40 +584,42 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
         mid: midPick?.mid ?? null, sql: insertSql, args: insertArgs })
     : await rows<any>("vendorGateway", insertSql, insertArgs);
 
-  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null };
+  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null, banker: input.merchantId ?? null };
 
   // Two requests for the same ref raced and the other one inserted first.
-  const raced = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-  // A conflict guarantees a row on this key, so an empty result means the row was
-  // deleted between the two statements. Say so rather than returning `order: undefined`,
-  // which surfaces to the caller as an opaque "order create failed".
-  if (!raced) throw new Error(`pay-in replay lost: order_id=${orderId} merchant=${input.merchantId ?? "-"}`);
+  const raced = await readExistingOrder(orderId, signerKey, livemode);
+  // Nothing under the signing Key: the conflict was this banker's own txnid on an order another
+  // Key signed (or one sent here by the banker switch). That txnid is taken on this banker.
+  if (!raced) throw new OrderRefTakenError(orderId);
   return raced;
 }
 
-// IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT.
+// IDEMPOTENT REPLAY — AND IT MUST BE SCOPED TO THE MERCHANT (the banker whose Key signed it).
 //
 // The insert conflicts on (vendor, merchant, order_id), so re-read on the SAME key.
 // Re-reading by (vendor, order_id) alone is what made a colliding txnid hand one
 // merchant another merchant's order — its UUID, its amount and its deeplinks, so the
 // payer was sent to the wrong collection VPA (migration 0024). The merchant predicate
 // mirrors the index expression exactly, NULL included.
-async function readExistingOrder(orderId: string, merchantId: string | null, livemode: boolean): Promise<CreateKatanaOrderResult | null> {
+//
+// The signer is the order's own banker, except on an order the banker switch moved, where it is
+// `signed_by` (vendorGateway 0042); the predicate mirrors that index expression exactly.
+async function readExistingOrder(orderId: string, signer: string | null, livemode: boolean): Promise<CreateKatanaOrderResult | null> {
   const existing = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
-           channel, status, created_at, livemode, channel_type, channel_id, meta
+           channel, status, created_at, livemode, channel_type, channel_id, meta, merchant_id
       FROM vendor_payin_orders
      WHERE vendor = 'KATANA'
        AND order_id = $1
-       AND COALESCE(merchant_id, '') = COALESCE($2, '')
+       AND COALESCE(signed_by, merchant_id, '') = COALESCE($2, '')
        AND livemode = $3        -- a test order must never replay the live order with the same ref
-  `, [orderId, merchantId, livemode]);
+  `, [orderId, signer, livemode]);
   const ex = existing[0];
   if (!ex) return null;
   // `meta` carries the receiver VPA, the VPA pool, the sub-MID and confirmation detail.
   // It is needed here for the stored deeplinks, but it is not part of the caller's
   // order shape — strip it so it cannot reach an API response.
-  const { meta: exMeta, ...exOrder } = ex as Record<string, unknown> & { meta?: Record<string, unknown> };
+  const { meta: exMeta, merchant_id: exBanker, ...exOrder } = ex as Record<string, unknown> & { meta?: Record<string, unknown>; merchant_id?: string | null };
   const storedMeta = exMeta ?? {};
   return {
     order: exOrder,
@@ -527,6 +629,7 @@ async function readExistingOrder(orderId: string, merchantId: string | null, liv
     checkoutUrl: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url ?? null,
     checkoutGateway: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url
       ? (storedMeta.gateway as PayuGatewayMeta).provider : null,
+    banker: exBanker ?? null,
   };
 }
 

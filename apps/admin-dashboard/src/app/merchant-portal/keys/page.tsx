@@ -1,10 +1,9 @@
 "use client";
 
-// Key + Salt for each of the merchant's bankers, in the main menu, with what the merchant's developer
-// has to build (components/merchant/developer-checklist) and each banker's Starter Kit, the same
-// instructions tailored to that banker (lib/starter-kit). The key card is the one on the Integration
-// page and each banker's own page: a test pair at any time, the live pair once the banker is live;
-// the Salt is shown once, when it is made.
+// Each of the merchant's bankers' Keys, read-only, with what the merchant's developer has to build
+// (components/merchant/developer-checklist) and each banker's Starter Kit (lib/starter-kit, test
+// Key + Salt only). A merchant never makes, regenerates or sees a Salt (lib/key-access): the banker
+// does on the banker portal, or Katana admin.
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -33,7 +32,7 @@ export default function MerchantKeysPage() {
     <>
       <PageHeader
         title="Key + Salt"
-        description="Generate the Key and Salt your developers sign requests with, for each of your bankers, and see what they need to build. Copy the Salt when it is shown; it is not shown again."
+        description="Your bankers' Keys and what your developers need to build. Each banker makes and regenerates its own Key + Salt on the banker portal (Integration), or Katana admin does it for you; the Salt is never shown here."
         icon={KeyRound}
       />
 

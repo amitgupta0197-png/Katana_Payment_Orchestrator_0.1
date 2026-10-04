@@ -569,6 +569,14 @@ for (const [i, c] of COMBOS.entries()) {
       const keyStatus = await api("GET", `/api/merchants/${bankerId}/checkout-key`, undefined, providerLogin);
       assert.equal(keyStatus.status, 200, JSON.stringify(keyStatus.body));
       assert.equal(keyStatus.body.test_status?.configured, true, "the merchant sees its banker's test pair");
+      // Only the banker and Super Admin / Admin manage Keys (lib/key-access): a merchant sees the Key,
+      // nothing of the Salt, and is refused when it tries to make one.
+      assert.equal(keyStatus.body.test_status?.salt_hint, undefined, "no Salt hint for a merchant");
+      assert.equal(keyStatus.body.can_manage, false);
+      const keyRefused = await api("POST", `/api/merchants/${bankerId}/checkout-key`, { livemode: false }, providerLogin);
+      assert.equal(keyRefused.status, 403, JSON.stringify(keyRefused.body));
+      assert.equal(keyRefused.body.code, "KEYS_MANAGED_BY_BANKER");
+      assert.equal(keyRefused.body.creds, undefined);
 
       try {
         for (const [who, cookie] of [["banker", bankerLogin], ["merchant", providerLogin]] as const) {

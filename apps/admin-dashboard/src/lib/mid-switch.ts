@@ -15,8 +15,9 @@
 //   1. the MID a person switched traffic to (the manual switch), while it can take the order
 //   2. PRIORITY mode: the one with the lowest priority number (ties: least used today)
 //      WEIGHTED mode: one at random in proportion to its weight
-// When none can, the order is refused (NO_ACCOUNT_AVAILABLE): a limit is a limit, and traffic
-// never moves to another banker.
+// When none can, the order is refused (NO_ACCOUNT_AVAILABLE): a limit is a limit, and this switch
+// never moves traffic to another banker. (A merchant's banker switch, lib/banker-switch, may offer
+// a signed order to its other bankers before it reaches any banker's MIDs.)
 
 export const MID_KINDS = ["GATEWAY", "UPI"] as const;
 export type MidKind = (typeof MID_KINDS)[number];

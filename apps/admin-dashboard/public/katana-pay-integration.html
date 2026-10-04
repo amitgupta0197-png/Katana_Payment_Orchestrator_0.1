@@ -141,7 +141,8 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
 <h3>Response (HTTP 201 new / 200 reused)</h3>
 <pre>{
   "verified": true,
-  "merchant": "UK-108",
+  "merchant": "UK-108",                               // the account that holds the order
+  "signed_by": "UK-108",                              // the account whose Key signed it
   "livemode": true,                                   // false = created with a test Key
   "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "amount": 100, "status": "PENDING", … },
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // redirect the customer here
@@ -149,6 +150,7 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
   "upi_intent": "upi://pay?…",
   "qr_payload": "upi://pay?…"
 }</pre>
+<div class="note"><b>Several accounts?</b> With the banker switch on (MID switch page in your portal), you can sign with any of your accounts&rsquo; Keys and Katana picks the account that takes each order. <code>merchant</code> then says which account took it; <code>signed_by</code> is the Key you signed with. The callback still comes to your usual address, signed with the Salt you signed the order with, and retrying with the same Key and <code>txnid</code> finds the same order.</div>
 <p>Take <code>pay_url</code> and send the browser there. If you are building your own payment screen instead, use
 <code>qr_payload</code> (render as a QR) or <code>upi_intent</code> (an app deeplink).</p>
 <h3>Merchants paid on a gateway's payment page</h3>
@@ -170,6 +172,7 @@ gateway's reason.</p>
   <tr><td><code>401 signature mismatch</code></td><td>Hash didn't match — check your signing string.</td></tr>
   <tr><td><code>403</code></td><td>Account blocked or suspended (<code>code</code> <code>MERCHANT_BLOCKED</code> / <code>MERCHANT_SUSPENDED</code>), or set up for payouts only (<code>code</code> <code>PAYIN_NOT_ENABLED</code>).</td></tr>
   <tr><td><code>400 invalid amount</code></td><td>Amount missing / not positive.</td></tr>
+  <tr><td><code>409 TXNID_IN_USE</code></td><td>Banker switch only: the account the order was offered to already has this <code>txnid</code> from another Key, and no other account could take it. Use a new <code>txnid</code>.</td></tr>
   <tr><td><code>409</code></td><td>This account can't take live payments yet (no payment gateway or receiving UPI ID is set up). Contact your Katana account manager.</td></tr>
   <tr><td><code>502</code></td><td>The payment gateway refused the order — the message gives its reason (for example, below its minimum amount). No order was created; fix and retry with the same <code>txnid</code>.</td></tr>
   <tr><td><code>422</code></td><td>The order is outside your account's limits. No order was created. The body carries <code>code</code>, <code>field</code>, <code>limit</code> and <code>actual</code> — see below.</td></tr>

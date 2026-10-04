@@ -38,7 +38,9 @@ import { ProviderOnboardMerchant } from "@/components/merchant/provider-onboard-
 import { ProviderKycDocsCard } from "@/components/provider/kyc-docs-card";
 import { PaymentFunnel } from "@/components/integrations/payment-funnel";
 import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
-import { useCan } from "@/lib/use-access";
+import { useAccess, useCan } from "@/lib/use-access";
+import { managesKeys } from "@/lib/key-access";
+import { BulkKeyCard } from "@/components/merchant/bulk-key-card";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 import { PayinFlowCard } from "@/components/payin/flow";
 import { ServicesCard } from "@/components/merchant/services";
@@ -133,6 +135,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
   const canAdmin = useCan("providers", "admin");
   const canDelete = useCan("providers", "delete");
   const canMerchantCreate = useCan("merchants", "create");
+  const canManageKeys = managesKeys(useAccess().data?.persona);
   const canMerchantUpdate = useCan("merchants", "update");
   const canMerchantDelete = useCan("merchants", "delete");
   const [merchantDrawer, setMerchantDrawer] = useState<Mapping | null>(null);
@@ -232,6 +235,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
   }
 
   const { provider, users, docs, commission, mappings } = q.data;
+  const keyBankers = mappings.filter((m) => m.merchant_uuid && m.merchant_code)
+    .map((m) => ({ id: m.merchant_uuid, code: m.merchant_code!, name: m.merchant_name ?? m.merchant_code! }));
   const uploadedTypes = new Set(docs.map((d) => d.doc_type));
   const docChecklist = REQUIRED_DOCS.map((kind) => ({
     kind, uploaded: uploadedTypes.has(kind),
@@ -409,7 +414,8 @@ export default function ProviderDetailView({ id }: { id: string }) {
       </Card>
     )},
     { key: "merchants", label: "Bankers", icon: Network, count: mappings.length, content: (
-      <Card>
+      <>
+      <Card className="mb-4">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
           {canMerchantCreate && (
@@ -422,6 +428,9 @@ export default function ProviderDetailView({ id }: { id: string }) {
             : <DataTable columns={mapCols} rows={mappings} rowKey={(r) => r.id} onRowClick={(r) => setMerchantDrawer(r)} />}
         </CardContent>
       </Card>
+      {/* Key + Salt for several of this merchant's bankers at once: Super Admin and Admin only (lib/key-access). */}
+      {canManageKeys && keyBankers.length > 0 && <BulkKeyCard bankers={keyBankers} />}
+      </>
     )},
     { key: "integration", label: "Pay-in funnel", icon: Plug, content: (
       <div className="space-y-4">

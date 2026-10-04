@@ -43,12 +43,17 @@ export async function GET(req: Request) {
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
-/** Every banker in scope (staff: those with MIDs), with each kind's state now. */
+/** Every banker in scope (staff: every banker, those with MIDs first), with each kind's state now. */
 async function summary(codes: string[] | null) {
-  const bankers = codes ?? (await rows<{ b: string }>("vendorGateway", `SELECT DISTINCT banker_code AS b FROM payin_mids ORDER BY 1`)).map((r) => r.b);
+  const names = codes
+    ? await rows<{ code: string; name: string }>("merchant",
+      `SELECT merchant_code AS code, COALESCE(NULLIF(brand_name,''), legal_name) AS name FROM merchants WHERE merchant_code = ANY($1::text[])`, [codes]).catch(() => [])
+    : await rows<{ code: string; name: string }>("merchant",
+      `SELECT merchant_code AS code, COALESCE(NULLIF(brand_name,''), legal_name) AS name FROM merchants
+        WHERE merchant_code IS NOT NULL ORDER BY 2, 1 LIMIT 5000`);
+  const withMids = codes ? [] : (await rows<{ b: string }>("vendorGateway", `SELECT DISTINCT banker_code AS b FROM payin_mids ORDER BY 1`)).map((r) => r.b);
+  const bankers = codes ?? [...new Set([...withMids, ...names.map((n) => n.code)])];
   if (!bankers.length) return [];
-  const names = await rows<{ code: string; name: string }>("merchant",
-    `SELECT merchant_code AS code, COALESCE(NULLIF(brand_name,''), legal_name) AS name FROM merchants WHERE merchant_code = ANY($1::text[])`, [bankers]).catch(() => []);
   const mids = await rows<{ banker_code: string; kind: string; total: number; active: number }>("vendorGateway", `
     SELECT banker_code, kind, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active
       FROM payin_mids WHERE banker_code = ANY($1::text[]) GROUP BY 1, 2`, [bankers]);

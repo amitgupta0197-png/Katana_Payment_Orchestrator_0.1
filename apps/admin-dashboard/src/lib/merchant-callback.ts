@@ -16,6 +16,11 @@
 // payment.failed / payment.expired with the header signature (lib/webhook-v2). Everything around
 // it is shared — the target, the once-per-status guard, the outbox and its retries — so a v2
 // banker is told about exactly the same moments as a v1 one. A banker on v1 is never sent v2.
+//
+// AN ORDER THE BANKER SWITCH MOVED (lib/banker-switch, meta.signed_by) is called back as the
+// SIGNING banker's own order would be: its target, its webhook version and events, its Salt or
+// signing secret. The merchant's server verifies it with the Salt it signed the order with. The
+// order itself, its money and its settlement are the banker's that took it.
 
 import { rows } from "@/lib/pg";
 import { getCheckoutCreds } from "@/lib/merchant-checkout";
@@ -47,7 +52,8 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   const meta = cur.meta ?? {};
   // Idempotent per status: an order told "Expired" and then paid late still gets its "Captured".
   if (payinCallbackSent(meta.callback, cur.status)) return { sent: false, reason: "already sent" };
-  const merchantCode: string | null = cur.merchant_id ?? null;
+  // Whose callback this is: the signing banker's when the banker switch moved the order.
+  const merchantCode: string | null = (typeof meta.signed_by === "string" && meta.signed_by) || cur.merchant_id || null;
   if (!merchantCode) return { sent: false, reason: "no merchant" };
 
   const delivery = await webhookDelivery(merchantCode).catch(() => null);

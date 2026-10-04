@@ -26,7 +26,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { pgError } from "@/lib/pg";
 import { resolveCheckoutKey, getCheckoutCreds, verifyCheckoutSignature } from "@/lib/merchant-checkout";
-import { createKatanaOrder, MerchantBlockedError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
+import { createKatanaOrder, MerchantBlockedError, OrderRefTakenError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
 import type { OrderFlow } from "@/lib/payin-flow";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
@@ -155,6 +155,7 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
       client: intentClientFrom(req, { ip: body.client_ip, deviceInfo: body.device_info }),
       flow: api.flow,           // null: the merchant's selected flow decides
       requestId,
+      routeAcrossBankers: true, // the merchant's banker switch may give it to another of its bankers
     });
     if (!r.order) return NextResponse.json({ error: "order create failed" }, { status: 500 });
 
@@ -167,7 +168,10 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
     const hosted = !!r.checkoutUrl;
     return NextResponse.json(merchantSafeBody({
       verified: true,
-      merchant: merchantCode,
+      // The banker that holds the order: the signer's, or another of the merchant's bankers when
+      // the banker switch moved it (lib/banker-switch). `signed_by` is the Key's banker.
+      merchant: r.banker ?? merchantCode,
+      signed_by: merchantCode,
       livemode,
       reused: r.reused,
       // The flow the order took (P2P | INTENT). A test order pays the sandbox UPI ID whatever the flow.
@@ -181,6 +185,7 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
     }, WHERE), { status: r.reused ? 200 : 201 });
   } catch (err) {
     if (err instanceof MerchantBlockedError) return NextResponse.json({ error: err.message, code: err.code }, { status: 403 });
+    if (err instanceof OrderRefTakenError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     // A limit refused the order: which one, on which field, and the limit itself.
     if (err instanceof PayinLimitError)
       return NextResponse.json(payinLimitBody(err.breach), {

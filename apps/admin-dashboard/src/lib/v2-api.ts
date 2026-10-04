@@ -20,7 +20,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows } from "@/lib/pg";
-import { createKatanaOrder, MerchantBlockedError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
+import { createKatanaOrder, MerchantBlockedError, OrderRefTakenError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
 import { PayinLimitError } from "@/lib/payin-limits";
 import { NoMidAvailableError } from "@/lib/mid-switch";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
@@ -61,6 +61,7 @@ export function toV2Error(err: unknown, where: string): V2Error {
   if (err instanceof PayinSetupError) return new V2Error("SETUP_INCOMPLETE", safe(err.message));
   if (err instanceof PayuIntentError) return new V2Error("PROCESSOR_ERROR", safe(err.message));
   if (err instanceof NoMidAvailableError) return new V2Error("NO_ACCOUNT_AVAILABLE", err.message, { "retry-after": "60" });
+  if (err instanceof OrderRefTakenError) return new V2Error("REFERENCE_REUSED", err.message);
   // Anything else is ours. Its text (a database message, a stack) stays in the log.
   console.error(`[v2] ${where}:`, err);
   return new V2Error("INTERNAL_ERROR", "the request could not be completed; retry with the same reference");
@@ -161,6 +162,7 @@ export function v2CreateOrder(req: Request): Promise<NextResponse> {
       customerPhone: b.customer?.phone ?? null, customerVpa: b.customer?.vpa ?? null,
       client: intentClientFrom(req, { ip: b.customer?.ip, deviceInfo: b.customer?.user_agent }),
       flow: b.flow ?? null, metadata: b.metadata, apiVersion: "v2",
+      routeAcrossBankers: true,   // the merchant's banker switch may give it to another of its bankers
     });
     const o = r.order?.id ? await orderRow(r.order.id as string) : null;
     if (!o) throw new Error("order create returned no order");
@@ -178,13 +180,16 @@ export function v2CreateOrder(req: Request): Promise<NextResponse> {
   });
 }
 
-/** The order a key may read by Katana's id or by its own reference: the key's banker and mode only. */
+/**
+ * The order a key may read by Katana's id or by its own reference: the key's banker and mode only,
+ * including an order this key signed that the banker switch gave to another banker (signed_by).
+ */
 async function findOrderId(owner: V2KeyOwner, idOrReference: string): Promise<string | null> {
   const isKatanaId = /^KTN_/i.test(idOrReference);
   if (!isKatanaId) {
     const byRef = await rows<{ id: string }>("vendorGateway", `
       SELECT id::text FROM vendor_payin_orders
-       WHERE vendor = 'KATANA' AND merchant_id = $1 AND livemode = $2 AND order_id = $3 LIMIT 1
+       WHERE vendor = 'KATANA' AND COALESCE(signed_by, merchant_id) = $1 AND livemode = $2 AND order_id = $3 LIMIT 1
     `, [owner.merchantCode, owner.livemode, idOrReference]);
     if (byRef.length) return byRef[0].id;
   }
@@ -192,7 +197,7 @@ async function findOrderId(owner: V2KeyOwner, idOrReference: string): Promise<st
   if (!uuid) return null;
   const byId = await rows<{ id: string }>("vendorGateway", `
     SELECT id::text FROM vendor_payin_orders
-     WHERE vendor = 'KATANA' AND merchant_id = $1 AND livemode = $2 AND id = $3::uuid LIMIT 1
+     WHERE vendor = 'KATANA' AND (merchant_id = $1 OR signed_by = $1) AND livemode = $2 AND id = $3::uuid LIMIT 1
   `, [owner.merchantCode, owner.livemode, uuid]);
   return byId[0]?.id ?? null;
 }

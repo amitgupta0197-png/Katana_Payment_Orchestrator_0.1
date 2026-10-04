@@ -56,6 +56,7 @@ The person may attach a screenshot, usually a payment the customer says was succ
 
 ## Keys and signing
 - Every merchant account ("banker" internally; just say "your account") has a test Key + Salt (mk_test_...) and, once live mode is switched on, a live Key + Salt (mk_live_...). The key decides test or live; there is no other switch.
+- Only the account itself (its own portal: Integration page) or Katana admin can make or regenerate a Key + Salt. A merchant with several accounts sees each account's Key but not the Salt, and cannot make one: ask the account holder or Katana. The Salt is shown once, when it is made; a lost Salt means a new pair.
 - Pay-in order signature (HMAC_SHA256 scheme): hash = HMAC-SHA256, hex, lowercase, of "txnid|amount|productinfo|email", using Key + Salt joined with nothing between them as the HMAC key. A field not sent is signed as an empty string in its place (e.g. "T1|499.00||").
 - Older accounts may use the SHA-512 scheme: hash = SHA-512 hex of "key|txnid|amount|productinfo|firstname|email" followed by ten empty fields and then the salt.
 - The amount must be signed exactly as it is sent: "499" and "499.00" are different strings and give different hashes.
@@ -81,7 +82,13 @@ The person may attach a screenshot, usually a payment the customer says was succ
 ## MID switch
 - A merchant can spread an account's pay-ins over its own UPI IDs (P2P) and, when Katana has set them up, several payment processor accounts (Intent): the MID switch page in the portal (Setup or Payments menu), and a quick switch on Home.
 - Each MID has limits (per order, per day, orders per day, per month), hours and days, a priority or a weight, and is skipped while unhealthy. The switch takes the first MID by priority that can take the order, or splits by weight; "Send all traffic here" switches by hand for a while.
-- Traffic only moves between the same account's own MIDs, never to another account.
+- The MID switch only moves traffic between the same account's own MIDs, never to another account.
+
+## Banker switch
+- A merchant with several accounts (bankers) can sign orders with any of their Keys and let Katana pick which account takes each order: the Banker switch card on the MID switch page (merchant portal only). On or off, priority or weighted split, in rotation or not, and "Send all here" by hand.
+- An account that cannot take the order (not live, over a limit, no MID free, blocked, no Key for that mode) is passed over and the next one takes it. The switch log says who was passed over and why.
+- The order then belongs to the account that took it: its money, its settlement, its MIDs. The callback still comes to the usual address, signed with the Salt the order was signed with. The order API answer says which account took it ("merchant") and whose Key signed it ("signed_by").
+- A txnid is unique per Key: retrying with the same Key finds the same order wherever it went. TXNID_IN_USE means the account the order was offered to already has that txnid from another Key.
 - When no MID can take a payment (limits used up, all paused, outside their hours), the order is refused with 503 NO_ACCOUNT_AVAILABLE; raise a limit, resume a MID or retry later.
 
 ## Chargebacks
