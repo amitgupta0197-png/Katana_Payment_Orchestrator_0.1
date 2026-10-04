@@ -21,9 +21,17 @@ interface Order {
   sub_mid_code: string; rrn?: string; hold?: boolean; hold_reason?: string | null; terminal: boolean; created_at: string;
   /** "checkout": a hosted-checkout order (POST /api/pay), shown in the history only. */
   source?: "checkout";
+  /** INTENT | P2P | UNCLASSIFIED (legacy), fixed for the order's life. */
+  channel_type?: string;
+  /** Made by Katana staff from the Intent live test; the banker's server is not told about it. */
+  staff_test?: boolean;
 }
 
-export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
+/** P2P or Intent: the banker page shows each flow on its own; none = every channel. */
+export type PayinChannel = "P2P" | "INTENT";
+const inChannel = (o: Order, channel?: PayinChannel) => !channel || o.channel_type === channel;
+
+export function PayinOperationsCard({ merchantId, channel }: { merchantId: string; channel?: PayinChannel }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["merchant", merchantId, "payin-orders"],
@@ -88,23 +96,32 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
     onError: (e: Error) => toast.error("Simulate failed", { description: e.message }),
   });
 
-  const live = q.data?.live ?? [];
+  const live = (q.data?.live ?? []).filter((o) => inChannel(o, channel));
+  // UPI ID failover, bank-credit matching and confirming by UTR are P2P's: a gateway confirms its own.
+  const p2pActions = channel !== "INTENT";
   const copyLink = (id: string) => { navigator.clipboard?.writeText(`${window.location.origin}/pay/${id}`); toast.success("Pay link copied"); };
 
   return (
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">Active payments (operations)</CardTitle>
-          <CardDescription>Live pay-ins for this banker — mode, active receiver VPA, backup failover.</CardDescription>
+          <CardTitle className="text-base">{channel === "INTENT" ? "Open Intent payments" : channel === "P2P" ? "Open P2P payments" : "Active payments (operations)"}</CardTitle>
+          <CardDescription>
+            {channel === "INTENT" ? "Intent pay-ins not yet final. The gateway confirms each one; refresh asks it now."
+              : "Live pay-ins for this banker — mode, active receiver VPA, backup failover."}
+          </CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={live.length ? "success" : "default"}>{live.length} active</Badge>
-          <KatanaCreateOrder
-            endpoint={`/api/merchants/${merchantId}/payin-orders`}
-            receiverPlaceholder={"leave blank to use the merchant's settlement VPA\nor add a payee pool, one per line"}
-            onChange={() => qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] })}
-          />
+          {/* Intent orders are made by the live test above it. */}
+          {channel !== "INTENT" && (
+            <KatanaCreateOrder
+              endpoint={`/api/merchants/${merchantId}/payin-orders`}
+              flow={channel}
+              receiverPlaceholder={"leave blank to use the merchant's settlement VPA\nor add a payee pool, one per line"}
+              onChange={() => qc.invalidateQueries({ queryKey: ["merchant", merchantId, "payin-orders"] })}
+            />
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -112,7 +129,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
           <div className="py-4 text-center text-sm text-[color:var(--color-text-muted)]">Loading…</div>
         ) : live.length === 0 ? (
           <div className="rounded-xl border border-dashed px-3 py-5 text-center text-sm text-[color:var(--color-text-muted)]">
-            No active pay-ins. Click &ldquo;Create S2S order&rdquo; above to start one.
+            {channel === "INTENT" ? "No open Intent payments." : <>No active pay-ins. Click &ldquo;Create S2S order&rdquo; above to start one.</>}
           </div>
         ) : (
           <ul className="space-y-2">
@@ -126,6 +143,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
                       <Badge variant="default">{o.mode === "QR" ? <><QrCode className="mr-1 h-3 w-3" />QR</> : <><Smartphone className="mr-1 h-3 w-3" />deeplink</>}</Badge>
                       {o.sub_mid_code && <Badge variant="info">{o.sub_mid_code}</Badge>}
                       {o.hold && <Badge variant="warning" title={o.hold_reason ?? "manual review"}>HELD · review</Badge>}
+                      {o.staff_test && <Badge variant="info" title="Made by Katana staff; the banker's server is not told about it">Live test</Badge>}
                       <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
                     </div>
                     <div className="mt-1 text-xs text-[color:var(--color-text-muted)]">
@@ -138,16 +156,18 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
                     <Button size="sm" variant="ghost" title="Copy pay link" onClick={() => copyLink(o.id)}><Copy className="h-3.5 w-3.5" /></Button>
                     <Button asChild size="sm" variant="ghost" title="Open payment page"><a href={`/pay/${o.id}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /></a></Button>
                     <Button size="sm" variant="ghost" title="Force status refresh" disabled={refresh.isPending} onClick={() => refresh.mutate(o.id)}><RefreshCw className="h-3.5 w-3.5" /></Button>
-                    <Button size="sm" variant="ghost" title="Simulate bank credit (sandbox) — match & confirm" disabled={simCredit.isPending} onClick={() => simCredit.mutate(o.id)}><Banknote className="h-3.5 w-3.5" /></Button>
-                    <Button size="sm" variant="ghost" title="Confirm received — enter the UTR (ops only)" disabled={confirmReceived.isPending}
-                      onClick={() => { const utr = window.prompt("Enter the UTR / bank reference shown in the payer's app:"); if (utr && utr.trim()) confirmReceived.mutate({ id: o.id, utr: utr.trim() }); }}>
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="sm" variant="secondary" disabled={o.vpa_remaining < 1 || advance.isPending}
-                      title={o.vpa_remaining < 1 ? "No backup VPA left" : "VPA can't receive — fail over to next"}
-                      onClick={() => advance.mutate(o.id)}>
-                      <SkipForward className="h-3.5 w-3.5" /> Next VPA
-                    </Button>
+                    {p2pActions && <>
+                      <Button size="sm" variant="ghost" title="Simulate bank credit (sandbox) — match & confirm" disabled={simCredit.isPending} onClick={() => simCredit.mutate(o.id)}><Banknote className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" title="Confirm received — enter the UTR (ops only)" disabled={confirmReceived.isPending}
+                        onClick={() => { const utr = window.prompt("Enter the UTR / bank reference shown in the payer's app:"); if (utr && utr.trim()) confirmReceived.mutate({ id: o.id, utr: utr.trim() }); }}>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={o.vpa_remaining < 1 || advance.isPending}
+                        title={o.vpa_remaining < 1 ? "No backup VPA left" : "VPA can't receive — fail over to next"}
+                        onClick={() => advance.mutate(o.id)}>
+                        <SkipForward className="h-3.5 w-3.5" /> Next VPA
+                      </Button>
+                    </>}
                   </div>
                 </div>
               </li>
@@ -163,7 +183,7 @@ export function PayinOperationsCard({ merchantId }: { merchantId: string }) {
 // (SUCCESS / PENDING / FAILED / EXPIRED), newest first. Reuses the same data hook
 // as the operations card above (shared query cache), but renders the complete
 // `all` set instead of only the live ones.
-export function MerchantTransactionsCard({ merchantId }: { merchantId: string }) {
+export function MerchantTransactionsCard({ merchantId, channel }: { merchantId: string; channel?: PayinChannel }) {
   const q = useQuery({
     queryKey: ["merchant", merchantId, "payin-orders"],
     queryFn: async () => {
@@ -174,7 +194,7 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     refetchInterval: 10_000,
   });
 
-  const all = q.data?.all ?? [];
+  const all = (q.data?.all ?? []).filter((o) => inChannel(o, channel));
   const successAmount = all
     .filter((o) => ["SUCCESS", "SUCCEEDED"].includes(o.status))
     .reduce((sum, o) => sum + (o.amount ?? 0), 0);
@@ -183,6 +203,8 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     { key: "order_id", header: "Order", render: (o) => <span className="font-mono text-xs">{o.order_id}</span> },
     { key: "amount", header: "Amount", render: (o) => formatAmount(o.amount, o.currency_code) },
     { key: "status", header: "Status", render: (o) => <Badge variant={statusVariant(o.status)}>{o.status}</Badge> },
+    // Every channel together: say which each one is. Legacy rows are UNCLASSIFIED, never guessed.
+    ...(channel ? [] : [{ key: "channel_type", header: "Channel", render: (o: Order) => <Badge variant="default">{o.channel_type === "INTENT" ? "Intent" : o.channel_type === "P2P" ? "P2P" : "Unclassified"}</Badge> }]),
     { key: "mode", header: "Mode", render: (o) => o.source === "checkout" ? `Hosted checkout${o.vendor !== "CHECKOUT" ? ` · ${railLabel(o.vendor)}` : ""}` : o.mode === "QR" ? "QR" : "deeplink" },
     { key: "active_vpa", header: "Payee VPA", render: (o) => o.active_vpa ? <span className="font-mono text-xs">{o.active_vpa}</span> : "—" },
     { key: "rrn", header: "UTR (bank reference)", render: (o) => o.rrn ? <span className="font-mono text-xs">{o.rrn}</span> : "—" },
@@ -194,8 +216,12 @@ export function MerchantTransactionsCard({ merchantId }: { merchantId: string })
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">Transactions</CardTitle>
-          <CardDescription>All pay-ins for this banker across every status, newest first — Katana Pay orders and hosted checkouts.</CardDescription>
+          <CardTitle className="text-base">{channel === "INTENT" ? "Intent transactions" : channel === "P2P" ? "P2P transactions" : "Transactions"}</CardTitle>
+          <CardDescription>
+            {channel === "INTENT" ? "Every Intent pay-in for this banker, newest first — gateway orders and hosted checkouts."
+              : channel === "P2P" ? "Every P2P pay-in for this banker, newest first — paid to its own UPI IDs."
+              : "All pay-ins for this banker across every status, newest first — Katana Pay orders and hosted checkouts."}
+          </CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="success" title="Total of successful pay-ins">{formatAmount(successAmount, "INR")} collected</Badge>

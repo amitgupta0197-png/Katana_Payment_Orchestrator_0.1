@@ -52,6 +52,13 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
   const meta = cur.meta ?? {};
   // Idempotent per status: an order told "Expired" and then paid late still gets its "Captured".
   if (payinCallbackSent(meta.callback, cur.status)) return { sent: false, reason: "already sent" };
+  // A staff live test (the banker page's Intent live test) is Katana's own order: the banker's
+  // server never created it, so it is not told about it.
+  if (meta.staff_test) {
+    await rows("vendorGateway", `UPDATE vendor_payin_orders SET meta = COALESCE(meta,'{}'::jsonb) || $2::jsonb WHERE id = $1::uuid`,
+      [orderRowId, JSON.stringify({ callback: { skipped: "staff live test", at: new Date().toISOString() } })]).catch(() => {});
+    return { sent: false, reason: "staff live test" };
+  }
   // Whose callback this is: the signing banker's when the banker switch moved the order.
   const merchantCode: string | null = (typeof meta.signed_by === "string" && meta.signed_by) || cur.merchant_id || null;
   if (!merchantCode) return { sent: false, reason: "no merchant" };

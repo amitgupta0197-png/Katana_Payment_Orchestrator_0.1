@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Store, ChevronLeft, CheckCircle2, Circle, ArrowRight, AlertTriangle, KeyRound, Copy, Upload, FileText,
-  LayoutGrid, ReceiptText, Smartphone, Landmark, Code2, UserCog,
+  LayoutGrid, Smartphone, Landmark, Code2, UserCog, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
@@ -36,7 +36,8 @@ import { SetLoginPasswordCard } from "@/components/admin/set-password-card";
 import { JourneyBar, StatusLights } from "@/components/merchant/merchant-at-a-glance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime, statusVariant } from "@/lib/utils";
-import { PayinFlowCard } from "@/components/payin/flow";
+import { FlowFitNote, PayinFlowCard } from "@/components/payin/flow";
+import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
 import { useSeesGatewayNames } from "@/lib/use-access";
 
 interface Merchant {
@@ -56,8 +57,13 @@ interface ApiKey {
   created_at: string; last_used_at?: string; revoked_at?: string;
 }
 
-const TAB_KEYS = ["overview", "payments", "collection", "gateways", "developer", "account"] as const;
+// Pay-ins are split by flow: P2P (paid to the banker's own UPI IDs, proven by a bank credit) and
+// Intent (a payment gateway takes and confirms the payment). Settings that apply to both stay on
+// Overview.
+const TAB_KEYS = ["overview", "p2p", "intent", "payouts", "developer", "account"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
+// Links and bookmarks from before the split.
+const OLD_TAB: Record<string, TabKey> = { payments: "overview", collection: "p2p", gateways: "intent" };
 
 // PRIVATE_LIMITED -> Private limited
 const titleCase = (s: string) => {
@@ -511,10 +517,12 @@ export default function MerchantDetailView({ id }: { id: string }) {
   const [tab, setTabState] = useState<TabKey>("overview");
   // The open tab lives in the URL (?tab=), so a reload or a shared link lands on it.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const raw = new URLSearchParams(window.location.search).get("tab");
+    const t = raw ? OLD_TAB[raw] ?? raw : null;
     if (t && (TAB_KEYS as readonly string[]).includes(t)) setTabState(t as TabKey);
   }, []);
-  const setTab = (t: TabKey | string) => {
+  const setTab = (want: TabKey | string) => {
+    const t = OLD_TAB[want] ?? want;
     if (!(TAB_KEYS as readonly string[]).includes(t)) return;
     setTabState(t as TabKey);
     const u = new URL(window.location.href);
@@ -563,10 +571,10 @@ export default function MerchantDetailView({ id }: { id: string }) {
 
   const tabs: { key: TabKey; label: string; icon: typeof Store; count?: number }[] = [
     { key: "overview", label: "Overview", icon: LayoutGrid },
-    { key: "payments", label: "Payments", icon: ReceiptText },
-    { key: "collection", label: "Collection", icon: Smartphone },
+    { key: "p2p", label: "P2P pay-ins", icon: Smartphone },
+    { key: "intent", label: "Intent pay-ins", icon: Zap },
     // Which gateways a banker is connected to is for Katana staff only (lib/merchant-safe).
-    ...(named ? [{ key: "gateways" as const, label: "Gateways & payouts", icon: Landmark }] : []),
+    ...(named ? [{ key: "payouts" as const, label: "Payouts", icon: Landmark }] : []),
     { key: "developer", label: "Developer", icon: Code2 },
     { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
   ];
@@ -674,31 +682,49 @@ export default function MerchantDetailView({ id }: { id: string }) {
             </Card>
           </div>
           <OnboardingChecksCard merchantId={merchant.id} />
+          {/* Pay-in settings that apply to both flows. */}
+          <div className="mt-4">
+            <PayinFlowCard target={{ kind: "banker", id: merchant.id, name: merchant.brand_name || merchant.legal_name }} />
+          </div>
+          <div className="mt-4">
+            <PaymentMethodsCard merchantId={merchant.id} />
+            <PayinLimitsCard merchantId={merchant.id} />
+            {/* Every channel together, legacy (unclassified) orders included. */}
+            <MerchantTransactionsCard merchantId={merchant.id} />
+          </div>
         </TabsContent>
 
-        <TabsContent value="payments">
-          <PayinOperationsCard merchantId={merchant.id} />
-          <MerchantTransactionsCard merchantId={merchant.id} />
-          <MerchantCapturedCreditsCard merchantId={merchant.id} />
-        </TabsContent>
-
-        <TabsContent value="collection">
-          <PayinFlowCard target={{ kind: "banker", id: merchant.id, name: merchant.brand_name || merchant.legal_name }} />
-          <PaymentMethodsCard merchantId={merchant.id} />
-          <PayinLimitsCard merchantId={merchant.id} />
-          <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+        {/* P2P: the payer pays the banker's own UPI ID; the agent phone sees the bank credit. */}
+        <TabsContent value="p2p">
+          <FlowFitNote bankerId={merchant.id} flow="P2P" />
           <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
             <KatanaPayConfigCard merchantId={merchant.id} />
             <PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit />
           </div>
+          <div className="mt-4">
+            <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            <PayinOperationsCard merchantId={merchant.id} channel="P2P" />
+            <MerchantCapturedCreditsCard merchantId={merchant.id} />
+            <MerchantTransactionsCard merchantId={merchant.id} channel="P2P" />
+          </div>
         </TabsContent>
 
-        {named && <TabsContent value="gateways">
-          <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">
+        {/* Intent: a payment gateway takes the payment and confirms it by webhook and status API. */}
+        <TabsContent value="intent">
+          <FlowFitNote bankerId={merchant.id} flow="INTENT" />
+          {named && <>
             <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            <div className="mt-4">
+              <IntentLiveTestCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            </div>
+          </>}
+          <PayinOperationsCard merchantId={merchant.id} channel="INTENT" />
+          <MerchantTransactionsCard merchantId={merchant.id} channel="INTENT" />
+        </TabsContent>
+
+        {named && <TabsContent value="payouts">
+          <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">
             <PayoutGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
-          </div>
-          <div className="mt-4">
             <PayoutPolicyCard merchantId={merchant.id} />
           </div>
         </TabsContent>}

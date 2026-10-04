@@ -132,10 +132,10 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
   const gatewayLight = (q: typeof payin | typeof payout, key: string, label: string, fallback: string): Light => {
     const d = q.data as { restricted?: true; status?: GatewayStatus } | undefined;
     const s = d?.status;
-    if (d?.restricted) return { key, label, value: "Super Admin only", hint: "", tone: "idle", tab: "gateways" };
-    if (!s?.configured) return { key, label, value: fallback, hint: "No gateway connected", tone: "idle", tab: "gateways" };
-    if (!s.connector) return { key, label, value: `${s.gateway_name}, not connected`, hint: "Saved, but Katana can't use it yet", tone: "warn", tab: "gateways" };
-    return { key, label, value: s.gateway_name ?? "", hint: s.env === "PROD" ? "Live account" : "Sandbox account", tone: s.env === "PROD" ? "good" : "warn", tab: "gateways" };
+    if (d?.restricted) return { key, label, value: "Super Admin only", hint: "", tone: "idle", tab: key === "payout" ? "payouts" : "intent" };
+    if (!s?.configured) return { key, label, value: fallback, hint: "No gateway connected", tone: "idle", tab: key === "payout" ? "payouts" : "intent" };
+    if (!s.connector) return { key, label, value: `${s.gateway_name}, not connected`, hint: "Saved, but Katana can't use it yet", tone: "warn", tab: key === "payout" ? "payouts" : "intent" };
+    return { key, label, value: s.gateway_name ?? "", hint: s.env === "PROD" ? "Live account" : "Sandbox account", tone: s.env === "PROD" ? "good" : "warn", tab: key === "payout" ? "payouts" : "intent" };
   };
 
   const devs = devices.data?.devices ?? [];
@@ -145,7 +145,7 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
 
   const lights: Light[] = [
     {
-      key: "money", label: "Collected", tab: "payments",
+      key: "money", label: "Collected", tab: "overview",
       value: formatAmount(collected, "INR"),
       hint: `${paid.length} paid of ${all.length} payment${all.length === 1 ? "" : "s"}${active ? `, ${active} open` : ""}`,
       tone: paid.length ? "good" : "idle",
@@ -153,13 +153,13 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
     gatewayLight(payin, "payin", "Pay-ins", "Katana UPI route"),
     gatewayLight(payout, "payout", "Payouts", "Paid by hand"),
     {
-      key: "vpa", label: "Settlement UPI ID", tab: "collection",
+      key: "vpa", label: "Settlement UPI ID", tab: "p2p",
       value: vpa || "Not set",
       hint: vpa ? "Payments are credited here" : "Captured payments can't be credited",
       tone: vpa ? "good" : "bad",
     },
     {
-      key: "agent", label: "Agent phone", tab: "collection",
+      key: "agent", label: "Agent phone", tab: "p2p",
       value: !devs.length ? "Not installed" : onlineDevs ? `${onlineDevs} online` : "Offline",
       hint: !devs.length ? "Install the agent to confirm payments" : devices.data?.any_permitted ? `${devs.length} enrolled` : "Waiting for permissions",
       tone: !devs.length ? "warn" : onlineDevs ? "good" : "bad",

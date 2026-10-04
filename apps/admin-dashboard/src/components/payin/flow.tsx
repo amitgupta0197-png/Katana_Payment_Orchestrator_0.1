@@ -242,3 +242,39 @@ export function PayinFlowCard({ target }: { target: FlowTarget }) {
     </Card>
   );
 }
+
+/**
+ * The top line of the banker page's P2P and Intent sections: whether this banker takes pay-ins on
+ * that flow, and what it still needs. Reads the same query as PayinFlowCard.
+ */
+export function FlowFitNote({ bankerId, flow }: { bankerId: string; flow: OrderFlow }) {
+  const q = useQuery({
+    queryKey: ["payin-flow", "banker", bankerId],
+    queryFn: async () => {
+      const r = await fetch(`/api/merchants/${bankerId}/payin-flow`);
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(d?.error ?? "Could not load the pay-in flow");
+      return d as FlowView;
+    },
+  });
+  const d = q.data;
+  if (!d) return null;
+  const label = PAYIN_FLOW_LABEL[flow];
+  const on = d.flow === flow || d.flow === "BOTH";
+  const ready = flow === "P2P" ? d.readiness?.p2p : d.readiness?.intent;
+  const text = d.flow === "UNSET"
+    ? `No pay-in flow is selected for this banker yet, so its orders are routed as before. Select ${label} or Both under Overview → Pay-in flow.`
+    : !on ? `This banker is on ${flowText(d)}: ${label} orders are refused. Change it under Overview → Pay-in flow.`
+    : ready === false ? `This banker is on ${flowText(d)}, but ${flow === "P2P" ? "has no settlement UPI ID" : "has no pay-in gateway connected"} yet.`
+    : `This banker takes ${label} pay-ins (${flowText(d)}).`;
+  const tone = d.flow !== "UNSET" && on && ready !== false ? "success" : "warning";
+  return (
+    <div className={cn("mb-4 flex items-center gap-2 rounded-md border px-3 py-2 text-sm",
+      tone === "success"
+        ? "border-[color:var(--color-success)]/30 bg-[color:var(--color-success-muted)]"
+        : "border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)]")}>
+      <FlowBadge flow={d.flow} active={d.active} />
+      <span>{text}</span>
+    </div>
+  );
+}

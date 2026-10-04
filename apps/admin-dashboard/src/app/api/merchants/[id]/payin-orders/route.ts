@@ -13,10 +13,12 @@ import { randomUUID } from "crypto";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
-import { createKatanaOrder, MerchantBlockedError, PayinSetupError } from "@/lib/katana-order";
+import { createKatanaOrder, MerchantBlockedError, OrderRefTakenError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
+import { AccountNotLiveError } from "@/lib/gateway-golive";
 import { NoMidAvailableError } from "@/lib/mid-switch";
 import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
 import { getLivemode } from "@/lib/mode";
+import { getEffectiveFlow } from "@/lib/payin-flow-store";
 import { activationErrorResponse } from "@/lib/live-activation";
 import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
@@ -37,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const orders = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, vendor, amount::float AS amount, currency_code, status,
              COALESCE(rrn,'') AS rrn, COALESCE(sub_mid_code,'') AS sub_mid_code,
-             meta, created_at, livemode
+             meta, created_at, livemode, COALESCE(channel_type,'UNCLASSIFIED') AS channel_type
         FROM vendor_payin_orders
        WHERE merchant_id = $1
          AND livemode = $2   -- follows the dashboard's Test / Live switch
@@ -51,6 +53,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         id: o.id, order_id: o.order_id, vendor: o.vendor, amount: o.amount, currency_code: o.currency_code,
         status: o.status, rrn: o.rrn, sub_mid_code: o.sub_mid_code, created_at: o.created_at,
         livemode: o.livemode !== false,
+        channel_type: o.channel_type,           // INTENT | P2P | UNCLASSIFIED (legacy), fixed for life
+        staff_test: !!m.staff_test,
         mode: m.mode ?? "QR",
         active_vpa: m.receiver_vpa ?? null,
         vpa_total: pool.length,
@@ -75,7 +79,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       id: o.id, order_id: o.txn_id, vendor: o.provider ?? "CHECKOUT", amount: o.amount, currency_code: o.currency,
       // A gateway can report a reference before the money lands; show it only once paid.
       status: o.status, rrn: o.status === "SUCCESS" ? o.bank_ref : "", sub_mid_code: "", created_at: o.created_at,
-      livemode: o.livemode !== false, mode: "HOSTED", active_vpa: null, vpa_total: 0, vpa_remaining: 0,
+      livemode: o.livemode !== false, channel_type: "INTENT", mode: "HOSTED",   // a checkout order is INTENT active_vpa: null, vpa_total: 0, vpa_remaining: 0,
       hold: false, hold_reason: null, source: "checkout",
       terminal: ["SUCCESS", "FAILED"].includes(o.status),
     }));
@@ -100,6 +104,9 @@ const createSchema = z.object({
   customer_vpa: z.string().optional(),                   // sender / payer VPA
   customer_phone: z.string().optional(),
   order_ref: z.string().max(60).optional(),
+  // The banker page's P2P / Intent sections ask for their own flow (lib/payin-flow). Absent: the
+  // banker's default, as before.
+  flow: z.enum(["P2P", "INTENT"]).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -149,6 +156,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       customerVpa: body.customer_vpa ?? null,
       customerPhone: body.customer_phone ?? null,
       livemode,
+      // A banker with no flow selected keeps the routing it always had: naming a flow would be
+      // refused (FLOW_NOT_SELECTED), so the section's flow is only asked for once one is chosen.
+      flow: body.flow && (await getEffectiveFlow(scope.code)).flow !== "UNSET" ? body.flow : null,
       client: intentClientFrom(req),
     });
     if (r.reused) return NextResponse.json({ error: "order_ref already used" }, { status: 409 });
@@ -159,6 +169,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: `${err.message} — new pay-ins rejected`, code: err.code }, { status: 403 });
     if (err instanceof PayinLimitError) return NextResponse.json(payinLimitBody(err.breach), { status: err.status });
     if (err instanceof NoMidAvailableError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    if (err instanceof OrderRefTakenError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    if (err instanceof AccountNotLiveError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    if (err instanceof PayinFlowError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     if (err instanceof PayuIntentError || err instanceof PayinSetupError) {
       // Operators get the gateway's own words; a provider or merchant gets the scrubbed text.
       const error = seesGatewayNames(g.session.persona) ? err.message : merchantSafeError(err.message, "api/merchants/payin-orders");

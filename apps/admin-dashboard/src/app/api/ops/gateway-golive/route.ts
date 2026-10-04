@@ -13,32 +13,22 @@ import { gateOrResponse } from "@/lib/scope";
 import { STAFF_PERSONAS } from "@/lib/portal-scope";
 import { getGatewayMid, VAULT_LABEL } from "@/lib/gateway-creds";
 import {
-  gatewaySendsWebhooks, goLiveChecklist, canGoLive, getGoLive, listGoLive, recordPing, recordStatusCheck,
+  gatewaySendsWebhooks, getGoLive, goLiveView, listGoLive, recordPing, recordStatusCheck,
   recordWebhookPayment, setLive, VERIFY_MAX_AMOUNT, VERIFY_MAX_ORDERS, type GoLiveRow,
 } from "@/lib/gateway-golive";
-import { payinWebhookUrl } from "@/lib/payin-providers/types";
 import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
 
-async function shape(r: GoLiveRow) {
-  const mid = await getGatewayMid(r.merchant_id, r.account).catch(() => null);
-  const hooks = gatewaySendsWebhooks(r.gateway, mid?.gateway === r.gateway ? mid.auth : null);
-  return {
-    ...r, account_label: r.account === VAULT_LABEL ? "First account" : `Account ${r.account.slice(VAULT_LABEL.length + 1, VAULT_LABEL.length + 9)}`,
-    mid_code: mid?.mid_code ?? null, sends_webhooks: hooks, callback_url: hooks ? payinWebhookUrl(r.gateway) : null,
-    credentials_match: mid?.gateway === r.gateway && mid.env === "PROD",
-    checklist: goLiveChecklist(r, hooks), can_go_live: r.status === "VERIFYING" && canGoLive(r, hooks),
-  };
-}
-
-export async function GET() {
+export async function GET(req: Request) {
   const g = await gateOrResponse(STAFF_PERSONAS);
   if ("response" in g) return g.response;
+  // ?merchant=<banker code>: that banker's accounts only (the banker page's Intent section).
+  const merchant = new URL(req.url).searchParams.get("merchant");
   try {
-    const all = await listGoLive();
+    const all = (await listGoLive()).filter((r) => !merchant || r.merchant_id === merchant);
     return NextResponse.json({
-      accounts: await Promise.all(all.map(shape)),
+      accounts: await Promise.all(all.map(goLiveView)),
       limits: { max_amount: VERIFY_MAX_AMOUNT, max_orders: VERIFY_MAX_ORDERS },
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
@@ -83,6 +73,6 @@ export async function POST(req: Request) {
       resourceType: "gateway_account", resourceId: `${body.merchant_id}:${body.gateway}:${acct}`,
       after: row ? { status: row.status, ping_ok: row.ping_ok, webhook_at: row.webhook_at, status_at: row.status_at } : null, notes: body.note,
     }).catch(() => null);
-    return NextResponse.json({ account: row ? await shape(row) : null, ...(answer ? { answer } : {}) });
+    return NextResponse.json({ account: row ? await goLiveView(row) : null, ...(answer ? { answer } : {}) });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

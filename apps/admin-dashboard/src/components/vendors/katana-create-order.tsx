@@ -39,12 +39,14 @@ const MUTED = "text-[color:var(--color-text-muted)]";
 // is scoped to that merchant (sub-MID routing + risk rules). Both endpoints accept
 // the same body and return the same { order, deeplinks, upi_intent } shape.
 export function KatanaCreateOrder({
-  onChange, endpoint = "/api/vendors/katana/order", buttonLabel = "Create S2S order", receiverPlaceholder,
+  onChange, endpoint = "/api/vendors/katana/order", buttonLabel = "Create S2S order", receiverPlaceholder, flow,
 }: {
   onChange?: () => void;
   endpoint?: string;
   buttonLabel?: string;
   receiverPlaceholder?: string;
+  /** Ask for this pay-in flow (P2P / INTENT) instead of the banker's default. */
+  flow?: "P2P" | "INTENT";
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ amount: "499", receiver_vpas: "", customer_vpa: "", customer_phone: "", order_ref: "", mode: "QR" });
@@ -61,6 +63,7 @@ export function KatanaCreateOrder({
           customer_vpa: form.customer_vpa || undefined,
           customer_phone: form.customer_phone || undefined,
           order_ref: form.order_ref || undefined,
+          ...(flow ? { flow } : {}),
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Failed");

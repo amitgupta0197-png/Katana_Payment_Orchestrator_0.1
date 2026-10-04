@@ -59,6 +59,11 @@ export interface CreateKatanaOrderInput {
   routeAcrossBankers?: boolean;
   /** Internal: the banker whose Key signed an order that `merchantId` is taking. */
   signedBy?: string | null;
+  /**
+   * A live test made by Katana staff from the banker page (Intent live test). Kept on the order
+   * as `meta.staff_test`; the banker's server is not sent a callback for it (lib/merchant-callback).
+   */
+  staffTest?: { by: string } | null;
 }
 
 /**
@@ -538,6 +543,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     ...(input.apiVersion ? { api_version: input.apiVersion } : {}),
     // The banker switch sent it here: the Key that signed it, whose callback settings it keeps.
     ...(input.signedBy ? { signed_by: input.signedBy } : {}),
+    ...(input.staffTest ? { staff_test: { by: input.staffTest.by, at: new Date().toISOString() } } : {}),
     ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
     // The MID the switch picked (lib/mid-switch): its account is used for every later call about
     // this order (lib/gateway-creds orderVaultLabel), and why it was picked.

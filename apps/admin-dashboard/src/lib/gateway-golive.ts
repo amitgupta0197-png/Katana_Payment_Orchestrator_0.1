@@ -154,6 +154,18 @@ export async function goLiveBlocker(merchantCode: string, gateway: string, amoun
   catch (err) { if (err instanceof AccountNotLiveError) return err.message; throw err; }
 }
 
+/** One account as the checklist screens show it (staff: it names the gateway). */
+export async function goLiveView(r: GoLiveRow) {
+  const mid = await getGatewayMid(r.merchant_id, r.account).catch(() => null);
+  const hooks = gatewaySendsWebhooks(r.gateway, mid?.gateway === r.gateway ? mid.auth : null);
+  return {
+    ...r, account_label: r.account === VAULT_LABEL ? "First account" : `Account ${r.account.slice(VAULT_LABEL.length + 1, VAULT_LABEL.length + 9)}`,
+    mid_code: mid?.mid_code ?? null, sends_webhooks: hooks, callback_url: hooks ? payinWebhookUrl(r.gateway) : null,
+    credentials_match: mid?.gateway === r.gateway && mid.env === "PROD",
+    checklist: goLiveChecklist(r, hooks), can_go_live: r.status === "VERIFYING" && canGoLive(r, hooks),
+  };
+}
+
 // ── The three checks ─────────────────────────────────────────────────────────────
 
 /** 1. Ask Katana's own callback URL for this gateway the way a gateway's "test" button does. */
