@@ -78,6 +78,12 @@ The person may attach a screenshot, usually a payment the customer says was succ
 - Settled means the merchant's bankers have settled it to them. A settlement raised for one channel only settles that channel's payments.
 - Recon exceptions: amount differs, status differs (the bank shows the money, the order is not paid), no bank evidence yet, money received with no order, duplicate, settled more than collected.
 
+## MID switch
+- A merchant can spread an account's pay-ins over its own UPI IDs (P2P) and, when Katana has set them up, several payment processor accounts (Intent): the MID switch page in the portal (Setup or Payments menu), and a quick switch on Home.
+- Each MID has limits (per order, per day, orders per day, per month), hours and days, a priority or a weight, and is skipped while unhealthy. The switch takes the first MID by priority that can take the order, or splits by weight; "Send all traffic here" switches by hand for a while.
+- Traffic only moves between the same account's own MIDs, never to another account.
+- When no MID can take a payment (limits used up, all paused, outside their hours), the order is refused with 503 NO_ACCOUNT_AVAILABLE; raise a limit, resume a MID or retry later.
+
 ## Chargebacks
 - A chargeback comes from the bank or the payment processor and is matched to the original payment in its own channel; it never touches the other channel. The original payment's amount is never changed.
 - How much is debited comes from the merchant's chargeback terms (a percentage, per channel). With no terms set, nothing is debited until Katana sets them; never guess a percentage.

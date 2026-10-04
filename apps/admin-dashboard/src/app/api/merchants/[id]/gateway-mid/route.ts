@@ -5,15 +5,21 @@
 //        auth: a sign-in mode from the gateway's altAuth (PayU: "client_credentials"); default otherwise.
 //
 // SUPER_ADMIN only: these are the gateway's secrets, which Katana holds on the merchant's
-// behalf and never exposes. Stored sealed in the credential vault. A merchant has ONE pay-in
-// gateway; saving another replaces it. Changes are audited (never the secrets).
+// behalf and never exposes. Stored sealed in the credential vault. Changes are audited (never
+// the secrets).
+//
+// `account` picks which of the banker's processor accounts is saved: left out, its first one
+// (as before: saving replaces it); "new" adds another for the MID switch (lib/mid-switch); a
+// vault label from `accounts` rotates that one. GET lists every account (`accounts`).
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { wormAppend } from "@/lib/worm";
-import { storeGatewayMid, getGatewayMidStatus, payinProdId } from "@/lib/gateway-creds";
+import { randomUUID } from "crypto";
+import { storeGatewayMid, getGatewayMidStatus, payinProdId, accountVaultLabel, VAULT_LABEL } from "@/lib/gateway-creds";
+import { bankerGatewayAccounts } from "@/lib/mid-switch-store";
 import { GATEWAYS, gatewayDef, validateCredFields } from "@/lib/pg-catalog";
 import { payinProdEnabled, payinWebhookUrl } from "@/lib/payin-providers/types";
 import { getGoLive, startVerifying } from "@/lib/gateway-golive";
@@ -38,7 +44,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const hook = status.configured && !(status.gateway === "PAYU" && status.auth === "client_credentials");
     // Where a live account stands on the go-live checklist; null for one with no checklist.
     const golive = status.configured && status.env === "PROD" ? await getGoLive(code, status.gateway).catch(() => null) : null;
-    return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null, golive: golive ? { status: golive.status } : null });
+    const accounts = await bankerGatewayAccounts(code).catch(() => []);
+    return NextResponse.json({ status, webhook_url: hook ? payinWebhookUrl(status.gateway as never) : null, golive: golive ? { status: golive.status } : null, accounts });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
 
@@ -47,6 +54,7 @@ const schema = z.object({
   env: z.enum(["TEST", "PROD"]).default("TEST"),
   auth: z.enum(["key_salt", "client_credentials"]).optional(),
   fields: z.record(z.string()).default({}),
+  account: z.string().max(80).optional(),
 });
 
 // The built-in fields every gateway maps onto; everything else is kept as an extra.
@@ -80,8 +88,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: `live ${def.name}${alt ? ` (${alt.label})` : ""} payments aren't switched on yet — connect its sandbox (TEST) account first` }, { status: 409 });
 
   const extra = Object.fromEntries(Object.entries(f).filter(([k]) => !CORE.has(k)));
+  // Which account: the first (default), a new one, or an existing one by its label.
+  let label = VAULT_LABEL;
+  if (body.account === "new") label = accountVaultLabel(randomUUID());
+  else if (body.account && body.account !== VAULT_LABEL) {
+    if (!(await bankerGatewayAccounts(code)).some((a) => a.vault_label === body.account))
+      return NextResponse.json({ error: "no such processor account on this banker" }, { status: 404 });
+    label = body.account;
+  }
   try {
-    const before = await getGatewayMidStatus(code);
+    const before = await getGatewayMidStatus(code, label);
     await storeGatewayMid(code, {
       gateway: def.id,
       mid_code: f.mid_code ?? f.key,
@@ -91,8 +107,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       env: body.env,
       ...(alt ? { auth: alt.id } : {}),
       extra: Object.keys(extra).length ? extra : undefined,
-    });
-    const after = await getGatewayMidStatus(code);
+    }, label);
+    const after = await getGatewayMidStatus(code, label);
     // A live account goes on the go-live checklist (lib/gateway-golive) and takes only small
     // verification payments until it passes. One that was already live on this gateway is
     // recorded as LIVE: rotating its credentials must not stop its payments.
@@ -104,9 +120,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await wormAppend({
       actorId: g.session.user_id, actorEmail: g.session.email,
       action: before.configured ? "merchant.payin_gateway.rotated" : "merchant.payin_gateway.set",
-      resourceType: "merchant", resourceId: id, before, after: { merchant_code: code, ...after },
+      resourceType: "merchant", resourceId: id, before, after: { merchant_code: code, account: label, ...after },
     }).catch(() => {});
     // Echo only non-secret status back.
-    return NextResponse.json({ status: after, golive: golive ? { status: golive.status } : null }, { status: 201 });
+    return NextResponse.json({ status: after, account: label, golive: golive ? { status: golive.status } : null }, { status: 201 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }

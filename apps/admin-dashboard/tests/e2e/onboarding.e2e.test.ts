@@ -100,6 +100,14 @@ async function cleanup() {
     await rows("vendorGateway", `DELETE FROM payin_chargebacks WHERE merchant_id = ANY($1::text[]) OR bank_ref LIKE 'E2E-CB-%'`, [codes]);
     await rows("vendorGateway", `DELETE FROM payin_chargeback_rules WHERE note = 'e2e terms'`);
   })());
+  // MID switch rows; its log is append-only by trigger, lifted for the e2e bankers' rows only.
+  await quiet((async () => {
+    await rows("vendorGateway", `ALTER TABLE payin_mid_events DISABLE TRIGGER payin_mid_events_locked_trg`);
+    try { await rows("vendorGateway", `DELETE FROM payin_mid_events WHERE banker_code = ANY($1::text[])`, [codes]); }
+    finally { await rows("vendorGateway", `ALTER TABLE payin_mid_events ENABLE TRIGGER payin_mid_events_locked_trg`); }
+    await rows("vendorGateway", `DELETE FROM payin_mid_settings WHERE banker_code = ANY($1::text[])`, [codes]);
+    await rows("vendorGateway", `DELETE FROM payin_mids WHERE banker_code = ANY($1::text[])`, [codes]);
+  })());
   await quiet(rows("vendorGateway", `DELETE FROM vendor_payin_orders WHERE merchant_id = ANY($1::text[])`, [codes]));
   await quiet(rows("audit", `DELETE FROM api_request_log WHERE merchant_id = ANY($1::text[])`, [codes]));
   await quiet(rows("merchant", `DELETE FROM support_bot_conversations WHERE merchant_code = ANY($1::text[])`, [codes]));
@@ -530,6 +538,24 @@ for (const [i, c] of COMBOS.entries()) {
       const back = await api("POST", `/api/chargebacks/${cbRow.id}`, { action: "reverse", kind: "REPRESENTMENT_WON", note: "e2e won at the bank" });
       assert.deepEqual([back.body.chargeback.state, back.body.postings.map((x: { kind: string }) => x.kind)],
         ["CB_REVERSED", ["CHARGEBACK_DEBIT", "CHARGEBACK_REVERSAL"]], JSON.stringify(back.body));
+      // ── 5f. The MID switch: the merchant puts the banker's UPI ID in the switch, the banker sees
+      //        it and switches traffic by hand; neither can add a processor account; staff see all.
+      const added = await api("POST", "/api/mid-switch", { banker: bankerCode, action: "add", kind: "UPI", upi_id: `e2e${i}@upi`, daily_amount: 50000 }, providerLogin);
+      assert.equal(added.status, 200, JSON.stringify(added.body));
+      const upiMid = added.body.mids.find((m: { upi_id: string }) => m.upi_id === `e2e${i}@upi`);
+      assert.ok(upiMid && upiMid.takes_traffic_now, JSON.stringify(added.body.mids));
+      const seen = await api("GET", `/api/mid-switch?banker=${bankerCode}`, undefined, bankerLogin);
+      assert.equal(seen.status, 200);
+      assert.equal(seen.body.mids.length, 1);
+      const pinnedRes = await api("POST", "/api/mid-switch", { banker: bankerCode, action: "pin", kind: "UPI", mid_id: upiMid.id, minutes: 30 }, bankerLogin);
+      assert.equal(pinnedRes.body.mids[0].pinned, true);
+      assert.equal((await api("POST", "/api/mid-switch", { banker: bankerCode, action: "add", kind: "GATEWAY", vault_label: "gateway_mid" }, bankerLogin)).status, 403);
+      assert.equal((await api("GET", "/api/mid-switch?banker=E2E-NOT-MINE", undefined, providerLogin)).status, 404, "another banker's switch is not found");
+      assert.ok((await api("GET", `/api/mid-switch?banker=${bankerCode}`)).body.staff, "staff see it as staff");
+      const log = (await api("GET", `/api/mid-switch?banker=${bankerCode}`, undefined, providerLogin)).body.events;
+      assert.ok(log.some((e: { action: string }) => e.action === "PINNED") && log.every((e: { who: string }) => !e.who.startsWith("katana:")));
+      assert.equal(/payu|razorpay|cashfree|rubyvault|ismartpay/i.test(JSON.stringify(seen.body)), false);
+
       // The bot's channel and chargeback lookups run on this banker and name no gateway.
       const totals = await call("get_channel_totals", { days: 7 });
       assert.ok("INTENT" in totals && "P2P" in totals && "all_channels_sum" in totals);

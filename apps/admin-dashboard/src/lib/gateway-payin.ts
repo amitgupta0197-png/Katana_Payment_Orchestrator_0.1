@@ -14,7 +14,7 @@
 
 import { rows } from "@/lib/pg";
 import { fromMinor, toMinor } from "@/lib/money";
-import { payinProdId, type GatewayMid } from "@/lib/gateway-creds";
+import { orderVaultLabel, payinProdId, type GatewayMid } from "@/lib/gateway-creds";
 import { gatewayName } from "@/lib/pg-catalog";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
@@ -155,7 +155,10 @@ export async function checkGatewayPayin(input: {
   /** Katana Pay orders only: skip if checked within this many seconds. */
   throttleSec?: number;
 }): Promise<ApplyResult & { lookupError?: string }> {
-  const gw = await gatewayPayinFor(input.merchantCode);
+  // A Katana Pay order is asked about on the gateway account it was created on (lib/mid-switch);
+  // a checkout order, and every order from before, on the banker's first account.
+  const v = await findGatewayPayin(input.provider, input.txnid);
+  const gw = await gatewayPayinFor(input.merchantCode, v ? orderVaultLabel(v.meta) : undefined);
   if (!gw || gw.mid.gateway !== input.provider) return { applied: false, status: "UNKNOWN", reason: "no_gateway_credentials" };
   if (input.throttleSec != null && !(await claimGatewayPayinCheck(input.provider, input.txnid, input.throttleSec)))
     return { applied: false, status: "UNKNOWN", reason: "checked_recently" };
@@ -172,14 +175,14 @@ async function orderAmountMinor(provider: string, txnid: string): Promise<bigint
 }
 
 /** Resolve the merchant and provider of an order Katana created, by its txnid. */
-export async function gatewayOrderOwner(provider: string, txnid: string): Promise<{ merchantCode: string; kind: "checkout" | "payin"; dest: string | null } | null> {
+export async function gatewayOrderOwner(provider: string, txnid: string): Promise<{ merchantCode: string; kind: "checkout" | "payin"; dest: string | null; vaultLabel?: string } | null> {
   const c = (await rows<{ merchant_id: string; status: string; client_surl: string | null; client_furl: string | null }>("checkout",
     `SELECT merchant_id, status, client_surl, client_furl FROM checkout_orders WHERE txn_id = $1 LIMIT 1`, [txnid]).catch(() => []))[0];
   if (c) return { merchantCode: c.merchant_id, kind: "checkout", dest: null };
   const v = await findGatewayPayin(provider, txnid);
   // No return_url: back to the order's own pay page, which shows the result.
   if (v) return {
-    merchantCode: v.merchant_id, kind: "payin",
+    merchantCode: v.merchant_id, kind: "payin", vaultLabel: orderVaultLabel(v.meta),
     dest: typeof v.meta?.return_url === "string" && v.meta.return_url ? v.meta.return_url : `${publicBase()}/pay/${v.id}?returned=1`,
   };
   return null;

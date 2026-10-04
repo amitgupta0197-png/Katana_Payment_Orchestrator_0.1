@@ -18,7 +18,7 @@
 // still confirms the money.
 
 import { rows } from "@/lib/pg";
-import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
+import { getGatewayMid, orderVaultLabel, payuKeySalt } from "@/lib/gateway-creds";
 import { payuResponseHash } from "@/lib/payu";
 import { enqueue as enqueueWebhook } from "@/lib/webhook-outbox";
 import { capturePaymentDetails } from "@/lib/payment-details";
@@ -199,7 +199,9 @@ export async function checkPayuPayinNow(txnid: string, merchantId: string, minIn
 }> {
   if (minIntervalSec != null && !(await claimPayuPayinCheck(txnid, minIntervalSec)))
     return { applied: false, status: "UNKNOWN", reason: "checked_recently" };
-  const mid = payuKeySalt(await getGatewayMid(merchantId));
+  // The PayU account the order was created on (lib/mid-switch); the first account for older orders.
+  const order = await findPayuPayin(txnid);
+  const mid = payuKeySalt(await getGatewayMid(merchantId, order ? orderVaultLabel(order.meta) : undefined));
   if (!mid) return { applied: false, status: "UNKNOWN", reason: "no_gateway_credentials" };
   const v = await verifyPayuTxn(mid, txnid);
   if (!v.found) return { applied: false, status: "UNKNOWN", reason: "lookup_failed", lookupError: `PayU: ${v.status}`.slice(0, 80) };
@@ -244,7 +246,7 @@ export async function applyPayuResult(
   if (!o) {
     const v = await findPayuPayin(txnid);
     if (!v) return { matched: false, txnid, status: "UNKNOWN", hashOk: false, dest: null, reason: "unknown_txn", applied: false };
-    const mid = await getGatewayMid(v.merchant_id).then(payuKeySalt);
+    const mid = await getGatewayMid(v.merchant_id, orderVaultLabel(v.meta)).then(payuKeySalt);
     const hashOk = !!mid && !!p.hash && payuResponseHash(mid, {
       status: p.status || "", email: p.email || "", firstname: p.firstname || "",
       productinfo: p.productinfo || "", amount: p.amount || "", txnid,

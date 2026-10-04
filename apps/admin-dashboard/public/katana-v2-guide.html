@@ -240,6 +240,7 @@ if not (fresh and hmac.compare_digest(expected, sig["v1"])):
 <tr><td><code>DAILY_LIMIT_EXCEEDED</code></td><td>422</td><td>The order would pass the account's limit for the day.</td></tr>
 <tr><td><code>RATE_LIMITED</code></td><td>429</td><td>Too many orders in one second; retry after the Retry-After header.</td></tr>
 <tr><td><code>PROCESSOR_ERROR</code></td><td>502</td><td>The payment processor did not accept the request; retry with the same reference.</td></tr>
+<tr><td><code>NO_ACCOUNT_AVAILABLE</code></td><td>503</td><td>None of the account's payment accounts can take this payment now (limits used, paused or outside their hours); retry later.</td></tr>
 <tr><td><code>INTERNAL_ERROR</code></td><td>500</td><td>Something failed on Katana's side; retry with the same reference.</td></tr>
 </table>
 <p>After a <code>5xx</code>, or a timeout, send the same request again with the same <code>reference</code>: you get the order that was created, never a second one.</p>

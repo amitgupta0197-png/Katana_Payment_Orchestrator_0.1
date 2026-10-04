@@ -18,8 +18,10 @@ import { getEffectiveFlow } from "@/lib/payin-flow-store";
 import { allowsPayin } from "@/lib/merchant-services";
 import { getProviderServices } from "@/lib/merchant-services-store";
 import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
-import { getPayinLimits, getPayinUsage, insertWithinDailyLimit } from "@/lib/payin-limits-store";
+import { getPayinLimits, getPayinUsage } from "@/lib/payin-limits-store";
 import { assertGoLiveAllows } from "@/lib/gateway-golive";
+import { insertOrderWithinLimits, pickMidForOrder, recordCreateFailure, type MidPick } from "@/lib/mid-switch-store";
+import { NoMidAvailableError, type Mid } from "@/lib/mid-switch";
 
 export interface CreateKatanaOrderInput {
   orderId: string;
@@ -44,6 +46,8 @@ export interface CreateKatanaOrderInput {
   metadata?: Record<string, string | number | boolean | null>;
   /** Which order API created it. Absent = v1. */
   apiVersion?: "v2";
+  /** Internal: MIDs that could not create this order a moment ago (the switch tries the next one). */
+  excludeMids?: string[];
 }
 
 /**
@@ -120,7 +124,31 @@ export class PayinNotEnabledError extends MerchantBlockedError {
 const CLOSED_STAGES = new Set(["SUSPENDED", "TERMINATED", "REJECTED"]);
 const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
 
+/**
+ * Create a Katana Pay order. When the banker's MID switch (lib/mid-switch) picked a gateway
+ * account and that account could not create the order, the order is tried again on the next
+ * account the switch allows, and the failure counts against the first one's health. A banker
+ * with one account, or none in the switch, gets the error as before.
+ */
 export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
+  const exclude = [...(input.excludeMids ?? [])];
+  for (;;) {
+    try {
+      return await createKatanaOrderOnce({ ...input, excludeMids: exclude });
+    } catch (err) {
+      const failed = (err as { failedMid?: Mid }).failedMid;
+      if (!failed || exclude.length >= 5) throw err;
+      await recordCreateFailure(failed, (err as Error).message);
+      exclude.push(failed.id);
+      // No other account can take it: answer with what went wrong on this one, not "no account".
+      const next = await pickMidForOrder(failed.banker_code, "GATEWAY", input.amount, exclude)
+        .catch((e) => { if (e instanceof NoMidAvailableError) return null; throw e; });
+      if (!next) throw err;
+    }
+  }
+}
+
+async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<CreateKatanaOrderResult> {
   const orderId = input.orderId;
   const note = `Order ${orderId}`;
   // TEST ORDERS CANNOT MOVE MONEY. They pay the sandbox UPI ID (never a request receiver or
@@ -188,27 +216,42 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     : undefined;
   const savedVpa = saved?.v?.trim() || null;
   if (!receivers.length && savedVpa) receivers = [savedVpa];
-  const { pool, active } = buildVpaPool({ ...input, receiverVpas: receivers, receiverVpa: null });
+  let { pool, active } = buildVpaPool({ ...input, receiverVpas: receivers, receiverVpa: null });
   // The saved payee name belongs to the one UPI ID it was entered for (payee_name_vpa, bound by
   // the payment-config API). It is sent only when the order pays exactly that account: a
   // receiver passed on the request, or a settlement VPA changed since, is an account whose
   // registered name we do not know — and a wrong name is itself a decline signal.
   const nameVpa = saved?.name_vpa?.trim().toLowerCase() || null;
-  const payeeName = active && nameVpa && active.toLowerCase() === nameVpa
+  let payeeName = active && nameVpa && active.toLowerCase() === nameVpa
     ? saved?.name?.trim() || null : null;
   const mode = input.mode === "INTENT" ? "INTENT" : "QR";
+
+  // A REPLAYED ORDER IS ANSWERED FIRST, as the order it was created as. It is not checked
+  // against today's limits or routed again, and its ref never reaches a gateway twice (a
+  // gateway refuses a reused transaction id).
+  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
+  if (prior) return prior;
+
+  // THE MID SWITCH (lib/mid-switch): a banker with gateway accounts in its switch has this order
+  // created on the one the switch picks (priority or weighted split, inside each account's limits,
+  // hours and health, or the one switched to by hand). Without any, its one account is used as
+  // before. NoMidAvailableError when it has accounts and none can take the order.
+  const gatewayPick: MidPick | null = livemode && gatewayAllowed && input.merchantId
+    ? await pickMidForOrder(input.merchantId, "GATEWAY", input.amount, input.excludeMids)
+    : null;
+  const vaultLabel = gatewayPick?.mid.vault_label ?? undefined;
 
   // PayU: a live order for a merchant with PayU Key + Salt gets its UPI intent from PayU, so the
   // customer pays PayU's collection account on the merchant's MID. A link built locally to the
   // merchant's own UPI ID is exactly what UPI apps decline. PayU then confirms the order
   // (lib/payu-result); the bank-credit matcher leaves these orders alone.
   const payuMid = livemode && gatewayAllowed && input.merchantId
-    ? await getGatewayMid(input.merchantId).then(payuKeySalt).catch(() => null)
+    ? await getGatewayMid(input.merchantId, vaultLabel).then(payuKeySalt).catch(() => null)
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
   const connected = livemode && gatewayAllowed && !payuMid && input.merchantId
-    ? await gatewayPayinFor(input.merchantId).catch(() => null)
+    ? await gatewayPayinFor(input.merchantId, vaultLabel).catch(() => null)
     : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
   // Gateways with no UPI intent take the payment on their own hosted page: PayU with a Client ID +
@@ -216,12 +259,26 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
   // there; the gateway's answer settles it. CCAvenue has none either, but its merchants keep the
   // direct UPI link to their own UPI ID.
   const linkGw = !otherGw && connected && connected.mid.gateway !== "CCAVENUE" ? connected : null;
+  // The account the switch picked has no usable credentials: try the next one.
+  if (gatewayPick && !payuMid && !otherGw && !linkGw) {
+    throw Object.assign(new PayuIntentError("the processor account picked for this order has no usable credentials"), { failedMid: gatewayPick.mid });
+  }
 
-  // A REPLAYED ORDER IS ANSWERED FIRST, as the order it was created as. It is not checked
-  // against today's limits or routed again, and its ref never reaches a gateway twice (a
-  // gateway refuses a reused transaction id).
-  const prior = await readExistingOrder(orderId, input.merchantId ?? null, livemode);
-  if (prior) return prior;
+  // P2P: a banker with UPI IDs in its switch is paid on the one the switch picks, with the others
+  // that can take the order kept as the order's backup UPI IDs. A receiver named on the request
+  // is still honoured as it was.
+  let upiPick: MidPick | null = null;
+  if (livemode && input.merchantId && !payuMid && !otherGw && !linkGw && flow !== "INTENT"
+      && !(input.receiverVpas?.length || input.receiverVpa)) {
+    upiPick = await pickMidForOrder(input.merchantId, "UPI", input.amount, input.excludeMids);
+    if (upiPick) {
+      receivers = [upiPick.mid.upi_id!, ...upiPick.others.map((m) => m.upi_id!)];
+      ({ pool, active } = buildVpaPool({ ...input, receiverVpas: receivers, receiverVpa: null }));
+      payeeName = upiPick.mid.payee_name?.trim()
+        || (active && nameVpa && active.toLowerCase() === nameVpa ? saved?.name?.trim() || null : null);
+    }
+  }
+  const midPick = gatewayPick ?? upiPick;
 
   // LIMITS (lib/payin-limits): rate, ticket size, the UPI ceiling and the day's total. Checked
   // before a gateway is asked for anything, so a refused order costs the gateway nothing. The
@@ -247,6 +304,7 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
 
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string;
   const status = "PENDING";
+  try {
   if (payuMid) {
     vendorTxnId = shortId("kp");   // PayU txnid: unique per MID, at most 25 characters
     const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
@@ -347,6 +405,12 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     deeplinks = buildDeeplinks(query);
     upiIntent = deeplinks.upi;
   }
+  } catch (err) {
+    // The processor account the switch picked could not create the order: createKatanaOrder
+    // tries the next one.
+    if (gatewayPick && err instanceof PayuIntentError) throw Object.assign(err, { failedMid: gatewayPick.mid });
+    throw err;
+  }
   // Risk: high-amount hold — orders at/above the threshold are held for manual
   // review and are NOT auto-settled by the poller; ops must confirm them.
   const hold = input.amount >= HIGH_AMOUNT_HOLD;
@@ -366,6 +430,12 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     ...(input.requestId ? { request_id: input.requestId } : {}),   // also in the status history (vendorGateway 0033)
     ...(input.apiVersion ? { api_version: input.apiVersion } : {}),
     ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
+    // The MID the switch picked (lib/mid-switch): its account is used for every later call about
+    // this order (lib/gateway-creds orderVaultLabel), and why it was picked.
+    ...(midPick ? { mid: {
+      id: midPick.mid.id, name: midPick.mid.name, kind: midPick.mid.kind, vault_label: midPick.mid.vault_label,
+      how: midPick.choice.how, reason: midPick.choice.reason,
+    } } : {}),
     // Which integration config drove this order (cascade visibility).
     gateway,                               // PayU txnid + payment id when PayU issued the intent
     integration: !livemode ? { source: "test", env: "SANDBOX", live: false }
@@ -386,19 +456,22 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode,
-       channel_type, channel_id, requested_channel)
-    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14)
+       channel_type, channel_id, requested_channel, payin_mid_id)
+    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14,$16::uuid)
     ON CONFLICT (vendor, COALESCE(merchant_id, ''), livemode, order_id) DO NOTHING
     RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode,
               channel_type, channel_id
   `;
   const insertArgs = [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode,
-      payinChannel.type, payinChannel.id];
-  // With a daily limit in force the insert is made under the banker's day lock, where the
-  // total is read again: orders arriving together cannot pass the limit between them.
-  const inserted = dailyLimit != null && input.merchantId
-    ? await insertWithinDailyLimit<any>(input.merchantId, input.amount, dailyLimit, insertSql, insertArgs)
+      payinChannel.type, payinChannel.id, midPick?.mid.id ?? null];
+  // With a daily limit in force, or a MID with limits, the insert is made under the banker's and
+  // the MID's locks, where the totals are read again: orders arriving together cannot pass a
+  // limit between them.
+  const midLimited = !!midPick && (midPick.mid.daily_amount != null || midPick.mid.daily_count != null || midPick.mid.monthly_amount != null);
+  const inserted = (dailyLimit != null || midLimited) && input.merchantId
+    ? await insertOrderWithinLimits<any>({ banker: input.merchantId, amount: input.amount, bankerDaily: dailyLimit,
+        mid: midPick?.mid ?? null, sql: insertSql, args: insertArgs })
     : await rows<any>("vendorGateway", insertSql, insertArgs);
 
   if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null };

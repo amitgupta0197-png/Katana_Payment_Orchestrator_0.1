@@ -32,6 +32,7 @@ import { activationErrorResponse } from "@/lib/live-activation";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody, merchantSafeError } from "@/lib/merchant-safe";
 import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
+import { NoMidAvailableError } from "@/lib/mid-switch";
 import { AccountNotLiveError } from "@/lib/gateway-golive";
 import { logApiRequest } from "@/lib/api-log";
 import { clientIp } from "@/lib/session-security";
@@ -189,6 +190,8 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
     // "not enabled for you" from a payment failure.
     if (err instanceof PayinFlowError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     if (err instanceof AccountNotLiveError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    // Every MID the banker's switch has is used up, paused or outside its hours (lib/mid-switch).
+    if (err instanceof NoMidAvailableError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status, headers: { "retry-after": "60" } });
     if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: merchantSafeError(err.message, WHERE) }, { status: err.status });
     const a = activationErrorResponse(err);   // live key, live mode not activated
     if (a) return NextResponse.json(a.body, { status: a.status });

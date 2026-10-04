@@ -109,7 +109,7 @@ export const openapiSpec = {
         responses: {
           "201": { description: "Order created", content: { "application/json": { schema: { $ref: "#/components/schemas/V2OrderCreated" } } } },
           "200": { description: "The reference was used before: the existing order", content: { "application/json": { schema: { $ref: "#/components/schemas/V2OrderCreated" } } } },
-          "400": v2Error(400), "401": v2Error(401), "403": v2Error(403), "409": v2Error(409), "422": v2Error(422), "429": v2Error(429), "500": v2Error(500), "502": v2Error(502),
+          "400": v2Error(400), "401": v2Error(401), "403": v2Error(403), "409": v2Error(409), "422": v2Error(422), "429": v2Error(429), "500": v2Error(500), "502": v2Error(502), "503": v2Error(503),
         },
       },
     },

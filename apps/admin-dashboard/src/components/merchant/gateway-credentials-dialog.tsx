@@ -26,7 +26,7 @@ export function serviceOf(id: GatewayId, kind: GatewayKind): GatewayService | nu
 }
 
 export function GatewayCredentialsDialog({
-  kind, merchantCode, configured, current, saving, onSave,
+  kind, merchantCode, configured, current, saving, onSave, addAnother = false,
 }: {
   kind: GatewayKind;
   merchantCode: string;
@@ -34,6 +34,8 @@ export function GatewayCredentialsDialog({
   current?: GatewayId;
   saving: boolean;
   onSave: (form: GatewayForm) => Promise<unknown>;
+  /** Adds a further account for the MID switch instead of replacing the first one. */
+  addAnother?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [gateway, setGateway] = useState<GatewayId>(current ?? "PAYU");
@@ -59,16 +61,17 @@ export function GatewayCredentialsDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant={configured ? "secondary" : "default"}>
-          <KeyRound className="h-4 w-4" /> {configured ? "Change" : "Connect gateway"}
+        <Button size="sm" variant={configured || addAnother ? "secondary" : "default"}>
+          <KeyRound className="h-4 w-4" /> {addAnother ? "Add another account" : configured ? "Change" : "Connect gateway"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{configured ? "Change" : "Connect"} {what} gateway</DialogTitle>
+          <DialogTitle>{addAnother ? `Add another ${what} account` : `${configured ? "Change" : "Connect"} ${what} gateway`}</DialogTitle>
           <DialogDescription>
             Credentials the gateway issued for <span className="font-mono">{merchantCode}</span>. Stored encrypted and never shown again.
-            {configured && " Saving replaces the current gateway."}
+            {addAnother ? " It is added beside the current account; the MID switch decides which one takes each order."
+              : configured && " Saving replaces the current gateway."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

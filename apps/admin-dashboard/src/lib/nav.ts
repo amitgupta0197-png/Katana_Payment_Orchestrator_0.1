@@ -1,4 +1,4 @@
-import { ListChecks,
+import { ListChecks, ArrowRightLeft,
   LayoutDashboard,
   BookOpen,
   GitMerge,
@@ -77,7 +77,7 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // to their job. Nothing is removed from the app — every page stays reachable by URL
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
-  OPERATOR:   ["/", "/orders", "/gateway-health", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
+  OPERATOR:   ["/", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/security"],
@@ -139,6 +139,8 @@ export const navItems: NavItem[] = [
   { href: "/bank-adapter", label: "Bank Adapters", icon: Network, status: "live", group: "Money Movement" },
   { href: "/crypto-rail", label: "Crypto Rails", icon: Coins, status: "live", group: "Money Movement" },
   { href: "/vendors/katana", label: "Katana Pay", icon: CreditCard, status: "live", group: "Money Movement" },
+  // Each banker's pay-in traffic between its own MIDs (lib/mid-switch).
+  { href: "/mid-switch", label: "MID switch", icon: ArrowRightLeft, status: "live", group: "Money Movement" },
   // Display name only — the rail code stays QUICKPAY in the DB, adapters and routes.
   { href: "/vendors/quickpay", label: "Vendor PG", icon: CreditCard, status: "live", group: "Money Movement" },
 

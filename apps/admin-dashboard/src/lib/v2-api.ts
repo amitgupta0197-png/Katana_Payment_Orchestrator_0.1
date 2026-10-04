@@ -22,6 +22,7 @@ import { z } from "zod";
 import { rows } from "@/lib/pg";
 import { createKatanaOrder, MerchantBlockedError, PayinFlowError, PayinSetupError } from "@/lib/katana-order";
 import { PayinLimitError } from "@/lib/payin-limits";
+import { NoMidAvailableError } from "@/lib/mid-switch";
 import { PayuIntentError, intentClientFrom } from "@/lib/payu-intent";
 import { LiveModeNotActivatedError } from "@/lib/live-activation";
 import { AccountNotLiveError } from "@/lib/gateway-golive";
@@ -59,6 +60,7 @@ export function toV2Error(err: unknown, where: string): V2Error {
   if (err instanceof PayinFlowError) return new V2Error(err.code, safe(err.message));
   if (err instanceof PayinSetupError) return new V2Error("SETUP_INCOMPLETE", safe(err.message));
   if (err instanceof PayuIntentError) return new V2Error("PROCESSOR_ERROR", safe(err.message));
+  if (err instanceof NoMidAvailableError) return new V2Error("NO_ACCOUNT_AVAILABLE", err.message, { "retry-after": "60" });
   // Anything else is ours. Its text (a database message, a stack) stays in the log.
   console.error(`[v2] ${where}:`, err);
   return new V2Error("INTERNAL_ERROR", "the request could not be completed; retry with the same reference");

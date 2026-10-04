@@ -48,7 +48,8 @@ export async function handlePayinWebhook(req: Request, input: {
     recordGatewayWebhook({ ...seen, outcome: "UNKNOWN_ORDER" });
     return NextResponse.json({ ok: true, ignored: "unknown order", txn_id: txnid });
   }
-  const gw = await gatewayPayinFor(owner.merchantCode);
+  // The account the order was created on signs its events (lib/mid-switch).
+  const gw = await gatewayPayinFor(owner.merchantCode, owner.vaultLabel);
   if (!gw || gw.mid.gateway !== input.provider) {
     recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, outcome: "NOT_CONNECTED" });
     return NextResponse.json({ ok: true, ignored: "gateway not connected", txn_id: txnid });

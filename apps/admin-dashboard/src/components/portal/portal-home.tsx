@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { istTime, rupees } from "@/lib/plain-words";
 import { PortalSearchBox, usePortal } from "@/components/portal/portal-frame";
+import { MidQuickSwitch } from "@/components/mid-switch/mid-quick-switch";
 import type { HomeData } from "@/lib/portal-home";
 
 const MUTED = "text-[color:var(--color-text-muted)]";
@@ -194,6 +195,8 @@ export function PortalHome() {
               ) : <p className={`text-sm ${MUTED}`}>No settlement to show yet.</p>}
             </Panel>
           </div>
+
+          <MidQuickSwitch base={base} />
 
           {d.setup.length > 0 && <Setup setup={d.setup} multi={d.bankers > 1} />}
 

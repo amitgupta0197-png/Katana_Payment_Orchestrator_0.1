@@ -24,5 +24,6 @@ export const V2_ERRORS = {
   DAILY_LIMIT_EXCEEDED:    { status: 422, meaning: "The order would pass the account's limit for the day." },
   RATE_LIMITED:            { status: 429, meaning: "Too many orders in one second; retry after the Retry-After header." },
   PROCESSOR_ERROR:         { status: 502, meaning: "The payment processor did not accept the request; retry with the same reference." },
+  NO_ACCOUNT_AVAILABLE:    { status: 503, meaning: "None of the account's payment accounts can take this payment now (limits used, paused or outside their hours); retry later." },
   INTERNAL_ERROR:          { status: 500, meaning: "Something failed on Katana's side; retry with the same reference." },
 } as const;

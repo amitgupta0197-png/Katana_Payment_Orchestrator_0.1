@@ -14,9 +14,9 @@
 // gateway: a customer who could not complete the payment is what a failing gateway looks like.
 // It is also what an uninterested customer looks like, so the threshold is a prompt to look.
 //
-// WHAT THIS DOES NOT DO. It does not move traffic. Every merchant has one pay-in gateway, so
-// there is nowhere to move an order to; when a gateway is unhealthy a person is told
-// (gateway:health:<GATEWAY> through lib/ops-alert) and decides.
+// WHAT THIS DOES NOT DO. It does not move traffic: it is per gateway, across every banker, and
+// a person is told (gateway:health:<GATEWAY> through lib/ops-alert). Traffic moves per banker in
+// the MID switch (lib/mid-switch), which judges each of the banker's own MIDs by its own orders.
 
 import { rows } from "@/lib/pg";
 import { setAlert } from "@/lib/ops-alert";

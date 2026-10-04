@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { rows } from "@/lib/pg";
 import { runJob } from "@/lib/jobs";
 import { GATEWAY_RECHECK_SQL } from "@/lib/katana-pay";
-import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
+import { getGatewayMid, orderVaultLabel, payuKeySalt } from "@/lib/gateway-creds";
 import { verifyPayuTxn } from "@/lib/payu-verify";
 import { applyVerifiedPayuStatus, claimPayuPayinCheck, markPayuPayinFinal } from "@/lib/payu-result";
 import { checkGatewayPayin, payinConnector, payinConnectorFor } from "@/lib/gateway-payin";
@@ -47,8 +47,9 @@ async function run() {
   // EXPIRED is included on purpose: the pay page stops waiting after 15 minutes, but a customer
   // who approved late has still paid, and confirmKatanaOrder revives an expired order on success.
   // So is a recently FAILED one, for the same reason (GATEWAY_RECHECK_SQL).
-  const payins = await rows<{ txn_id: string; merchant_id: string; provider: string }>("vendorGateway", `
-    SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider
+  const payins = await rows<{ txn_id: string; merchant_id: string; provider: string; mid: unknown }>("vendorGateway", `
+    SELECT vendor_txn_id AS txn_id, merchant_id, meta->'gateway'->>'provider' AS provider,
+           jsonb_build_object('mid', meta->'mid') AS mid   -- the gateway account it was created on (lib/mid-switch)
       FROM vendor_payin_orders
      WHERE vendor = 'KATANA' AND COALESCE(meta->'gateway'->>'provider', '') <> ''
        AND ${GATEWAY_RECHECK_SQL}
@@ -79,11 +80,12 @@ async function run() {
   const unreachableReasons: Record<string, number> = {};
 
   const checks = [
-    ...pending.map((o) => ({ ...o, payin: false, provider: null as string | null })),
+    ...pending.map((o) => ({ ...o, payin: false, provider: null as string | null, mid: null as unknown })),
     ...payins.map((o) => ({ ...o, payin: true })),
   ];
   for (const o of checks) {
-    const mid = await getGatewayMid(o.merchant_id);
+    // A Katana Pay order is asked about on the gateway account it was created on (lib/mid-switch).
+    const mid = await getGatewayMid(o.merchant_id, orderVaultLabel(o.mid));
 
     // Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, and PayU with a Client ID + Secret.
     // A Katana Pay order names its provider; for PAYU the merchant's sign-in mode picks the path

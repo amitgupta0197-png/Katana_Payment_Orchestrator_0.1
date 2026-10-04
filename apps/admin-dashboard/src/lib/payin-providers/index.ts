@@ -36,9 +36,12 @@ export function payinConnectorFor(mid: GatewayMid | null | undefined): PayinConn
   return payinConnector(mid.gateway);
 }
 
-/** The merchant's gateway credentials and connector, unless they use PayU Key + Salt (lib/payu-*). */
-export async function gatewayPayinFor(merchantCode: string): Promise<{ mid: GatewayMid; connector: PayinConnector } | null> {
-  const mid = await getGatewayMid(merchantCode).catch(() => null);
+/**
+ * The merchant's gateway credentials and connector, unless they use PayU Key + Salt (lib/payu-*).
+ * `label` picks one of its gateway accounts (lib/gateway-creds orderVaultLabel); default the first.
+ */
+export async function gatewayPayinFor(merchantCode: string, label?: string): Promise<{ mid: GatewayMid; connector: PayinConnector } | null> {
+  const mid = await getGatewayMid(merchantCode, label).catch(() => null);
   const connector = payinConnectorFor(mid);
   return mid && connector ? { mid, connector } : null;
 }

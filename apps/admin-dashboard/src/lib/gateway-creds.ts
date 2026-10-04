@@ -8,8 +8,11 @@
 //   - At order time Katana maps merchant -> gateway MID creds internally and
 //     signs the outbound gateway request itself.
 //
-// One sealed `mid_secret` vault row per merchant (label="gateway_mid") holds a
-// JSON blob { gateway, mid_code, key, salt, scheme }.
+// One sealed `mid_secret` vault row per gateway account holds a JSON blob
+// { gateway, mid_code, key, salt, scheme }. A banker's first account is label "gateway_mid";
+// further accounts for the MID switch (lib/mid-switch) are "gateway_mid:<id>". An order records
+// the account it was created on (meta.mid.vault_label) and everything that asks the gateway about
+// that order afterwards (webhooks, status checks, sweeps) uses the same account: gatewayMidForOrder.
 
 import { createHash, createHmac } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
@@ -19,7 +22,16 @@ import { gatewayDef, hint, type AuthModeId } from "@/lib/pg-catalog";
 export type SigningScheme = "PAYU_SHA512" | "HMAC_SHA256";
 export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
 
-const VAULT_LABEL = "gateway_mid";
+export const VAULT_LABEL = "gateway_mid";
+
+/** A further gateway account's vault label. */
+export const accountVaultLabel = (id: string) => `${VAULT_LABEL}:${id}`;
+
+/** The vault label an order was created on: its MID's account, else the banker's first account. */
+export function orderVaultLabel(meta: unknown): string {
+  const m = (meta as { mid?: { vault_label?: unknown } } | null | undefined)?.mid;
+  return typeof m?.vault_label === "string" && m.vault_label.startsWith(VAULT_LABEL) ? m.vault_label : VAULT_LABEL;
+}
 
 export interface GatewayMid {
   gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM, RUBYVAULT, ISMARTPAY
@@ -38,21 +50,26 @@ export interface GatewayMid {
 }
 
 // Persist (or rotate) a merchant's gateway MID credentials. Sealed at rest.
-export async function storeGatewayMid(merchantCode: string, mid: GatewayMid): Promise<void> {
+export async function storeGatewayMid(merchantCode: string, mid: GatewayMid, label: string = VAULT_LABEL): Promise<void> {
   await storeCredential({
     kind: "mid_secret", ownerType: "merchant", ownerId: merchantCode,
-    label: VAULT_LABEL, plaintext: JSON.stringify(mid),
+    label, plaintext: JSON.stringify(mid),
   });
 }
 
 // Internal resolver: merchant_code -> full gateway creds (key+salt included).
 // Server-side only; never hand the result to a merchant response.
-export async function getGatewayMid(merchantCode: string): Promise<GatewayMid | null> {
+export async function getGatewayMid(merchantCode: string, label: string = VAULT_LABEL): Promise<GatewayMid | null> {
   const pt = await readCredential({
-    kind: "mid_secret", ownerType: "merchant", ownerId: merchantCode, label: VAULT_LABEL,
+    kind: "mid_secret", ownerType: "merchant", ownerId: merchantCode, label,
   });
   if (!pt) return null;
   try { return JSON.parse(pt) as GatewayMid; } catch { return null; }
+}
+
+/** The gateway account an existing order was created on (meta.mid), for every later call about it. */
+export async function gatewayMidForOrder(merchantCode: string, meta: unknown): Promise<GatewayMid | null> {
+  return getGatewayMid(merchantCode, orderVaultLabel(meta));
 }
 
 /**
@@ -77,8 +94,8 @@ export type GatewayMidStatus =
       auth: AuthModeId; auth_label: string | null;
     };
 
-export async function getGatewayMidStatus(merchantCode: string): Promise<GatewayMidStatus> {
-  const mid = await getGatewayMid(merchantCode);
+export async function getGatewayMidStatus(merchantCode: string, label: string = VAULT_LABEL): Promise<GatewayMidStatus> {
+  const mid = await getGatewayMid(merchantCode, label);
   if (!mid) return { configured: false };
   const def = gatewayDef(mid.gateway);
   const env = mid.env ?? "TEST";

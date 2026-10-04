@@ -28,7 +28,8 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       if (r.status === 403) return { restricted: true as const };
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
-      return d as { status: PayinStatus; webhook_url?: string | null; golive?: { status: "VERIFYING" | "LIVE" } | null };
+      return d as { status: PayinStatus; webhook_url?: string | null; golive?: { status: "VERIFYING" | "LIVE" } | null;
+        accounts?: { vault_label: string; gateway: string; env: string; mid_code: string }[] };
     },
   });
   const restricted = (q.data as { restricted?: boolean })?.restricted;
@@ -41,8 +42,9 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
     catch { toast.error("Couldn't copy", { description: webhookUrl }); }
   };
 
+  const accounts = (q.data as { accounts?: { vault_label: string; gateway: string; env: string; mid_code: string }[] })?.accounts ?? [];
   const save = useMutation({
-    mutationFn: async (form: GatewayForm) => {
+    mutationFn: async (form: GatewayForm & { account?: string }) => {
       const r = await fetch(`/api/merchants/${merchantId}/gateway-mid`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
       });
@@ -62,8 +64,14 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
           <CardDescription>The payment gateway this merchant collects through, and the credentials Katana uses on their behalf. Stored encrypted; never shown to the merchant.</CardDescription>
         </div>
         {!restricted && (
-          <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={!!status?.configured}
-            current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync(f)} />
+          <div className="flex flex-wrap gap-2">
+            <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={!!status?.configured}
+              current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync(f)} />
+            {status?.configured && (
+              <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={false} addAnother
+                current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync({ ...f, account: "new" })} />
+            )}
+          </div>
         )}
       </CardHeader>
       <CardContent>
@@ -96,6 +104,13 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
                 <span className="text-[color:var(--color-text-muted)]">Payment events:</span>
                 <span className="min-w-0 truncate font-mono text-xs">{webhookUrl}</span>
                 <Button size="sm" variant="secondary" onClick={copyEndpoint}><Copy className="h-4 w-4" /> Copy</Button>
+              </div>
+            )}
+            {accounts.length > 1 && (
+              <div className="pt-1 text-xs">
+                <span className="text-[color:var(--color-text-muted)]">More accounts for the MID switch:</span>{" "}
+                {accounts.filter((a) => a.vault_label !== "gateway_mid").map((a) => `${a.gateway} ${a.mid_code} (${a.env})`).join(" · ")}
+                {" "}— <a className="underline" href={`/mid-switch?banker=${encodeURIComponent(merchantCode)}`}>set limits and priority</a>
               </div>
             )}
             {!status.connector && (
