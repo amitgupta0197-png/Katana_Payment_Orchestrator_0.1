@@ -32,7 +32,7 @@ export default function GatewayGoLivePage() {
           <CardTitle className="text-base">Accounts</CardTitle>
           <CardDescription>
             An account appears here when live credentials are saved for a banker.
-            {l ? ` While it is verifying it takes at most ${l.max_orders} live payments of up to ₹${l.max_amount} each.` : ""} Accounts that were live before the checklist existed are not listed and are not restricted.
+            {l ? ` While it is verifying it takes at most ${l.max_orders} live payments of up to ₹${l.max_amount} each (or the gateway's own minimum, when that is higher: RubyVault ₹500).` : ""} Accounts that were live before the checklist existed are not listed and are not restricted.
           </CardDescription>
         </CardHeader>
         <CardContent>

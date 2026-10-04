@@ -11,7 +11,7 @@ import { getGatewayMid, payinProdId, payuKeySalt } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
-import { gatewayName } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayName } from "@/lib/pg-catalog";
 import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
@@ -288,7 +288,12 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   const decided = decideOrderFlow({ flow: setting.flow, active: setting.active }, input.flow ?? null);
   if (!decided.ok) throw new PayinFlowError(decided.error, decided.code);
   const flow = decided.flow;
+  // An Intent order may go to an Intent gateway account; a P2P order never does. A P2P order may
+  // go to a P2P processor account (lib/pg-catalog gatewayAccountChannel: the customer pays a UPI
+  // ID of the banker's own and the processor confirms it, e.g. PayAtom); an Intent order never
+  // does. With no flow selected either may take it, as the routing always did.
   const gatewayAllowed = flow !== "P2P";
+  const p2pProviderAllowed = flow !== "INTENT";
 
   // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses
   // the parent merchant's API key but carries its own identity, so payin volume is
@@ -355,9 +360,15 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
-  const connected = livemode && gatewayAllowed && !payuMid && input.merchantId
+  const anyAccount = livemode && (gatewayAllowed || p2pProviderAllowed) && !payuMid && input.merchantId
     ? await gatewayPayinFor(input.merchantId, vaultLabel).catch(() => null)
     : null;
+  // Only an account of this order's flow. A P2P processor account needs a UPI intent (the customer
+  // pays the banker's UPI ID in it); the MID switch only picks for Intent, so a P2P order uses the
+  // banker's first account. An Intent order the switch put on a P2P account moves on (below).
+  const accountChannel = anyAccount ? gatewayAccountChannel(anyAccount.mid) : null;
+  const connected = anyAccount && (accountChannel === "P2P" ? p2pProviderAllowed && !!anyAccount.connector.upiIntent : gatewayAllowed)
+    ? anyAccount : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
   // Gateways with no UPI intent take the payment on their own hosted page: PayU with a Client ID +
   // Secret (payment links), RubyVault and iSmartPay. The order gets that page and the customer pays
@@ -565,7 +576,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // as P2P, the Intent API answered `flow: "P2P"` and the Intent status lookup did not find it.
   const payinChannel = !gateway?.provider && flow === "INTENT"
     ? { type: "INTENT" as const, id: SANDBOX_CHANNEL_ID }
-    : classifyPayinOrder(gateway?.provider);
+    : classifyPayinOrder(gateway?.provider, otherGw ? accountChannel : null);
 
   const insertSql = `
     INSERT INTO vendor_payin_orders

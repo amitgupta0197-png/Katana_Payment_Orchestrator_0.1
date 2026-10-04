@@ -189,7 +189,7 @@ export function PayinFlowCard({ target }: { target: FlowTarget }) {
   });
   const d = q.data;
   const own: MerchantFlow = d ? (target.kind === "banker" ? d.own ?? { flow: "UNSET", active: null } : { flow: d.flow, active: d.active }) : { flow: "UNSET", active: null };
-  const needs = (f: OrderFlow) => (f === "P2P" ? "a settlement UPI ID" : "a connected pay-in gateway");
+  const needs = (f: OrderFlow) => (f === "P2P" ? "a settlement UPI ID or a P2P processor account" : "a connected pay-in gateway");
   const inForce: OrderFlow[] = !d ? [] : d.flow === "BOTH" ? ["P2P", "INTENT"] : d.flow === "UNSET" ? [] : [d.flow];
   const missing = d?.readiness ? inForce.filter((f) => !(f === "P2P" ? d.readiness!.p2p : d.readiness!.intent)) : [];
 
@@ -265,7 +265,7 @@ export function FlowFitNote({ bankerId, flow }: { bankerId: string; flow: OrderF
   const text = d.flow === "UNSET"
     ? `No pay-in flow is selected for this banker yet, so its orders are routed as before. Select ${label} or Both under Overview → Pay-in flow.`
     : !on ? `This banker is on ${flowText(d)}: ${label} orders are refused. Change it under Overview → Pay-in flow.`
-    : ready === false ? `This banker is on ${flowText(d)}, but ${flow === "P2P" ? "has no settlement UPI ID" : "has no pay-in gateway connected"} yet.`
+    : ready === false ? `This banker is on ${flowText(d)}, but ${flow === "P2P" ? "has no settlement UPI ID or P2P processor account" : "has no Intent pay-in gateway connected"} yet.`
     : `This banker takes ${label} pay-ins (${flowText(d)}).`;
   const tone = d.flow !== "UNSET" && on && ready !== false ? "success" : "warning";
   return (

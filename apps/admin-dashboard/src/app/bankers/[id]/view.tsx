@@ -703,6 +703,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </div>
           <div className="mt-4">
             <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
+            {named && <IntentLiveTestCard merchantId={merchant.id} merchantCode={merchant.merchant_code} flow="P2P" />}
             <PayinOperationsCard merchantId={merchant.id} channel="P2P" />
             <MerchantCapturedCreditsCard merchantId={merchant.id} />
             <MerchantTransactionsCard merchantId={merchant.id} channel="P2P" />

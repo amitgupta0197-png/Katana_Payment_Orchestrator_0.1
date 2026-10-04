@@ -16,6 +16,7 @@ interface PayinStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
   mid_code?: string; env?: "TEST" | "PROD"; env_label?: string; key_hint?: string;
   auth?: "key_salt" | "client_credentials"; auth_label?: string | null;
+  channel?: "INTENT" | "P2P";
 }
 
 export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: string; merchantCode: string }) {
@@ -86,6 +87,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
               </span>
               <Badge variant={status.env === "PROD" ? "danger" : "default"}>{status.env_label}</Badge>
               {status.auth_label && <Badge variant="default">{status.auth_label}</Badge>}
+              {status.channel === "P2P" && <Badge variant="info" title="The money lands in the banker's own accounts; used for P2P orders, never for Intent">P2P flow</Badge>}
               {status.connector
                 ? <Badge variant="success">Connected</Badge>
                 : <Badge variant="warning">Saved — connector coming soon</Badge>}

@@ -2,7 +2,7 @@
 //
 // PURE (no `pg`, no server imports): the dashboards import the same definitions the API uses.
 //
-//   INTENT        a gateway issues the payment and confirms it (PayU, RubyVault, iSmartPay, …).
+//   INTENT        a gateway issues the payment and confirms it (PayU, RubyVault, iSmartPay, PayAtom, …).
 //   P2P           the payer pays a banker's own UPI ID; the proof is a bank credit.
 //   UNCLASSIFIED  a legacy row whose rail was never recorded. Shown as such, never guessed.
 //
@@ -36,10 +36,13 @@ export const P2P_CHANNEL_ID = "UPI_DIRECT";
 
 /**
  * The channel of a new Katana Pay order: INTENT when a gateway takes the payment, P2P when the
- * customer is sent to the banker's own UPI ID.
+ * customer is sent to the banker's own UPI ID. A P2P processor account (the customer pays the
+ * banker's own UPI ID and the processor confirms it, e.g. PayAtom) is P2P, its rail the processor.
  */
-export function classifyPayinOrder(gatewayProvider: string | null | undefined): { type: PayinChannel; id: string } {
-  if (gatewayProvider) return { type: "INTENT", id: gatewayProvider };
+export function classifyPayinOrder(
+  gatewayProvider: string | null | undefined, accountChannel?: "INTENT" | "P2P" | null,
+): { type: PayinChannel; id: string } {
+  if (gatewayProvider) return { type: accountChannel === "P2P" ? "P2P" : "INTENT", id: gatewayProvider };
   return { type: "P2P", id: P2P_CHANNEL_ID };
 }
 

@@ -153,10 +153,21 @@ export function GatewayCredentialsDialog({
           {shown.map((f) => (
             <div key={`${gateway}-${auth}-${f.name}`} className="space-y-1.5">
               <Label>{f.label}{f.optional && <span className="text-[color:var(--color-text-muted)]"> (optional)</span>}</Label>
-              <Input
-                type={f.secret ? "password" : "text"} autoComplete="off" placeholder={f.placeholder}
-                value={fields[f.name] ?? ""} onChange={(e) => setFields({ ...fields, [f.name]: e.target.value })}
-              />
+              {f.options ? (
+                // A choice (PayAtom: where the money lands). No default: staff pick it on purpose.
+                <select
+                  className="flex h-9 w-full rounded-md border bg-[color:var(--color-surface)] px-3 py-1 text-sm"
+                  value={fields[f.name] ?? ""} onChange={(e) => setFields({ ...fields, [f.name]: e.target.value })}
+                >
+                  <option value="" disabled>Choose…</option>
+                  {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : (
+                <Input
+                  type={f.secret ? "password" : "text"} autoComplete="off" placeholder={f.placeholder}
+                  value={fields[f.name] ?? ""} onChange={(e) => setFields({ ...fields, [f.name]: e.target.value })}
+                />
+              )}
             </div>
           ))}
         </div>

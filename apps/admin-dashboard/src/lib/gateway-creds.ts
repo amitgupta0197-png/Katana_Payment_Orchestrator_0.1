@@ -17,7 +17,7 @@
 import { createHash, createHmac } from "crypto";
 import { storeCredential, readCredential } from "@/lib/credential-vault";
 import { rows } from "@/lib/pg";
-import { gatewayDef, hint, type AuthModeId } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayDef, hint, type AuthModeId } from "@/lib/pg-catalog";
 
 export type SigningScheme = "PAYU_SHA512" | "HMAC_SHA256";
 export const SIGNING_SCHEMES: SigningScheme[] = ["PAYU_SHA512", "HMAC_SHA256"];
@@ -34,7 +34,7 @@ export function orderVaultLabel(meta: unknown): string {
 }
 
 export interface GatewayMid {
-  gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM, RUBYVAULT, ISMARTPAY
+  gateway: string;      // lib/pg-catalog GatewayId: PAYU, RAZORPAY, CASHFREE, CCAVENUE, PHONEPE, PAYTM, RUBYVAULT, ISMARTPAY, PAYATOM
   mid_code: string;     // the merchant's id at the gateway
   key: string;          // the gateway's public credential (PayU key, Razorpay Key ID, Cashfree App ID, …)
   salt: string;         // the gateway's secret (PayU salt, Razorpay Key Secret, CCAvenue Working Key, …)
@@ -92,6 +92,8 @@ export type GatewayMidStatus =
       configured: true; gateway: string; gateway_name: string; connector: boolean;
       mid_code: string; scheme: SigningScheme; env: "TEST" | "PROD"; env_label: string; key_hint: string;
       auth: AuthModeId; auth_label: string | null;
+      /** The pay-in flow this account runs on (lib/pg-catalog gatewayAccountChannel). */
+      channel: "INTENT" | "P2P";
     };
 
 export async function getGatewayMidStatus(merchantCode: string, label: string = VAULT_LABEL): Promise<GatewayMidStatus> {
@@ -107,6 +109,7 @@ export async function getGatewayMidStatus(merchantCode: string, label: string = 
     key_hint: hint(mid.key),
     auth: mid.auth ?? "key_salt",
     auth_label: alt?.label ?? def?.payin.defaultAuthLabel ?? null,
+    channel: gatewayAccountChannel(mid),
   };
 }
 

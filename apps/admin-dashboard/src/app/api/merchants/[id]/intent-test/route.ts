@@ -1,9 +1,13 @@
-// Intent live test: a real, live pay-in on a banker's own pay-in gateway, made by Katana staff
-// from the banker page's Intent section, with a payment link to pay it from a phone.
-//   GET  — this banker's recent live tests and the verifying limits. Staff.
-//   POST { amount, customer_phone? } — create one. SUPER_ADMIN / ADMIN.
+// Live test: a real, live pay-in on a banker, made by Katana staff from the banker page's Intent
+// or P2P section, with a payment link to pay it from a phone. (The path says "intent" because it
+// began as the Intent test; it serves both flows.)
+//   GET  — this banker's recent live tests (each with its channel) and the verifying limits. Staff.
+//   POST { amount, customer_phone?, flow? } — create one; flow INTENT (default) or P2P. SUPER_ADMIN / ADMIN.
 //
-// It is an ordinary live order on the Intent flow (createKatanaOrder with flow INTENT), so it goes
+// Intent: the banker's Intent gateway takes it. P2P: its P2P processor account if it has one (e.g.
+// PayAtom on P2P), else its own UPI ID, confirmed by the bank credit as any P2P order.
+//
+// It is an ordinary live order on that flow (createKatanaOrder with the flow named), so it goes
 // through everything a merchant's order does: block, live mode, limits, the MID switch and the
 // go-live checklist (an account still VERIFYING takes only small payments). What differs: it is
 // marked `meta.staff_test`, and the banker's server is not sent a callback for it
@@ -41,11 +45,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   try {
     const tests = await rows<any>("vendorGateway", `
       SELECT id::text, order_id, amount::float AS amount, status, COALESCE(rrn,'') AS rrn, created_at, updated_at,
-             meta->'staff_test'->>'by' AS by, meta->'gateway'->>'provider' AS gateway,
+             meta->'staff_test'->>'by' AS by, meta->'gateway'->>'provider' AS gateway, channel_type,
              COALESCE(meta->'mid'->>'name', meta->'mid'->>'vault_label') AS account
         FROM vendor_payin_orders
        WHERE vendor = 'KATANA' AND merchant_id = $1 AND livemode AND meta ? 'staff_test'
-       ORDER BY created_at DESC LIMIT 10
+       ORDER BY created_at DESC LIMIT 20
     `, [scope.code]);
     return NextResponse.json({
       merchant_code: scope.code,
@@ -58,6 +62,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const schema = z.object({
   amount: z.coerce.number().min(1).max(10_000),
   customer_phone: z.string().trim().regex(/^[6-9]\d{9}$/, "a 10-digit Indian mobile number").optional().or(z.literal("").transform(() => undefined)),
+  flow: z.enum(["INTENT", "P2P"]).default("INTENT"),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -74,13 +79,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     // A banker with no flow selected has its orders routed as they always were: to its pay-in
-    // gateway when a live one is connected. Naming INTENT there would be refused
-    // (FLOW_NOT_SELECTED), so the test leaves the flow out, and only when that gateway is live.
+    // gateway when a live one is connected. Naming a flow there would be refused
+    // (FLOW_NOT_SELECTED), so the test leaves the flow out; an Intent test only when an Intent
+    // gateway is live, so it cannot fall back to a UPI ID.
     const unset = (await getEffectiveFlow(scope.code)).flow === "UNSET";
-    if (unset) {
+    if (unset && body.flow === "INTENT") {
       const gw = await getGatewayMidStatus(scope.code).catch(() => ({ configured: false as const }));
-      if (!gw.configured || !gw.connector || gw.env !== "PROD")
-        return NextResponse.json({ error: "no live pay-in gateway is connected for this banker: save live credentials under Pay-in gateway first", code: "FLOW_NOT_READY" }, { status: 409 });
+      if (!gw.configured || !gw.connector || gw.env !== "PROD" || gw.channel !== "INTENT")
+        return NextResponse.json({ error: "no live Intent pay-in gateway is connected for this banker: save live credentials under Pay-in gateway first", code: "FLOW_NOT_READY" }, { status: 409 });
     }
     const r = await createKatanaOrder({
       orderId: `LT-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`,
@@ -89,7 +95,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       merchantId: scope.code,
       receiverVpas: [],
       mode: "INTENT",
-      flow: unset ? null : "INTENT",   // never a UPI ID: a banker not on Intent is refused (FLOW_NOT_ENABLED)
+      flow: unset ? null : body.flow,   // a banker not on that flow is refused (FLOW_NOT_ENABLED)
       livemode: true,          // whatever the dashboard's Test / Live switch says
       customerPhone: body.customer_phone ?? null,
       client: intentClientFrom(req),
@@ -99,15 +105,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Which account the MID switch put it on, for the person testing.
     const meta = (await rows<{ meta: any }>("vendorGateway",
       `SELECT meta FROM vendor_payin_orders WHERE id = $1::uuid`, [r.order.id]).catch(() => []))[0]?.meta ?? {};
-    // With no flow selected the old routing decided; say so if it did not reach the gateway.
-    const warning = r.order.channel_type !== "INTENT"
-      ? "this order was not sent to the pay-in gateway (no flow is selected and the old routing chose a UPI ID); select Intent or Both for this banker"
+    // With no flow selected the old routing decided; say so if it chose the other flow.
+    const warning = r.order.channel_type !== body.flow
+      ? `this order went on the ${r.order.channel_type === "INTENT" ? "Intent" : "P2P"} flow, not ${body.flow === "INTENT" ? "Intent" : "P2P"}: no flow is selected for this banker and the old routing chose; select a flow for this banker`
       : null;
     return NextResponse.json({
       order: { id: r.order.id, order_id: r.order.order_id, amount: Number(r.order.amount), status: r.order.status, created_at: r.order.created_at },
       pay_link: `${base()}/pay/${r.order.id}`,
       gateway: meta.gateway?.provider ?? null,
       account: meta.mid?.name ?? meta.mid?.vault_label ?? null,
+      channel: r.order.channel_type,
       warning,
     }, { status: 201 });
   } catch (err) {

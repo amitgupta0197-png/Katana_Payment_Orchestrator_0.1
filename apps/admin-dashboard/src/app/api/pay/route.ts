@@ -22,7 +22,8 @@ import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody } from "@/lib/merchant-safe";
 import { getMerchantFlow } from "@/lib/payin-flow-store";
 import { serviceRefusal } from "@/lib/merchant-services-store";
-import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
+import { issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
+import { intentGatewayPayinFor } from "@/lib/payin-providers";
 import { runCheckout } from "@/lib/checkout-core";
 import { assertLiveActivated, activationErrorResponse } from "@/lib/live-activation";
 import { goLiveBlocker } from "@/lib/gateway-golive";
@@ -143,7 +144,7 @@ async function handle(req: Request, seen: Seen): Promise<NextResponse> {
 
     // Razorpay, Cashfree, CCAvenue, PhonePe and Paytm (lib/gateway-payin). Their sandbox keys
     // pair with a Katana test key, so these work for test orders too.
-    const other = wantRedirect || wantIntent ? await gatewayPayinFor(merchantCode) : null;
+    const other = wantRedirect || wantIntent ? await intentGatewayPayinFor(merchantCode) : null;
     if (other) {
       const currency = (body.currency ?? "INR").toUpperCase();
       if (currency !== "INR") return json({ error: `${other.connector.name} payments are INR only here` }, { status: 400 });

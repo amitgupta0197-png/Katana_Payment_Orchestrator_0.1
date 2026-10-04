@@ -1,6 +1,6 @@
 // RULE: a merchant never learns which payment gateway sits behind Katana.
 //
-// PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, RubyVault, iSmartPay and any
+// PayU, Razorpay, Cashfree, CCAvenue, PhonePe PG, Paytm PG, RubyVault, iSmartPay, PayAtom and any
 // gateway added later are Katana's own business. Their names, their error text, their support
 // addresses and their ids must not reach a merchant: not in an API response, not in a callback,
 // not on the hosted pay page, not in the provider or branch portal, not in the public guides.

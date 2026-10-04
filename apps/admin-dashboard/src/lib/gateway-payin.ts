@@ -162,9 +162,22 @@ export async function checkGatewayPayin(input: {
   if (!gw || gw.mid.gateway !== input.provider) return { applied: false, status: "UNKNOWN", reason: "no_gateway_credentials" };
   if (input.throttleSec != null && !(await claimGatewayPayinCheck(input.provider, input.txnid, input.throttleSec)))
     return { applied: false, status: "UNKNOWN", reason: "checked_recently" };
-  const s = await gw.connector.status(gw.mid, input.txnid, await orderAmountMinor(input.provider, input.txnid));
+  const s = await gw.connector.status(gw.mid, input.txnid, await orderAmountMinor(input.provider, input.txnid),
+    await gatewayPaymentRef(input.provider, input.txnid, v));
   if (!s.ok) return { applied: false, status: "UNKNOWN", reason: "lookup_failed", lookupError: s.error };
   return applyGatewayPayinState(input.provider, input.txnid, s.data, input.source);
+}
+
+/** The gateway's own id for an order, kept when it was made: a Katana Pay order's meta, else the checkout order's intent. */
+async function gatewayPaymentRef(provider: string, txnid: string, v: { meta: any } | null): Promise<string | null> {
+  const fromOrder = v?.meta?.gateway?.payment_id;
+  if (typeof fromOrder === "string" && fromOrder) return fromOrder;
+  const c = (await rows<{ ref: string | null }>("checkout", `
+    SELECT t.payload->>'payment_id' AS ref FROM checkout_orders o
+      JOIN order_state_transitions t ON t.order_id = o.id AND t.reason = $2
+     WHERE o.txn_id = $1 AND t.payload->>'provider' = $3
+     ORDER BY t.occurred_at DESC LIMIT 1`, [txnid, ISSUED, provider]).catch(() => []))[0];
+  return c?.ref ?? null;
 }
 
 async function orderAmountMinor(provider: string, txnid: string): Promise<bigint | undefined> {

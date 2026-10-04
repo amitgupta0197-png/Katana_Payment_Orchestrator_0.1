@@ -163,7 +163,7 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
        WHERE merchant_id = $1 AND livemode = false AND status IN ('SUCCESS', 'SUCCEEDED')`, [code]).catch(() => []),
     rows<{ n: number }>("checkout", `
       SELECT COUNT(*)::int AS n FROM checkout_orders WHERE merchant_id = $1 AND livemode = false AND status = 'SUCCESS'`, [code]).catch(() => []),
-    needs.payinGateway ? flowReadiness([code]).catch(() => null) : null,
+    needs.payinGateway || needs.settlementVpa ? flowReadiness([code]).catch(() => null) : null,
     needs.testPayout
       ? rows<{ n: number }>("fifo", `
           SELECT COUNT(*)::int AS n FROM fifo_orders
@@ -182,7 +182,8 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
       hint: "Katana finishes KYB, screening and bank verification, then approves the account.",
     },
     needs.settlementVpa && {
-      key: "settlement_vpa", label: "Settlement UPI ID saved", done: !!c?.vpa?.trim() || extraVpas,
+      // A P2P processor account (lib/pg-catalog gatewayAccountChannel) takes P2P payments in its place.
+      key: "settlement_vpa", label: "Settlement UPI ID saved", done: !!c?.vpa?.trim() || extraVpas || !!ready?.get(code)?.p2p,
       hint: "The UPI ID your live payments are paid to. Your Katana account manager sets it.",
     },
     needs.payinGateway && {

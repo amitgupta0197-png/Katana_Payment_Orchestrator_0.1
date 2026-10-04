@@ -31,6 +31,7 @@ import { getGatewayMid, payuKeySalt, VAULT_LABEL } from "@/lib/gateway-creds";
 import { payinConnectorFor } from "@/lib/payin-providers";
 import { payinWebhookUrl } from "@/lib/payin-providers/types";
 import { verifyPayuTxn } from "@/lib/payu-verify";
+import { gatewayAccountChannel, gatewayDef } from "@/lib/pg-catalog";
 
 export type GoLiveStatus = "VERIFYING" | "LIVE";
 
@@ -77,6 +78,15 @@ export function goLiveChecklist(r: GoLiveRow, sendsWebhooks = true): ChecklistIt
 
 export function canGoLive(r: GoLiveRow, sendsWebhooks = true): boolean {
   return goLiveChecklist(r, sendsWebhooks).every((i) => i.done);
+}
+
+/**
+ * The largest payment a VERIFYING account of this gateway takes: GOLIVE_VERIFY_MAX_AMOUNT, raised to
+ * the gateway's own live minimum when that is higher (RubyVault refuses live payments under ₹500,
+ * so a ₹100 cap left no payment both would accept and the checklist could never finish).
+ */
+export function verifyMaxAmountFor(gateway: string | null | undefined): number {
+  return Math.max(VERIFY_MAX_AMOUNT, (gateway && gatewayDef(gateway)?.payin.minAmount) || 0);
 }
 
 /** Why a VERIFYING account cannot take this live order, or null. */
@@ -144,7 +154,7 @@ export async function assertGoLiveAllows(merchantCode: string, gateway: string, 
       SELECT COUNT(*)::int AS n FROM checkout_orders WHERE merchant_id = $1 AND COALESCE(livemode, true) AND created_at >= $2`,
       [merchantCode, row.created_at]).catch(() => [{ n: 0 }]),
   ]);
-  const blocker = verifyingBlocker(amount, (payins[0]?.n ?? 0) + (checkouts[0]?.n ?? 0));
+  const blocker = verifyingBlocker(amount, (payins[0]?.n ?? 0) + (checkouts[0]?.n ?? 0), verifyMaxAmountFor(gateway));
   if (blocker) throw new AccountNotLiveError(blocker);
 }
 
@@ -162,6 +172,11 @@ export async function goLiveView(r: GoLiveRow) {
     ...r, account_label: r.account === VAULT_LABEL ? "First account" : `Account ${r.account.slice(VAULT_LABEL.length + 1, VAULT_LABEL.length + 9)}`,
     mid_code: mid?.mid_code ?? null, sends_webhooks: hooks, callback_url: hooks ? payinWebhookUrl(r.gateway) : null,
     credentials_match: mid?.gateway === r.gateway && mid.env === "PROD",
+    // The flow the account runs on (a PayAtom account may be P2P), for the banker page's two tabs.
+    channel: gatewayAccountChannel(mid),
+    // This account's verification limits: the gateway's minimum, and the cap that allows it.
+    verify_max_amount: verifyMaxAmountFor(r.gateway),
+    min_amount: gatewayDef(r.gateway)?.payin.minAmount ?? null,
     checklist: goLiveChecklist(r, hooks), can_go_live: r.status === "VERIFYING" && canGoLive(r, hooks),
   };
 }
@@ -226,7 +241,10 @@ export async function recordStatusCheck(merchantCode: string, gateway: string, b
   } else {
     const connector = payinConnectorFor(mid);
     if (!connector) return { row, answer: "no connector for this gateway" };
-    const s = await connector.status(mid, row.webhook_txn_id);
+    // The gateway's own id for the payment, for a gateway that looks orders up by it (PayAtom).
+    const ref = row.webhook_order_id ? (await rows<{ ref: string | null }>("vendorGateway",
+      `SELECT meta->'gateway'->>'payment_id' AS ref FROM vendor_payin_orders WHERE id = $1::uuid`, [row.webhook_order_id]).catch(() => []))[0]?.ref ?? null : null;
+    const s = await connector.status(mid, row.webhook_txn_id, undefined, ref);
     paid = s.ok && s.data.final === "SUCCESS";
     answer = s.ok ? s.data.status ?? (s.data.found ? "not final" : "not found") : s.error;
   }

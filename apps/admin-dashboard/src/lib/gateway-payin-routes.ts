@@ -33,7 +33,10 @@ export async function handlePayinWebhook(req: Request, input: {
   txnidOf: (b: WebhookBody) => string;
   /** true = signed correctly, false = bad signature, null = nothing to check with. */
   verify: (mid: GatewayMid, b: WebhookBody, headers: Headers) => boolean | null;
+  /** Added to every 200 answer: a gateway that retries until it reads its own word (PayAtom). */
+  ack?: Record<string, string>;
 }) {
+  const ok = (body: Record<string, unknown>) => NextResponse.json({ ...body, ...(input.ack ?? {}) });
   const b = await readBody(req);
   if (!b.json) return NextResponse.json({ ok: false, error: "empty body" }, { status: 400 });
   const txnid = input.txnidOf(b);
@@ -41,18 +44,18 @@ export async function handlePayinWebhook(req: Request, input: {
   const seen = { gateway: input.provider, txnId: txnid || null };
   if (!txnid) {
     recordGatewayWebhook({ ...seen, outcome: "IGNORED" });
-    return NextResponse.json({ ok: true, ignored: "no order reference" });
+    return ok({ ok: true, ignored: "no order reference" });
   }
   const owner = await gatewayOrderOwner(input.provider, txnid);
   if (!owner) {
     recordGatewayWebhook({ ...seen, outcome: "UNKNOWN_ORDER" });
-    return NextResponse.json({ ok: true, ignored: "unknown order", txn_id: txnid });
+    return ok({ ok: true, ignored: "unknown order", txn_id: txnid });
   }
   // The account the order was created on signs its events (lib/mid-switch).
   const gw = await gatewayPayinFor(owner.merchantCode, owner.vaultLabel);
   if (!gw || gw.mid.gateway !== input.provider) {
     recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, outcome: "NOT_CONNECTED" });
-    return NextResponse.json({ ok: true, ignored: "gateway not connected", txn_id: txnid });
+    return ok({ ok: true, ignored: "gateway not connected", txn_id: txnid });
   }
   const signed = input.verify(gw.mid, b, req.headers);
   if (signed === false) {
@@ -62,7 +65,7 @@ export async function handlePayinWebhook(req: Request, input: {
   }
   const r = await checkGatewayPayin({ provider: input.provider, txnid, merchantCode: owner.merchantCode, source: "webhook" });
   recordGatewayWebhook({ ...seen, merchantId: owner.merchantCode, signatureOk: signed, outcome: outcomeOf(r), status: r.status });
-  return NextResponse.json({ ok: true, txn_id: txnid, status: r.status, applied: r.applied, ...(r.reason ? { note: r.reason } : {}) });
+  return ok({ ok: true, txn_id: txnid, status: r.status, applied: r.applied, ...(r.reason ? { note: r.reason } : {}) });
 }
 
 function redirectTo(dest: string | null, params: Record<string, string>): NextResponse {

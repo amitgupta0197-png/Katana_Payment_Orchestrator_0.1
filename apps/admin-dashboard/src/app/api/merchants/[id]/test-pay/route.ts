@@ -18,7 +18,8 @@ import { getGatewayMid, payuKeySalt } from "@/lib/gateway-creds";
 import { payuFields, payuPaymentUrl } from "@/lib/payu";
 import { issuePayuIntent, intentClientFrom } from "@/lib/payu-intent";
 import { merchantSafeBody, seesGatewayNames } from "@/lib/merchant-safe";
-import { gatewayPayinFor, issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
+import { issueGatewayIntent, startGatewayCheckout } from "@/lib/gateway-payin";
+import { intentGatewayPayinFor } from "@/lib/payin-providers";
 import { toMinor, fromMinor } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const currency = body.currency.toUpperCase();
 
   try {
-    const other = body.intent || body.redirect ? await gatewayPayinFor(merchantCode) : null;
+    const other = body.intent || body.redirect ? await intentGatewayPayinFor(merchantCode) : null;
     if (other) {
       const base = (process.env.PUBLIC_BASE_URL ?? "https://katanapay.co").replace(/\/$/, "");
       const input = {

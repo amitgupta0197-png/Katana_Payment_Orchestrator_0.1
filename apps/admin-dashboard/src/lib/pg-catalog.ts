@@ -11,7 +11,7 @@
 // route until their connector ships — the UI says so. Every money path checks the gateway id
 // before using stored credentials, so saving a not-yet-connected gateway can't misroute orders.
 
-export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "RUBYVAULT" | "ISMARTPAY";
+export type GatewayId = "PAYU" | "RAZORPAY" | "CASHFREE" | "CCAVENUE" | "PHONEPE" | "PAYTM" | "RUBYVAULT" | "ISMARTPAY" | "PAYATOM";
 export type GatewayEnv = "TEST" | "PROD";
 
 export interface CredField {
@@ -22,6 +22,8 @@ export interface CredField {
   optional?: boolean;
   placeholder?: string;
   pattern?: string;      // regex the value must match (checked server-side too)
+  /** A choice instead of free text; the value must be one of these (checked server-side too). */
+  options?: { value: string; label: string }[];
 }
 
 /**
@@ -54,6 +56,18 @@ export interface GatewayService {
   webhook?: "api" | "dashboard" | "per_transfer";
   /** Payouts: Katana can read the account balance. */
   balance?: boolean;
+  /**
+   * Pay-ins: the account can also run on the P2P flow, chosen per account with a `channel` field:
+   * the customer pays a UPI ID of the banker's own, and the processor (not Katana's bank-credit
+   * capture) confirms it. Without this every account of the gateway is INTENT.
+   */
+  p2p?: boolean;
+  /**
+   * Pay-ins: the smallest live payment the gateway accepts, in rupees (from its docs). A verifying
+   * account's small-payment cap is never below it (lib/gateway-golive verifyMaxAmountFor), or no
+   * verification payment could be made at all.
+   */
+  minAmount?: number;
 }
 
 export interface GatewayDef {
@@ -211,7 +225,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "RUBYVAULT", name: "RubyVault", logo: null, color: "#B0123A",
     payin: {
-      connector: true,
+      connector: true, minAmount: 500,
       env: { TEST: "Test (enter RubyVault's test URL below)", PROD: "Live (rubyvault.tech)" },
       creds: "RubyVault doesn't use a Client ID / Secret. Ask RubyVault for the Account Code and Secret Key.",
       note: "Hosted UPI QR checkout (no UPI intent). RubyVault's live minimum is ₹500. Give RubyVault Katana's payment events URL as the callback URL; it is set once at onboarding, not per order.",
@@ -227,7 +241,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "ISMARTPAY", name: "iSmartPay", logo: null, color: "#1B7F5C",
     payin: {
-      connector: true,
+      connector: true, minAmount: 100,
       env: { TEST: "Test (enter iSmartPay's test URL below)", PROD: "Live (pay.ismartpay.co.in)" },
       creds: "iSmartPay doesn't use a Client ID / Secret. iSmartPay support gives the MID; the API key is generated in the iSmartPay partner panel.",
       note: "Hosted checkout (no UPI intent), ₹100 to ₹2,00,000 per payment. Katana sends its return and payment events URLs with every order; nothing to set in iSmartPay.",
@@ -248,6 +262,32 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "api_base", label: "API base URL (required for Test)", placeholder: "https://pay.ismartpay.co.in", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$", optional: true, show: true },
       ],
     },
+  },
+  {
+    id: "PAYATOM", name: "PayAtom", logo: null, color: "#5B3FD9",
+    payin: {
+      connector: true, p2p: true,
+      env: { TEST: "UAT (enter PayAtom's UAT URL below)", PROD: "Live (enter PayAtom's live URL below)" },
+      creds: "PayAtom doesn't use a Client ID / Secret. PayAtom gives the PID, the API key and the secret key at onboarding.",
+      note: "UPI on PayAtom's P2P Seamless product: Katana's pay page shows PayAtom's UPI string and PayAtom confirms the payment. Whole rupees only. Before it works, PayAtom must whitelist Katana's server IP (72.61.227.233) and set Katana's payment events URL as the callback URL for this PID; neither is sent per order. PayAtom requires a location with every request: enter the one PayAtom agreed for this account.",
+      fields: [
+        {
+          name: "channel", label: "Where the customer's money lands", show: true,
+          options: [
+            { value: "INTENT", label: "PayAtom's accounts, PayAtom settles to the banker (Intent flow)" },
+            { value: "P2P", label: "The banker's own bank accounts (P2P flow)" },
+          ],
+        },
+        { name: "key", label: "PID", placeholder: "PID from PayAtom" },
+        { name: "salt", label: "Secret key", secret: true },
+        { name: "api_key", label: "API key (X-Api-Key)", secret: true },
+        { name: "api_base", label: "API base URL", placeholder: "https://… from PayAtom", pattern: "^https://[A-Za-z0-9.-]+(:\\d+)?/?$" },
+        { name: "latitude", label: "Latitude sent with orders", placeholder: "e.g. 19.0760", pattern: "^-?\\d{1,2}(\\.\\d+)?$", show: true },
+        { name: "longitude", label: "Longitude sent with orders", placeholder: "e.g. 72.8777", pattern: "^-?\\d{1,3}(\\.\\d+)?$", show: true },
+      ],
+    },
+    // PayAtom has payout APIs (IMPS / UPI); not connected yet.
+    payout: null,
   },
 ];
 
@@ -276,9 +316,19 @@ export function validateCredFields(svc: GatewayService, input: Record<string, un
     }
     if (v.length > 2048) return { error: `${f.label} is too long` };
     if (f.pattern && !new RegExp(f.pattern).test(v)) return { error: `${f.label} doesn't look right` };
+    if (f.options && !f.options.some((o) => o.value === v)) return { error: `${f.label}: choose one of the options` };
     values[f.name] = v;
   }
   return { values };
+}
+
+/**
+ * The pay-in channel a saved gateway account runs on: P2P only for a gateway that offers it and an
+ * account saved with channel P2P (the money lands in the banker's own accounts); otherwise INTENT.
+ */
+export function gatewayAccountChannel(mid: { gateway: string; extra?: Record<string, string> } | null | undefined): "INTENT" | "P2P" {
+  if (!mid) return "INTENT";
+  return gatewayDef(mid.gateway)?.payin.p2p && mid.extra?.channel === "P2P" ? "P2P" : "INTENT";
 }
 
 /** Last 4 characters, for showing which key is saved without showing the key. */

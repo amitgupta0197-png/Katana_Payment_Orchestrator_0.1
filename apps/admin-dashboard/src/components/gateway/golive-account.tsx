@@ -19,6 +19,11 @@ export interface GoLiveAccount {
   status: "VERIFYING" | "LIVE"; created_at: string; created_by: string | null;
   live_at: string | null; live_by: string | null; note: string | null; callback_url: string | null; sends_webhooks: boolean;
   credentials_match: boolean; checklist: Item[]; can_go_live: boolean;
+  /** The flow the account runs on. */
+  channel?: "INTENT" | "P2P";
+  /** The largest payment this account takes while verifying, and the gateway's own live minimum. */
+  verify_max_amount?: number;
+  min_amount?: number | null;
 }
 type Action = "ping" | "webhook" | "status" | "live";
 const ACTION: Record<string, { action: Action; label: string }> = {

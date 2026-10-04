@@ -10,8 +10,10 @@ import { paytmPayin } from "@/lib/payin-providers/paytm";
 import { ccavenuePayin } from "@/lib/payin-providers/ccavenue";
 import { rubyvaultPayin } from "@/lib/payin-providers/rubyvault";
 import { ismartpayPayin } from "@/lib/payin-providers/ismartpay";
+import { payatomPayin } from "@/lib/payin-providers/payatom";
 import { payuLinksPayin } from "@/lib/payin-providers/payu-links";
 import type { PayinConnector } from "@/lib/payin-providers/types";
+import { gatewayAccountChannel } from "@/lib/pg-catalog";
 
 const CONNECTORS: Record<string, PayinConnector> = {
   RAZORPAY: razorpayPayin,
@@ -21,6 +23,7 @@ const CONNECTORS: Record<string, PayinConnector> = {
   CCAVENUE: ccavenuePayin,
   RUBYVAULT: rubyvaultPayin,
   ISMARTPAY: ismartpayPayin,
+  PAYATOM: payatomPayin,
 };
 
 export const PAYIN_GATEWAYS = Object.keys(CONNECTORS);
@@ -44,4 +47,14 @@ export async function gatewayPayinFor(merchantCode: string, label?: string): Pro
   const mid = await getGatewayMid(merchantCode, label).catch(() => null);
   const connector = payinConnectorFor(mid);
   return mid && connector ? { mid, connector } : null;
+}
+
+/**
+ * As gatewayPayinFor, for a NEW checkout order (/api/pay, test payments): those are Intent orders,
+ * so a P2P processor account (the money lands with the banker; lib/pg-catalog
+ * gatewayAccountChannel) never takes one.
+ */
+export async function intentGatewayPayinFor(merchantCode: string): Promise<{ mid: GatewayMid; connector: PayinConnector } | null> {
+  const gw = await gatewayPayinFor(merchantCode);
+  return gw && gatewayAccountChannel(gw.mid) === "INTENT" ? gw : null;
 }
