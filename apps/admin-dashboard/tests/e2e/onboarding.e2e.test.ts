@@ -116,6 +116,21 @@ async function cleanup() {
   await quiet(rows("checkout", `DELETE FROM merchant_checkout_keys WHERE merchant_code = ANY($1::text[])`, [codes]));
   await quiet(rows("checkout", `DELETE FROM credential_vault WHERE owner_type = 'merchant' AND owner_id = ANY($1::text[])`, [codes]));
   await quiet(rows("provider", `DELETE FROM provider_merchant_mappings WHERE merchant_id::text = ANY($1::text[])`, [[...ids, ...codes]]));
+  // Partners made of e2e merchants (lib/partner); their log is append-only by trigger, lifted for these only.
+  await quiet((async () => {
+    const pids = (await rows<{ id: string }>("provider", `SELECT id::text FROM providers WHERE code LIKE $1`, [`${PROVIDER_PREFIX}%`])).map((p) => p.id);
+    const partners = (await rows<{ id: string }>("vendorGateway", `SELECT id::text FROM partners WHERE provider_id = ANY($1::text[])`, [pids])).map((p) => p.id);
+    if (!partners.length) return;
+    await rows("vendorGateway", `DELETE FROM vendor_payin_orders WHERE partner_id = ANY($1::uuid[])`, [partners]);
+    await rows("notification", `DELETE FROM webhook_outbox WHERE merchant_id = ANY($1::text[])`, [partners.map((id) => `partner:${id}`)]);
+    await rows("audit", `DELETE FROM api_request_log WHERE merchant_id = ANY($1::text[])`, [partners.map((id) => `partner:${id}`)]);
+    await rows("vendorGateway", `ALTER TABLE partner_events DISABLE TRIGGER partner_events_locked_trg`);
+    try { await rows("vendorGateway", `DELETE FROM partner_events WHERE partner_id = ANY($1::uuid[])`, [partners]); }
+    finally { await rows("vendorGateway", `ALTER TABLE partner_events ENABLE TRIGGER partner_events_locked_trg`); }
+    await rows("vendorGateway", `DELETE FROM partner_api_keys WHERE partner_id = ANY($1::uuid[])`, [partners]);
+    await rows("vendorGateway", `DELETE FROM partner_sub_merchants WHERE partner_id = ANY($1::uuid[])`, [partners]);
+    await rows("vendorGateway", `DELETE FROM partners WHERE id = ANY($1::uuid[])`, [partners]);
+  })());
   await quiet(rows("provider", `DELETE FROM providers WHERE code LIKE $1`, [`${PROVIDER_PREFIX}%`]));
   await quiet(rows("merchant", `DELETE FROM merchant_payment_config WHERE merchant_code = ANY($1::text[])`, [codes]));
   await quiet(rows("merchant", `DELETE FROM merchant_live_activation WHERE merchant_code = ANY($1::text[])`, [codes]));
@@ -666,4 +681,102 @@ test("changing a merchant's choice warns first, then takes effect on the next or
   const back = await api("PUT", `/api/providers/${p.id}/onboarding-choice`, { services: "BOTH", payin_flow: "P2P" });
   assert.deepEqual([back.status, back.body.services, back.body.flow.flow], [200, "BOTH", "P2P"]);
   assert.equal((await order(creds, "/api/v1/katana-pay/order")).status, 201);
+});
+
+test("a partner onboards its merchants and takes their payments through the partner API", async (t) => {
+  const why = skip(); if (why) return t.skip(why);
+  const code = `${PROVIDER_PREFIX}${RUN}-PTN`, bankerCode = `${BANKER_PREFIX}${RUN}P`, partnerCode = `E2EP${RUN}`.slice(0, 20);
+
+  // ── 1. A P2P merchant with one live banker: where the partner's money will land.
+  const made = await api("POST", "/api/providers", {
+    code, legal_name: "E2E Partner", contact_email: `e2e-m-${RUN.toLowerCase()}-ptn@katana.test`, kind: "PROVIDER",
+    services: "PAYIN", payin_flow: "P2P",
+    initial_branch: { merchant_code: bankerCode, legal_name: "E2E Partner Banker", contact_email: `e2e-banker-${RUN.toLowerCase()}-ptn@katana.test` },
+  });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const providerId = made.body.id as string;
+  const bankerId = (await rows<{ id: string }>("merchant", `SELECT id::text FROM merchants WHERE merchant_code = $1`, [bankerCode]))[0].id;
+  for (const step of ["step_application", "step_kyb_docs", "step_screening", "step_bank_verify", "step_mid_issuance", "step_config"])
+    assert.equal((await api("POST", `/api/merchants/${bankerId}/advance`, { step, override: true, notes: "e2e: KYB is not under test" })).status, 200, step);
+  await api("PATCH", `/api/merchants/${bankerId}/payment-config`, { katana_pay: { settlement_vpa: "e2e-partner@upi" } });
+  assert.equal((await api("POST", `/api/merchants/${bankerId}/advance`, { step: "step_approval" })).body.stage, "LIVE");
+  const issued = await api("POST", `/api/merchants/${bankerId}/checkout-key`, { livemode: false });
+  const creds = (issued.body.creds ?? issued.body) as Creds;
+  assert.equal((await order(creds, "/api/v1/katana-pay/order")).status, 201, "before it is a partner its banker takes its own orders");
+
+  // ── 2. Staff make it a partner. Its banker now takes partner orders only.
+  const p = await api("POST", "/api/partners", { provider_id: providerId, code: partnerCode, own_gateway: "PAYATOM" });
+  assert.equal(p.status, 201, JSON.stringify(p.body));
+  const partnerId = p.body.id as string;
+  assert.equal((await api("POST", "/api/partners", { provider_id: providerId, code: `${partnerCode}2`.slice(0, 20) })).status, 409, "one partner per merchant");
+  const own = await order(creds, "/api/v1/katana-pay/order");
+  assert.deepEqual([own.status, own.body.code], [403, "PARTNER_ONLY"]);
+
+  // ── 3. A test key, made once.
+  const key = await api("POST", `/api/partners/${partnerId}/keys`, { livemode: false });
+  assert.equal(key.status, 201, JSON.stringify(key.body));
+  const secret = key.body.secret as string;
+  assert.match(secret, /^pk_test_/);
+  const partnerApi = (method: string, path: string, body?: unknown, auth = `Bearer ${secret}`) => fetch(`${BASE}${path}`, {
+    method, headers: { authorization: auth, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
+
+  // ── 4. Onboard a merchant through the API.
+  assert.deepEqual((await partnerApi("GET", "/api/v1/partner/merchants", undefined, "")).status, 401);
+  const sub = { external_id: `E2E-SUB-${RUN}`, legal_name: "E2E Sub Merchant", pan: "ABCDE1234F", limits: { max_amount: 1000000 } };
+  const created = await partnerApi("POST", "/api/v1/partner/merchants", sub);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.deepEqual([created.body.status, created.body.flows, created.body.limits.max_amount], ["PENDING", "P2P", 1000000]);
+  assert.match(created.body.id, /^SM_/);
+  assert.deepEqual([(await partnerApi("POST", "/api/v1/partner/merchants", sub)).body.code], ["SUB_MERCHANT_EXISTS"]);
+  const badPan = await partnerApi("POST", "/api/v1/partner/merchants", { ...sub, external_id: `E2E-SUB-${RUN}-2`, pan: "12345" });
+  assert.deepEqual([badPan.status, badPan.body.code, badPan.body.field], [400, "INVALID_REQUEST", "pan"]);
+  assert.equal((await partnerApi("GET", `/api/v1/partner/merchants/${sub.external_id}`)).body.id, created.body.id);
+
+  // ── 5. Orders for it: created, replayed, refused when they should be, paid.
+  const reference = `E2E-PTN-${RUN}-1`;
+  const o = await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: sub.external_id, reference, amount: 49900 });
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  assert.deepEqual([o.body.status, o.body.sub_merchant_id, o.body.external_id, o.body.flow, o.body.livemode], ["PENDING", created.body.id, sub.external_id, "P2P", false]);
+  assert.match(o.body.checkout_url, /\/pay\/[0-9a-f-]{36}$/);
+  const again = await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: created.body.id, reference, amount: 49900 });
+  assert.deepEqual([again.status, again.body.order_id], [200, o.body.order_id]);
+  assert.deepEqual((await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: sub.external_id, reference, amount: 50000 })).body.code, "REFERENCE_REUSED");
+  assert.deepEqual((await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: "nobody", reference: `${reference}-x`, amount: 100 })).body.code, "SUB_MERCHANT_NOT_FOUND");
+  const over = await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: sub.external_id, reference: `${reference}-big`, amount: 1000001 });
+  assert.deepEqual([over.status, over.body.code, over.body.limit], [422, "SUB_MERCHANT_MAX_AMOUNT", 1000000]);
+  assert.deepEqual((await partnerApi("POST", "/api/v1/partner/orders", { sub_merchant_id: sub.external_id, reference: `${reference}-i`, amount: 100, flow: "INTENT" })).body.code, "FLOW_NOT_ALLOWED");
+  const uuid = o.body.checkout_url.split("/pay/")[1];
+  const order0 = (await rows<{ merchant_id: string; partner_id: string }>("vendorGateway", `SELECT merchant_id, partner_id::text FROM vendor_payin_orders WHERE id = $1::uuid`, [uuid]))[0];
+  assert.deepEqual([order0.merchant_id, order0.partner_id], [bankerCode, partnerId], "taken by the partner's banker, stamped with the partner");
+  assert.equal((await api("POST", `/api/pay-status/${uuid}/simulate`, { outcome: "SUCCESS" }, "")).status, 200);
+  const read = await partnerApi("GET", `/api/v1/partner/orders/${reference}`);
+  assert.deepEqual([read.status, read.body.status, read.body.sub_merchant_id, read.body.gateway], [200, "SUCCESS", created.body.id, null]);
+  assert.equal((await partnerApi("GET", `/api/v1/partner/orders/${o.body.order_id}`)).body.reference, reference);
+
+  // ── 6. Staff review it; a live order would now get past the sub-merchant check.
+  const subs = await api("GET", `/api/partners/${partnerId}/sub-merchants?mode=test`);
+  const row = subs.body.sub_merchants.find((x: { external_id: string }) => x.external_id === sub.external_id);
+  assert.equal(row.totals.today_paid, 1);
+  const bare = await api("POST", `/api/partners/${partnerId}/sub-merchants/${row.id}`, { action: "reject" });
+  assert.equal(bare.status, 400, "a rejection needs a reason");
+  const ok = await api("POST", `/api/partners/${partnerId}/sub-merchants/${row.id}`, { action: "approve" });
+  assert.deepEqual([ok.status, ok.body.status], [200, "ACTIVE"]);
+
+  // ── 7. The partner's own login: its partner only, no processor name, no review.
+  const providerEmail = `e2e-p-${RUN.toLowerCase()}-ptn@katana.test`;
+  const pl = await api("POST", "/api/admin/set-password", { email: providerEmail, kind: "PROVIDER", scope_id: providerId, scope_label: "E2E Partner" });
+  const providerLogin = await login(providerEmail, pl.body.password);
+  const mine = await api("GET", "/api/partners/me", undefined, providerLogin);
+  assert.equal(mine.status, 200, JSON.stringify(mine.body));
+  assert.equal(mine.body.partner.id, partnerId);
+  assert.equal("own_gateway" in mine.body.partner, false);
+  assert.equal(/payu|razorpay|cashfree|ccavenue|rubyvault|ismartpay|payatom/i.test(JSON.stringify(mine.body.events)), false);
+  assert.equal((await api("GET", "/api/partners", undefined, providerLogin)).status, 403);
+  assert.equal((await api("POST", `/api/partners/me/sub-merchants/${row.id}`, { action: "suspend", reason: "x" }, providerLogin)).status, 403);
+  const portalSub = await api("POST", "/api/partners/me/sub-merchants", { external_id: `E2E-SUB-${RUN}-P`, legal_name: "E2E Portal Sub", pan: "ABCDE1234F" }, providerLogin);
+  assert.deepEqual([portalSub.status, portalSub.body.status, portalSub.body.created_via], [201, "PENDING", "PORTAL"]);
+  const orders = await api("GET", "/api/partners/me/orders?mode=test", undefined, providerLogin);
+  assert.ok(orders.body.orders.some((x: { order_id: string }) => x.order_id === reference));
 });

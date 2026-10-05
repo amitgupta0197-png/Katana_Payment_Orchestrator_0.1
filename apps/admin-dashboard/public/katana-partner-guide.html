@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Partner API Guide</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  h2 { font-size:21px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--bd); }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--bd); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .brand { color:var(--brand); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .badbox { border-left-color:var(--bad); }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  .step { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:50%; font-size:13px; margin-right:8px; }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ol { padding-left:22px; } ol li { margin:6px 0; }
+  @media print {
+    body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8}
+    /* On paper there is nothing to scroll, so a long line must wrap or it is silently
+       cut off — and these samples exist to be copied. */
+    pre{white-space:pre-wrap;word-break:break-word;overflow:visible}
+    /* Keep a code block or callout whole, but let a long table flow across pages —
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Katana Partner API</h1>
+  <div class="sub">For payment aggregators: onboard your merchants on Katana, take their payments, get told the result. One key, two resources, one webhook, four statuses.</div>
+</header>
+
+<div class="note badbox"><strong>Webhooks are notifications; they can fail or retry. Always confirm an order's status with GET /api/v1/partner/orders/{id} before you credit your merchant.</strong></div>
+
+<div class="toc">
+  <a href="#model">1. How it fits together</a>
+  <a href="#keys">2. Keys and modes</a>
+  <a href="#merchants">3. Onboard a merchant</a>
+  <a href="#review">4. Review and status</a>
+  <a href="#orders">5. Create an order</a>
+  <a href="#read">6. Read an order</a>
+  <a href="#webhook">7. Webhooks and the signature</a>
+  <a href="#errors">8. Errors</a>
+</div>
+
+<h2 id="model">1. How it fits together</h2>
+<ul>
+  <li><strong>You</strong> are a Katana merchant with a partner account. Your merchants' payments are collected by the accounts Katana set up for you and settled to <strong>you</strong>; you pay your merchants.</li>
+  <li><strong>Your merchants</strong> ("sub-merchants") are onboarded through this API or your portal (Sub-merchants). Each one has your own id for it (<code>external_id</code>) and Katana's (<code>SM_…</code>); either works wherever an id is asked for.</li>
+  <li><strong>Every order names a sub-merchant.</strong> Katana checks that sub-merchant's status, flows and limits, then the payment goes through Katana's pay-in as for any merchant.</li>
+  <li>The base URL is <code>https://katanapay.co</code>. Every request is HTTPS with a JSON body; amounts are integers in <strong>paise</strong> (₹10.00 is <code>1000</code>).</li>
+</ul>
+
+<h2 id="keys">2. Keys and modes</h2>
+<p>Send your key on every request: <code>Authorization: Bearer pk_live_…</code>. Make keys in the portal under Sub-merchants → API &amp; webhook. A key is shown once.</p>
+<table>
+  <tr><th>Key</th><th>Mode</th><th>What it does</th></tr>
+  <tr><td><code>pk_test_…</code></td><td>Test</td><td>Orders that move no money. A sub-merchant waiting for review can take test orders.</td></tr>
+  <tr><td><code>pk_live_…</code></td><td>Live</td><td>Real payments. The sub-merchant must be <code>ACTIVE</code>.</td></tr>
+</table>
+<p>Your sub-merchants are the same in both modes. Orders are kept apart: a test key never reads a live order.</p>
+
+<h2 id="merchants">3. Onboard a merchant</h2>
+<h3>POST /api/v1/partner/merchants</h3>
+<pre>curl -X POST https://katanapay.co/api/v1/partner/merchants \
+  -H "Authorization: Bearer pk_test_…" -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "MER-1042",
+    "legal_name": "Acme Traders Private Limited",
+    "display_name": "Acme",
+    "pan": "ABCDE1234F",
+    "gstin": "27ABCDE1234F1Z5",
+    "business_type": "Private limited",
+    "category": "Retail",
+    "email": "accounts@acme.example",
+    "phone": "+919800000000",
+    "website": "https://acme.example",
+    "address": "12 Market Road, Pune 411001",
+    "flows": "BOTH",
+    "limits": { "min_amount": 100, "max_amount": 5000000, "daily_amount": 50000000 }
+  }'</pre>
+<table>
+  <tr><th>Field</th><th></th><th>Notes</th></tr>
+  <tr><td><code>external_id</code></td><td>required</td><td>Your id for the merchant: 1 to 60 letters, digits or <code>. _ : -</code>. Unique among your merchants; it never changes.</td></tr>
+  <tr><td><code>legal_name</code></td><td>required</td><td>The registered business name.</td></tr>
+  <tr><td><code>pan</code></td><td>required</td><td>The business's PAN. A <code>gstin</code>, when sent, must be issued to this PAN.</td></tr>
+  <tr><td><code>flows</code></td><td>optional</td><td><code>P2P</code>, <code>INTENT</code> or <code>BOTH</code>; it must be within your own account's flow. Not sent: your account's flow.</td></tr>
+  <tr><td><code>limits</code></td><td>optional</td><td>Paise. <code>min_amount</code> / <code>max_amount</code> per order, <code>daily_amount</code> per India day (live orders, failed and expired not counted). <code>null</code> = no limit.</td></tr>
+  <tr><td>the rest</td><td>optional</td><td><code>display_name</code>, <code>business_type</code>, <code>category</code>, <code>email</code>, <code>phone</code>, <code>website</code>, <code>address</code>.</td></tr>
+</table>
+<p>Answer <code>201</code>:</p>
+<pre>{
+  "id": "SM_3F9A1C2B7D4E5F",
+  "external_id": "MER-1042",
+  "legal_name": "Acme Traders Private Limited",
+  "flows": "BOTH",
+  "limits": { "min_amount": 100, "max_amount": 5000000, "daily_amount": 50000000 },
+  "status": "PENDING",
+  "status_reason": null,
+  …
+}</pre>
+<h3>GET /api/v1/partner/merchants/{id}</h3>
+<p><code>{id}</code> is <code>SM_…</code> or your <code>external_id</code>. <code>GET /api/v1/partner/merchants?status=PENDING&amp;q=acme&amp;limit=100</code> lists them (<code>{ "data": [ … ] }</code>).</p>
+<h3>PATCH /api/v1/partner/merchants/{id}</h3>
+<p>Send only what changes; <code>external_id</code> cannot change. Changing <code>legal_name</code>, <code>pan</code> or <code>gstin</code> of an <code>ACTIVE</code> merchant sends it back to <code>PENDING</code> for review.</p>
+
+<h2 id="review">4. Review and status</h2>
+<table>
+  <tr><th>Status</th><th>Test orders</th><th>Live orders</th><th>Meaning</th></tr>
+  <tr><td><code>PENDING</code></td><td class="ok">yes</td><td class="bad">no</td><td>Waiting for Katana's review.</td></tr>
+  <tr><td><code>ACTIVE</code></td><td class="ok">yes</td><td class="ok">yes</td><td>Approved.</td></tr>
+  <tr><td><code>REJECTED</code></td><td class="bad">no</td><td class="bad">no</td><td>Not approved; <code>status_reason</code> says why. Fix it and send it for review again from the portal.</td></tr>
+  <tr><td><code>SUSPENDED</code></td><td class="bad">no</td><td class="bad">no</td><td>Stopped by Katana; <code>status_reason</code> says why. Orders already open can still be paid.</td></tr>
+</table>
+
+<h2 id="orders">5. Create an order</h2>
+<h3>POST /api/v1/partner/orders</h3>
+<pre>curl -X POST https://katanapay.co/api/v1/partner/orders \
+  -H "Authorization: Bearer pk_test_…" -H "Content-Type: application/json" \
+  -d '{
+    "sub_merchant_id": "MER-1042",
+    "reference": "ORD-20261005-0001",
+    "amount": 49900,
+    "currency": "INR",
+    "callback_url": "https://your-server.example/katana/webhook",
+    "return_url": "https://acme.example/thanks",
+    "customer": { "phone": "9800000000" },
+    "metadata": { "cart": "C-77" }
+  }'</pre>
+<table>
+  <tr><th>Field</th><th></th><th>Notes</th></tr>
+  <tr><td><code>sub_merchant_id</code></td><td>required</td><td><code>SM_…</code> or your <code>external_id</code>.</td></tr>
+  <tr><td><code>reference</code></td><td>required</td><td>Your id for the order, unique across all your merchants in each mode. Sending the same reference again returns the same order (safe to retry); with another merchant or amount it is refused (<code>REFERENCE_REUSED</code>).</td></tr>
+  <tr><td><code>amount</code></td><td>required</td><td>Paise, an integer.</td></tr>
+  <tr><td><code>flow</code></td><td>optional</td><td><code>P2P</code> or <code>INTENT</code>, one the merchant is on. Not sent: the merchant's only flow, or your account's default.</td></tr>
+  <tr><td><code>callback_url</code></td><td>optional</td><td>Where this order's result is sent. Not sent: your webhook URL.</td></tr>
+  <tr><td><code>return_url</code>, <code>customer</code>, <code>metadata</code></td><td>optional</td><td>As in API v2. <code>metadata</code>: up to 20 keys, given back when the order is read.</td></tr>
+</table>
+<p>Answer <code>201</code> (<code>200</code> for a retry of the same order). Send the customer to <code>checkout_url</code>:</p>
+<pre>{
+  "order_id": "KTN_8b0e3c1f9a2d4e6f8a1b2c3d4e5f6a7b",
+  "reference": "ORD-20261005-0001",
+  "sub_merchant_id": "SM_3F9A1C2B7D4E5F",
+  "external_id": "MER-1042",
+  "status": "PENDING",
+  "amount": 49900,
+  "currency": "INR",
+  "flow": "P2P",
+  "checkout_url": "https://katanapay.co/pay/8b0e3c1f-…",
+  "expires_at": "2026-10-05T07:15:00.000Z",
+  "livemode": false
+}</pre>
+
+<h2 id="read">6. Read an order</h2>
+<h3>GET /api/v1/partner/orders/{order_id or reference}</h3>
+<p>Answers with the same object the webhook carries, plus <code>checkout_url</code> (while <code>PENDING</code>), <code>expires_at</code>, <code>created_at</code> and <code>metadata</code>.</p>
+<table>
+  <tr><th>Status</th><th>Meaning</th></tr>
+  <tr><td><code>PENDING</code></td><td>Waiting for the customer to pay.</td></tr>
+  <tr><td><code>SUCCESS</code></td><td>Paid. <code>rrn</code> is the bank reference (UTR); <code>rrn_is_synthetic: true</code> means Katana made it and no bank statement shows it.</td></tr>
+  <tr><td><code>FAILED</code></td><td>Not paid.</td></tr>
+  <tr><td><code>EXPIRED</code></td><td>Not paid in time. A payment that still arrives later turns it into <code>SUCCESS</code> with <code>previous_status: "EXPIRED"</code>.</td></tr>
+</table>
+
+<h2 id="webhook">7. Webhooks and the signature</h2>
+<p>Set your webhook URL and make a signing secret in the portal (API &amp; webhook). <strong>Nothing is sent until a secret exists.</strong> Choose all results or paid payments only.</p>
+<pre>POST {your webhook URL or the order's callback_url}
+X-Katana-Event:     payment.success | payment.failed | payment.expired
+X-Katana-Event-ID:  evt_…   (the same on every retry of one event)
+X-Katana-Signature: t=1759650000,v1=5f0c…
+
+{
+  "event": "payment.success",
+  "event_id": "evt_…",
+  "order_id": "KTN_…",
+  "reference": "ORD-20261005-0001",
+  "status": "SUCCESS",
+  "amount": 49900,
+  "currency": "INR",
+  "rrn": "527812345678",
+  "rrn_is_synthetic": false,
+  "paid_at": "2026-10-05T07:03:12.000Z",
+  "gateway": null,
+  "sub_merchant_id": "SM_3F9A1C2B7D4E5F",
+  "external_id": "MER-1042",
+  "livemode": true
+}</pre>
+<pre>signed_payload = "{t}.{raw request body}"
+v1             = hex( HMAC-SHA256( key = signing secret, message = signed_payload ) )</pre>
+<p>Sign the body exactly as it arrived, before parsing it, and refuse a delivery whose <code>t</code> is more than 300 seconds from your clock. Answer <code>2xx</code>; anything else is retried after 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours and 24 hours.</p>
+<h3>Node.js</h3>
+<pre>const [t, v1] = req.headers["x-katana-signature"].split(",").map((p) =&gt; p.split("=")[1]);
+const expected = crypto.createHmac("sha256", SIGNING_SECRET).update(`${t}.${rawBody}`).digest("hex");
+const fresh = Math.abs(Date.now() / 1000 - Number(t)) &lt;= 300;
+const valid = fresh &amp;&amp; crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected));
+if (!valid) return res.status(400).end();</pre>
+<h3>PHP</h3>
+<pre>parse_str(str_replace(",", "&amp;", $_SERVER["HTTP_X_KATANA_SIGNATURE"]), $sig);
+$raw      = file_get_contents("php://input");
+$expected = hash_hmac("sha256", $sig["t"] . "." . $raw, $SIGNING_SECRET);
+$valid    = abs(time() - (int) $sig["t"]) &lt;= 300 &amp;&amp; hash_equals($expected, $sig["v1"]);
+if (!$valid) { http_response_code(400); exit; }</pre>
+
+<h2 id="errors">8. Errors</h2>
+<p>Every error is <code>{ "code", "message", "reference" }</code>; a field error adds <code>field</code>, a limit error adds <code>limit</code> and <code>actual</code> (paise). Quote <code>reference</code> to Katana support.</p>
+<table>
+  <tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr>
+  <tr><td><code>HTTPS_REQUIRED</code></td><td>400</td><td>The request was not made over HTTPS.</td></tr>
+  <tr><td><code>INVALID_REQUEST</code></td><td>400</td><td>A field is missing or malformed; the message names it.</td></tr>
+  <tr><td><code>UNSUPPORTED_CURRENCY</code></td><td>400</td><td>Only INR is accepted.</td></tr>
+  <tr><td><code>UNAUTHORIZED</code></td><td>401</td><td>The API key is missing, unknown or revoked.</td></tr>
+  <tr><td><code>LIVE_MODE_NOT_ACTIVATED</code></td><td>403</td><td>A live key was used before live mode was activated.</td></tr>
+  <tr><td><code>MERCHANT_BLOCKED</code></td><td>403</td><td>The account is blocked and takes no orders.</td></tr>
+  <tr><td><code>MERCHANT_SUSPENDED</code></td><td>403</td><td>The account is suspended or terminated.</td></tr>
+  <tr><td><code>PARTNER_SUSPENDED</code></td><td>403</td><td>The partner account is suspended and takes no orders.</td></tr>
+  <tr><td><code>PAYIN_NOT_ENABLED</code></td><td>403</td><td>The account is set up for payouts only and takes no pay-in orders.</td></tr>
+  <tr><td><code>SUB_MERCHANT_NOT_ACTIVE</code></td><td>403</td><td>The sub-merchant is not approved for this order: live orders need an ACTIVE sub-merchant; a PENDING one may take test orders.</td></tr>
+  <tr><td><code>ORDER_NOT_FOUND</code></td><td>404</td><td>No order with that id or reference belongs to this partner in this mode.</td></tr>
+  <tr><td><code>SUB_MERCHANT_NOT_FOUND</code></td><td>404</td><td>No sub-merchant with that id or external_id belongs to this partner.</td></tr>
+  <tr><td><code>ACCOUNT_NOT_LIVE</code></td><td>409</td><td>Live payments on the account are still being verified.</td></tr>
+  <tr><td><code>FLOW_NOT_ALLOWED</code></td><td>409</td><td>The requested flow is not one the sub-merchant is on.</td></tr>
+  <tr><td><code>FLOW_NOT_ENABLED</code></td><td>409</td><td>The requested flow is not enabled for the account.</td></tr>
+  <tr><td><code>FLOW_NOT_READY</code></td><td>409</td><td>The account's flow cannot take this payment yet.</td></tr>
+  <tr><td><code>FLOW_NOT_SELECTED</code></td><td>409</td><td>No pay-in flow has been selected for the account yet.</td></tr>
+  <tr><td><code>INVALID_STATUS_CHANGE</code></td><td>409</td><td>The sub-merchant's status does not allow that change.</td></tr>
+  <tr><td><code>REFERENCE_REUSED</code></td><td>409</td><td>The reference already belongs to an order of another sub-merchant or a different amount.</td></tr>
+  <tr><td><code>SETUP_INCOMPLETE</code></td><td>409</td><td>The account has no way to take this payment; contact Katana support.</td></tr>
+  <tr><td><code>SUB_MERCHANT_EXISTS</code></td><td>409</td><td>A sub-merchant with this external_id already exists.</td></tr>
+  <tr><td><code>AMOUNT_ABOVE_MAX</code></td><td>422</td><td>The amount is over the account's maximum.</td></tr>
+  <tr><td><code>AMOUNT_BELOW_MIN</code></td><td>422</td><td>The amount is under the minimum.</td></tr>
+  <tr><td><code>DAILY_LIMIT_EXCEEDED</code></td><td>422</td><td>The order would pass the account's limit for the day.</td></tr>
+  <tr><td><code>SUB_MERCHANT_DAILY_LIMIT</code></td><td>422</td><td>The order would pass the sub-merchant's limit for the day (India time).</td></tr>
+  <tr><td><code>SUB_MERCHANT_MAX_AMOUNT</code></td><td>422</td><td>The amount is over the sub-merchant's maximum.</td></tr>
+  <tr><td><code>SUB_MERCHANT_MIN_AMOUNT</code></td><td>422</td><td>The amount is under the sub-merchant's minimum.</td></tr>
+  <tr><td><code>UPI_LIMIT_EXCEEDED</code></td><td>422</td><td>The amount is over the limit for one UPI payment.</td></tr>
+  <tr><td><code>RATE_LIMITED</code></td><td>429</td><td>Too many orders in one second; retry after the Retry-After header.</td></tr>
+  <tr><td><code>INTERNAL_ERROR</code></td><td>500</td><td>Something failed on Katana's side; retry with the same reference.</td></tr>
+  <tr><td><code>PROCESSOR_ERROR</code></td><td>502</td><td>The payment processor did not accept the request; retry with the same reference.</td></tr>
+  <tr><td><code>NO_ACCOUNT_AVAILABLE</code></td><td>503</td><td>None of the account's payment accounts can take this payment now (limits used, paused or outside their hours); retry later.</td></tr>
+</table>
+</div>
+</body>
+</html>

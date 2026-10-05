@@ -17,7 +17,8 @@ export interface ApiLogEntry {
   requestId: string;
   merchantId: string | null;
   livemode: boolean | null;
-  apiVersion: "v1" | "v2";
+  /** "partner": the partner API (lib/partner/api). */
+  apiVersion: "v1" | "v2" | "partner";
   method: string;
   /** The route, not the full URL: /v2/orders, /v2/orders/{id}. */
   endpoint: string;

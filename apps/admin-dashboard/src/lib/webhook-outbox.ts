@@ -24,6 +24,8 @@ import { payloadHash, sign, retrySchedule } from "@/lib/webhooks";
 import { publish } from "@/lib/events";
 import { safeFetch } from "@/lib/safe-fetch";
 import { newEventId, v2SignatureHeader, type WebhookVersion } from "@/lib/webhook-v2";
+import { partnerIdFromOutbox } from "@/lib/partner/rules";
+import { partnerWebhookSecret } from "@/lib/partner/store";
 
 // NO FALLBACK SECRET. A merchant with no merchant_webhook_configs row used to have its
 // callbacks signed with a constant committed to this repo, so anyone could forge a valid
@@ -55,8 +57,13 @@ const ROW_COLS = `outbox_id::text, merchant_id, order_id::text, event_type, payl
 const V2_COLS = `version, event_id, is_test`;
 const V1_DEFAULTS = `'v1' AS version, NULL::text AS event_id, false AS is_test`;
 
-/** The banker's v2 signing secret (merchants.webhook_secret, sealed), or null. */
+/**
+ * The banker's v2 signing secret (merchants.webhook_secret, sealed), or null. A partner's row
+ * (merchant_id "partner:<id>", lib/partner) is signed with the partner's own secret.
+ */
 async function v2Secret(merchantId: string): Promise<string | null> {
+  const partnerId = partnerIdFromOutbox(merchantId);
+  if (partnerId) return partnerWebhookSecret(partnerId);
   const r = await rows<{ s: string | null }>("merchant",
     `SELECT webhook_secret AS s FROM merchants WHERE merchant_code = $1`, [merchantId]).catch(() => []);
   return openText(r[0]?.s)?.trim() || null;

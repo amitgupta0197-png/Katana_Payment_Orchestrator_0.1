@@ -68,6 +68,8 @@ export const SEALED_COLUMNS: { db: DbKey; table: string; key: string; column: st
   { db: "provider", table: "provider_beneficiary_accounts", key: "id", column: "account_number" },
   { db: "provider", table: "provider_branch_settlements", key: "id", column: "beneficiary_snapshot", json: "account_number" },
   { db: "merchant", table: "merchant_bank_accounts", key: "id", column: "bank_account_no" },
+  // A partner's webhook signing secret (vendorGateway 0044, lib/partner). Written sealed from the start.
+  { db: "vendorGateway", table: "partners", key: "id", column: "webhook_secret" },
 ];
 
 /**

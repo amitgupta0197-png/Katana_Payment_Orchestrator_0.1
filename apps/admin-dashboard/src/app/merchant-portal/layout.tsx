@@ -5,6 +5,7 @@ import { ProviderPortalShell } from "./_components/portal-shell";
 import { getLivemode } from "@/lib/mode";
 import { portalsEnabled } from "@/lib/support-bot/scope";
 import { getProviderServices } from "@/lib/merchant-services-store";
+import { partnerForProvider } from "@/lib/partner/store";
 
 export default async function ProviderPortalLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -14,7 +15,8 @@ export default async function ProviderPortalLayout({ children }: { children: Rea
   }
   return (
     <ProviderPortalShell scopeLabel={session.scope_label} email={session.email} fullName={session.full_name} livemode={await getLivemode()} assistant={portalsEnabled()}
-      services={await getProviderServices(session.scope_id).catch(() => "UNSET" as const)}>
+      services={await getProviderServices(session.scope_id).catch(() => "UNSET" as const)}
+      partner={!!(await partnerForProvider(session.scope_id).catch(() => null))}>
       {children}
     </ProviderPortalShell>
   );

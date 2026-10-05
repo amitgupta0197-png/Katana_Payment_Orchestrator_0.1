@@ -78,7 +78,9 @@ const PUBLIC_UI_PREFIX = ["/pay", "/katana-pay"];
 // /v2/* is the v2 order API (lib/v2-api): Bearer API key, no session. It is an API whose path
 // does not start with /api, so it is let through here rather than sent to /login.
 const V2_API = /^\/v2(\/|$)/;
-const PUBLIC_API_PREFIX = ["/api/pay-status", "/api/oauth", "/api/v1/katana-pay/callback", "/api/v1/p2p/order", "/api/v1/intent/order", "/api/v1/bank-feeds"];
+const PUBLIC_API_PREFIX = ["/api/pay-status", "/api/oauth", "/api/v1/katana-pay/callback", "/api/v1/p2p/order", "/api/v1/intent/order", "/api/v1/bank-feeds",
+  // The partner API (lib/partner/api): Bearer partner key, no session.
+  "/api/v1/partner"];
 const VENDOR_CALLBACK = /^\/api\/vendors\/[^/]+\/callback\/?$/;
 const SANDBOX_PREFIX = /^\/api\/sandbox(\/|$)/;
 

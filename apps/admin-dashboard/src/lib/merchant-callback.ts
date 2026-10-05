@@ -32,6 +32,7 @@ import { webhookDelivery } from "@/lib/webhook-settings";
 import { newEventId, v2Body, v2Status, wantsEvent } from "@/lib/webhook-v2";
 import { chooseCallbackTarget, payinCallbackFlow } from "@/lib/integration";
 import { flowCallbackUrl } from "@/lib/integration-callback-url";
+import { sendPartnerCallback } from "@/lib/partner/callback";
 
 async function merchantWebhookUrl(merchantCode: string): Promise<string | null> {
   const r = await rows<{ webhook_url: string | null }>(
@@ -62,6 +63,8 @@ export async function sendPayinCallback(orderRowId: string): Promise<{ sent: boo
       [orderRowId, JSON.stringify({ callback: { skipped: "staff live test", at: new Date().toISOString() } })]).catch(() => {});
     return { sent: false, reason: "staff live test" };
   }
+  // A partner's order (lib/partner) is called back to the partner, never to the banker that took it.
+  if (meta.partner) return sendPartnerCallback(orderRowId, cur, callbackStatus(cur.status).STATUS);
   // Whose callback this is: the signing banker's when the banker switch moved the order.
   const merchantCode: string | null = (typeof meta.signed_by === "string" && meta.signed_by) || cur.merchant_id || null;
   if (!merchantCode) return { sent: false, reason: "no merchant" };

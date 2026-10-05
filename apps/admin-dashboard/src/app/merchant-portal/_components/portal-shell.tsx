@@ -5,7 +5,7 @@
 
 import {
   Store, CreditCard, Percent, FileCheck2, LifeBuoy, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
-  FileSpreadsheet, GitMerge, Search, Webhook, ScrollText, Sparkles, UserPlus, Wallet, Briefcase, Code2, BarChart3, KeyRound, ArrowRightLeft,
+  FileSpreadsheet, GitMerge, Search, Webhook, ScrollText, Sparkles, UserPlus, Wallet, Briefcase, Code2, BarChart3, KeyRound, ArrowRightLeft, Handshake,
 } from "lucide-react";
 import { PortalFrame, type NavGroup } from "@/components/portal/portal-frame";
 import { allowsPayin, type MerchantServicesSetting } from "@/lib/merchant-services";
@@ -32,6 +32,8 @@ const GROUPS: NavGroup[] = [
   ] },
   { id: "business", label: "Business", icon: Briefcase, items: [
     { href: `${B}/bankers`, label: "Bankers", icon: Store },
+    // A partner's own merchants (lib/partner); listed only for a merchant that is a partner.
+    { href: `${B}/sub-merchants`, label: "Sub-merchants", icon: Handshake },
     // In the main menu, not behind "Developer tools": issuing a Key + Salt is the first thing a
     // merchant is told to do, and with the switch off by default nobody could find it (2026-10-03).
     { href: `${B}/keys`, label: "Key + Salt", icon: KeyRound },
@@ -54,10 +56,11 @@ const DEV: NavGroup = { id: "developers", label: "Developers", icon: Code2, item
 ] };
 
 export function ProviderPortalShell({
-  children, scopeLabel, email, fullName, livemode, services = "UNSET", assistant = false,
-}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string; livemode: boolean; services?: MerchantServicesSetting; assistant?: boolean }) {
+  children, scopeLabel, email, fullName, livemode, services = "UNSET", assistant = false, partner = false,
+}: { children: React.ReactNode; scopeLabel: string; email: string; fullName: string; livemode: boolean; services?: MerchantServicesSetting; assistant?: boolean; partner?: boolean }) {
   // The support assistant is listed once it is open to merchants (lib/support-bot/scope).
-  const keep = (href: string) => (allowsPayin(services) || !PAYIN_ONLY.has(href)) && (assistant || !href.endsWith("/assistant"));
+  const keep = (href: string) => (allowsPayin(services) || !PAYIN_ONLY.has(href)) && (assistant || !href.endsWith("/assistant"))
+    && (partner || !href.endsWith("/sub-merchants"));
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => keep(i.href)) })).filter((g) => g.items.length);
   return (
     <PortalFrame base={B} subtitle="Merchant portal" badge="Merchant" groups={groups} devGroup={DEV}

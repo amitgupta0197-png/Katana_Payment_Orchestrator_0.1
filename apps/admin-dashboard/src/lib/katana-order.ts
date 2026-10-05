@@ -26,6 +26,7 @@ import { bankerOrder, passOverWords } from "@/lib/banker-switch";
 import { bankersWithKey, bankerToday, logSwitchEvent, noteTaken, switchForSigner } from "@/lib/banker-switch-store";
 import { LiveModeNotActivatedError } from "@/lib/live-activation";
 import { raiseAlert } from "@/lib/ops-alert";
+import { isExclusivePartner } from "@/lib/partner/exclusive";
 
 export interface CreateKatanaOrderInput {
   orderId: string;
@@ -64,6 +65,21 @@ export interface CreateKatanaOrderInput {
    * as `meta.staff_test`; the banker's server is not sent a callback for it (lib/merchant-callback).
    */
   staffTest?: { by: string } | null;
+  /**
+   * A partner's order (lib/partner): the partner and the sub-merchant it is for, kept on the order
+   * (partner_id, partner_sub_merchant_id, meta.partner). The partner's bankers take nothing else
+   * when it is exclusive, and the partner's own gateway is never used for its orders.
+   */
+  partner?: PartnerOrderInput | null;
+}
+
+export interface PartnerOrderInput {
+  partnerId: string;
+  subMerchantId: string;
+  subCode: string;
+  externalId: string;
+  /** The connector that is the partner's own company (e.g. PAYATOM): its accounts never take a partner order. */
+  ownGateway: string | null;
 }
 
 /**
@@ -139,6 +155,12 @@ export class MerchantSuspendedError extends MerchantBlockedError {
   constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} is suspended`); }
 }
 
+/** The banker belongs to an exclusive partner (lib/partner): it takes partner orders only. Answered 403. */
+export class PartnerOnlyError extends MerchantBlockedError {
+  readonly code = "PARTNER_ONLY";
+  constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} takes orders through the partner API only`); }
+}
+
 /** The banker's merchant was onboarded for payouts only (lib/merchant-services). Answered 403. */
 export class PayinNotEnabledError extends MerchantBlockedError {
   readonly code = "PAYIN_NOT_ENABLED";
@@ -166,7 +188,7 @@ export async function createKatanaOrder(input: CreateKatanaOrderInput): Promise<
 }
 
 /** Why an attempt on one banker is a reason to offer the order to the next one, or null when it is not. */
-function passOverCode(err: unknown): string | null {
+export function passOverCode(err: unknown): string | null {
   if (err instanceof MerchantBlockedError) return err.code;          // blocked, suspended, pay-ins off
   if (err instanceof PayinFlowError) return err.code;
   if (err instanceof OrderRefTakenError) return err.code;
@@ -284,6 +306,9 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     if (CLOSED_STATUSES.has(p[0]?.status ?? "")) throw new MerchantSuspendedError(input.merchantId);
     // A merchant onboarded for payouts only takes no pay-in order, on any flow.
     if (!allowsPayin(await getProviderServices(setting.providerId))) throw new PayinNotEnabledError(input.merchantId);
+    // An exclusive partner's bankers take the partner's orders only (lib/partner). A staff live test
+    // from the banker page is Katana's own order and is still allowed.
+    if (!input.partner && !input.staffTest && await isExclusivePartner(setting.providerId)) throw new PartnerOnlyError(input.merchantId);
   }
   const decided = decideOrderFlow({ flow: setting.flow, active: setting.active }, input.flow ?? null);
   if (!decided.ok) throw new PayinFlowError(decided.error, decided.code);
@@ -355,14 +380,19 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // customer pays PayU's collection account on the merchant's MID. A link built locally to the
   // merchant's own UPI ID is exactly what UPI apps decline. PayU then confirms the order
   // (lib/payu-result); the bank-credit matcher leaves these orders alone.
-  const payuMid = livemode && gatewayAllowed && input.merchantId
+  // A partner's order never goes to an account on the partner's own gateway: the money would go
+  // back to the partner it came from (lib/partner).
+  const ownGateway = input.partner?.ownGateway?.toUpperCase() || null;
+  let ownSkipped = false;
+  const payuMid = livemode && gatewayAllowed && input.merchantId && ownGateway !== "PAYU"
     ? await getGatewayMid(input.merchantId, vaultLabel).then(payuKeySalt).catch(() => null)
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
-  const anyAccount = livemode && (gatewayAllowed || p2pProviderAllowed) && !payuMid && input.merchantId
+  let anyAccount = livemode && (gatewayAllowed || p2pProviderAllowed) && !payuMid && input.merchantId
     ? await gatewayPayinFor(input.merchantId, vaultLabel).catch(() => null)
     : null;
+  if (anyAccount && ownGateway && anyAccount.mid.gateway?.toUpperCase() === ownGateway) { anyAccount = null; ownSkipped = true; }
   // Only an account of this order's flow. A P2P processor account needs a UPI intent (the customer
   // pays the banker's UPI ID in it); the MID switch only picks for Intent, so a P2P order uses the
   // banker's first account. An Intent order the switch put on a P2P account moves on (below).
@@ -377,6 +407,8 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   const linkGw = !otherGw && connected && connected.mid.gateway !== "CCAVENUE" ? connected : null;
   // The account the switch picked has no usable credentials: try the next one.
   if (gatewayPick && !payuMid && !otherGw && !linkGw) {
+    // On the partner's own gateway: passed to the next account without counting against its health.
+    if (ownSkipped) throw Object.assign(new PayuIntentError("the processor account picked for this order cannot take partner orders"), { skippedMid: gatewayPick.mid });
     throw Object.assign(new PayuIntentError("the processor account picked for this order has no usable credentials"), { failedMid: gatewayPick.mid });
   }
 
@@ -555,6 +587,9 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     // The banker switch sent it here: the Key that signed it, whose callback settings it keeps.
     ...(input.signedBy ? { signed_by: input.signedBy } : {}),
     ...(input.staffTest ? { staff_test: { by: input.staffTest.by, at: new Date().toISOString() } } : {}),
+    // A partner's order (lib/partner): its callback goes to the partner, not the banker.
+    ...(input.partner ? { partner: { id: input.partner.partnerId, sub_merchant_id: input.partner.subMerchantId,
+      sub_merchant: input.partner.subCode, external_id: input.partner.externalId } } : {}),
     ...(input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
     // The MID the switch picked (lib/mid-switch): its account is used for every later call about
     // this order (lib/gateway-creds orderVaultLabel), and why it was picked.
@@ -582,8 +617,8 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     INSERT INTO vendor_payin_orders
       (tenant_id, vendor, merchant_id, sub_mid_code, pay_id, order_id, amount, currency_code, channel,
        vendor_txn_id, response_code, status, customer_vpa, customer_phone, meta, livemode,
-       channel_type, channel_id, requested_channel, payin_mid_id, signed_by)
-    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14,$16::uuid,$17)
+       channel_type, channel_id, requested_channel, payin_mid_id, signed_by${input.partner ? ", partner_id, partner_sub_merchant_id" : ""})
+    VALUES ('tenant-default','KATANA',$1,$2,$3,$4,$5,$6,$7,$8,'U17',$9,$10,$11,$12::jsonb,$13,$14,$15,$14,$16::uuid,$17${input.partner ? ",$18::uuid,$19::uuid" : ""})
     -- Either key: this banker's own txnid (0026) or the signing Key's (0042).
     ON CONFLICT DO NOTHING
     RETURNING id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code, channel, status, created_at, livemode,
@@ -591,7 +626,8 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   `;
   const insertArgs = [input.merchantId ?? null, subMidCode, payId, orderId, input.amount, input.currency, input.channel ?? "UPI_INTENT",
       vendorTxnId, status, input.customerVpa ?? null, input.customerPhone ?? null, JSON.stringify(meta), livemode,
-      payinChannel.type, payinChannel.id, midPick?.mid.id ?? null, input.signedBy ?? null];
+      payinChannel.type, payinChannel.id, midPick?.mid.id ?? null, input.signedBy ?? null,
+      ...(input.partner ? [input.partner.partnerId, input.partner.subMerchantId] : [])];
   // With a daily limit in force, or a MID with limits, the insert is made under the banker's and
   // the MID's locks, where the totals are read again: orders arriving together cannot pass a
   // limit between them.
@@ -621,7 +657,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
 //
 // The signer is the order's own banker, except on an order the banker switch moved, where it is
 // `signed_by` (vendorGateway 0042); the predicate mirrors that index expression exactly.
-async function readExistingOrder(orderId: string, signer: string | null, livemode: boolean): Promise<CreateKatanaOrderResult | null> {
+export async function readExistingOrder(orderId: string, signer: string | null, livemode: boolean): Promise<CreateKatanaOrderResult | null> {
   const existing = await rows<any>("vendorGateway", `
     SELECT id::text, order_id, pay_id, vendor_txn_id, sub_mid_code, amount, currency_code,
            channel, status, created_at, livemode, channel_type, channel_id, meta, merchant_id

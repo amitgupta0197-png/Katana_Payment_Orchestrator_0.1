@@ -1,4 +1,4 @@
-import { ListChecks, ArrowRightLeft,
+import { ListChecks, ArrowRightLeft, Handshake,
   LayoutDashboard,
   BookOpen,
   GitMerge,
@@ -125,7 +125,7 @@ const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
   OPERATOR:   ["/", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement-engine", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/tsps", "/banks", "/security"],
-  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/tsps", "/banks", "/security"],
+  COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/partners", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/tsps", "/banks", "/security"],
   SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
@@ -280,6 +280,8 @@ const rawNavItems: NavItem[] = [
   { href: "/merchants",        label: "Merchants",       icon: UserPlus, status: "live", group: "Payment Management", module: "providers" },
   { href: "/sub-mids",         label: "Sub-MIDs",        icon: Network,  status: "live", group: "Payment Management", module: "sub_mids" },
   { href: "/bankers",        label: "Banker",          icon: Store,    status: "live", group: "Payment Management", module: "merchants" },
+  // Payment aggregators that onboard their own merchants on Katana (lib/partner). Staff only.
+  { href: "/partners",       label: "Partners",        icon: Handshake, status: "live", group: "Payment Management", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "COMPLIANCE", "FINANCE", "RISK", "SUPPORT"] },
   { href: "/merchant-config",  label: "Banker Config",   icon: Sliders,  status: "live", group: "Payment Management" },
   // Pay-in flows: the P2P / Intent / Both bifurcation, and one sub-module per flow.
   { href: "/merchant-readiness", label: "Merchant readiness", icon: ListChecks, status: "live", group: "Payment Management" },
