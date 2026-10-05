@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { LOCATION_PRESETS } from "@/lib/payatom-setup";
 import { cn } from "@/lib/utils";
 
-interface ProductState { account: "main" | "extra"; env: "PROD" | "TEST"; pid_hint: string; api_base: string | null; golive: string | null; reachable?: boolean }
+interface ProductState { account: "main" | "extra"; env: "PROD" | "TEST"; pid_hint: string; api_key_hint?: string; api_key_is_secret?: boolean; api_base: string | null; golive: string | null; reachable?: boolean }
 interface State {
   banker: string;
   flow: { flow: string; active: string | null };
@@ -77,6 +77,8 @@ export function PayatomConnectCard({ merchantId }: { merchantId: string }) {
   if (s.p2p && !flowHas("P2P")) warnings.push("UPI link (P2P) is connected, but this banker's pay-in flow is Intent only, so it is not used.");
   if (s.intent && !flowHas("INTENT")) warnings.push("Intent is connected, but this banker's pay-in flow is P2P only, so it is not used.");
   if (s.intent && s.intent.reachable === false) warnings.push("The Intent account is saved but not in this banker's traffic switch, so Intent orders do not reach it. Save the setup again to fix it.");
+  for (const [name, p] of [["UPI link (P2P)", s.p2p], ["Intent", s.intent]] as const)
+    if (p?.api_key_is_secret) warnings.push(`${name}: the saved API key is the secret key, so PayAtom refuses every payment ("Invalid API key"). Change PayAtom setup and paste PayAtom's API key (the one with dashes) in the API key box.`);
   if (s.p2p?.env === "TEST" || s.intent?.env === "TEST") warnings.push("UAT details are saved. Katana's test orders do not reach PayAtom yet, so UAT cannot be tried through Katana until PayAtom test mode is added.");
 
   const steps = [
@@ -108,7 +110,7 @@ export function PayatomConnectCard({ merchantId }: { merchantId: string }) {
                   <Badge variant={st.tone} className="ml-auto">{st.word}</Badge>
                 </div>
                 <p className={cn("mt-1 text-xs", muted)}>{PRODUCTS[k].money}</p>
-                {p && <p className={cn("mt-1 text-xs", muted)}>PID {p.pid_hint} · {p.api_base}</p>}
+                {p && <p className={cn("mt-1 text-xs", muted)}>PID {p.pid_hint} · API key {p.api_key_hint ?? "—"} · {p.api_base}</p>}
               </div>
             );
           })}
@@ -209,7 +211,10 @@ function ConnectDialog({ merchantId, state, onClose }: { merchantId: string; sta
   const canNext1 = true;
   const needsNew = (p: ProductState | null, f: CredForm) => !p && (!f.pid.trim() || !f.secret.trim());
   const needsShared = (p: ProductState | null, f: CredForm) => !p && (!f.api_key.trim() || !f.api_base.trim());
-  const canNext2 = !!lat.trim() && !!lng.trim()
+  // The same value in both boxes is a paste slip (PayAtom then answers "Invalid API key").
+  const sameKey = (f: CredForm) => !!f.api_key.trim() && f.api_key.trim() === f.secret.trim();
+  const keyMixup = (wantP2p && sameKey(p2p)) || (wantIntent && sameKey(intent));
+  const canNext2 = !keyMixup && !!lat.trim() && !!lng.trim()
     && !(wantP2p && (needsNew(state.p2p, p2p) || needsShared(state.p2p, p2p)))
     && !(wantIntent && (needsNew(state.intent, intent) || (!(both && same) && needsShared(state.intent, intent))));
 
@@ -265,6 +270,11 @@ function ConnectDialog({ merchantId, state, onClose }: { merchantId: string; sta
               </label>
             )}
             {wantIntent && credFields("INTENT", intent, setIntent, both && same)}
+            {keyMixup && (
+              <p className="rounded-xl border border-[color:var(--color-danger)]/40 bg-[color:var(--color-danger-muted)] px-3 py-2 text-sm text-[color:var(--color-danger)]">
+                The API key and the secret key are the same. They are two different values from PayAtom: the API key is the one with dashes.
+              </p>
+            )}
             <div className="space-y-2 rounded-xl border p-3">
               <div className="text-sm font-medium">Location PayAtom registered <span className={cn("font-normal", muted)}>· sent with every payment</span></div>
               <div className="flex flex-wrap gap-1.5">

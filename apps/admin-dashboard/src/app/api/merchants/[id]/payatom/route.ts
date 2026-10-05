@@ -66,7 +66,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const flow = await getEffectiveFlow(code);
     const view = async (a: (typeof accounts)[number] | undefined | null) => a && {
       account: a.vault_label === MAIN ? "main" : "extra", env: a.mid.env ?? "TEST",
-      pid_hint: hint(a.mid.key), api_base: a.mid.extra?.api_base ?? null,
+      pid_hint: hint(a.mid.key), api_key_hint: hint(a.mid.extra?.api_key), api_base: a.mid.extra?.api_base ?? null,
+      // Shown as a warning: the saved API key is the secret key (a paste slip).
+      api_key_is_secret: !!a.mid.extra?.api_key && a.mid.extra.api_key === a.mid.salt,
       golive: (a.mid.env === "PROD" ? (await getGoLive(code, "PAYATOM", a.vault_label).catch(() => null))?.status : null) ?? null,
     };
     const byLabel = (x: AccountNow | null) => (x ? accounts.find((a) => a.vault_label === x.vault_label) : null);
@@ -137,6 +139,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const v = validateCredFields(def.payin, fields);
       if (!v.values) return { error: `${product === "P2P" ? "UPI link (P2P)" : "Intent"}: ${v.error}` };
       const f = v.values;
+      // The API key and the secret key are two different values from PayAtom. The same value in
+      // both boxes is a paste slip, and PayAtom answers every request "Invalid API key".
+      if (f.api_key === f.salt)
+        return { error: `${product === "P2P" ? "UPI link (P2P)" : "Intent"}: the API key is the same as the secret key. Paste PayAtom's API key (X-Api-Key) in the API key box.` };
       return {
         gateway: "PAYATOM", mid_code: f.key, key: f.key, salt: f.salt, scheme: "HMAC_SHA256", env: b.env,
         extra: { channel: product, api_key: f.api_key, api_base: f.api_base, latitude: f.latitude, longitude: f.longitude },
