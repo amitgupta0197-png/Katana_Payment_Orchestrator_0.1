@@ -21,6 +21,10 @@ export interface PayStatusPayload {
   // confirm (the confirmation window, lib/katana-pay). `confirm_until` is when it stops waiting.
   confirming: boolean; confirm_until: string | null;
   livemode: boolean;   // false = a test order; the pay page labels it so nobody mistakes it for real
+  /** The processor's own app links (Paytm / PhonePe), opened as given; null when there are none. */
+  app_links: Record<string, string> | null;
+  /** Katana's link to the processor's own payment page for a UPI-link order (a fallback), or null. */
+  payment_page_url: string | null;
   checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): Katana's link to the page the customer pays on
   checkout_methods: "ALL" | "UPI" | null;   // what that page takes: UPI only, or cards / net banking / wallets too
 }
@@ -125,6 +129,8 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
     // This response is public (the customer's pay page and the merchant's status polling), so
     // it never names the gateway (lib/merchant-safe): the page is reached through Katana's own
     // link (/pay/{id}/go), never by its address, and only what it can be paid with is said.
+    app_links: meta.app_links && typeof meta.app_links === "object" ? meta.app_links : null,
+    payment_page_url: typeof meta.gateway?.page_url === "string" ? `${publicBase()}/pay/${order.id}/go` : null,
     checkout_url: typeof meta.gateway?.checkout_url === "string" ? `${publicBase()}/pay/${order.id}/go` : null,
     checkout_methods: typeof meta.gateway?.checkout_url === "string" ? (meta.gateway.provider === "PAYU" ? "ALL" : "UPI") : null,
   };

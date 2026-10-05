@@ -38,6 +38,25 @@ export function upiAppUrl(app: UpiApp, upiIntent: string): string {
   return `${SCHEME[app]}?${query}`;
 }
 
+/**
+ * A processor's own app link (e.g. `paytmmp://cash_wallet?…`, `phonepe://native?…`), opened as
+ * given. On Android it goes through intent:// with the app's package, the same reliable route as
+ * above, keeping the link's own scheme, host and query.
+ */
+export function appLinkUrl(app: UpiApp, link: string): string {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const m = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(link);
+  if (/android/i.test(ua) && PKG[app] && m) return `intent://${m[2]}#Intent;scheme=${m[1]};package=${PKG[app]};end`;
+  return link;
+}
+
+/** Open the processor's own link for `app` when there is one, else the standard UPI link. */
+export function openPayApp(app: UpiApp, upiIntent: string, appLinks?: Partial<Record<UpiApp, string>> | null): void {
+  const own = app !== "any" ? appLinks?.[app] : undefined;
+  if (own) { window.location.href = appLinkUrl(app, own); return; }
+  openUpiApp(app, upiIntent);
+}
+
 // Navigate the current tab to the app. Custom schemes / intent URLs must be a
 // top-level navigation (not target=_blank) for the OS handoff to fire.
 export function openUpiApp(app: UpiApp, upiIntent: string): void {

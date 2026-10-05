@@ -32,6 +32,9 @@ export interface PayinOrder {
   customerVpa?: string | null;
 }
 
+/** App-specific payment links a processor hands out, keyed by app. */
+export type AppLinks = Partial<Record<"paytm" | "phonepe" | "gpay", string>>;
+
 export interface PayinClient {
   ip: string;
   deviceInfo: string;
@@ -64,7 +67,11 @@ export interface PayinConnector {
   /** Start a hosted checkout. */
   checkout(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<CheckoutStart>>;
   /** Get a UPI intent server-to-server (no gateway page). Gateways without one omit it. */
-  upiIntent?(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<{ intentQuery: string; paymentId: string | null; redirectUrl?: string | null }>>;
+  upiIntent?(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<{
+    intentQuery: string; paymentId: string | null; redirectUrl?: string | null;
+    /** The processor's own app links, used as given (PayAtom quasi intent: Paytm / PhonePe person-to-person links). */
+    appLinks?: AppLinks | null;
+  }>>;
   /**
    * What the gateway says happened to the order Katana created as `txnid` (for `amountMinor`).
    * `paymentRef` is the gateway's own id for it, kept when the order was made (PayAtom looks an

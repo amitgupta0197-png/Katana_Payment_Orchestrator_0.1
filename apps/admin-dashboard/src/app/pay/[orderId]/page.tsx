@@ -11,7 +11,7 @@ import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-quer
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, Check, ShieldCheck, Upload, Loader2, FileCheck2, ArrowRight, Share2, Smartphone, RefreshCw, X, CreditCard, Landmark, Wallet, Lock } from "lucide-react";
 import { PaytmLogo, PhonePeLogo, GooglePayLogo } from "@/components/icons/upi-apps";
-import { openUpiApp } from "@/lib/upi";
+import { openPayApp, openUpiApp } from "@/lib/upi";
 
 interface PayStatus {
   order_id: string; amount: number; currency_code: string; status: string;
@@ -29,6 +29,8 @@ interface PayStatus {
   livemode?: boolean;   // false = a test order: labelled so nobody mistakes it for a real payment
   checkout_url?: string | null;   // pay on the gateway's own page (PayU Client ID, RubyVault, iSmartPay)
   checkout_methods?: "ALL" | "UPI" | null;   // what that page takes; the gateway itself is never named
+  app_links?: Partial<Record<"paytm" | "phonepe" | "gpay", string>> | null;   // the processor's own app links, opened as given
+  payment_page_url?: string | null;   // Katana's link to the processor's own payment page: a fallback
 }
 
 type Phase = "loading" | "waiting" | "verifying" | "success" | "failed" | "expired";
@@ -278,9 +280,9 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
 
       {upi && qrLive && (
         <div className="kp-rise mt-4 grid grid-cols-3 gap-2.5" style={{ animationDelay: "140ms" }}>
-          <AppTile label="Paytm" onClick={() => openUpiApp("paytm", upi)}><PaytmLogo /></AppTile>
-          <AppTile label="PhonePe" onClick={() => openUpiApp("phonepe", upi)}><PhonePeLogo /></AppTile>
-          <AppTile label="GPay" onClick={() => openUpiApp("gpay", upi)}><GooglePayLogo /></AppTile>
+          <AppTile label="Paytm" onClick={() => openPayApp("paytm", upi, d.app_links)}><PaytmLogo /></AppTile>
+          <AppTile label="PhonePe" onClick={() => openPayApp("phonepe", upi, d.app_links)}><PhonePeLogo /></AppTile>
+          <AppTile label="GPay" onClick={() => openPayApp("gpay", upi, d.app_links)}><GooglePayLogo /></AppTile>
         </div>
       )}
 
@@ -308,6 +310,12 @@ function WaitingBody({ d, merchant, orderId, onProof }: { d: PayStatus; merchant
           <button type="button" onClick={() => openUpiApp("any", upi)} className="kp-pill kp-pill-solid">
             <Smartphone className="h-4 w-4" /> Pay with any UPI app
           </button>
+        )}
+        {/* The processor's own payment page, when it has one: for an app that refuses the link above. */}
+        {d.payment_page_url && qrLive && (
+          <a href={d.payment_page_url} className="kp-dim mt-3 block text-center text-xs underline underline-offset-4">
+            Payment not going through? Open the secure payment page
+          </a>
         )}
         <p className="kp-faint mt-2.5 text-center text-[11px]">Order {d.order_id} · this screen updates on its own</p>
       </div>

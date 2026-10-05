@@ -106,6 +106,8 @@ interface PayuGatewayMeta {
   /** PayU Client ID mode: how Katana signs in, and the PayU payment page the customer pays on. */
   auth?: "client_credentials";
   checkout_url?: string;
+  /** The processor's own payment page for an order paid by UPI link (PayAtom quasi intent): a fallback, reached through /pay/{id}/go. */
+  page_url?: string;
 }
 
 // Build the receiver-VPA pool with per-VPA health. The first READY VPA is active;
@@ -456,6 +458,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   let checkoutUrl: string | null = null;
   let merchantName: string | null = null;
   let gateway: PayuGatewayMeta | null = null;
+  let appLinks: Record<string, string> | null = null;
 
   let payId: string, vendorTxnId: string, deeplinks: DeepLinks, upiIntent: string;
   const status = "PENDING";
@@ -500,12 +503,15 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
       paytm: `paytm://upi/pay?${r.data.intentQuery}`,
       phonepe: `phonepe://upi/pay?${r.data.intentQuery}`,
     };
+    // The processor's own app links, used on the pay page instead of rebuilt ones (PayAtom quasi intent).
+    appLinks = r.data.appLinks ?? null;
     payId = r.data.paymentId ?? shortId("pay");
     deeplinks = links as DeepLinks;
     upiIntent = links.upi;
     gateway = {
       provider: connector.id, txnid: vendorTxnId, payment_id: r.data.paymentId, env: mid.env ?? "TEST",
       payee_vpa: new URLSearchParams(r.data.intentQuery).get("pa"),
+      ...(r.data.redirectUrl ? { page_url: r.data.redirectUrl } : {}),
     };
   } else if (linkGw) {
     const { mid, connector } = linkGw;
@@ -573,6 +579,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   const hold = input.amount >= HIGH_AMOUNT_HOLD;
   const meta = {
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
+    ...(appLinks ? { app_links: appLinks } : {}),
     mode,                                  // QR | INTENT
     // A PayU order is paid to PayU's collection account, not the merchant's UPI ID.
     receiver_vpa: gateway ? gateway.payee_vpa : livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,

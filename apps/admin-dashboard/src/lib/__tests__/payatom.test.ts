@@ -81,7 +81,8 @@ test("a merchant never reads PayAtom's name", () => {
 
 // ── The connector's calls, against a stand-in for PayAtom's server ─────────────────────────────
 
-import { payatomPayin } from "@/lib/payin-providers/payatom";
+import { payatomAppLinks, payatomPayin } from "@/lib/payin-providers/payatom";
+import { appLinkUrl } from "@/lib/upi";
 import type { GatewayMid } from "@/lib/gateway-creds";
 
 const MID: GatewayMid = {
@@ -248,6 +249,11 @@ test("quasi intent: an empty qr_code is read from PayAtom's app links (live repl
       assert.equal(q.get("tr"), null);                 // empty in PayAtom's link: left out
       assert.equal(q.get("featuretype"), null);        // Paytm's own field: left out
       assert.equal(r.data.paymentId, "9a07ced0");
+      // PayAtom's own app links are kept exactly; its payment page is kept as a fallback.
+      assert.equal(r.data.appLinks?.paytm, live.additional_data.paytm_intent);
+      assert.equal(r.data.appLinks?.phonepe, live.additional_data.phonepe_intent);
+      assert.equal(r.data.appLinks?.gpay, undefined);
+      assert.equal(r.data.redirectUrl, "https://p2flow.in/pay/pay_X");
     }
   } finally { s.restore(); }
 });
@@ -258,4 +264,19 @@ test("success with no usable UPI link is an error that says so", async () => {
     const r = await payatomPayin.upiIntent!(MID, ORDER, { ip: "", deviceInfo: "" });
     assert.ok(!r.ok && /no UPI link/.test(r.error));
   } finally { s.restore(); }
+});
+
+test("a link outside the app's own scheme is not taken as that app's link", () => {
+  assert.equal(payatomAppLinks({ additional_data: { paytm_intent: "javascript:alert(1)", phonepe_intent: "https://evil.example" } }), null);
+  assert.deepEqual(payatomAppLinks({ additional_data: { paytm_intent: "paytmmp://cash_wallet?pa=a@b&am=1" } }), { paytm: "paytmmp://cash_wallet?pa=a@b&am=1" });
+});
+
+test("an app's own link opens as given; on Android through intent:// with the app's package", () => {
+  const link = "phonepe://native?data=eyJ9&id=p2ppayment";
+  assert.equal(appLinkUrl("phonepe", link), link);   // no navigator here: not Android
+  const real = globalThis.navigator;
+  Object.defineProperty(globalThis, "navigator", { value: { userAgent: "Mozilla/5.0 (Linux; Android 14)" }, configurable: true });
+  try {
+    assert.equal(appLinkUrl("phonepe", link), "intent://native?data=eyJ9&id=p2ppayment#Intent;scheme=phonepe;package=com.phonepe.app;end");
+  } finally { Object.defineProperty(globalThis, "navigator", { value: real, configurable: true }); }
 });

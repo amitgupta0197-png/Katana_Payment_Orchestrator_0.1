@@ -33,7 +33,7 @@
 
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import type { GatewayMid } from "@/lib/gateway-creds";
-import { intentQueryOf, type PayinCall, type PayinConnector, type PayinState } from "@/lib/payin-providers/types";
+import { intentQueryOf, type AppLinks, type PayinCall, type PayinConnector, type PayinState } from "@/lib/payin-providers/types";
 
 /** The body PayAtom's server signs: sorted keys, compact JSON, "/" and non-ASCII escaped like PHP. */
 export function payatomCanonical(params: Record<string, unknown>): string {
@@ -154,6 +154,25 @@ export function payatomIntentQuery(body: any): string | null {
   return null;
 }
 
+/**
+ * PayAtom's own app links (quasi intent): Paytm and PhonePe open them as a person-to-person
+ * transfer, which a rebuilt merchant link (paytmmp://pay, phonepe://pay) is not. Kept exactly as
+ * sent; only links in the app's own scheme are taken.
+ */
+export function payatomAppLinks(body: any): AppLinks | null {
+  const extra = body?.additional_data;
+  if (!extra || typeof extra !== "object") return null;
+  const out: AppLinks = {};
+  const take = (app: keyof AppLinks, key: string, scheme: RegExp) => {
+    const v = (extra as Record<string, unknown>)[key];
+    if (typeof v === "string" && scheme.test(v) && v.length < 4000) out[app] = v;
+  };
+  take("paytm", "paytm_intent", /^paytmmp:\/\//i);
+  take("phonepe", "phonepe_intent", /^phonepe:\/\//i);
+  take("gpay", "gpay_intent", /^(tez|gpay):\/\//i);
+  return Object.keys(out).length ? out : null;
+}
+
 const msgOf = (b: any, status: number) => String(b?.message || `HTTP ${status}`).slice(0, 200);
 
 const SUCCESS = /^(approved|late approved)$/i;
@@ -232,7 +251,8 @@ export const payatomPayin: PayinConnector = {
       data: {
         intentQuery: q,
         paymentId: body.ref_code ? String(body.ref_code) : null,
-        redirectUrl: typeof body.redirect_url === "string" ? body.redirect_url : null,
+        redirectUrl: typeof body.redirect_url === "string" && /^https:\/\//i.test(body.redirect_url) ? body.redirect_url : null,
+        appLinks: payatomAppLinks(body),
       },
     };
   },
