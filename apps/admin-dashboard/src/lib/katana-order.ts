@@ -491,6 +491,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
       productinfo: note, firstname: "Customer", email: "payments@katanapay.co",
       phone: input.customerPhone?.trim() || "9999999999",
       returnUrl: payinReturnUrl(connector.id, vendorTxnId), notifyUrl: payinWebhookUrl(connector.id),
+      customerVpa: input.customerVpa ?? null,
     }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
     if (!r.ok) throw new PayuIntentError(r.error);
 
@@ -518,6 +519,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
       productinfo: note, firstname: "Customer", email: "payments@katanapay.co",
       phone: input.customerPhone?.trim() || "9999999999",
       returnUrl: payinReturnUrl(connector.path ?? connector.id, vendorTxnId), notifyUrl: payinWebhookUrl(connector.path ?? connector.id),
+      customerVpa: input.customerVpa ?? null,
     }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
     if (!r.ok) throw new PayuIntentError(r.error);
     if (r.data.kind !== "redirect") throw new PayuIntentError(`${name} returned no payment page`);

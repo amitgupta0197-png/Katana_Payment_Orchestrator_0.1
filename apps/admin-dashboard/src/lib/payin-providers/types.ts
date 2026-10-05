@@ -28,6 +28,8 @@ export interface PayinOrder {
   returnUrl: string;
   /** Where the gateway posts server-to-server events (Katana's webhook route for this gateway). */
   notifyUrl: string;
+  /** The paying customer's own UPI ID, when the merchant sent one (customer_vpa). */
+  customerVpa?: string | null;
 }
 
 export interface PayinClient {

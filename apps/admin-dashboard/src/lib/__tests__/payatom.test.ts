@@ -201,3 +201,29 @@ test("PayAtom credentials: where the money lands must be chosen from the options
   assert.match(validateCredFields(svc, { ...base, channel: "BANK" }).error ?? "", /choose one/);
   assert.equal(validateCredFields(svc, { ...base, channel: "P2P" }).values?.channel, "P2P");
 });
+
+test("upiIntent: the customer's UPI ID goes as upi_id; a malformed one is left out", async () => {
+  const s = stub(() => ({ status: "success", ref_code: "R", qr_code: "upi://pay?pa=x@upi&am=500", amount: 500 }));
+  try {
+    await payatomPayin.upiIntent!(MID, { ...ORDER, customerVpa: " buyer@okaxis " }, { ip: "", deviceInfo: "" });
+    await payatomPayin.upiIntent!(MID, { ...ORDER, customerVpa: "not a vpa" }, { ip: "", deviceInfo: "" });
+    await payatomPayin.upiIntent!(MID, ORDER, { ip: "", deviceInfo: "" });
+    assert.equal(s.calls[0].body.upi_id, "buyer@okaxis");
+    assert.equal("upi_id" in s.calls[1].body, false);
+    assert.equal("upi_id" in s.calls[2].body, false);
+    // Whatever is sent is signed.
+    assert.equal(s.calls[0].body.signature, payatomSign(s.calls[0].body, SECRET));
+  } finally { s.restore(); }
+});
+
+test("upiIntent: an Intent (P2C) account sends Katana's return URL as redirect_url; a P2P account does not", async () => {
+  const s = stub(() => ({ status: "success", ref_code: "R", qr_code: "upi://pay?pa=x@upi&am=500", amount: 500 }));
+  const back = "https://katanapay.co/api/gateway/payatom/return?txnid=kp_abc";
+  try {
+    await payatomPayin.upiIntent!({ ...MID, extra: { ...MID.extra, channel: "INTENT" } }, { ...ORDER, returnUrl: back }, { ip: "", deviceInfo: "" });
+    await payatomPayin.upiIntent!({ ...MID, extra: { ...MID.extra, channel: "P2P" } }, { ...ORDER, returnUrl: back }, { ip: "", deviceInfo: "" });
+    assert.equal(s.calls[0].body.redirect_url, back);
+    assert.equal(s.calls[0].body.signature, payatomSign(s.calls[0].body, SECRET));
+    assert.equal("redirect_url" in s.calls[1].body, false);
+  } finally { s.restore(); }
+});

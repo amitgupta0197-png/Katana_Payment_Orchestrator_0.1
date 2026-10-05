@@ -8,7 +8,8 @@
 //   signature SHA-256 hex of (the body without `signature`, keys sorted A-Z, compact JSON with "/"
 //             escaped as "\/", as PHP's json_encode writes it) + secret key
 //   request   POST {base}/api/v2/request.php {pid, amount (whole rupees), order_id, ip, name, email,
-//             phone, latitude, longitude, customer_id, [upi_id], signature}
+//             phone, latitude, longitude, customer_id, [upi_id when the merchant sent customer_vpa],
+//             [redirect_url: Katana's /api/gateway/payatom/return, Intent (P2C) accounts], signature}
 //             -> {status: "success", ref_code, qr_code: "upi://pay?pa=…", redirect_url, amount,
 //                receiverVPA} | {status: "error", message} — always HTTP 200
 //   status    POST {base}/api/v2/status_polling.php {pid, ref_code, post_hash}; no signature.
@@ -183,6 +184,13 @@ export const payatomPayin: PayinConnector = {
       longitude: lng,
       customer_id: o.phone || o.txnid,
     };
+    // The customer's UPI ID: PayAtom's docs mark it required ("for intent flow"). Sent when the
+    // merchant passed customer_vpa; Katana does not know it otherwise.
+    const vpa = o.customerVpa?.trim();
+    if (vpa && /^[A-Za-z0-9._-]{2,256}@[A-Za-z][A-Za-z0-9.-]{1,64}$/.test(vpa)) params.upi_id = vpa;
+    // Payin P2C Seamless (money lands with PayAtom) needs a redirect_url unless PayAtom set one at
+    // registration: the customer comes back to Katana, which checks the order and shows the result.
+    if (mid.extra?.channel !== "P2P" && o.returnUrl) params.redirect_url = o.returnUrl;
     params.signature = payatomSign(params, mid.salt);
     const r = await post(mid, "/api/v2/request.php", params, 20_000);
     if (!r.ok) return r;
