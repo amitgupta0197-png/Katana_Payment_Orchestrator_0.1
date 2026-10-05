@@ -8,7 +8,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { PinelabsConfigCard } from "@/components/pinelabs-config-card";
 import { Plug, Copy, KeyRound, RefreshCw, Check, ExternalLink, Download, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
@@ -144,9 +143,6 @@ hash = HMAC_SHA256( key=(KEY + SALT), message=data )              // lowercase h
         } />
 
       <LiveActivationCard />
-
-      {/* Pine Labs — pull transactions + RRN from your Pine Labs account */}
-      <div className="mb-4"><PinelabsConfigCard endpoint="/api/me/pinelabs" canEdit /></div>
 
       {/* Credentials — one pair per mode */}
       <Card className="mb-4">

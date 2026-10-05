@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
-import { PinelabsConfigCard } from "@/components/pinelabs-config-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -712,10 +711,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         {/* P2P: the payer pays the banker's own UPI ID; the agent phone sees the bank credit. */}
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
-          <div className="grid gap-4 xl:grid-cols-2 [&>*]:mb-0">
-            <KatanaPayConfigCard merchantId={merchant.id} />
-            <PinelabsConfigCard endpoint={`/api/merchants/${merchant.id}/pinelabs`} canEdit />
-          </div>
+          <KatanaPayConfigCard merchantId={merchant.id} />
           <div className="mt-4">
             <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             {named && <IntentLiveTestCard merchantId={merchant.id} merchantCode={merchant.merchant_code} flow="P2P" />}
