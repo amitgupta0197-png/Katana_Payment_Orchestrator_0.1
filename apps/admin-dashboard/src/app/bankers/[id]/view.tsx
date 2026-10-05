@@ -26,6 +26,7 @@ import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
 import { StarterKitCard } from "@/components/merchant/starter-kit-card";
 import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
+import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
 import { PayinLimitsCard } from "@/components/merchant/payin-limits-card";
@@ -711,6 +712,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         {/* P2P: the payer pays the banker's own UPI ID; the agent phone sees the bank credit. */}
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
+          {named && <PayatomConnectCard merchantId={merchant.id} />}
           <KatanaPayConfigCard merchantId={merchant.id} />
           <div className="mt-4">
             <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
@@ -725,6 +727,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         <TabsContent value="intent">
           <FlowFitNote bankerId={merchant.id} flow="INTENT" />
           {named && <>
+            <PayatomConnectCard merchantId={merchant.id} />
             <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             <div className="mt-4">
               <IntentLiveTestCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
