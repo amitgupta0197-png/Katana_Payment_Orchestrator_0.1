@@ -227,3 +227,35 @@ test("upiIntent: an Intent (P2C) account sends Katana's return URL as redirect_u
     assert.equal("redirect_url" in s.calls[1].body, false);
   } finally { s.restore(); }
 });
+
+test("quasi intent: an empty qr_code is read from PayAtom's app links (live reply, 2026-10-05)", async () => {
+  const live = {
+    ref_code: "9a07ced0", qr_code: "", status: "success", redirect_url: "https://p2flow.in/pay/pay_X", amount: 201,
+    receiverVPA: "gpay-12202885821@okbizaxis",
+    additional_data: {
+      paytm_intent: "paytmmp://cash_wallet?pa=gpay-12202885821@okbizaxis&pn=P2Flow&tr=&am=201.00&cu=INR&tn=1vcep1&mc=7221&featuretype=money_transfer",
+      phonepe_intent: "phonepe://native?data=eyJ9&id=p2ppayment",
+    },
+  };
+  const s = stub(() => live);
+  try {
+    const r = await payatomPayin.upiIntent!(MID, { ...ORDER, amountMinor: 20100n }, { ip: "", deviceInfo: "" });
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      const q = new URLSearchParams(r.data.intentQuery);
+      assert.deepEqual([q.get("pa"), q.get("pn"), q.get("am"), q.get("cu"), q.get("tn"), q.get("mc")],
+        ["gpay-12202885821@okbizaxis", "P2Flow", "201.00", "INR", "1vcep1", "7221"]);
+      assert.equal(q.get("tr"), null);                 // empty in PayAtom's link: left out
+      assert.equal(q.get("featuretype"), null);        // Paytm's own field: left out
+      assert.equal(r.data.paymentId, "9a07ced0");
+    }
+  } finally { s.restore(); }
+});
+
+test("success with no usable UPI link is an error that says so", async () => {
+  const s = stub(() => ({ status: "success", ref_code: "R", qr_code: "", additional_data: {} }));
+  try {
+    const r = await payatomPayin.upiIntent!(MID, ORDER, { ip: "", deviceInfo: "" });
+    assert.ok(!r.ok && /no UPI link/.test(r.error));
+  } finally { s.restore(); }
+});

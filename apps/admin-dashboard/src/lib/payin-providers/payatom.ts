@@ -126,6 +126,34 @@ async function post(mid: GatewayMid, path: string, body: unknown, timeoutMs = 15
   }
 }
 
+/**
+ * The UPI string of a created payment. Usually qr_code; on a "quasi intent" MID PayAtom leaves
+ * qr_code empty and sends app links instead (additional_data.paytm_intent / phonepe_intent, seen
+ * live 2026-10-05), so the UPI query is read from the first one that carries pa and am. Only the
+ * UPI fields are kept (pa, pn, tr, am, cu, tn, mc): tn is PayAtom's note that matches the payment.
+ */
+export function payatomIntentQuery(body: any): string | null {
+  const direct = intentQueryOf(body?.qr_code);
+  if (direct) return direct;
+  const extra = body?.additional_data;
+  if (!extra || typeof extra !== "object") return null;
+  const links = Object.entries(extra as Record<string, unknown>)
+    .filter(([k, v]) => /intent/i.test(k) && typeof v === "string")
+    .sort(([a], [b]) => Number(b.startsWith("upi")) - Number(a.startsWith("upi")))
+    .map(([, v]) => v as string);
+  for (const link of links) {
+    const i = link.indexOf("?");
+    if (i < 0) continue;
+    const src = new URLSearchParams(link.slice(i + 1));
+    if (!src.get("pa") || !src.get("am")) continue;
+    const out = new URLSearchParams();
+    for (const k of ["pa", "pn", "tr", "am", "cu", "tn", "mc"]) { const v = src.get(k); if (v) out.set(k, v); }
+    if (!out.get("cu")) out.set("cu", "INR");
+    return out.toString().replace(/\+/g, "%20");
+  }
+  return null;
+}
+
 const msgOf = (b: any, status: number) => String(b?.message || `HTTP ${status}`).slice(0, 200);
 
 const SUCCESS = /^(approved|late approved)$/i;
@@ -195,9 +223,10 @@ export const payatomPayin: PayinConnector = {
     const r = await post(mid, "/api/v2/request.php", params, 20_000);
     if (!r.ok) return r;
     const { httpStatus, body } = r.data;
-    const q = intentQueryOf(body?.qr_code);
-    if (body?.status !== "success" || !q)
+    const q = payatomIntentQuery(body);
+    if (body?.status !== "success")
       return { ok: false, error: `PayAtom did not create the payment: ${msgOf(body, httpStatus)}` };
+    if (!q) return { ok: false, error: "PayAtom created the payment but sent no UPI link Katana can use" };
     return {
       ok: true,
       data: {
