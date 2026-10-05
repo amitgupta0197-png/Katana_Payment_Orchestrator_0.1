@@ -508,10 +508,14 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     payId = r.data.paymentId ?? shortId("pay");
     deeplinks = links as DeepLinks;
     upiIntent = links.upi;
+    // A processor that wants its own page used (pageFirst: PayAtom) makes this a hosted-page order:
+    // the customer is sent straight to that page. Otherwise the page is only a fallback.
+    const hostedPage = connector.pageFirst && r.data.redirectUrl ? r.data.redirectUrl : null;
+    if (hostedPage) checkoutUrl = hostedPage;
     gateway = {
       provider: connector.id, txnid: vendorTxnId, payment_id: r.data.paymentId, env: mid.env ?? "TEST",
       payee_vpa: new URLSearchParams(r.data.intentQuery).get("pa"),
-      ...(r.data.redirectUrl ? { page_url: r.data.redirectUrl } : {}),
+      ...(hostedPage ? { checkout_url: hostedPage } : r.data.redirectUrl ? { page_url: r.data.redirectUrl } : {}),
     };
   } else if (linkGw) {
     const { mid, connector } = linkGw;

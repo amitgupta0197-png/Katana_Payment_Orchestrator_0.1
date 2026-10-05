@@ -204,6 +204,8 @@ export function payatomPayinState(t: Record<string, any>): PayinState {
 export const payatomPayin: PayinConnector = {
   id: "PAYATOM",
   name: "PayAtom",
+  // Customers pay on PayAtom's own page (redirect_url), which PayAtom builds for its UPI flows.
+  pageFirst: true,
 
   // Seamless only: Katana's own pay page shows PayAtom's UPI string. The request's redirect_url,
   // when PayAtom sends one, is used for a hosted checkout.

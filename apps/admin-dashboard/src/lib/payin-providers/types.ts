@@ -64,6 +64,12 @@ export interface PayinConnector {
   name: string;
   /** Route folder under /api/gateway when it isn't the lowercased id (PayU Client ID mode). */
   path?: string;
+  /**
+   * The customer pays on the processor's own page whenever it gives one with the UPI intent
+   * (PayAtom): the order is then a hosted-page order (gateway.checkout_url), and Katana's links
+   * (/pay/{id}/go, the API's gateway_url) go straight to that page.
+   */
+  pageFirst?: boolean;
   /** Start a hosted checkout. */
   checkout(mid: GatewayMid, o: PayinOrder, client: PayinClient): Promise<PayinCall<CheckoutStart>>;
   /** Get a UPI intent server-to-server (no gateway page). Gateways without one omit it. */
