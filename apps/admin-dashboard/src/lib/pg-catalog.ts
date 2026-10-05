@@ -266,7 +266,8 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PAYATOM", name: "PayAtom", logo: null, color: "#5B3FD9",
     payin: {
-      connector: true, p2p: true,
+      // PayAtom refuses smaller payments ("amount should be greater than : 200", live, 2026-10-05).
+      connector: true, p2p: true, minAmount: 201,
       env: { TEST: "UAT (enter PayAtom's UAT URL below)", PROD: "Live (enter PayAtom's live URL below)" },
       creds: "PayAtom doesn't use a Client ID / Secret. PayAtom gives the PID, the API key and the secret key at onboarding.",
       note: "UPI on PayAtom's P2P Seamless product: Katana's pay page shows PayAtom's UPI string and PayAtom confirms the payment. Whole rupees only. Before it works, PayAtom must whitelist Katana's server IP (72.61.227.233) and set Katana's payment events URL as the callback URL for this PID; neither is sent per order. PayAtom requires a location with every request: enter the one PayAtom agreed for this account.",
