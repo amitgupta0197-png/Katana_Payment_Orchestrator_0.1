@@ -225,10 +225,10 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "RUBYVAULT", name: "RubyVault", logo: null, color: "#B0123A",
     payin: {
-      connector: true, minAmount: 500,
+      connector: true, minAmount: 1000,
       env: { TEST: "Test (enter RubyVault's test URL below)", PROD: "Live (rubyvault.tech)" },
       creds: "RubyVault doesn't use a Client ID / Secret. Ask RubyVault for the Account Code and Secret Key.",
-      note: "Hosted UPI QR checkout (no UPI intent). RubyVault's live minimum is ₹500. Give RubyVault Katana's payment events URL as the callback URL; it is set once at onboarding, not per order.",
+      note: "Hosted UPI QR checkout (no UPI intent). RubyVault's live minimum is ₹500 or ₹1,000 depending on the account (₹1,000 assumed). Give RubyVault Katana's payment events URL as the callback URL; it is set once at onboarding, not per order.",
       fields: [
         { name: "key", label: "Account Code", placeholder: "Account Code from RubyVault" },
         { name: "salt", label: "Secret Key", secret: true },

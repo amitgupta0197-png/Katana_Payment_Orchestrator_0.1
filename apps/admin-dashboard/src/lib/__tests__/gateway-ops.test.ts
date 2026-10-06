@@ -98,10 +98,10 @@ test("what a gateway check answered is recorded as one outcome", () => {
 });
 
 test("verifying cap: never below the gateway's own live minimum, or no verification payment is possible", () => {
-  // RubyVault refuses live payments under ₹500: its verifying accounts take up to ₹500.
-  assert.equal(verifyMaxAmountFor("RUBYVAULT"), Math.max(VERIFY_MAX_AMOUNT, 500));
-  assert.equal(verifyingBlocker(500, 0, verifyMaxAmountFor("RUBYVAULT"), 20), null);
-  assert.match(verifyingBlocker(501, 0, verifyMaxAmountFor("RUBYVAULT"), 20) ?? "", /up to ₹500/);
+  // Some RubyVault accounts refuse live payments under ₹1,000: its verifying accounts take up to ₹1,000.
+  assert.equal(verifyMaxAmountFor("RUBYVAULT"), Math.max(VERIFY_MAX_AMOUNT, 1000));
+  assert.equal(verifyingBlocker(1000, 0, verifyMaxAmountFor("RUBYVAULT"), 20), null);
+  assert.match(verifyingBlocker(1001, 0, verifyMaxAmountFor("RUBYVAULT"), 20) ?? "", /up to ₹1000/);
   // Gateways with no minimum keep the platform cap.
   assert.equal(verifyMaxAmountFor("RAZORPAY"), VERIFY_MAX_AMOUNT);
   assert.equal(verifyMaxAmountFor(null), VERIFY_MAX_AMOUNT);
