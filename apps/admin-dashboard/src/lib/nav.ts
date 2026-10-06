@@ -1,4 +1,4 @@
-import { ListChecks, ArrowRightLeft, Handshake,
+import { ListChecks, ArrowRightLeft, Handshake, BellRing,
   LayoutDashboard,
   BookOpen,
   GitMerge,
@@ -122,11 +122,11 @@ export function filterNavForPersona(items: NavItem[], persona: NavPersona): NavI
 // to their job. Nothing is removed from the app — every page stays reachable by URL
 // and the ⌘K command palette; this only declutters the sidebar (presentation only).
 const CURATED_NAV: Partial<Record<NavPersona, string[]>> = {
-  OPERATOR:   ["/", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
+  OPERATOR:   ["/", "/attention", "/orders", "/gateway-health", "/mid-switch", "/operator", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/security"],
   FINANCE:    ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/payouts", "/fifo-settlements", "/fifo-reconciliation", "/fifo-reports", "/ledger", "/settlement-engine", "/settlement", "/reserves", "/chargebacks", "/dt-dashboard", "/dt-purchases", "/dt-refills", "/security"],
   RISK:       ["/", "/status-intelligence", "/transaction-intel", "/fifo-dashboard", "/forensics", "/cases", "/risk", "/risk/aml", "/risk/payin-flags", "/chargebacks", "/fifo-reports", "/fifo-controls", "/tsps", "/banks", "/security"],
   COMPLIANCE: ["/", "/forensics", "/cases", "/kyb", "/partners", "/disputes", "/chargebacks", "/risk/aml", "/risk/payin-flags", "/fifo-controls", "/fifo-reports", "/tsps", "/banks", "/security"],
-  SUPPORT:    ["/", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
+  SUPPORT:    ["/", "/attention", "/orders", "/api-log", "/support-bot", "/payin-data", "/payout-data", "/summary", "/security"],
 };
 
 /** Read right per module_code for one persona (lib/access rightsFor; only can_read is used here). */
@@ -354,6 +354,8 @@ const rawNavItems: NavItem[] = [
   { href: "/forensics", label: "Forensics", icon: FileSearch, status: "live", group: "Risk & Compliance" },
   { href: "/cases", label: "Compliance Cases", icon: Briefcase, status: "live", group: "Risk & Compliance", module: "aml_cases" },
 
+  // Every banker's open problems, worst first (lib/attention).
+  { href: "/attention", label: "Needs attention", icon: BellRing, status: "live", group: "Operations", personas: ["SUPER_ADMIN", "ADMIN", "OPERATOR", "SUPPORT"] },
   { href: "/operator", label: "Operator Console", icon: Headphones, status: "live", group: "Operations", personas: OPERATOR_NAV },
   // Staff test it here; merchants and bankers use it from their portals once SUPPORT_BOT_PORTALS is on (lib/support-bot).
   { href: "/support-bot", label: "Support assistant", icon: Bot, status: "live", group: "Operations", personas: ["SUPER_ADMIN", "ADMIN", "SUPPORT"] },
