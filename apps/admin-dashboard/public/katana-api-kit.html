@@ -995,6 +995,11 @@ refreshed per delivery, so it cannot be used as a freshness bound.</div>
 <p>Every attempt is recorded on Katana's side. In the portal, <b>Orders</b> shows each attempt for an order with
 what your server answered, <b>Resend</b> sends a callback again, and <b>Send test event</b> sends a sample of each
 status to your callback URL.</p>
+<p><b>Address checks.</b> Katana also checks now and then that your callback URL answers. A check is a signed
+<code>Expired</code> callback for a made-up order (<code>ORDER_ID</code> <code>integration-check</code>,
+<code>LIVEMODE=false</code>) and carries the header <code>X-Katana-Check: 1</code>. Answer it with any <code>2xx</code>,
+or reject it as an unknown order (<code>400</code>, <code>404</code>, <code>409</code> or <code>422</code>): both count
+as reachable. Never act on it.</p>
 <div class="note badbox"><b>The callback is a convenience, not a guarantee.</b> Each one is abandoned after
 roughly 31 hours of failures. An <code>Expired</code> or <code>Failed</code> order that is paid afterwards (§7.3)
 gets a second, <code>Captured</code> callback, with the same delivery rules. The status enquiry (§7) is the

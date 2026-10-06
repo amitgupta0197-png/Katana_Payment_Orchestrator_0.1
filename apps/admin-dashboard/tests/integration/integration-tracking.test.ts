@@ -81,7 +81,14 @@ test("three failed checks make the URL FAILED and senders fall back; a pass rest
   const pass = await verifyCallback({ merchantId: bankerId, flow: "INTENT", triggeredBy: "MANUAL" }, echo);
   assert.equal(pass.status, "VERIFIED");
   assert.ok(seen["X-Katana-Signature"]?.startsWith("t="), "a v2 banker's check is signed like its events");
+  assert.equal(seen["X-Katana-Check"], "1", "every check says it is one");
   assert.equal(await flowCallbackUrl(CODE, "INTENT"), "https://example.com/intent-cb");
+  // A server that answers 404 to the made-up test order is reachable, with a note, not a failure.
+  const reach = await verifyCallback({ merchantId: bankerId, flow: "INTENT", triggeredBy: "MANUAL" }, answering(404, "order not found"));
+  assert.deepEqual([reach.ok, reach.status, reach.consecutive_failures], [true, "VERIFIED", 0]);
+  assert.match(reach.note ?? "", /answered 404 for the test order/);
+  const ev = await rows<{ event: string }>("merchant", `SELECT event FROM integration_events WHERE merchant_id = $1::uuid ORDER BY id DESC LIMIT 1`, [bankerId]);
+  assert.equal(ev[0]?.event, "callback_reachable");
 });
 
 test("the default URL, the summary, the chain and clearing", opts, async () => {

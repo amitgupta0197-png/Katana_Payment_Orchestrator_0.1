@@ -223,6 +223,9 @@ redirect is <b>informational only</b> and can be forged by anyone who can type a
 <p>On every terminal status Katana <b>POSTs</b> a JSON body to your <code>notify_url</code> (or your saved webhook
 URL). Reply <code>HTTP 200</code>. Delivery is queued and <b>retried with backoff</b> until you do, and every
 attempt is recorded — so a callback is never silently dropped.</p>
+<p>Katana also checks your callback URL now and then with a made-up order (<code>ORDER_ID</code>
+<code>integration-check</code>, header <code>X-Katana-Check: 1</code>). Answer it <code>200</code>, or reject it as an
+unknown order (<code>404</code> is fine); never act on it.</p>
 <h3>Callback body</h3>
 <pre>{
   "PAY_ID": "…", "ORDER_ID": "ORDER-1001", "TXN_ID": "…",

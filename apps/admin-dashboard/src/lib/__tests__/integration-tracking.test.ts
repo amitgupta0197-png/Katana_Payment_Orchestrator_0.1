@@ -56,6 +56,14 @@ test("a 2xx passes; a JSON echo must match the challenge when present", () => {
   assert.deepEqual(pingPasses(200, JSON.stringify({ echo: "abc" }), "abc"), { ok: true, error: null });
   assert.equal(pingPasses(200, JSON.stringify({ echo: "nope" }), "abc").ok, false);
   assert.equal(pingPasses(500, "", "abc").error, "HTTP 500");
+  // A server that rejects the made-up test order is reachable (2026-10-06: a merchant's 404s).
+  for (const s of [400, 404, 409, 422]) {
+    const p = pingPasses(s, "order not found", "abc");
+    assert.equal(p.ok, true, `HTTP ${s}`);
+    assert.match(p.note ?? "", new RegExp(`answered ${s} for the test order`));
+  }
+  assert.equal(pingPasses(401, "", "abc").ok, false);
+  assert.equal(pingPasses(503, "", "abc").ok, false);
   assert.equal(pingPasses(301, "", "abc").ok, false);
   assert.equal(pingPasses(null, "", "abc").ok, false);
 });

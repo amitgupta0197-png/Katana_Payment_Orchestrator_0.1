@@ -189,10 +189,11 @@ function CheckActions({ merchantId, cb, canEdit }: { merchantId: string; cb: Cal
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const verify = useMutation({
-    mutationFn: () => call<{ ok: boolean; http_status: number | null; error: string | null }>(`/api/merchants/${merchantId}/integration/verify`,
+    mutationFn: () => call<{ ok: boolean; http_status: number | null; error: string | null; note?: string }>(`/api/merchants/${merchantId}/integration/verify`,
       { method: "POST", body: JSON.stringify({ flow: cb.flow }) }),
     onSuccess: (r) => {
-      if (r.ok) toast.success(`The URL answered${r.http_status ? ` (HTTP ${r.http_status})` : ""}`);
+      if (r.ok && r.note) toast.warning("The URL is reachable", { description: r.note });
+      else if (r.ok) toast.success(`The URL answered${r.http_status ? ` (HTTP ${r.http_status})` : ""}`);
       else toast.error("The check failed", { description: r.error ?? undefined });
       qc.invalidateQueries({ queryKey: ["merchant", merchantId, "integration"] });
     },
@@ -317,7 +318,7 @@ function ChangeUrl({ merchantId, flow, current }: { merchantId: string; flow: Ca
 
 const EVENT_LABEL: Record<string, string> = {
   key_generated: "Key made", key_rotated: "Key made again", callback_url_set: "Callback URL set", callback_url_cleared: "Callback URL cleared",
-  callback_verified: "Check passed", callback_failed: "Check failed", test_txn_success: "Test payment paid",
+  callback_verified: "Check passed", callback_reachable: "Reached (test order rejected)", callback_failed: "Check failed", test_txn_success: "Test payment paid",
 };
 
 function LogCard({ events }: { events: IntegrationEvent[] }) {
@@ -326,8 +327,8 @@ function LogCard({ events }: { events: IntegrationEvent[] }) {
     { key: "event", header: "What", render: (r) => EVENT_LABEL[r.event] ?? r.event },
     { key: "flow", header: "Flow", render: (r) => (r.flow ? FLOW_LABEL[r.flow as CallbackFlow] ?? r.flow : "Default") },
     { key: "detail", header: "Detail", render: (r) => {
-      const d = r.detail as { url?: string; http_status?: number; error?: string };
-      return <span className="break-all text-xs">{[d.url, d.http_status ? `HTTP ${d.http_status}` : null, d.error].filter(Boolean).join(" · ")}</span>;
+      const d = r.detail as { url?: string; http_status?: number; error?: string; note?: string };
+      return <span className="break-all text-xs">{[d.url, d.http_status ? `HTTP ${d.http_status}` : null, d.error, d.note].filter(Boolean).join(" · ")}</span>;
     } },
     { key: "actor", header: "By", render: (r) => r.actor ?? "—" },
   ];

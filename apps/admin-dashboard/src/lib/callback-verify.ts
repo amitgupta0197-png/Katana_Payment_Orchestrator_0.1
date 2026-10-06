@@ -8,8 +8,9 @@
 // LIVEMODE false), so a server that acts on it changes nothing. It is sent directly, not through
 // the outbox: it is not a callback owed to anyone and is never retried.
 //
-// The challenge goes in the X-Katana-Challenge header. Any 2xx passes; when the answer is JSON
-// with an `echo` field it must equal the challenge.
+// The challenge goes in the X-Katana-Challenge header, and every check carries X-Katana-Check: 1.
+// Any 2xx passes; when the answer is JSON with an `echo` field it must equal the challenge. A 400,
+// 404, 409 or 422 also passes, with a note: the server is up and rejected an order it never saw.
 //
 // Every check is a callback_pings row. A per-flow URL's state lives on its banker_callback_urls
 // row; the default webhook_url's is worked out from its pings. One failure raises an amber
@@ -47,6 +48,8 @@ export interface VerifyResult {
   http_status: number | null;
   response_ms: number | null;
   error: string | null;
+  /** A reachable server that rejected the test order (lib/integration REACHABLE_4XX). */
+  note?: string;
   status: CallbackStatus | null;
   consecutive_failures: number;
 }
@@ -74,7 +77,9 @@ async function banker(merchantId: string): Promise<Banker | null> {
 
 /** The signed test event in the banker's contract, or why it cannot be signed. */
 async function testEvent(b: Banker, challenge: string): Promise<{ headers: Record<string, string>; body: string } | { error: string }> {
-  const headers: Record<string, string> = { "content-type": "application/json", "X-Katana-Challenge": challenge, "X-Katana-Test": "integration-check" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json", "X-Katana-Challenge": challenge, "X-Katana-Test": "integration-check", "X-Katana-Check": "1",
+  };
   const secret = openText(b.webhook_secret);
   if (b.webhook_version === "v2" && secret) {
     const eventId = newEventId();
@@ -112,14 +117,15 @@ export async function verifyCallback(input: VerifyInput, send: Sender = defaultS
 
   const challenge = randomBytes(12).toString("hex");
   const ev = await testEvent(b, challenge);
-  let httpStatus: number | null = null, ms: number | null = null, error: string | null = null, ok = false;
+  let httpStatus: number | null = null, ms: number | null = null, error: string | null = null, ok = false, note: string | null = null;
   if ("error" in ev) error = ev.error;
   else {
     const started = Date.now();
     try {
       const r = await send(url, { method: "POST", headers: ev.headers, body: ev.body });
       httpStatus = r.status;
-      ({ ok, error } = pingPasses(r.status, r.body, challenge));
+      const p = pingPasses(r.status, r.body, challenge);
+      ({ ok, error } = p); note = p.note ?? null;
     } catch (e) {
       const m = (e as Error).name === "AbortError" ? `no answer in ${PING_TIMEOUT_MS / 1000} seconds` : (e as Error).message;
       error = m.slice(0, 300);
@@ -165,12 +171,12 @@ export async function verifyCallback(input: VerifyInput, send: Sender = defaultS
 
   // The log: every failure and every manual pass; a scheduled pass only when it changes something.
   if (!ok || input.triggeredBy === "MANUAL" || before !== "VERIFIED")
-    await appendIntegrationEvent(b.id, ok ? "callback_verified" : "callback_failed", {
+    await appendIntegrationEvent(b.id, ok ? (note ? "callback_reachable" : "callback_verified") : "callback_failed", {
       flow: input.flow, actor: input.actor ?? (input.triggeredBy === "SCHEDULED" ? "scheduled check" : null),
-      detail: { url, http_status: httpStatus, response_ms: ms, error, status, consecutive_failures: failures, triggered_by: input.triggeredBy },
+      detail: { url, http_status: httpStatus, response_ms: ms, error, ...(note ? { note } : {}), status, consecutive_failures: failures, triggered_by: input.triggeredBy },
     }).catch(() => {});
 
-  return { ok, url, http_status: httpStatus, response_ms: ms, error, status, consecutive_failures: failures };
+  return { ok, url, http_status: httpStatus, response_ms: ms, error, ...(note ? { note } : {}), status, consecutive_failures: failures };
 }
 
 export interface DueCheck { merchant_id: string; flow: CallbackFlow | null }

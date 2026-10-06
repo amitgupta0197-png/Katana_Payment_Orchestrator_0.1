@@ -74,9 +74,21 @@ export function afterCheck(prev: CheckState, ok: boolean): CheckState & { alert:
 /** One alert per banker and flow (flow null = the default webhook URL). */
 export const callbackAlertKey = (merchantCode: string, flow: CallbackFlow | null) => `callback:${merchantCode}:${flow ?? "DEFAULT"}`;
 
-/** Whether a check's answer passes: a 2xx, and the echo when the body is JSON carrying one. */
-export function pingPasses(httpStatus: number | null, body: string, challenge: string): { ok: boolean; error: string | null } {
+/**
+ * A merchant's server that answers the test event (ORDER_ID "integration-check", an order it has
+ * never seen) with one of these is up and reading our callbacks: it rejected an unknown order,
+ * which is right. Reachable, with a note; never a failure.
+ */
+export const REACHABLE_4XX = new Set([400, 404, 409, 422]);
+
+/**
+ * Whether a check's answer passes: a 2xx (and the echo when the body is JSON carrying one), or one
+ * of REACHABLE_4XX with a note. 5xx, redirects, timeouts and connection errors fail.
+ */
+export function pingPasses(httpStatus: number | null, body: string, challenge: string): { ok: boolean; error: string | null; note?: string } {
   if (httpStatus == null) return { ok: false, error: "no answer" };
+  if (REACHABLE_4XX.has(httpStatus))
+    return { ok: true, error: null, note: `your server answered ${httpStatus} for the test order (integration-check): that's fine if it rejects unknown orders` };
   if (httpStatus < 200 || httpStatus > 299) return { ok: false, error: `HTTP ${httpStatus}` };
   let parsed: unknown = null;
   try { parsed = JSON.parse(body); } catch { /* not JSON: no echo needed */ }
