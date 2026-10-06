@@ -90,6 +90,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const gates = await runStepGates(step, subject);
     const blocking = blockingGates(gates);
     const overriding = blocking.length > 0 && body.override === true && s.persona === "SUPER_ADMIN";
+    // The banker page (bankers/[id]/view.tsx OVERRIDE_NOTE_MIN) asks for the same.
     if (overriding && body.notes.trim().length < 5)
       return NextResponse.json({ error: "an override needs a note saying why" }, { status: 400 });
     await recordGates(id, gates, overriding ? s.email : null);

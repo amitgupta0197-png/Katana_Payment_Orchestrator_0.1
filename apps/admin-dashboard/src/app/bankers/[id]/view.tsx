@@ -156,6 +156,9 @@ function KybDocUploader({ merchantId }: { merchantId: string }) {
   );
 }
 
+// Shortest note an override is accepted with (api/merchants/[id]/advance).
+const OVERRIDE_NOTE_MIN = 5;
+
 function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex: number }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -165,6 +168,8 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
   // A system check refused the step (lib/onboarding-gates). A Super Admin may go ahead with a note.
   const [blocked, setBlocked] = useState<{ error: string; canOverride: boolean } | null>(null);
   const [override, setOverride] = useState(false);
+  // The advance route refuses an override whose note is shorter than this.
+  const noteTooShort = notes.trim().length < OVERRIDE_NOTE_MIN;
 
   const m = useMutation({
     mutationFn: async () => {
@@ -223,17 +228,28 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
             <div className="rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
               <div>A check stopped this step: {blocked.error}</div>
               {blocked.canOverride && (
-                <label className="mt-2 flex items-center gap-1.5">
-                  <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
-                  Advance anyway. The note above is recorded as the reason.
-                </label>
+                <>
+                  <label className="mt-2 flex items-center gap-1.5">
+                    <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+                    Advance anyway. The note above is recorded as the reason.
+                  </label>
+                  <div className="mt-1.5 text-[color:var(--color-text-muted)]">
+                    {!override
+                      ? "To go ahead without it, tick the box and say why in the note."
+                      : noteTooShort
+                        ? `Say why in the note: at least ${OVERRIDE_NOTE_MIN} characters.`
+                        : "Confirm to advance anyway."}
+                  </div>
+                </>
               )}
             </div>
           )}
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => m.mutate()} disabled={m.isPending}>{m.isPending ? "Advancing…" : "Confirm advance"}</Button>
+          <Button onClick={() => m.mutate()} disabled={m.isPending || (override && noteTooShort)}>
+            {m.isPending ? "Advancing…" : override ? "Advance anyway" : "Confirm advance"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
