@@ -90,3 +90,20 @@ test("onboarding stage checks in plain words", async () => {
   assert.equal(plainGateMessage("plain text"), "plain text");
   assert.equal(plainGateMessage(null), "");
 });
+
+test("a live banker with no flow chosen (routed as before) is not told it can't take payments (BBUY88)", () => {
+  const t = bankerTodo(todo(
+    { steps: { application: true, kyb: true, screening: true, bankVerify: true, approval: true }, golive: { webhookAt: "2026-10-06T13:36:38Z", statusAt: "2026-10-06T13:46:00Z" }, livePaid: { intent: 1, p2p: 0 } },
+    { flow: { flow: "UNSET", active: null }, liveActivated: true, account: { ...RV, golive: "LIVE" } },
+  ));
+  assert.equal(t.steps[1].done, true);
+  assert.match(t.steps[1].detail, /routed as before/);
+  assert.equal(t.live, true);
+  assert.doesNotMatch(t.headline, /can't take live payments/);
+});
+
+test("no flow chosen and nothing set up is still step 2", () => {
+  const t = bankerTodo(todo({}, { flow: { flow: "UNSET", active: null } }));
+  assert.equal(t.steps[1].done, false);
+  assert.equal(t.steps[1].detail, "Not chosen");
+});

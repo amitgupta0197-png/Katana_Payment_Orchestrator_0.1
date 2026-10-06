@@ -52,7 +52,10 @@ export function bankerTodo(t: BankerTodoFacts): BankerTodo {
   const p2pReady = !!f.upiId || (!!a && a.channel === "P2P");
 
   const detailsDone = t.steps.application && t.steps.kyb && t.steps.screening && t.steps.bankVerify;
-  const flowDone = !payin || f.flow.flow !== "UNSET";
+  // No flow chosen is the routing every banker had before flows (lib/payin-flow UNSET): it takes
+  // live orders as long as something can take them, so it only counts as missing with nothing set up.
+  const legacyRouted = f.flow.flow === "UNSET" && (intentAccount || p2pReady);
+  const flowDone = !payin || f.flow.flow !== "UNSET" || legacyRouted;
   const accountDone = !payin || (flow === "P2P" ? p2pReady : flow === "INTENT" ? intentAccount : intentAccount || p2pReady);
   const onIntent = payin && flow !== "P2P" && (flow === "INTENT" || intentAccount);
   const testDone = !payin || (onIntent
@@ -61,7 +64,8 @@ export function bankerTodo(t: BankerTodoFacts): BankerTodo {
   const goLiveDone = t.steps.approval && f.liveActivated && (!onIntent || a?.golive !== "VERIFYING");
 
   const amount = onIntent ? (a?.minAmount ?? null) : 1;
-  const flowWords = flow === "P2P" ? "Customer pays the banker's UPI ID" : flow === "INTENT" ? "Through a payment gateway" : f.flow.flow === "BOTH" ? "Both flows" : "Not chosen";
+  const flowWords = flow === "P2P" ? "Customer pays the banker's UPI ID" : flow === "INTENT" ? "Through a payment gateway" : f.flow.flow === "BOTH" ? "Both flows"
+    : legacyRouted ? "Not chosen: orders are routed as before (you can choose one)" : "Not chosen";
 
   const raw: Omit<TodoStep, "n" | "waitingFor">[] = [
     {
