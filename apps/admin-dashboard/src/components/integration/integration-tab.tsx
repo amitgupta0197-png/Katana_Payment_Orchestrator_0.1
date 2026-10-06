@@ -61,7 +61,7 @@ export function IntegrationTab({ merchantId, canEdit, onOpenTab }: { merchantId:
   const d = q.data;
   return (
     <div className="space-y-4">
-      <ScoresCard d={d} />
+      <ScoresCard d={d} onOpenTab={onOpenTab} />
       <div className="grid gap-4 lg:grid-cols-2 [&>*]:mb-0">
         <KeysCard d={d} onOpenTab={onOpenTab} />
         <WebhookCard d={d} merchantId={merchantId} canEdit={canEdit} />
@@ -76,7 +76,7 @@ export function IntegrationTab({ merchantId, canEdit, onOpenTab }: { merchantId:
   );
 }
 
-function ScoresCard({ d }: { d: Integration }) {
+function ScoresCard({ d, onOpenTab }: { d: Integration; onOpenTab?: (t: string) => void }) {
   const shown = d.scores.filter((s) => s.active);
   return (
     <Card>
@@ -95,7 +95,7 @@ function ScoresCard({ d }: { d: Integration }) {
         </div>
         {shown.length > 0 && (
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {shown.map((s) => <ScoreItems key={s.flow} s={s} />)}
+            {shown.map((s) => <ScoreItems key={s.flow} s={s} onOpenTab={onOpenTab} />)}
           </div>
         )}
       </CardContent>
@@ -103,17 +103,48 @@ function ScoresCard({ d }: { d: Integration }) {
   );
 }
 
-function ScoreItems({ s }: { s: FlowScore }) {
+/** Where a failing health item is fixed: a tab of the banker page, or a card further down this one. */
+function fixFor(key: string, flow: CallbackFlow): { how: string; label: string; tab?: string; anchor?: string } | null {
+  switch (key) {
+    case "key": return { how: "Make the banker's Key + Salt (live once live mode is on).", label: "Open API login", tab: "developer" };
+    case "callback_url": return { how: "Set the URL Katana sends payment messages to: this flow's own, or the default one.", label: "Set the callback URL", anchor: "default-callback" };
+    case "verified": return { how: "Press Verify now on the callback URL card. Katana sends a test message and the URL must answer 2xx.", label: "Go to Verify now", anchor: "default-callback" };
+    case "payment": return flow === "PAYOUT"
+      ? { how: "Make one successful payout (a test payout counts).", label: "Open Payouts", tab: "payouts" }
+      : { how: "Make one successful payment on this flow (the live test on its tab counts).", label: flow === "P2P" ? "Open P2P live test" : "Open Intent live test", tab: flow === "P2P" ? "p2p" : "intent" };
+    case "secret": return { how: "Make the webhook signing secret so v2 messages can be checked.", label: "Make the signing secret", anchor: "default-callback" };
+    default: return null;
+  }
+}
+
+function ScoreItems({ s, onOpenTab }: { s: FlowScore; onOpenTab?: (t: string) => void }) {
+  const go = (f: NonNullable<ReturnType<typeof fixFor>>) => {
+    if (f.tab && onOpenTab) return onOpenTab(f.tab);
+    if (f.anchor) document.getElementById(f.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <div className="rounded-md border p-3 text-sm">
       <div className="mb-1.5 font-medium">{FLOW_LABEL[s.flow]}</div>
-      <ul className="space-y-1">
-        {s.items.map((i) => (
-          <li key={i.key} className="flex gap-2">
-            <span aria-hidden style={{ color: i.ok ? BAND_COLOR.GREEN : BAND_COLOR.RED }}>{i.ok ? "✓" : "✗"}</span>
-            <span className={i.ok ? "" : muted}>{i.label}</span>
-          </li>
-        ))}
+      <ul className="space-y-1.5">
+        {s.items.map((i) => {
+          const fix = i.ok ? null : fixFor(i.key, s.flow as CallbackFlow);
+          return (
+            <li key={i.key} className="flex gap-2">
+              <span aria-hidden style={{ color: i.ok ? BAND_COLOR.GREEN : BAND_COLOR.RED }}>{i.ok ? "✓" : "✗"}</span>
+              <span className="min-w-0">
+                <span className={i.ok ? "" : muted}>{i.label}</span>
+                {fix && (
+                  <span className={`block text-xs ${muted}`}>
+                    {fix.how}{" "}
+                    {(fix.anchor || onOpenTab) && (
+                      <button type="button" className="text-[color:var(--color-brand)] hover:underline" onClick={() => go(fix)}>{fix.label} →</button>
+                    )}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ul>
       <div className={`mt-1.5 text-xs ${muted}`}>{s.successes_30d} paid of {s.payments_30d} in 30 days</div>
     </div>
@@ -153,7 +184,7 @@ function KeysCard({ d, onOpenTab }: { d: Integration; onOpenTab?: (t: string) =>
 function WebhookCard({ d, merchantId, canEdit }: { d: Integration; merchantId: string; canEdit: boolean }) {
   const cb = d.default_callback;
   return (
-    <Card>
+    <Card id="default-callback" className="scroll-mt-20">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Default callback URL</CardTitle>
         <CardDescription>Used for every flow that has no URL of its own.</CardDescription>
@@ -235,7 +266,7 @@ function PingTable({ pings }: { pings: PingRow[] }) {
 function CallbackCard({ merchantId, cb, score, canEdit }: { merchantId: string; cb: CallbackView; score: FlowScore; canEdit: boolean }) {
   const flow = cb.flow as CallbackFlow;
   return (
-    <Card className={score.active ? "" : "opacity-80"}>
+    <Card id={`callback-${flow}`} className={`scroll-mt-20 ${score.active ? "" : "opacity-80"}`}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-2 text-base">
           {FLOW_LABEL[flow]} callback
