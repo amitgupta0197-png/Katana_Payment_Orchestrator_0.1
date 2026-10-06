@@ -7,6 +7,7 @@ import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
@@ -69,7 +70,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       {impact.dialog}
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
-          <CardTitle className="text-base">Payment account<TechLabel>Pay-in gateway</TechLabel></CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Payment account<TechLabel>Pay-in gateway</TechLabel><InfoTip label="the payment account">The gateway account where customers pay on the Intent flow. H2H means the merchant shows the UPI link on their own page. Redirect means the customer pays on the gateway page.</InfoTip></CardTitle>
           <CardDescription>The gateway account the customer's money is paid into, and the credentials Katana uses for it. Stored encrypted; never shown to the merchant.</CardDescription>
         </div>
         {!restricted && (

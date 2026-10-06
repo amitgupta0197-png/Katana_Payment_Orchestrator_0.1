@@ -11,6 +11,7 @@ import { Eye, EyeOff, Landmark, Plus, History } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import {
@@ -80,7 +81,7 @@ function ChainCard({ merchantId, chain, canEdit, onSaved }: { merchantId: string
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base"><Landmark className="h-4 w-4" /> Bank and TSP</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-base"><Landmark className="h-4 w-4" /> Bank and TSP <InfoTip label="bank and TSP">Only needed when a bank issues MIDs (merchant IDs) for this banker. Most bankers use a payment account instead and can skip this.</InfoTip></CardTitle>
         <CardDescription>The bank issues this banker&apos;s MIDs through this TSP.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

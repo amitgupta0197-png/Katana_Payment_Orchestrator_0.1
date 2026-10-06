@@ -13,6 +13,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Copy, ExternalLink, FlaskConical, RefreshCw, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,7 +115,7 @@ export function IntentLiveTestCard({ merchantId, merchantCode, flow = "INTENT" }
   return (
     <Card className="mb-4">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="h-4 w-4" /> {p2p ? "P2P live test" : "Intent live test"}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="h-4 w-4" /> {p2p ? "P2P live test" : "Intent live test"}{p2p ? <InfoTip label="the P2P live test">A real payment you make yourself to this banker&apos;s UPI ID. It proves money arrives. The banker&apos;s server gets no message for it.</InfoTip> : <InfoTip label="the Intent live test">A real payment you make yourself through the gateway. It proves the gateway takes money and tells Katana. The banker&apos;s server gets no message for it.</InfoTip>}</CardTitle>
         <CardDescription>
           {p2p
             ? <>A real P2P payment on this banker: through its P2P processor account if it has one, otherwise to its own UPI ID
@@ -205,7 +206,7 @@ export function IntentLiveTestCard({ merchantId, merchantCode, flow = "INTENT" }
         )}
 
         <div className="border-t pt-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Rocket className="h-4 w-4" /> Go-live checklist</div>
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Rocket className="h-4 w-4" /> Go-live checklist <InfoTip label="the go-live checklist">A new gateway account takes only small payments at first. After one real payment is confirmed, mark it live to lift the limit.</InfoTip></div>
           {golive.isLoading ? <p className={`text-sm ${MUTED}`}>Loading…</p>
             : golive.error ? <p className="text-sm text-[color:var(--color-danger)]">{(golive.error as Error).message}</p>
             : accounts.length === 0 ? (

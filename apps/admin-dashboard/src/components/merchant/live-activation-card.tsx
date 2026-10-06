@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,7 +106,7 @@ export function LiveActivationCard({ merchantId, canDecide = false }: { merchant
     <Card className="mb-4">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="inline-flex items-center gap-2 text-base"><Rocket className="h-4 w-4" />Activate live mode</CardTitle>
+          <CardTitle className="inline-flex items-center gap-2 text-base"><Rocket className="h-4 w-4" />Activate live mode <InfoTip label="live mode">Live mode lets the live keys take real money. It needs the setup and a test payment first. Until then, only test orders work.</InfoTip></CardTitle>
           <CardDescription>
             {merchantId
               ? "Live keys and live orders stay blocked for this banker until live mode is activated. The banker completes the checklist and requests it; a Super Admin approves."

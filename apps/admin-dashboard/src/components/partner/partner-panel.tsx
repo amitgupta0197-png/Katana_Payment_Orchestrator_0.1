@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, KeyRound, Plus, RefreshCw, Webhook } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -588,10 +589,10 @@ function SettingsTab({ d, base, partnerId }: { d: Detail; base: string; partnerI
     if (k === "exclusive" && on && !(await impact.ask(`/api/partners/${partnerId}/impact?change=EXCLUSIVE`))) return;
     save.mutate({ [k]: on });
   };
-  const toggle = (k: "exclusive" | "auto_approve", label: string, help: string) => (
+  const toggle = (k: "exclusive" | "auto_approve", label: string, help: string, info?: string) => (
     <label className="flex items-start gap-3 rounded-xl border p-3">
       <input type="checkbox" className="mt-1" checked={p[k]} onChange={(e) => { void setFlag(k, e.target.checked); }} disabled={save.isPending} />
-      <span><span className="font-medium">{label}</span><span className={cn("block text-sm", muted)}>{help}</span></span>
+      <span><span className="inline-flex items-center gap-1 font-medium">{label}{info && <InfoTip label={label}>{info}</InfoTip>}</span><span className={cn("block text-sm", muted)}>{help}</span></span>
     </label>
   );
   return (
@@ -607,10 +608,10 @@ function SettingsTab({ d, base, partnerId }: { d: Detail; base: string; partnerI
             {p.status === "ACTIVE" ? "Suspend partner" : "Reactivate partner"}
           </Button>
         </div>
-        {toggle("exclusive", "Exclusive bankers", "Its bankers take the partner's orders only; their own Key + Salt and v2 keys are refused (PARTNER_ONLY).")}
-        {toggle("auto_approve", "Approve new sub-merchants automatically", "Off: each one waits for Compliance before it may take live orders.")}
+        {toggle("exclusive", "Exclusive bankers", "Its bankers take the partner's orders only; their own Key + Salt and v2 keys are refused (PARTNER_ONLY).", "When on, this partner's bankers take only partner orders. Orders sent with a banker's own keys are refused. Leave it off if the bankers also have their own customers.")}
+        {toggle("auto_approve", "Approve new sub-merchants automatically", "Off: each one waits for Compliance before it may take live orders.", "When on, a new sub-merchant can take real orders at once. When off, Compliance checks each one first.")}
         <form className="space-y-1.5" onSubmit={(e) => { e.preventDefault(); save.mutate({ own_gateway: ownGw.trim() || null }); }}>
-          <Label htmlFor="own-gw">The partner&apos;s own gateway</Label>
+          <span className="inline-flex items-center gap-1"><Label htmlFor="own-gw">The partner&apos;s own gateway</Label><InfoTip label="the partner's own gateway">If the partner is also a gateway, name it here. Partner orders then never go to that gateway, so money does not loop back.</InfoTip></span>
           <div className="flex gap-2">
             <Input id="own-gw" value={ownGw} onChange={(e) => setOwnGw(e.target.value.toUpperCase())} placeholder="e.g. PAYATOM" />
             <Button type="submit" variant="secondary" disabled={save.isPending}>Save</Button>

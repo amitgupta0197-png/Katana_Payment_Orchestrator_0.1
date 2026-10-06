@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Smartphone, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Copy, Download, BookOpen, Trash2, Mail, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/utils";
@@ -170,7 +171,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
     <Card className="mb-4">
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
-          <CardTitle className="text-base">Transaction agent &amp; permissions</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Transaction agent &amp; permissions <InfoTip label="the transaction agent">A phone app that reads the bank&apos;s payment messages. It confirms P2P payments on its own. Without it, someone must confirm them by hand.</InfoTip></CardTitle>
           <CardDescription>Whether this merchant&apos;s forwarder device has granted the SMS/notification reconciliation permissions.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -188,7 +189,7 @@ export function MerchantAgentCard({ merchantId, merchantCode }: { merchantId: st
       <CardContent>
         {/* The account this banker collects on. */}
         <div className="mb-4 rounded-lg border border-[color:var(--color-border)] p-3">
-          <label htmlFor="settlement-vpa" className="text-xs font-medium">Settlement VPA / UPI ID</label>
+          <span className="inline-flex items-center gap-1"><label htmlFor="settlement-vpa" className="text-xs font-medium">Settlement VPA / UPI ID</label><InfoTip label="the settlement UPI ID">The UPI ID where customers pay on the P2P flow. It must belong to this banker. Without it, P2P orders are refused.</InfoTip></span>
           <p className={`mt-0.5 text-xs ${MUTED}`}>
             Where this banker receives money — e.g. <span className="font-mono">9355449766@okbizaxis</span>.
             Credits captured for this banker are attributed to it, and Katana Pay orders are paid to it.

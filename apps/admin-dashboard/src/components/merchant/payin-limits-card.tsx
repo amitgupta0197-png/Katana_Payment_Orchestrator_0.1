@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatDateTime } from "@/lib/utils";
@@ -63,7 +64,7 @@ export function PayinLimitsCard({ merchantId }: { merchantId: string }) {
   return (
     <Card className="mb-4">
       <CardHeader>
-        <CardTitle className="text-base">Pay-in limits</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">Pay-in limits <InfoTip label="pay-in limits">The smallest and largest payment, and the most per day. Orders outside these are refused. Empty means the platform default.</InfoTip></CardTitle>
         <CardDescription>
           Checked on every live order before it is created. An empty limit takes the platform default.
           A maximum set here also replaces the UPI limit for this banker.

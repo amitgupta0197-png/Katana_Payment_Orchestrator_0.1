@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import {
@@ -419,7 +420,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
       <>
       <Card className="mb-4">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Mapped merchants ({mappings.length})</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Mapped merchants ({mappings.length}) <InfoTip label="the bankers list">The bankers under this merchant. Money lands with a banker. Each banker has its own keys and setup.</InfoTip></CardTitle>
           {canMerchantCreate && (
             <Button size="sm" onClick={() => setOnboardOpen(true)}><Plus className="h-4 w-4" /> Onboard banker</Button>
           )}

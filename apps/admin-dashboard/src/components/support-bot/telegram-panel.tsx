@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +71,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            Telegram groups
+            Telegram groups <InfoTip label="Telegram groups">The assistant answers merchants in these groups. Each group sees only its linked merchant. Use Pause to stop it in a group.</InfoTip>
             {d && (d.enabled ? <Badge variant="success">On</Badge> : <Badge variant="warning">Off on this server</Badge>)}
             {d?.paused_all && <Badge variant="danger">All paused</Badge>}
           </CardTitle>
@@ -132,7 +133,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Katana staff on Telegram</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Katana staff on Telegram <InfoTip label="the staff list">The assistant never answers these people. Add every team member before adding the bot to a merchant group.</InfoTip></CardTitle>
           <CardDescription>The assistant never answers these people. Anyone can get their id by messaging the bot privately.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
@@ -156,7 +157,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Latest answers</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Latest answers <InfoTip label="latest answers">What the assistant told merchants, newest first. Check them now and then.</InfoTip></CardTitle>
           <CardDescription>Every question it took and what it did. The full conversations are in the list on the Test tab.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">

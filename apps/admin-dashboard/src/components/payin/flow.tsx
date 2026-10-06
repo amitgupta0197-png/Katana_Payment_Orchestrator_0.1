@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatDateTime } from "@/lib/utils";
 import { ReadinessPreview } from "@/components/merchant/readiness";
@@ -208,7 +209,7 @@ export function PayinFlowCard({ target }: { target: FlowTarget }) {
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="flex items-center gap-2 text-base"><ArrowLeftRight className="h-4 w-4" /> How customers pay<TechLabel className="ml-0">Pay-in flow</TechLabel></CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base"><ArrowLeftRight className="h-4 w-4" /> How customers pay<TechLabel className="ml-0">Pay-in flow</TechLabel><InfoTip label="how customers pay">P2P: the customer pays the banker&apos;s own UPI ID. Intent: the customer pays through a gateway. Both: each order uses its own flow; the default is used when the order does not say.</InfoTip></CardTitle>
           <CardDescription>
             {target.kind === "merchant"
               ? "Which Katana pay-in flow this merchant's bankers take: P2P, Intent or Both."

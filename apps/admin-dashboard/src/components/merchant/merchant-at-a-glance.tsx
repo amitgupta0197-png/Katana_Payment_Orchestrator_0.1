@@ -10,8 +10,19 @@ import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { useLiveActivation } from "@/components/merchant/live-activation-card";
 import { cn, formatAmount } from "@/lib/utils";
+import { InfoTip } from "@/components/ui/info-tip";
 
 type Tone = "good" | "warn" | "bad" | "idle";
+
+/** What each status tile means, in plain words. */
+const TILE_INFO: Record<string, string> = {
+  money: "Money customers paid to this banker. It counts only payments that are confirmed. Click to see the orders.",
+  payin: "The gateway account that takes Intent payments. Without it, gateway orders are refused. Click to connect or change it.",
+  payout: "The account that sends money out to people. Without it, payouts are paid by hand. Click to connect one.",
+  vpa: "The UPI ID where customers pay for P2P orders. Without it, P2P orders have nowhere to go. Click to set it.",
+  agent: "A phone app that reads bank messages and confirms P2P payments. Without it, P2P payments are not confirmed automatically.",
+  live: "Shows if real payments are switched on. When it is off, only test orders work. Click to see the keys.",
+};
 
 const TONE: Record<Tone, string> = {
   good: "var(--color-success)",
@@ -177,11 +188,12 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
   return (
     <div className="grid grid-cols-2 overflow-hidden rounded-lg border bg-[color:var(--color-surface)] md:grid-cols-3 xl:grid-cols-6">
       {lights.map((l) => (
+        <div key={l.key} className="group relative -mb-px -mr-px min-w-0 border-b border-r transition-colors hover:bg-[color:var(--color-surface-muted)]">
+        {TILE_INFO[l.key] && <span className="absolute right-2 top-2 z-10"><InfoTip label={l.label}>{TILE_INFO[l.key]}</InfoTip></span>}
         <button
-          key={l.key}
           type="button"
           onClick={() => onOpen(l.tab)}
-          className="group relative -mb-px -mr-px min-w-0 border-b border-r p-3 text-left transition-colors hover:bg-[color:var(--color-surface-muted)] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-brand)]"
+          className="block w-full min-w-0 p-3 pr-8 text-left focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--color-brand)]"
         >
           <span className="flex items-center gap-1.5 text-xs text-[color:var(--color-text-muted)]">
             <span
@@ -198,6 +210,7 @@ export function StatusLights({ merchantId, onOpen }: { merchantId: string; onOpe
             {loading ? " " : l.hint}
           </span>
         </button>
+        </div>
       ))}
     </div>
   );

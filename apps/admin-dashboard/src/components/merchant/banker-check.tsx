@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ListChecks, Loader2, XCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { BankerCheckResult, CheckItem } from "@/lib/banker-check";
 
@@ -35,6 +36,11 @@ function Fix({ item, onOpenTab, close }: { item: CheckItem; onOpenTab: (t: strin
 export function BankerCheckResultView({ data, onOpenTab, close }: { data: BankerCheckResult & { checked_at?: string }; onOpenTab: (t: string) => void; close: () => void }) {
   return (
     <div className="space-y-3">
+      {data.blockers.length > 0 && (
+        <div className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider ${muted}`}>Stops a live order
+          <InfoTip label="what stops a live order">Each red item makes Katana refuse a real order. Fix it with the button under it, then check again.</InfoTip>
+        </div>
+      )}
       {data.blockers.map((b) => (
         <div key={b.key} className="rounded-lg border border-[color:var(--color-danger)]/35 bg-[color:var(--color-danger-muted)] p-3">
           <div className="flex items-start gap-2.5">
@@ -47,6 +53,11 @@ export function BankerCheckResultView({ data, onOpenTab, close }: { data: Banker
           </div>
         </div>
       ))}
+      {data.notes.length > 0 && (
+        <div className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider ${muted}`}>Good to know
+          <InfoTip label="good to know">These do not stop orders. They are limits or open tasks the merchant should know about.</InfoTip>
+        </div>
+      )}
       {data.notes.map((n) => (
         <div key={n.key} className="rounded-lg border border-[color:var(--color-warning)]/35 bg-[color:var(--color-warning-muted)] p-3">
           <div className="flex items-start gap-2.5">
@@ -60,7 +71,9 @@ export function BankerCheckResultView({ data, onOpenTab, close }: { data: Banker
         </div>
       ))}
       <div className="overflow-hidden rounded-lg border">
-        <div className={`border-b px-3 py-2 text-[11px] font-medium uppercase tracking-wider ${muted}`}>Passed · {data.passed.length}</div>
+        <div className={`flex items-center gap-1.5 border-b px-3 py-2 text-[11px] font-medium uppercase tracking-wider ${muted}`}>Passed · {data.passed.length}
+          <InfoTip label="passed checks">These checks are fine. A real order gets past each of them today.</InfoTip>
+        </div>
         <ul>
           {data.passed.map((p) => (
             <li key={p.key} className="flex items-center gap-2.5 border-b px-3 py-2 text-sm last:border-b-0">

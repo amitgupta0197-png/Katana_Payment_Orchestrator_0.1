@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatDateTime } from "@/lib/utils";
 import { MERCHANT_SERVICES, SERVICES_HINT, SERVICES_LABEL, type MerchantServicesSetting } from "@/lib/merchant-services";
@@ -96,7 +97,7 @@ export function ServicesCard({ providerId, name, preview }: {
     <Card className="mt-4">
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="text-base">Services</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Services <InfoTip label="services">What this merchant may do: take payments in, send payouts, or both. Anything not chosen is refused.</InfoTip></CardTitle>
           <CardDescription>
             What this merchant was onboarded for. Its bankers take pay-in orders only when pay-in is included, and send
             payouts only when pay-out is.

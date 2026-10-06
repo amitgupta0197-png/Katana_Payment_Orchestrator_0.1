@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Copy, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,7 +74,7 @@ export function BulkKeyCard({ bankers }: { bankers: BulkBanker[] }) {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle className="text-base">Generate for one or more bankers</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">Generate for one or more bankers <InfoTip label="bulk keys">Make Key + Salt for several bankers at once. Use it when a merchant connects many bankers. Each Salt is shown only once.</InfoTip></CardTitle>
         <CardDescription>
           Pick the bankers and the mode. Each banker gets its own Key + Salt; the others are not touched. A live pair can only be made for a banker whose live mode is activated.
         </CardDescription>

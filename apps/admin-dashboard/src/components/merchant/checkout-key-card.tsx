@@ -85,9 +85,7 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
         <CardTitle className="flex items-center gap-1.5 text-base">
           Checkout integration (Key + Salt)
           <InfoTip label="Key + Salt">
-            The banker&apos;s login for Katana&apos;s order API. Their server sends the Key with every order and signs it with the Salt,
-            so Katana knows the order really came from them. There are two pairs: Test, to build and try the integration with no real
-            money, and Live, for real payments once live mode is on. The Salt is a secret: shown once when made, never in a chat.
+            This is the login for the order API. The Key says who is sending. The Salt is a secret that proves it. Never share the Salt in a chat.
           </InfoTip>
         </CardTitle>
         <CardDescription>
@@ -104,8 +102,8 @@ export function MerchantCheckoutKeyCard({ merchantId, merchantCode }: { merchant
                 <span className="inline-flex items-center gap-1">
                   <ModeBadge live={live} />
                   {live
-                    ? <InfoTip label="the live pair">For real payments. Works only after live mode is switched on for this banker. Regenerate only if the Salt leaked: the old pair stops working at once, so the banker must update their server the same moment.</InfoTip>
-                    : <InfoTip label="the test pair">For the developer to build and test. Test orders pay a sandbox UPI ID and never move real money. Safe to share with the banker&apos;s developer (the Starter Kit includes it).</InfoTip>}
+                    ? <InfoTip label="the live pair">These keys take real money. They work only after live mode is on. Make new ones only if the Salt leaked, because the old ones stop at once.</InfoTip>
+                    : <InfoTip label="the test pair">Test keys are for trying the setup. They never move real money. Give them to the developer; the Starter Kit has them.</InfoTip>}
                 </span>
                 {canManage && (
                   <Button size="sm" variant={s?.configured ? "secondary" : "default"} onClick={() => setMode(live)}

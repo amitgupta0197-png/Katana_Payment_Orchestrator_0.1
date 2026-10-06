@@ -11,6 +11,7 @@ import { Copy, RefreshCw, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
@@ -77,7 +78,7 @@ export function PayoutGatewayCard({ merchantId, merchantCode }: { merchantId: st
     <Card className="mb-4">
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
-          <CardTitle className="text-base">Payout gateway</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Payout gateway <InfoTip label="the payout gateway">The account that sends money to people. Without it, payouts are made by hand. Test payouts use a sandbox and move no money.</InfoTip></CardTitle>
           <CardDescription>The gateway this merchant’s payouts are sent through, from their own account. Stored encrypted; never shown to the merchant.</CardDescription>
         </div>
         {!restricted && (

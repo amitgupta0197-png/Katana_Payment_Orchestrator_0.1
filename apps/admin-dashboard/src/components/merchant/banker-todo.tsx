@@ -8,8 +8,18 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InfoTip } from "@/components/ui/info-tip";
 import type { BankerTodo, TodoStep } from "@/lib/banker-todo";
 import type { RefusedOrder } from "@/lib/banker-check-store";
+
+/** Why each go-live step matters, in plain words. */
+const STEP_INFO: Record<string, string> = {
+  DETAILS: "The banker's company details and documents. We check them before any real money moves. Open the onboarding steps to see what is missing.",
+  FLOW: "How customers pay: to the banker's UPI ID, or through a payment gateway. This decides which setup the banker needs next.",
+  ACCOUNT: "Where the customer's money goes. Without it, live orders have nowhere to land and are refused.",
+  TEST_PAYMENT: "One real, small payment that you make yourself. It proves money arrives and Katana hears about it.",
+  GO_LIVE: "The final yes from a Super Admin. After this, the banker's live keys take real payments.",
+};
 
 const muted = "text-[color:var(--color-text-muted)]";
 const subtle = "text-[color:var(--color-text-subtle)]";
@@ -54,7 +64,9 @@ export function BankerTodoCard({ merchantId, onOpenTab, onAdvance }: { merchantI
   const refused = d.refused.length ? (
     <section aria-label="Orders refused today" className="rounded-xl border bg-[color:var(--color-surface)] p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Orders we refused today</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">Orders we refused today
+          <InfoTip label="refused orders">Live orders from this banker that Katana said no to today, and why. Fix the reason so the next order goes through.</InfoTip>
+        </h2>
         <span className={`text-xs ${subtle}`}>So you hear it here first, not from the merchant</span>
       </div>
       <ul className="space-y-1.5">
@@ -109,7 +121,9 @@ export function BankerTodoCard({ merchantId, onOpenTab, onAdvance }: { merchantI
 
       <section aria-label="What's left" className="overflow-hidden rounded-xl border bg-[color:var(--color-surface)]">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4">
-          <h2 className="text-sm font-semibold">What's left</h2>
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold">What&apos;s left
+            <InfoTip label="what's left">The steps before this banker can take real money. Each step ticks itself when it is really done.</InfoTip>
+          </h2>
           <span className={`text-xs ${subtle}`}>Each step ticks itself when it's really done</span>
         </div>
         <ol>
@@ -121,7 +135,9 @@ export function BankerTodoCard({ merchantId, onOpenTab, onAdvance }: { merchantI
                   ? <span aria-label="Done" className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[color:var(--color-success-muted)] text-[color:var(--color-success)]"><Check className="h-3.5 w-3.5" /></span>
                   : <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border font-mono text-xs ${current ? "border-[color:var(--color-brand)] text-[color:var(--color-brand)]" : muted}`}>{s.n}</span>}
                 <div className="min-w-0 flex-1 basis-64">
-                  <div className={`text-sm ${s.done ? muted : current ? "font-semibold" : "font-medium"}`}>{s.title}</div>
+                  <div className={`flex items-center gap-1.5 text-sm ${s.done ? muted : current ? "font-semibold" : "font-medium"}`}>{s.title}
+                    {STEP_INFO[s.key] && <InfoTip label={s.title}>{STEP_INFO[s.key]}</InfoTip>}
+                  </div>
                   <div className={`text-xs ${muted}`}>{s.detail}</div>
                   {s.waitingFor != null && <div className={`mt-0.5 text-xs ${subtle}`}>Needs step {s.waitingFor} first</div>}
                 </div>

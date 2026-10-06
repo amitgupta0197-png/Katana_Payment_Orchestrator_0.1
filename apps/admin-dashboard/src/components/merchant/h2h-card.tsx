@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { CHECKOUT_MODE_WORDS } from "@/lib/pg-catalog";
 
@@ -45,7 +46,7 @@ export function H2hCard({ providerId }: { providerId: string }) {
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            Host-to-host checkout {on && <Badge variant="info">Needed</Badge>}
+            Host-to-host checkout <InfoTip label="host-to-host checkout">Turn this on if the merchant shows the UPI link on their own page. Then its bankers can only get gateways that send that link.</InfoTip> {on && <Badge variant="info">Needed</Badge>}
           </CardTitle>
           <CardDescription>
             {CHECKOUT_MODE_WORDS.H2H.label}: {CHECKOUT_MODE_WORDS.H2H.detail}. {CHECKOUT_MODE_WORDS.REDIRECT.label}: {CHECKOUT_MODE_WORDS.REDIRECT.detail}.

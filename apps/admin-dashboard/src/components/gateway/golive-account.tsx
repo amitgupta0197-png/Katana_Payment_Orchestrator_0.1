@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDateTime } from "@/lib/utils";
+import { InfoTip } from "@/components/ui/info-tip";
 
 interface Item { key: string; label: string; done: boolean; at: string | null; by: string | null; detail: string | null }
 export interface GoLiveAccount {
@@ -26,6 +27,14 @@ export interface GoLiveAccount {
   min_amount?: number | null;
 }
 type Action = "ping" | "webhook" | "status" | "live";
+/** What each go-live check proves, in plain words. */
+const GOLIVE_INFO: Record<string, string> = {
+  PING: "Checks that Katana's address for this gateway's payment messages answers. Press Ping callback URL.",
+  WEBHOOK: "Finds one real payment that the gateway confirmed. Make a small real payment first, then press the button.",
+  STATUS: "Asks the gateway about the same payment. It must say paid too.",
+  RECORD: "Ticks itself when the three checks above are done, with the time and your name.",
+};
+
 const ACTION: Record<string, { action: Action; label: string }> = {
   PING: { action: "ping", label: "Ping callback URL" },
   WEBHOOK: { action: "webhook", label: "Look for a confirmed payment" },
@@ -73,7 +82,7 @@ export function GoLiveAccountCard({ a }: { a: GoLiveAccount }) {
         {a.checklist.map((i) => (
           <li key={i.key} className="flex flex-wrap items-center gap-2 text-sm">
             {i.done ? <Check className="h-4 w-4 text-[color:var(--color-success)]" /> : <Circle className="h-4 w-4 text-[color:var(--color-text-muted)]" />}
-            <span>{i.label}</span>
+            <span className="inline-flex items-center gap-1">{i.label}{GOLIVE_INFO[i.key] && <InfoTip label={i.label}>{GOLIVE_INFO[i.key]}</InfoTip>}</span>
             {(i.at || i.detail) && <span className="text-xs text-[color:var(--color-text-muted)]">{[i.detail, i.at ? formatDateTime(i.at) : null, i.by].filter(Boolean).join(" · ")}</span>}
             {!live && ACTION[i.key] && (
               <Button size="sm" variant="secondary" className="ml-auto" disabled={run.isPending} onClick={() => run.mutate(ACTION[i.key].action)}>{ACTION[i.key].label}</Button>
@@ -86,6 +95,7 @@ export function GoLiveAccountCard({ a }: { a: GoLiveAccount }) {
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
           <Input className="h-8 min-w-[200px] flex-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" />
           <Button size="sm" disabled={!a.can_go_live || run.isPending} onClick={() => run.mutate("live")}><Rocket className="h-4 w-4" /> Set LIVE</Button>
+          <InfoTip label="Set LIVE">Lifts the small-payments limit on this account. It works only when all checks above are ticked.</InfoTip>
         </div>
       )}
     </li>

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -85,7 +86,7 @@ export function MidSwitchPanel({ banker }: { banker: string }) {
       <Card>
         <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-6 text-sm">
           <div>
-            <div className="text-xs text-[color:var(--color-text-muted)]">Taking traffic now</div>
+            <div className="flex items-center gap-1 text-xs text-[color:var(--color-text-muted)]">Taking traffic now <InfoTip label="the traffic switch">A banker can have several accounts. The switch decides which one takes each order, using limits, hours and health. It never moves money to another banker.</InfoTip></div>
             <div className="font-semibold">{!mids.length ? "Not set up: routed as before" : !s.enabled ? "Switch off: routed as before" : now ? now.name : takers[0]?.name ?? "No MID can take payments"}</div>
           </div>
           <div>

@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy, Check, MessageSquareText, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Button } from "@/components/ui/button";
 
 type KitFormat = "whatsapp" | "telegram" | "plain";
@@ -57,7 +58,7 @@ export function StarterKitCard({ merchantId }: { merchantId: string }) {
     <Card className="mb-4">
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4" /> Starter kit</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4" /> Starter kit <InfoTip label="the Starter kit">A ready message for the merchant&apos;s developer, with test keys and where to send orders. Short is one message. Full guide adds step-by-step examples.</InfoTip></CardTitle>
           <CardDescription>
             Short: one message with the test Key + Salt, where to send orders and a link to the full guide.
             Full guide: step-by-step messages with examples. The live Salt is never included.

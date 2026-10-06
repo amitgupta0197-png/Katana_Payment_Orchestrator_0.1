@@ -11,6 +11,7 @@ import type { LucideIcon } from "lucide-react";
 import { CreditCard, Wallet, Smartphone, QrCode, Landmark, Coins, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -163,7 +164,7 @@ export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
       <CardContent className="space-y-3 text-sm">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>Settlement VPA</Label>
+            <span className="inline-flex items-center gap-1"><Label>Settlement VPA</Label><InfoTip label="the settlement UPI ID">The UPI ID where customers pay on the P2P flow. It must belong to this banker.</InfoTip></span>
             <Input value={form.settlement_vpa} onChange={(e) => setForm({ ...form, settlement_vpa: e.target.value })} placeholder="banker@upi" />
           </div>
           <div className="space-y-1.5">

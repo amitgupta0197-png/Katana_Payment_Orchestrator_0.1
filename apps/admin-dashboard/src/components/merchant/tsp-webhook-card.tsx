@@ -82,9 +82,7 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
         <CardTitle className="flex items-center gap-1.5 text-base">
           TSP webhook link
           <InfoTip label="the TSP webhook link">
-            Only needed when a TSP or payment gateway reports this banker&apos;s payments to Katana itself (instead of Katana asking
-            the gateway). Give them this link and the secret; they post each payment result to it, signed with the secret, and
-            Katana marks the order paid or failed. If no TSP does this for the banker, you can ignore this card.
+            Some gateways send payment results to Katana themselves. Give them this link and the secret. If no gateway does this for this banker, ignore this card.
           </InfoTip>
         </CardTitle>
         <CardDescription>Give this link to the merchant&apos;s payment gateway / TSP. They post this merchant&apos;s payment results to it, signed with the test or live secret.</CardDescription>
@@ -109,8 +107,8 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
                   <div className="flex min-w-0 items-center gap-2">
                     <ModeBadge live={live} />
                     {live
-                      ? <InfoTip label="the live secret">Signs results for real (live) orders. Rotate it only if it leaked; the TSP must switch to the new secret at the same time.</InfoTip>
-                      : <InfoTip label="the test secret">Signs results for test orders, so the TSP can test their side without touching real payments. Generate it when the TSP wants to test.</InfoTip>}
+                      ? <InfoTip label="the live secret">This secret proves real payment results are genuine. Change it only if it leaked. The gateway must start using the new one at the same time.</InfoTip>
+                      : <InfoTip label="the test secret">This secret is for test results only. Make it when the gateway wants to test. It never touches real money.</InfoTip>}
                     <span className={`truncate text-xs ${configured(live) ? "" : "text-[color:var(--color-warning)]"}`}>
                       {configured(live) ? "Secret issued · sealed" : live && liveLocked ? "Locked until live mode is activated" : "No secret yet"}
                     </span>

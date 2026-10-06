@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { formatAmount, formatDateTime } from "@/lib/utils";
 import { usePortal } from "@/components/portal/portal-frame";
@@ -78,7 +79,7 @@ export function BankerSwitchCard({ banker }: { banker?: string }) {
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><Shuffle className="h-4 w-4" /> Banker switch</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><Shuffle className="h-4 w-4" /> Banker switch <InfoTip label="the banker switch">For a merchant with several bankers. When on, each order goes to the banker the switch picks, not only the one whose key signed it.</InfoTip></CardTitle>
             <CardDescription className="mt-1 max-w-3xl">
               Sign orders with any of your bankers&rsquo; Keys. With the switch on, Katana gives each order to the banker picked here and passes over one that cannot take it (not live, over a limit, no account free).
               The order, its money and its settlement belong to the banker that took it; the callback still comes signed with the Salt the order was signed with.

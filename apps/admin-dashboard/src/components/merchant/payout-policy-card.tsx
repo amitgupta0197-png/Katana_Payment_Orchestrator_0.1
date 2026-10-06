@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,7 +66,7 @@ export function PayoutPolicyCard({ merchantId }: { merchantId: string }) {
     <Card className="mb-4">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          Payout policy {data?.suspended && <Badge variant="danger">Suspended — payouts refused</Badge>}
+          Payout policy <InfoTip label="the payout policy">Rules checked on every payout, like the largest amount. A payout that breaks a rule is refused.</InfoTip> {data?.suspended && <Badge variant="danger">Suspended — payouts refused</Badge>}
         </CardTitle>
         <CardDescription>Checked on every payout, from the dashboard or the API. Leave a limit empty for no limit; tick no rail to allow all.</CardDescription>
       </CardHeader>

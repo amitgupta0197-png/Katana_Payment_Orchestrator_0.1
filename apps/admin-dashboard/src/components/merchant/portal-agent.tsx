@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Smartphone, Download, BookOpen, ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/utils";
@@ -62,7 +63,7 @@ export function MerchantPortalAgentCard() {
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
-          <CardTitle className="text-base">Transaction agent</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">Transaction agent <InfoTip label="the transaction agent">A phone app that reads the bank&apos;s payment messages. It confirms UPI payments on its own, so nobody has to check by hand.</InfoTip></CardTitle>
           <CardDescription>Install on your collection phone to auto-confirm UPI credits.</CardDescription>
         </div>
         {devices.length > 0 && (

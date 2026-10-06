@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { History, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -81,7 +82,7 @@ function ScoresCard({ d, onOpenTab }: { d: Integration; onOpenTab?: (t: string) 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Integration health</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">Integration health <InfoTip label="integration health">A score for how ready the merchant&apos;s connection is. Each cross is a missing step. The line under it says how to fix it.</InfoTip></CardTitle>
         <CardDescription>
           One score per flow this banker is on. Overall is the weakest flow.
           {" "}Services: {d.services.toLowerCase()} · pay-in flow: {d.payin_flow.toLowerCase()}.
@@ -186,7 +187,7 @@ function WebhookCard({ d, merchantId, canEdit }: { d: Integration; merchantId: s
   return (
     <Card id="default-callback" className="scroll-mt-20">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Default callback URL</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">Default callback URL <InfoTip label="the callback URL">The merchant&apos;s address where Katana sends payment results. Verify now sends a test message to check it answers.</InfoTip></CardTitle>
         <CardDescription>Used for every flow that has no URL of its own.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
@@ -269,7 +270,7 @@ function CallbackCard({ merchantId, cb, score, canEdit }: { merchantId: string; 
     <Card id={`callback-${flow}`} className={`scroll-mt-20 ${score.active ? "" : "opacity-80"}`}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-2 text-base">
-          {FLOW_LABEL[flow]} callback
+          <span className="flex items-center gap-1.5">{FLOW_LABEL[flow]} callback <InfoTip label="this flow&apos;s callback URL">Results for this flow go here. With no URL of its own, the default callback URL is used.</InfoTip></span>
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[cb.band] }} aria-hidden />
         </CardTitle>
         <CardDescription>{score.active ? "In use by this banker." : "Not a flow this banker is on."}</CardDescription>
