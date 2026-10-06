@@ -145,6 +145,7 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
   "signed_by": "UK-108",                              // the account whose Key signed it
   "livemode": true,                                   // false = created with a test Key
   "order": { "id": "8d20c0b6-…", "order_id": "ORDER-1001", "amount": 100, "status": "PENDING", … },
+  "checkout": "H2H",                                  // H2H: UPI link + QR below; REDIRECT: send to pay_url
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // redirect the customer here
   "deeplinks": { "upi": "upi://pay?…", … },
   "upi_intent": "upi://pay?…",
@@ -153,11 +154,17 @@ reference sent with a test Key and a live Key creates two separate orders.</p>
 <div class="note"><b>Several accounts?</b> With the banker switch on (MID switch page in your portal), you can sign with any of your accounts&rsquo; Keys and Katana picks the account that takes each order. <code>merchant</code> then says which account took it; <code>signed_by</code> is the Key you signed with. The callback still comes to your usual address, signed with the Salt you signed the order with, and retrying with the same Key and <code>txnid</code> finds the same order.</div>
 <p>Take <code>pay_url</code> and send the browser there. If you are building your own payment screen instead, use
 <code>qr_payload</code> (render as a QR) or <code>upi_intent</code> (an app deeplink).</p>
+<p><code>checkout</code> says whether you can: <code>H2H</code> (host-to-host) means the UPI link and QR are in the
+answer; <code>REDIRECT</code> means they are <code>null</code> and the customer pays on the hosted page. It depends on the
+payment account behind your channel; ask Katana for host-to-host if your integration needs it. A test order always
+carries the sandbox UPI link, and adds <code>live_checkout</code>: what your live orders will get (<code>H2H</code>,
+<code>REDIRECT</code>, or <code>null</code> while no payment account is set up).</p>
 <h3>Merchants paid on a gateway's payment page</h3>
-<p>Some merchants collect through a gateway that takes the payment on its own secure page. Their orders have <b>no UPI link</b>: <code>deeplinks</code>, <code>upi_intent</code> and
+<p>Some merchants collect through a gateway that takes the payment on its own secure page. Their orders have <b>no UPI link</b>: <code>checkout</code> is <code>REDIRECT</code>, <code>deeplinks</code>, <code>upi_intent</code> and
 <code>qr_payload</code> are <code>null</code>, and one field is added:</p>
 <pre>{
   …,
+  "checkout": "REDIRECT",
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",   // still the page to send the customer to
   "deeplinks": null, "upi_intent": null, "qr_payload": null,
   "gateway_url": "https://katanapay.co/pay/8d20c0b6-…/go"  // straight to the gateway's page, if you'd rather skip ours

@@ -45,6 +45,8 @@ export interface KitFacts {
   testPayouts: "SANDBOX" | "GATEWAY";
   /** Limits on live pay-ins, in rupees. Null = none. */
   limits: { min: number | null; max: number | null; daily: number | null };
+  /** How live orders are paid: H2H (the UPI link comes in the answer) or REDIRECT; null = not known yet. */
+  checkout?: "H2H" | "REDIRECT" | null;
 }
 
 export interface KitPart { title: string; text: string }
@@ -127,6 +129,9 @@ function partWelcome(k: KitFacts, f: Fmt): KitPart {
       f.b("Your account"),
       `• Services: ${servicesSentence(k.services)}`,
       payin && `• How customers pay: ${flowSentence(k.flow)}`,
+      payin && k.checkout && `• Live checkout: ${k.checkout === "H2H"
+        ? "host-to-host. The order answer carries the UPI link and QR for your own page"
+        : "redirect. Send the customer to pay_url; they pay on the hosted payment page"}`,
       `• Base URL: ${k.baseUrl}`,
       `• Webhook URL: ${k.webhook.url ?? "not set yet. Send us the URL where we should post results."}`,
       payin && (k.limits.min != null || k.limits.max != null || k.limits.daily != null) && `• Live pay-in limits: ${[
@@ -200,6 +205,7 @@ function partCreateOrder(k: KitFacts, f: Fmt): KitPart {
       "",
       f.b("You get back"),
       `${f.c("201")} with ${f.c("order.id")}, ${f.c("order.status")} = PENDING and ${f.c("pay_url")}. Send your customer to ${f.c("pay_url")}, or show ${f.c("qr_payload")} as a QR on your own page.`,
+      `${f.c("checkout")} says which you got: ${f.c("H2H")} (${f.c("upi_intent")} and ${f.c("qr_payload")} are set) or ${f.c("REDIRECT")} (only ${f.c("pay_url")}). Test orders also carry ${f.c("live_checkout")}: what live orders will get.`,
       `Sending the same ${f.c("txnid")} again answers ${f.c("200")} with ${f.c('"reused": true')} and the same order, so a timeout is safe to retry.`,
     ),
   };

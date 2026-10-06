@@ -51,7 +51,7 @@ export function validateOnboardingChoice(
 
 // ── What a banker needs before it goes live ───────────────────────────────────────────────
 
-export type SetupKey = "CHOICE" | "P2P_UPI_ID" | "INTENT_GATEWAY" | "PAYOUT_GATEWAY";
+export type SetupKey = "CHOICE" | "P2P_UPI_ID" | "INTENT_GATEWAY" | "INTENT_H2H" | "PAYOUT_GATEWAY";
 export type SetupState = "DONE" | "MISSING" | "OPTIONAL_MISSING";
 
 export interface SetupItem {
@@ -70,6 +70,10 @@ export interface SetupFacts {
   payinGateway: boolean;
   /** A payout gateway is connected for the banker. */
   payoutGateway: boolean;
+  /** The banker's merchant needs host-to-host checkout (providers.needs_h2h). */
+  needsH2h?: boolean;
+  /** The checkout mode of the banker's pay-in account (lib/pg-catalog gatewayCheckoutMode). */
+  intentCheckout?: "H2H" | "REDIRECT" | null;
 }
 
 /**
@@ -96,6 +100,11 @@ export function setupItems(services: MerchantServicesSetting, flow: MerchantFlow
       state: facts.upiId ? "DONE" : p2p, hint: "Save the banker's settlement UPI ID under Payment configuration." });
     if (intent) items.push({ key: "INTENT_GATEWAY", label: `${PAYIN_FLOW_LABEL.INTENT}: pay-in gateway connected`,
       state: facts.payinGateway ? "DONE" : intent, hint: "Save the banker's pay-in gateway credentials." });
+    // A merchant that needs host-to-host is flagged (never refused) when its account only redirects.
+    if (intent && facts.needsH2h && facts.payinGateway)
+      items.push({ key: "INTENT_H2H", label: `${PAYIN_FLOW_LABEL.INTENT}: host-to-host payment account`,
+        state: facts.intentCheckout === "H2H" ? "DONE" : "OPTIONAL_MISSING",
+        hint: "The merchant needs host-to-host checkout, but this banker's payment account only redirects to the gateway's page. Connect a host-to-host gateway." });
   }
   if (payout && services !== "UNSET") {
     items.push({ key: "PAYOUT_GATEWAY", label: "Pay-out: payout gateway connected",

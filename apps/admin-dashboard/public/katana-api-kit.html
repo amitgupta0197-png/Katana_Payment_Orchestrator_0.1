@@ -314,9 +314,13 @@ order instead of redirecting.</p>
   <tr><td><code>qr_payload</code></td><td>Render as a QR code for desktop checkout or a counter display.</td></tr>
   <tr><td><code>pay_url</code></td><td>The Katana hosted page, if you prefer not to build a payment screen at all.</td></tr>
 </table>
-<div class="note"><b>Merchants paid on a gateway's own page</b> get no deeplink
+<div class="note"><b>Host-to-host or redirect.</b> <code>checkout</code> in the response says which you got:
+<code>H2H</code> when the UPI link and QR are there for your own page, <code>REDIRECT</code> when they are not.
+Which one depends on the payment account behind your channel; ask Katana for host-to-host if your integration needs it.
+<b>Merchants paid on a gateway's own page</b> (<code>REDIRECT</code>) get no deeplink
 or QR: <code>upi_intent</code>, <code>deeplinks</code> and <code>qr_payload</code> are <code>null</code>, and the
-response adds <code>gateway_url</code> (that page). Send the customer to
+response adds <code>gateway_url</code> (that page). Some host-to-host orders carry <code>gateway_url</code> too: the UPI link is
+then also there, and either way works. Send the customer to
 <code>pay_url</code>, which hands over to the gateway, or straight to <code>gateway_url</code>. The gateway's own
 limits apply, e.g. a minimum amount per payment (a refused order returns <code>502</code> with the reason).</div>
 <div class="note warnbox"><b>The customer usually does not come back.</b> On UPI the customer approves inside their
@@ -429,6 +433,8 @@ first test payment, verify that the payee shown in the customer's UPI app is you
   <tr><td><code>order.order_id</code></td><td>Your reference, echoed back</td><td>UK108-ESN78452</td></tr>
   <tr><td><code>order.amount</code></td><td>Amount booked. Compare with what you sent when <code>reused</code> is true.</td><td>100</td></tr>
   <tr><td><code>order.status</code></td><td>Initial status</td><td>PENDING</td></tr>
+  <tr><td><code>checkout</code></td><td><code>H2H</code> (host-to-host): the UPI link and QR below are set, for your own page. <code>REDIRECT</code>: they are <code>null</code>; send the customer to <code>pay_url</code>.</td><td>H2H</td></tr>
+  <tr><td><code>live_checkout</code></td><td>Test orders only: what your live orders will get (<code>H2H</code>, <code>REDIRECT</code>, or <code>null</code> while no payment account is set up). A test order always carries the sandbox UPI link.</td><td>REDIRECT</td></tr>
   <tr><td><code>pay_url</code></td><td>Hosted payment page to redirect the customer to</td><td>https://katanapay.co/pay/8d20c0b6-…</td></tr>
   <tr><td><code>upi_intent</code></td><td>UPI Intent deeplink</td><td>upi://pay?pa=…&amp;am=100.00</td></tr>
   <tr><td><code>deeplinks</code></td><td>Per-application deeplink variants</td><td>{ "upi": "…", … }</td></tr>
@@ -456,6 +462,7 @@ HTTP 201 Created        (HTTP 200 with "reused": true if the txnid already exist
   "merchant": "UK-108",
   "reused": false,
   "order": { "id": "8d20c0b6-…", "order_id": "UK108-ESN78452", "amount": 100, "status": "PENDING" },
+  "checkout": "H2H",
   "pay_url": "https://katanapay.co/pay/8d20c0b6-…",
   "upi_intent": "upi://pay?pa=…&amp;am=100.00&amp;tr=UK108-ESN78452",
   "deeplinks": { "upi": "upi://pay?…" },

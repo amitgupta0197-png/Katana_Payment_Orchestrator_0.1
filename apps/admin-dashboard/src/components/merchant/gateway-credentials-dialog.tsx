@@ -2,6 +2,9 @@
 
 // Pick a payment gateway and enter its credentials. The fields follow lib/pg-catalog, so each
 // gateway asks for exactly what it issues. Used for both the pay-in and the payout gateway.
+// Pay-ins also say each gateway's checkout mode (host-to-host or redirect, lib/pg-catalog
+// gatewayCheckoutMode); for a merchant that needs host-to-host, a redirect-only account is saved
+// only with "Save anyway" and a note (the route refuses it otherwise: H2H_REQUIRED).
 
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
@@ -11,12 +14,29 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GATEWAYS, authFields, type AuthModeId, type GatewayEnv, type GatewayId, type GatewayService } from "@/lib/pg-catalog";
+import {
+  CHECKOUT_MODE_WORDS, GATEWAYS, authFields, gatewayCheckoutMode,
+  type AuthModeId, type CheckoutMode, type GatewayEnv, type GatewayId, type GatewayService,
+} from "@/lib/pg-catalog";
 import { GatewayLogo, shortGatewayName } from "@/components/merchant/gateway-logo";
 import { cn } from "@/lib/utils";
 
 export type GatewayKind = "payin" | "payout";
-export interface GatewayForm { gateway: GatewayId; env: GatewayEnv; auth?: AuthModeId; fields: Record<string, string> }
+export interface GatewayForm {
+  gateway: GatewayId; env: GatewayEnv; auth?: AuthModeId; fields: Record<string, string>;
+  /** A redirect-only account for a merchant that needs host-to-host, saved anyway with a note. */
+  override_h2h?: boolean; note?: string;
+}
+
+/** The checkout modes a gateway's pay-in accounts can have, across its sign-in modes. */
+function payinModes(id: GatewayId): CheckoutMode[] {
+  const g = GATEWAYS.find((x) => x.id === id);
+  if (!g?.payin.connector) return [];
+  const all = [gatewayCheckoutMode(id), ...(g.payin.altAuth ?? []).map((m) => gatewayCheckoutMode(id, m.id))];
+  return [...new Set(all.filter((m): m is CheckoutMode => !!m))];
+}
+
+const OVERRIDE_NOTE_MIN = 5;
 
 const selectCls = "flex h-9 w-full rounded-md border px-3 py-1 text-sm bg-[color:var(--color-surface)]";
 
@@ -26,7 +46,7 @@ export function serviceOf(id: GatewayId, kind: GatewayKind): GatewayService | nu
 }
 
 export function GatewayCredentialsDialog({
-  kind, merchantCode, configured, current, saving, onSave, addAnother = false,
+  kind, merchantCode, configured, current, saving, onSave, addAnother = false, needsH2h = false,
 }: {
   kind: GatewayKind;
   merchantCode: string;
@@ -36,15 +56,19 @@ export function GatewayCredentialsDialog({
   onSave: (form: GatewayForm) => Promise<unknown>;
   /** Adds a further account for the MID switch instead of replacing the first one. */
   addAnother?: boolean;
+  /** The banker's merchant needs host-to-host checkout (providers.needs_h2h). */
+  needsH2h?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [gateway, setGateway] = useState<GatewayId>(current ?? "PAYU");
   const [env, setEnv] = useState<GatewayEnv>("TEST");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [auth, setAuth] = useState<AuthModeId>("key_salt");
+  const [override, setOverride] = useState(false);
+  const [note, setNote] = useState("");
 
   // Start from the saved gateway each time the dialog opens; secrets are never prefilled.
-  useEffect(() => { if (open) { setGateway(current ?? "PAYU"); setEnv("TEST"); setAuth("key_salt"); setFields({}); } }, [open, current]);
+  useEffect(() => { if (open) { setGateway(current ?? "PAYU"); setEnv("TEST"); setAuth("key_salt"); setFields({}); setOverride(false); setNote(""); } }, [open, current]);
 
   const svc = serviceOf(gateway, kind);
   // The chosen sign-in mode, when the gateway offers more than one (PayU pay-ins).
@@ -52,9 +76,17 @@ export function GatewayCredentialsDialog({
   const shown = svc ? authFields(svc, mode?.id) : [];
   const missing = !svc || shown.some((f) => !f.optional && !(fields[f.name] ?? "").trim());
   const what = kind === "payin" ? "pay-in" : "payout";
+  // The chosen account's checkout mode. An account on the P2P flow (PayAtom) pays through a UPI link: H2H.
+  const checkout: CheckoutMode | null = kind !== "payin" ? null
+    : svc?.p2p && fields.channel === "P2P" ? "H2H" : gatewayCheckoutMode(gateway, mode?.id ?? null);
+  const blockedH2h = needsH2h && checkout === "REDIRECT";
+  const overrideIncomplete = blockedH2h && (!override || note.trim().length < OVERRIDE_NOTE_MIN);
 
   const save = async () => {
-    try { await onSave({ gateway, env, ...(mode ? { auth: mode.id } : {}), fields }); setOpen(false); } catch { /* the caller shows the error */ }
+    try {
+      await onSave({ gateway, env, ...(mode ? { auth: mode.id } : {}), fields, ...(blockedH2h ? { override_h2h: true, note: note.trim() } : {}) });
+      setOpen(false);
+    } catch { /* the caller shows the error */ }
   };
   const pickAuth = (id: AuthModeId) => { setAuth(id); setFields({}); };
 
@@ -81,7 +113,10 @@ export function GatewayCredentialsDialog({
               {GATEWAYS.map((g) => {
                 const s = kind === "payin" ? g.payin : g.payout;
                 const selected = g.id === gateway;
-                const tag = !s ? "No payouts" : !s.connector ? "Coming soon" : null;
+                const modes = kind === "payin" ? payinModes(g.id) : [];
+                const tag = !s ? "No payouts" : !s.connector ? "Coming soon"
+                  : modes.length ? modes.map((m) => CHECKOUT_MODE_WORDS[m].short).join(" or ") : null;
+                const redirectOnly = needsH2h && modes.length > 0 && !modes.includes("H2H");
                 return (
                   <button
                     key={g.id}
@@ -102,7 +137,7 @@ export function GatewayCredentialsDialog({
                     <GatewayLogo id={g.id} size={28} />
                     <span className="min-w-0">
                       <span className="block truncate font-medium">{shortGatewayName(g.name)}</span>
-                      {tag && <span className="block truncate text-[11px] text-[color:var(--color-text-muted)]">{tag}</span>}
+                      {tag && <span className={cn("block truncate text-[11px]", redirectOnly ? "text-[color:var(--color-warning)]" : "text-[color:var(--color-text-muted)]")}>{tag}</span>}
                     </span>
                   </button>
                 );
@@ -150,6 +185,24 @@ export function GatewayCredentialsDialog({
             <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">{mode?.creds ?? svc?.creds}</div>
           )}
           {(mode?.note ?? svc?.note) && <div className="text-xs text-[color:var(--color-text-muted)]">{mode?.note ?? svc?.note}</div>}
+          {checkout && (
+            <div className="rounded-md border px-3 py-2 text-xs">
+              <span className="font-medium">Checkout: {CHECKOUT_MODE_WORDS[checkout].label}</span>
+              <span className="text-[color:var(--color-text-muted)]"> — {CHECKOUT_MODE_WORDS[checkout].detail}.</span>
+            </div>
+          )}
+          {blockedH2h && (
+            <div className="space-y-2 rounded-md border border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)] px-3 py-2 text-xs">
+              <div>This merchant needs host-to-host checkout, and this account only offers a redirect to the gateway&apos;s payment page. Choose a host-to-host gateway, or save anyway (Super Admin) with a note.</div>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+                Save anyway. The note is recorded as the reason.
+              </label>
+              {override && (
+                <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={`Why (at least ${OVERRIDE_NOTE_MIN} characters)`} />
+              )}
+            </div>
+          )}
           {shown.map((f) => (
             <div key={`${gateway}-${auth}-${f.name}`} className="space-y-1.5">
               <Label>{f.label}{f.optional && <span className="text-[color:var(--color-text-muted)]"> (optional)</span>}</Label>
@@ -173,7 +226,7 @@ export function GatewayCredentialsDialog({
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} disabled={saving || missing}>{saving ? "Saving…" : "Save"}</Button>
+          <Button onClick={save} disabled={saving || missing || overrideIncomplete}>{saving ? "Saving…" : blockedH2h ? "Save anyway" : "Save"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

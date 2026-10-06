@@ -44,6 +44,7 @@ import { BulkKeyCard } from "@/components/merchant/bulk-key-card";
 import { formatAmount, formatDateTime, statusVariant } from "@/lib/utils";
 import { PayinFlowCard } from "@/components/payin/flow";
 import { ServicesCard } from "@/components/merchant/services";
+import { H2hCard } from "@/components/merchant/h2h-card";
 import { ReadinessPreview } from "@/components/merchant/readiness";
 
 interface Provider {
@@ -313,6 +314,7 @@ export default function ProviderDetailView({ id }: { id: string }) {
       <ServicesCard providerId={provider.id} name={provider.legal_name}
         preview={(services, enabled) => <ReadinessPreview providerId={provider.id} services={services} enabled={enabled} />} />
       <PayinFlowCard target={{ kind: "merchant", id: provider.id, name: provider.legal_name }} />
+      <H2hCard providerId={provider.id} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Identity & bank</CardTitle></CardHeader>

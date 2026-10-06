@@ -40,6 +40,8 @@ export interface AuthMode {
   env?: Record<GatewayEnv, string>;
   creds?: string;
   note?: string;
+  /** Host-to-host in this mode (GatewayService.h2h); absent = redirect. */
+  h2h?: boolean;
 }
 
 export interface GatewayService {
@@ -68,6 +70,12 @@ export interface GatewayService {
    * verification payment could be made at all.
    */
   minAmount?: number;
+  /**
+   * Pay-ins: host-to-host. The gateway's API hands Katana the UPI intent itself, so the order API
+   * returns it (upi_intent / deeplinks / qr_payload) for the merchant's own page. Without it the
+   * customer pays on the gateway's hosted page (redirect). Checked against the connectors by a test.
+   */
+  h2h?: boolean;
 }
 
 export interface GatewayDef {
@@ -85,7 +93,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PAYU", name: "PayU", logo: "/gateways/payu.png", color: "#A6C307",
     payin: {
-      connector: true,
+      connector: true, h2h: true,
       env: { TEST: "Test (test.payu.in)", PROD: "Live (secure.payu.in)" },
       creds: "Hosted checkout and UPI intent, signed with the Merchant Key + Salt.",
       defaultAuthLabel: "Key + Salt",
@@ -119,7 +127,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "RAZORPAY", name: "Razorpay", logo: "/gateways/razorpay.svg", color: "#0C2451",
     payin: {
-      connector: true,
+      connector: true, h2h: true,
       env: { TEST: "Test mode (rzp_test_…)", PROD: "Live mode (rzp_live_…)" },
       creds: "Razorpay's Key ID and Key Secret are its Client ID and Client Secret.",
       note: "Add Katana's payment events URL in Razorpay → Settings → Webhooks (events order.paid and payment.failed), with the same webhook secret as here. UPI intent needs S2S UPI enabled on the account.",
@@ -145,7 +153,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "CASHFREE", name: "Cashfree Payments", logo: "/gateways/cashfree.svg", color: "#00AD5B",
     payin: {
-      connector: true,
+      connector: true, h2h: true,
       env: { TEST: "Sandbox (sandbox.cashfree.com)", PROD: "Production (api.cashfree.com)" },
       creds: "Cashfree's App ID and Secret Key are its Client ID (x-client-id) and Client Secret (x-client-secret).",
       note: "Katana sends its payment events URL with every order, so there is nothing to set up for webhooks.",
@@ -183,7 +191,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PHONEPE", name: "PhonePe Payment Gateway", logo: "/gateways/phonepe.svg", color: "#5F259F",
     payin: {
-      connector: true,
+      connector: true, h2h: true,
       env: { TEST: "UAT (api-preprod.phonepe.com)", PROD: "Production (api.phonepe.com)" },
       creds: "Enter the Client ID, Client Secret and Client Version from the PhonePe dashboard.",
       note: "For webhooks, add Katana's payment events URL in the PhonePe dashboard with a username and password, and enter the same two here.",
@@ -201,7 +209,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PAYTM", name: "Paytm Payment Gateway", logo: "/gateways/paytm.svg", color: "#00BAF2",
     payin: {
-      connector: true,
+      connector: true, h2h: true,
       env: { TEST: "Staging (securegw-stage.paytm.in)", PROD: "Production (securegw.paytm.in)" },
       creds: "Paytm pay-ins don't use a Client ID / Secret. Ask Paytm for the MID and Merchant Key.",
       note: "Optionally add Katana's payment events URL as the payment notification URL in the Paytm dashboard.",
@@ -267,7 +275,7 @@ export const GATEWAYS: GatewayDef[] = [
     id: "PAYATOM", name: "PayAtom", logo: null, color: "#5B3FD9",
     payin: {
       // PayAtom refuses smaller payments ("amount should be greater than : 200", live, 2026-10-05).
-      connector: true, p2p: true, minAmount: 201,
+      connector: true, p2p: true, minAmount: 201, h2h: true,
       env: { TEST: "UAT (enter PayAtom's UAT URL below)", PROD: "Live (enter PayAtom's live URL below)" },
       creds: "PayAtom doesn't use a Client ID / Secret. PayAtom gives the PID, the API key and the secret key at onboarding.",
       note: "UPI on PayAtom's P2P Seamless product: Katana's pay page shows PayAtom's UPI string and PayAtom confirms the payment. Whole rupees only. Before it works, PayAtom must whitelist Katana's server IP (72.61.227.233) and set Katana's payment events URL as the callback URL for this PID; neither is sent per order. PayAtom requires a location with every request: enter the one PayAtom agreed for this account.",
@@ -331,6 +339,26 @@ export function gatewayAccountChannel(mid: { gateway: string; extra?: Record<str
   if (!mid) return "INTENT";
   return gatewayDef(mid.gateway)?.payin.p2p && mid.extra?.channel === "P2P" ? "P2P" : "INTENT";
 }
+
+/** How a gateway account's customer pays: H2H (the order API returns the UPI intent) or REDIRECT. */
+export type CheckoutMode = "H2H" | "REDIRECT";
+
+/**
+ * The checkout mode of pay-in accounts of `gateway` signed in with `auth` (its sign-in mode), or
+ * null for a gateway Katana has no pay-in connector for. The one place this is decided.
+ */
+export function gatewayCheckoutMode(gateway: string | null | undefined, auth?: string | null): CheckoutMode | null {
+  const svc = gateway ? gatewayDef(gateway)?.payin : undefined;
+  if (!svc?.connector) return null;
+  const alt = auth ? svc.altAuth?.find((m) => m.id === auth) : undefined;
+  return (alt ? alt.h2h : svc.h2h) ? "H2H" : "REDIRECT";
+}
+
+/** Plain words for a checkout mode. No gateway is named: merchants read these too. */
+export const CHECKOUT_MODE_WORDS: Record<CheckoutMode, { label: string; short: string; detail: string }> = {
+  H2H: { label: "Host-to-host", short: "H2H", detail: "the order API returns the UPI link and QR for your own page" },
+  REDIRECT: { label: "Redirect", short: "Redirect", detail: "send the customer to pay_url; they pay on the hosted payment page" },
+};
 
 /** Last 4 characters, for showing which key is saved without showing the key. */
 export function hint(v: string | undefined | null): string {

@@ -9,6 +9,7 @@ import { rows } from "@/lib/pg";
 import { setAlert } from "@/lib/ops-alert";
 import { merchantFlowOf, type MerchantFlow } from "@/lib/payin-flow";
 import { getProviderServices } from "@/lib/merchant-services-store";
+import { bankerLiveCheckoutMode, getProviderNeedsH2h } from "@/lib/checkout-mode-store";
 import {
   parseServices, setupItems, setupVerdict, type MerchantEvidence, type MerchantServicesSetting, type SetupItem,
 } from "@/lib/merchant-services";
@@ -26,14 +27,16 @@ export interface BankerSetup {
 /** What a banker was onboarded for and whether it is set up for it (the go-live gate). */
 export async function bankerSetup(merchantCode: string): Promise<BankerSetup> {
   const flow = await getEffectiveFlow(merchantCode);
-  const [services, ready, payout] = await Promise.all([
+  const [services, ready, payout, needsH2h] = await Promise.all([
     getProviderServices(flow.providerId),
     flowReadiness([merchantCode]),
     activePayoutProvider(merchantCode).catch(() => null),
+    getProviderNeedsH2h(flow.providerId),
   ]);
   const r = ready.get(merchantCode);
+  const intentCheckout = needsH2h && r?.intent ? await bankerLiveCheckoutMode(merchantCode) : null;
   const items = setupItems(services, { flow: flow.flow, active: flow.active },
-    { upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: !!payout });
+    { upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: !!payout, needsH2h, intentCheckout });
   return { services, flow: { flow: flow.flow, active: flow.active }, provider_id: flow.providerId, items, ...setupVerdict(items) };
 }
 
@@ -96,6 +99,16 @@ export async function merchantReadiness(only?: string | null, proposed?: Propose
     `, [codes]).catch(() => []),
   ]);
   const hasPayout = new Set(payout.map((p) => p.owner_id));
+  // Merchants that need host-to-host, and the checkout mode of their bankers' accounts.
+  // A database without provider 0023 has none.
+  const h2hProviders = new Set((await rows<{ id: string }>("provider",
+    `SELECT id::text FROM providers WHERE needs_h2h AND ($1::text IS NULL OR id::text = $1)`, [only ?? null]).catch(() => [])).map((r) => r.id));
+  const h2hMode = new Map<string, "H2H" | "REDIRECT" | null>();
+  for (const b of mine) {
+    const pid = mapped.get(b.id) ?? mapped.get(b.merchant_code);
+    if (pid && h2hProviders.has(pid) && ready.get(b.merchant_code)?.intent)
+      h2hMode.set(b.merchant_code, await bankerLiveCheckoutMode(b.merchant_code).catch(() => null));
+  }
   const ownFlow = new Map(own.map((o) => [o.merchant_code, merchantFlowOf(o.payin_flow, o.payin_active_flow)]));
 
   return providers.map((p) => {
@@ -105,7 +118,10 @@ export async function merchantReadiness(only?: string | null, proposed?: Propose
       const o = ownFlow.get(b.merchant_code);
       const eff = o ?? flow;
       const r = ready.get(b.merchant_code);
-      const items = setupItems(services, eff, { upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: hasPayout.has(b.merchant_code) });
+      const items = setupItems(services, eff, {
+        upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: hasPayout.has(b.merchant_code),
+        needsH2h: h2hProviders.has(p.id), intentCheckout: h2hMode.get(b.merchant_code) ?? null,
+      });
       return { id: b.id, merchant_code: b.merchant_code, name: b.name, stage: b.stage, flow: eff, own_flow: !!o, items, result: setupVerdict(items).result };
     });
     return {

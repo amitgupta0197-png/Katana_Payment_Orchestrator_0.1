@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
-import type { GatewayId } from "@/lib/pg-catalog";
+import { CHECKOUT_MODE_WORDS, type CheckoutMode, type GatewayId } from "@/lib/pg-catalog";
 
 interface PayinStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
@@ -30,13 +30,16 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || "HTTP " + r.status);
       return d as { status: PayinStatus; webhook_url?: string | null; golive?: { status: "VERIFYING" | "LIVE" } | null;
-        accounts?: { vault_label: string; gateway: string; env: string; mid_code: string }[] };
+        accounts?: { vault_label: string; gateway: string; env: string; mid_code: string; checkout?: CheckoutMode | null }[];
+        checkout?: CheckoutMode | null; needs_h2h?: boolean };
     },
   });
   const restricted = (q.data as { restricted?: boolean })?.restricted;
   const status = (q.data as { status?: PayinStatus })?.status;
   const webhookUrl = (q.data as { webhook_url?: string | null })?.webhook_url;
   const golive = (q.data as { golive?: { status: "VERIFYING" | "LIVE" } | null })?.golive;
+  const checkout = (q.data as { checkout?: CheckoutMode | null })?.checkout ?? null;
+  const needsH2h = (q.data as { needs_h2h?: boolean })?.needs_h2h === true;
   const copyEndpoint = async () => {
     if (!webhookUrl) return;
     try { await navigator.clipboard.writeText(webhookUrl); toast.success("Payment events URL copied", { description: webhookUrl }); }
@@ -53,7 +56,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       if (!r.ok) throw new Error(d.error ?? "Failed");
       return d;
     },
-    onSuccess: () => { toast.success("Pay-in gateway saved"); qc.invalidateQueries({ queryKey: key }); },
+    onSuccess: () => { toast.success("Pay-in gateway saved"); qc.invalidateQueries({ queryKey: key }); qc.invalidateQueries({ queryKey: ["merchant", merchantId] }); },
     onError: (e: Error) => toast.error("Not saved", { description: e.message }),
   });
 
@@ -66,10 +69,10 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
         </div>
         {!restricted && (
           <div className="flex flex-wrap gap-2">
-            <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={!!status?.configured}
+            <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={!!status?.configured} needsH2h={needsH2h}
               current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync(f)} />
             {status?.configured && (
-              <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={false} addAnother
+              <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={false} addAnother needsH2h={needsH2h}
                 current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync({ ...f, account: "new" })} />
             )}
           </div>
@@ -92,7 +95,17 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
                 ? <Badge variant="success">Connected</Badge>
                 : <Badge variant="warning">Saved — connector coming soon</Badge>}
               {golive && <Badge variant={golive.status === "LIVE" ? "success" : "warning"}>{golive.status === "LIVE" ? "Live" : "Verifying"}</Badge>}
+              {checkout && (
+                <Badge variant={needsH2h && checkout === "REDIRECT" ? "warning" : "default"} title={CHECKOUT_MODE_WORDS[checkout].detail}>
+                  {CHECKOUT_MODE_WORDS[checkout].label}
+                </Badge>
+              )}
             </div>
+            {needsH2h && checkout === "REDIRECT" && (
+              <div className="rounded-md border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] p-2 text-xs">
+                This merchant needs host-to-host checkout, but this account only redirects to the gateway&apos;s payment page: orders carry no UPI link for the merchant&apos;s own page. Connect a host-to-host gateway.
+              </div>
+            )}
             {golive?.status === "VERIFYING" && (
               <div className="rounded-md border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] p-2 text-xs">
                 This account takes only small verification payments until its go-live checklist is complete.{" "}
@@ -121,7 +134,8 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
           </div>
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
-            No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe or Paytm.
+            No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, RubyVault, iSmartPay or PayAtom.
+            {needsH2h && " This merchant needs host-to-host checkout: choose a gateway marked H2H."}
           </div>
         )}
       </CardContent>

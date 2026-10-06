@@ -12,10 +12,11 @@ import { getPayinLimits } from "@/lib/payin-limits-store";
 import { effectivePayinLimits, platformPayinLimits } from "@/lib/payin-limits";
 import { publicBase } from "@/lib/payin-providers/types";
 import type { KitFacts } from "@/lib/starter-kit";
+import { bankerLiveCheckoutMode } from "@/lib/checkout-mode-store";
 
 export async function starterKitFacts(merchantCode: string): Promise<KitFacts> {
   const flow = await getEffectiveFlow(merchantCode);
-  const [banker, services, test, live, hooks, activation, payout, ownLimits] = await Promise.all([
+  const [banker, services, test, live, hooks, activation, payout, ownLimits, checkout] = await Promise.all([
     rows<{ name: string }>("merchant",
       `SELECT COALESCE(NULLIF(brand_name, ''), legal_name) AS name FROM merchants WHERE merchant_code = $1`, [merchantCode]),
     getProviderServices(flow.providerId),
@@ -25,6 +26,7 @@ export async function starterKitFacts(merchantCode: string): Promise<KitFacts> {
     activationState(merchantCode),
     activePayoutProvider(merchantCode).catch(() => null),
     getPayinLimits(merchantCode).catch(() => null),
+    bankerLiveCheckoutMode(merchantCode).catch(() => null),
   ]);
   const hook = hooks[0];
   const limits = ownLimits ? effectivePayinLimits(ownLimits, platformPayinLimits()) : null;
@@ -48,5 +50,6 @@ export async function starterKitFacts(merchantCode: string): Promise<KitFacts> {
     // Sandbox payout credentials at its gateway win; otherwise Katana's own (lib/fifo-payout).
     testPayouts: payout?.creds.env === "TEST" ? "GATEWAY" : "SANDBOX",
     limits: { min: limits?.min ?? null, max: limits?.max ?? limits?.upiMax ?? null, daily: limits?.daily ?? null },
+    checkout,
   };
 }

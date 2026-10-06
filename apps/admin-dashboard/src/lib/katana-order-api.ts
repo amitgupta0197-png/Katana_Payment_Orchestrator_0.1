@@ -35,6 +35,7 @@ import { PayinLimitError, payinLimitBody } from "@/lib/payin-limits";
 import { NoMidAvailableError } from "@/lib/mid-switch";
 import { AccountNotLiveError } from "@/lib/gateway-golive";
 import { logApiRequest } from "@/lib/api-log";
+import { bankerLiveCheckoutMode } from "@/lib/checkout-mode-store";
 import { clientIp } from "@/lib/session-security";
 
 const schema = z.object({
@@ -164,8 +165,15 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
     // pay_url is still Katana's page, which shows the order and hands over to the gateway;
     // gateway_url goes straight to the gateway's page — through Katana's own link
     // (/pay/{id}/go), because that page's address names the gateway and the gateway is never
-    // named to the merchant (lib/merchant-safe). No UPI app link or QR.
+    // named to the merchant (lib/merchant-safe).
     const hosted = !!r.checkoutUrl;
+    // `checkout` says what this order carries (lib/pg-catalog CheckoutMode): H2H when it has a UPI
+    // link for the merchant's own page, REDIRECT when the customer must go to pay_url. A hosted
+    // order whose processor also gave a UPI link (PayAtom) is H2H too: the link is returned,
+    // and gateway_url still opens the processor's page. A test order carries the sandbox UPI
+    // link (H2H); `live_checkout` says what this banker's live orders will get.
+    const h2h = !!r.upiIntent;
+    const liveCheckout = livemode ? undefined : await bankerLiveCheckoutMode(r.banker ?? merchantCode);
     return NextResponse.json(merchantSafeBody({
       verified: true,
       // The banker that holds the order: the signer's, or another of the merchant's bankers when
@@ -177,9 +185,11 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
       // The flow the order took (P2P | INTENT). A test order pays the sandbox UPI ID whatever the flow.
       flow: r.order.channel_type ?? null,
       order: r.order,
-      deeplinks: hosted ? null : r.deeplinks,
-      upi_intent: hosted ? null : r.upiIntent,
-      qr_payload: hosted ? null : r.upiIntent,
+      checkout: h2h ? "H2H" : "REDIRECT",
+      ...(liveCheckout !== undefined ? { live_checkout: liveCheckout } : {}),
+      deeplinks: h2h ? r.deeplinks : null,
+      upi_intent: h2h ? r.upiIntent : null,
+      qr_payload: h2h ? r.upiIntent : null,
       pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
       ...(hosted ? { gateway_url: `${base}/pay/${r.order.id}/go` } : {}),
     }, WHERE), { status: r.reused ? 200 : 201 });

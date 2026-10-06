@@ -285,6 +285,11 @@ for (const [i, c] of COMBOS.entries()) {
       assert.equal(general.status, 201, JSON.stringify(general.body));
       assert.equal(general.body.flow, inUse(c));
       assert.equal(typeof general.body.pay_url, "string");
+      // A test order carries the sandbox UPI link (H2H); live_checkout is what live orders will get:
+      // these bankers have no payment account, so H2H (a UPI link to their UPI ID) when P2P is in use.
+      assert.equal(general.body.checkout, "H2H");
+      assert.equal(typeof general.body.upi_intent, "string");
+      assert.equal(general.body.live_checkout, inUse(c) === "P2P" ? "H2H" : null, JSON.stringify(general.body));
       assert.deepEqual(allows(c, "P2P") ? [p2p.status, p2p.body.flow] : [p2p.status, p2p.body.code], allows(c, "P2P") ? [201, "P2P"] : [409, "FLOW_NOT_ENABLED"]);
       assert.deepEqual(allows(c, "INTENT") ? [intent.status, intent.body.flow] : [intent.status, intent.body.code], allows(c, "INTENT") ? [201, "INTENT"] : [409, "FLOW_NOT_ENABLED"]);
       // No answer to a merchant ever names a gateway.

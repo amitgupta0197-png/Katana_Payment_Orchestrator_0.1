@@ -68,7 +68,16 @@ test("no message names a gateway, in any format", () => {
 
 test("every message fits in one Telegram message", () => {
   for (const f of KIT_FORMATS) for (const p of buildStarterKit(base, f).parts) assert.ok(p.text.length <= MAX_PART_CHARS, `${f}: ${p.title} is ${p.text.length}`);
+  for (const checkout of ["H2H", "REDIRECT"] as const)
+    for (const f of KIT_FORMATS) for (const p of buildStarterKit({ ...base, checkout }, f).parts) assert.ok(p.text.length <= MAX_PART_CHARS, `${checkout} ${f}: ${p.title} is ${p.text.length}`);
   assert.ok(MAX_PART_CHARS < 4096);
+});
+
+test("the kit says whether live orders are host-to-host or redirect", () => {
+  const text = (checkout: "H2H" | "REDIRECT" | null) => buildStarterKit({ ...base, checkout }, "plain").parts.map((p) => p.text).join("\n");
+  assert.match(text("H2H"), /Live checkout: host-to-host/);
+  assert.match(text("REDIRECT"), /Live checkout: redirect/);
+  assert.doesNotMatch(text(null), /Live checkout/);
 });
 
 test("formats: WhatsApp *bold*, Telegram **bold**, plain has no markup", () => {
