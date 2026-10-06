@@ -41,6 +41,7 @@ import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
 import { useAccess, useSeesGatewayNames } from "@/lib/use-access";
 import { BankerMids } from "@/components/merchant/banker-mids";
 import { IntegrationTab } from "@/components/integration/integration-tab";
+import { BankerCheckButton } from "@/components/merchant/banker-check";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -626,7 +627,9 @@ export default function MerchantDetailView({ id }: { id: string }) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Every check a live order meets, in plain words (staff: it names the gateway). */}
+            {named && <BankerCheckButton merchantId={merchant.id} onOpenTab={openTab} />}
             <Badge variant={statusVariant(merchant.stage)}>{titleCase(merchant.stage)}</Badge>
             {merchant.risk_tier && <Badge variant={statusVariant(merchant.risk_tier)}>{titleCase(merchant.risk_tier)} risk</Badge>}
           </div>

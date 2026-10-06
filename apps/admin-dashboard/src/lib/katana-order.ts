@@ -170,8 +170,8 @@ export class PayinNotEnabledError extends MerchantBlockedError {
 }
 
 // Onboarding stages and merchant statuses that take no new pay-ins.
-const CLOSED_STAGES = new Set(["SUSPENDED", "TERMINATED", "REJECTED"]);
-const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
+export const CLOSED_STAGES = new Set(["SUSPENDED", "TERMINATED", "REJECTED"]);
+export const CLOSED_STATUSES = new Set(["SUSPENDED", "TERMINATED"]);
 
 /**
  * Create a Katana Pay order. When the banker's MID switch (lib/mid-switch) picked a gateway
