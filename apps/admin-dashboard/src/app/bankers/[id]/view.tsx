@@ -43,6 +43,8 @@ import { BankerMids } from "@/components/merchant/banker-mids";
 import { IntegrationTab } from "@/components/integration/integration-tab";
 import { BankerCheckButton } from "@/components/merchant/banker-check";
 import { BankerTodoCard } from "@/components/merchant/banker-todo";
+import { TechLabel } from "@/components/ui/tech-label";
+import { plainGateMessage } from "@/lib/plain-errors";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -76,13 +78,14 @@ const titleCase = (s: string) => {
 };
 
 const STEPS = [
-  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",     description: "Basic banker details captured." },
-  { key: "step_kyb_docs",     stage_from: "DOCS_PENDING",  stage_to: "SCREENING",     label: "KYB documents",   description: "PAN, GST, CIN, MOA, AOA, board resolution, bank statement, MCC declaration uploaded." },
-  { key: "step_screening",    stage_from: "SCREENING",     stage_to: "BANK_VERIFY",   label: "Screening",       description: "OFAC / UN / EU / FATF sanctions screening. Risk tier assigned." },
-  { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "MID_ISSUANCE",  label: "Bank verify",     description: "Penny-drop on settlement account. Beneficiary name-match validated." },
-  { key: "step_mid_issuance", stage_from: "MID_ISSUANCE",  stage_to: "CONFIG",        label: "MID issuance",    description: "The banker's TSP and issuing bank recorded; the MIDs the bank issued entered and approved by a second person (MIDs tab)." },
-  { key: "step_config",       stage_from: "CONFIG",        stage_to: "CONFIG",        label: "Configuration",   description: "Main MID created. Rails enabled. Webhook URL set." },
-  { key: "step_approval",     stage_from: "CONFIG",        stage_to: "LIVE",          label: "Approval & go-live", description: "Super-Admin final review. Sub-MIDs settlement-enabled. API key issued." },
+  // `label` is the plain word staff see; `tech` the stage's own name, shown small beside it.
+  { key: "step_application",  stage_from: "APPLICATION",   stage_to: "DOCS_PENDING",  label: "Application",          tech: "Application",     description: "The banker's basic details." },
+  { key: "step_kyb_docs",     stage_from: "DOCS_PENDING",  stage_to: "SCREENING",     label: "Documents",            tech: "KYB documents",   description: "PAN, GST, CIN, MOA, AOA, board resolution, bank statement and MCC declaration uploaded." },
+  { key: "step_screening",    stage_from: "SCREENING",     stage_to: "BANK_VERIFY",   label: "Sanctions check",      tech: "Screening",       description: "Checked against OFAC, UN, EU and FATF lists, and a risk level given." },
+  { key: "step_bank_verify",  stage_from: "BANK_VERIFY",   stage_to: "MID_ISSUANCE",  label: "Bank account check",   tech: "Bank verify",     description: "A small test deposit to the settlement account, and the account holder's name matched." },
+  { key: "step_mid_issuance", stage_from: "MID_ISSUANCE",  stage_to: "CONFIG",        label: "Bank-issued IDs",      tech: "MID issuance",    description: "Only when a bank issues this banker IDs through a TSP (MIDs tab). Payments through a connected payment account don't need it." },
+  { key: "step_config",       stage_from: "CONFIG",        stage_to: "CONFIG",        label: "Settings",             tech: "Configuration",   description: "Payment account or UPI ID, and the callback URL, set." },
+  { key: "step_approval",     stage_from: "CONFIG",        stage_to: "LIVE",          label: "Approval",             tech: "Approval & go-live", description: "A Super Admin's final review. The banker can then go live." },
 ] as const;
 
 // KYB document uploader shown in the DOCS_PENDING advance step. Lets the operator
@@ -187,7 +190,7 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
       return r.json();
     },
     onSuccess: () => {
-      toast.success(`Advanced to ${step.stage_to}`);
+      toast.success(`${step.label} marked done`);
       setOpen(false); setBlocked(null); setOverride(false);
       qc.invalidateQueries({ queryKey: ["merchant", merchant.id] });
       qc.invalidateQueries({ queryKey: ["merchants"] });
@@ -201,7 +204,7 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Advance — {step.label}</DialogTitle>
+          <DialogTitle>Mark done: {step.label}<TechLabel>{step.tech}</TechLabel></DialogTitle>
           <DialogDescription>
             Move {merchant.merchant_code} from <Badge variant={statusVariant(step.stage_from)}>{step.stage_from}</Badge> to{" "}
             <Badge variant={statusVariant(step.stage_to)}>{step.stage_to}</Badge>. {step.description}
@@ -228,19 +231,19 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
           </div>
           {blocked && (
             <div className="rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs text-[color:var(--color-danger)]">
-              <div>A check stopped this step: {blocked.error}</div>
+              <div>A check stopped this step: {plainGateMessage(blocked.error)}</div>
               {blocked.canOverride && (
                 <>
                   <label className="mt-2 flex items-center gap-1.5">
                     <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
-                    Advance anyway. The note above is recorded as the reason.
+                    Mark it done anyway. The note above is recorded as the reason.
                   </label>
                   <div className="mt-1.5 text-[color:var(--color-text-muted)]">
                     {!override
-                      ? "To go ahead without it, tick the box and say why in the note."
+                      ? "To go ahead anyway, tick the box and say why in the note."
                       : noteTooShort
                         ? `Say why in the note: at least ${OVERRIDE_NOTE_MIN} characters.`
-                        : "Confirm to advance anyway."}
+                        : "Mark done to go ahead anyway."}
                   </div>
                 </>
               )}
@@ -250,7 +253,7 @@ function AdvanceDialog({ merchant, stepIndex }: { merchant: Merchant; stepIndex:
         <DialogFooter>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={() => m.mutate()} disabled={m.isPending || (override && noteTooShort)}>
-            {m.isPending ? "Advancing…" : override ? "Advance anyway" : "Confirm advance"}
+            {m.isPending ? "Saving…" : override ? "Mark done anyway" : "Mark done"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -596,17 +599,18 @@ export default function MerchantDetailView({ id }: { id: string }) {
     ["Approved", merchant.approved_at ? `${formatDateTime(merchant.approved_at)}${merchant.approved_by ? ` by ${merchant.approved_by}` : ""}` : "Not yet"],
   ];
 
-  const tabs: { key: TabKey; label: string; icon: typeof Store; count?: number }[] = [
+  // Plain words first; the technical name small beside it (`tech`).
+  const tabs: { key: TabKey; label: string; tech?: string; icon: typeof Store; count?: number }[] = [
     { key: "overview", label: "Overview", icon: LayoutGrid },
-    { key: "p2p", label: "P2P pay-ins", icon: Smartphone },
-    { key: "intent", label: "Intent pay-ins", icon: Zap },
+    { key: "p2p", label: "Pays UPI ID", tech: "P2P", icon: Smartphone },
+    { key: "intent", label: "Pays via gateway", tech: "Intent", icon: Zap },
     // Which gateways a banker is connected to is for Katana staff only (lib/merchant-safe).
     // A TSP is a gateway's company, so the MIDs tab is staff only too.
-    ...(named ? [{ key: "mids" as const, label: "MIDs", icon: Hash }] : []),
+    ...(named ? [{ key: "mids" as const, label: "Bank IDs", tech: "MIDs", icon: Hash }] : []),
     ...(named ? [{ key: "payouts" as const, label: "Payouts", icon: Landmark }] : []),
     // Callback URLs per flow, their checks and the integration score: staff only (lib/integration-store).
-    ...(named ? [{ key: "integration" as const, label: "Integration", icon: Activity }] : []),
-    { key: "developer", label: "Developer", icon: Code2 },
+    ...(named ? [{ key: "integration" as const, label: "Payment messages", tech: "Callbacks", icon: Activity }] : []),
+    { key: "developer", label: "API login", tech: "Keys", icon: Code2 },
     { key: "account", label: "Account", icon: UserCog, count: ownSubs.length || undefined },
   ];
 
@@ -679,6 +683,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
               <TabsTrigger key={t.key} value={t.key} className="pb-2.5 pt-2">
                 <t.icon className="h-4 w-4" />
                 {t.label}
+                {t.tech && <TechLabel className="ml-0 hidden lg:inline">{t.tech}</TechLabel>}
                 {t.count !== undefined && (
                   <span className="rounded-full bg-[color:var(--color-surface)] px-1.5 text-xs font-normal tabular-nums">{t.count}</span>
                 )}
@@ -707,8 +712,8 @@ export default function MerchantDetailView({ id }: { id: string }) {
             </div>
             <Card className="self-start">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Onboarding</CardTitle>
-                <CardDescription>What each step checks.</CardDescription>
+                <CardTitle className="text-base">Onboarding stages</CardTitle>
+                <CardDescription>What each stage checks.</CardDescription>
               </CardHeader>
               <CardContent>
                 <ol className="space-y-2.5">
@@ -721,7 +726,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
                           ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-success)]" />
                           : <Circle className={`mt-0.5 h-4 w-4 shrink-0 ${isNext ? "text-[color:var(--color-brand)]" : "text-[color:var(--color-text-subtle)]"}`} />}
                         <div className="min-w-0">
-                          <div className={`text-sm ${isNext ? "font-semibold" : done ? "" : "text-[color:var(--color-text-muted)]"}`}>{step.label}</div>
+                          <div className={`text-sm ${isNext ? "font-semibold" : done ? "" : "text-[color:var(--color-text-muted)]"}`}>{step.label}<TechLabel>{step.tech}</TechLabel></div>
                           <div className="text-xs text-[color:var(--color-text-muted)]">{step.description}</div>
                           {isNext && named && step.key === "step_mid_issuance" && (
                             <Button size="sm" variant="link" className="h-auto px-0 text-xs" onClick={() => openTab("mids")}>

@@ -12,6 +12,7 @@ import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
 import { CHECKOUT_MODE_WORDS, type CheckoutMode, type GatewayId } from "@/lib/pg-catalog";
 import { useImpactConfirm } from "@/components/merchant/confirm-impact";
+import { TechLabel } from "@/components/ui/tech-label";
 
 interface PayinStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
@@ -68,8 +69,8 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
       {impact.dialog}
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
-          <CardTitle className="text-base">Pay-in gateway</CardTitle>
-          <CardDescription>The payment gateway this merchant collects through, and the credentials Katana uses on their behalf. Stored encrypted; never shown to the merchant.</CardDescription>
+          <CardTitle className="text-base">Payment account<TechLabel>Pay-in gateway</TechLabel></CardTitle>
+          <CardDescription>The gateway account the customer's money is paid into, and the credentials Katana uses for it. Stored encrypted; never shown to the merchant.</CardDescription>
         </div>
         {!restricted && (
           <div className="flex flex-wrap gap-2">

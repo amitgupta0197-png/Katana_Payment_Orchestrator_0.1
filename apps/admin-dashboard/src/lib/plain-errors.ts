@@ -54,3 +54,29 @@ export function plainRefusal(code: string | null | undefined, error?: string | n
   }
   return { text: e ? e.replace(/\s*If this continues.*$/i, "").replace(/\.$/, "") : "the order was refused" };
 }
+
+// ── Onboarding stage checks (lib/onboarding-gates), as the advance dialog shows them ──────────
+
+const GATE_WORDS: Record<string, string> = {
+  APPLICATION: "Application", WEBSITE: "Website", DOCUMENTS: "Documents", SCREENING: "Sanctions check",
+  MID_ISSUANCE: "Bank-issued IDs", SETUP: "Payment setup",
+};
+
+const GATE_SUMMARY_WORDS: [RegExp, string][] = [
+  [/the banker is on no TSP/i, "no TSP is recorded for this banker. Only needed when a bank issues it IDs; payments through a connected payment account don't need one"],
+  [/the banker has no issuing bank/i, "no issuing bank is recorded for this banker"],
+  [/takes Intent pay-ins but has no active Intent MID/i, "it takes gateway payments but has no active bank-issued Intent ID"],
+  [/no TSPs in use yet/i, "no TSP is used yet: gateway payments go through the connected payment account, checked at Approval"],
+];
+
+/** "MID_ISSUANCE: the banker is on no TSP; SETUP: …" → plain words, one check per sentence. */
+export function plainGateMessage(msg: string | null | undefined): string {
+  if (!msg) return "";
+  return msg.split(/;\s*/).map((part) => {
+    const m = part.match(/^([A-Z_]+):\s*(.*)$/);
+    if (!m) return part;
+    let summary = m[2];
+    for (const [re, words] of GATE_SUMMARY_WORDS) if (re.test(summary)) { summary = words; break; }
+    return `${GATE_WORDS[m[1]] ?? m[1]}: ${summary}`;
+  }).join(". ");
+}

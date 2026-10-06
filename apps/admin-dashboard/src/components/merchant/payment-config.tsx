@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useImpactConfirm } from "@/components/merchant/confirm-impact";
+import { TechLabel } from "@/components/ui/tech-label";
 
 interface KatanaPayConfig { settlement_vpa?: string; payee_name?: string; notes?: string }
 interface Config { methods: string[]; enabled_methods: string[]; katana_pay: KatanaPayConfig; blocked?: boolean }
@@ -89,7 +90,7 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
           {impact.dialog}
           <Button size="sm" variant={blocked ? "secondary" : "danger"} disabled={block.isPending}
             onClick={async () => { if (!blocked && !(await impact.ask(`/api/merchants/${merchantId}/impact?change=BLOCK`))) return; block.mutate(!blocked); }}>
-            {blocked ? "Unblock merchant" : "Block merchant"}
+            {blocked ? "Unblock banker" : "Block banker"}
           </Button>
         </div>
       </CardHeader>
@@ -155,7 +156,7 @@ export function KatanaPayConfigCard({ merchantId }: { merchantId: string }) {
     <Card className="mb-4">
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">Katana Pay configuration</CardTitle>
+          <CardTitle className="text-base">Where P2P money arrives<TechLabel>Katana Pay configuration</TechLabel></CardTitle>
           <CardDescription>The UPI ID this banker is paid on for P2P pay-ins.</CardDescription>
         </div>
       </CardHeader>

@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn, formatDateTime } from "@/lib/utils";
 import { ReadinessPreview } from "@/components/merchant/readiness";
 import { useImpactConfirm } from "@/components/merchant/confirm-impact";
+import { TechLabel } from "@/components/ui/tech-label";
 import {
   ORDER_FLOWS, PAYIN_FLOWS, PAYIN_FLOW_HINT, PAYIN_FLOW_LABEL,
   type MerchantFlow, type OrderFlow, type PayinFlow, type PayinFlowSetting,
@@ -207,7 +208,7 @@ export function PayinFlowCard({ target }: { target: FlowTarget }) {
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="flex items-center gap-2 text-base"><ArrowLeftRight className="h-4 w-4" /> Pay-in flow</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base"><ArrowLeftRight className="h-4 w-4" /> How customers pay<TechLabel className="ml-0">Pay-in flow</TechLabel></CardTitle>
           <CardDescription>
             {target.kind === "merchant"
               ? "Which Katana pay-in flow this merchant's bankers take: P2P, Intent or Both."

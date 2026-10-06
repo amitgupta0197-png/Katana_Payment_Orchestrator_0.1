@@ -81,3 +81,12 @@ test("refused orders in plain words: by code, by the processor's text, else the 
   assert.equal(plainRefusal(null, "Something odd. If this continues, contact Katana support with reference KP-2.").text, "Something odd");
   assert.equal(plainRefusal(null, null).text, "the order was refused");
 });
+
+test("onboarding stage checks in plain words", async () => {
+  const { plainGateMessage } = await import("@/lib/plain-errors");
+  assert.equal(plainGateMessage("MID_ISSUANCE: the banker is on no TSP"),
+    "Bank-issued IDs: no TSP is recorded for this banker. Only needed when a bank issues it IDs; payments through a connected payment account don't need one");
+  assert.equal(plainGateMessage("SETUP: something new; WEBSITE: no website supplied"), "Payment setup: something new. Website: no website supplied");
+  assert.equal(plainGateMessage("plain text"), "plain text");
+  assert.equal(plainGateMessage(null), "");
+});
