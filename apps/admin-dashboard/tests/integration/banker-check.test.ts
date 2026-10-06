@@ -59,3 +59,11 @@ test("the banker page's to-do and today's refused orders read from the local dat
   assert.ok(Array.isArray(refused));
   for (const r of refused) assert.ok(r.plain.text && r.http_status >= 400);
 });
+
+test("recent order counts for 'before you save' read from the local database", opts, async () => {
+  const { bankerOrderCounts } = await import("@/lib/change-impact-store");
+  const m = await bankerOrderCounts([BANKER, "no-such-banker-zz"]);
+  const b = m.get(BANKER)!, none = m.get("no-such-banker-zz")!;
+  assert.ok(b.total >= b.intent + b.p2p - 0 && b.own <= b.total && b.open <= b.total);
+  assert.deepEqual({ ...none, code: "" }, { code: "", total: 0, intent: 0, p2p: 0, own: 0, open: 0, lastAt: null });
+});

@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatDateTime } from "@/lib/utils";
 import { ReadinessPreview } from "@/components/merchant/readiness";
+import { useImpactConfirm } from "@/components/merchant/confirm-impact";
 import {
   ORDER_FLOWS, PAYIN_FLOWS, PAYIN_FLOW_HINT, PAYIN_FLOW_LABEL,
   type MerchantFlow, type OrderFlow, type PayinFlow, type PayinFlowSetting,
@@ -86,6 +87,12 @@ export function FlowSelectDialog({ target, current, inherited, open, onOpenChang
     onError: (e: Error) => toast.error("Not saved", { description: e.message }),
   });
 
+  // A banker's flow change moves or stops its orders: say how first (lib/change-impact).
+  const impact = useImpactConfirm();
+  const submit = async () => {
+    if (target.kind === "banker" && !(await impact.ask(`/api/merchants/${target.id}/impact?change=FLOW&to=${flow}`))) return;
+    save.mutate();
+  };
   const valid = flow !== "BOTH" || !!active;
   const unchanged = flow === current.flow && (flow !== "BOTH" || active === current.active);
   const option = (value: PayinFlowSetting, title: string, hint: string) => (
@@ -108,6 +115,8 @@ export function FlowSelectDialog({ target, current, inherited, open, onOpenChang
   );
 
   return (
+    <>
+    {impact.dialog}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -159,12 +168,13 @@ export function FlowSelectDialog({ target, current, inherited, open, onOpenChang
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !valid || unchanged}>
+          <Button onClick={() => { void submit(); }} disabled={save.isPending || !valid || unchanged}>
             {save.isPending ? "Saving…" : "Save flow"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { GatewayLogo } from "@/components/merchant/gateway-logo";
 import { GatewayCredentialsDialog, type GatewayForm } from "@/components/merchant/gateway-credentials-dialog";
 import { CHECKOUT_MODE_WORDS, type CheckoutMode, type GatewayId } from "@/lib/pg-catalog";
+import { useImpactConfirm } from "@/components/merchant/confirm-impact";
 
 interface PayinStatus {
   configured: boolean; gateway?: GatewayId; gateway_name?: string; connector?: boolean;
@@ -60,8 +61,11 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
     onError: (e: Error) => toast.error("Not saved", { description: e.message }),
   });
 
+  const impact = useImpactConfirm();
+
   return (
     <Card className="mb-4">
+      {impact.dialog}
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
           <CardTitle className="text-base">Pay-in gateway</CardTitle>
@@ -70,7 +74,13 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
         {!restricted && (
           <div className="flex flex-wrap gap-2">
             <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={!!status?.configured} needsH2h={needsH2h}
-              current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync(f)} />
+              current={status?.gateway} saving={save.isPending}
+              onSave={async (f) => {
+                // Replacing the account moves new orders and changes how open ones are checked: say so first.
+                if (status?.configured && !(await impact.ask(`/api/merchants/${merchantId}/impact?change=ACCOUNT&gateway=${encodeURIComponent(f.gateway)}`)))
+                  throw new Error("Not saved: the current account was kept");
+                return save.mutateAsync(f);
+              }} />
             {status?.configured && (
               <GatewayCredentialsDialog kind="payin" merchantCode={merchantCode} configured={false} addAnother needsH2h={needsH2h}
                 current={status?.gateway} saving={save.isPending} onSave={(f) => save.mutateAsync({ ...f, account: "new" })} />

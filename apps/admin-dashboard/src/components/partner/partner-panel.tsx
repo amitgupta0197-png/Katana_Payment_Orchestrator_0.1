@@ -26,6 +26,7 @@ import {
 } from "@/lib/partner/rules";
 import type { PartnerEventRow, PartnerOrderRow, PartnerRow, SubMerchantRow, SubTotals } from "@/lib/partner/store";
 import type { PartnerKeyRow } from "@/lib/partner/keys";
+import { useImpactConfirm } from "@/components/merchant/confirm-impact";
 
 interface Detail {
   partner: PartnerRow; staff: boolean;
@@ -581,14 +582,21 @@ function SettingsTab({ d, base, partnerId }: { d: Detail; base: string; partnerI
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["partner", partnerId] }); qc.invalidateQueries({ queryKey: ["partners"] }); },
     onError: (e: Error) => toast.error("Not saved", { description: e.message }),
   });
+  // Making a partner exclusive stops its bankers' own orders: say which first (lib/change-impact).
+  const impact = useImpactConfirm();
+  const setFlag = async (k: "exclusive" | "auto_approve", on: boolean) => {
+    if (k === "exclusive" && on && !(await impact.ask(`/api/partners/${partnerId}/impact?change=EXCLUSIVE`))) return;
+    save.mutate({ [k]: on });
+  };
   const toggle = (k: "exclusive" | "auto_approve", label: string, help: string) => (
     <label className="flex items-start gap-3 rounded-xl border p-3">
-      <input type="checkbox" className="mt-1" checked={p[k]} onChange={(e) => save.mutate({ [k]: e.target.checked })} disabled={save.isPending} />
+      <input type="checkbox" className="mt-1" checked={p[k]} onChange={(e) => { void setFlag(k, e.target.checked); }} disabled={save.isPending} />
       <span><span className="font-medium">{label}</span><span className={cn("block text-sm", muted)}>{help}</span></span>
     </label>
   );
   return (
     <div className="grid gap-4 pt-4 lg:grid-cols-2">
+      {impact.dialog}
       <Card><CardContent className="space-y-3 pt-6">
         <h3 className="font-semibold">Partner settings</h3>
         <div className="flex items-center gap-3 rounded-xl border p-3">

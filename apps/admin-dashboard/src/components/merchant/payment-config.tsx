@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { useImpactConfirm } from "@/components/merchant/confirm-impact";
 
 interface KatanaPayConfig { settlement_vpa?: string; payee_name?: string; notes?: string }
 interface Config { methods: string[]; enabled_methods: string[]; katana_pay: KatanaPayConfig; blocked?: boolean }
@@ -68,6 +69,9 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
   });
 
+  // Blocking stops new pay-ins at once: say what it stops first (lib/change-impact).
+  const impact = useImpactConfirm();
+
   const toggle = (method: string) => {
     const next = enabled.has(method) ? [...enabled].filter((x) => x !== method) : [...enabled, method];
     m.mutate(next);
@@ -82,7 +86,9 @@ export function PaymentMethodsCard({ merchantId }: { merchantId: string }) {
         </div>
         <div className="flex items-center gap-2">
           {blocked && <Badge variant="danger">BLOCKED</Badge>}
-          <Button size="sm" variant={blocked ? "secondary" : "danger"} disabled={block.isPending} onClick={() => block.mutate(!blocked)}>
+          {impact.dialog}
+          <Button size="sm" variant={blocked ? "secondary" : "danger"} disabled={block.isPending}
+            onClick={async () => { if (!blocked && !(await impact.ask(`/api/merchants/${merchantId}/impact?change=BLOCK`))) return; block.mutate(!blocked); }}>
             {blocked ? "Unblock merchant" : "Block merchant"}
           </Button>
         </div>
