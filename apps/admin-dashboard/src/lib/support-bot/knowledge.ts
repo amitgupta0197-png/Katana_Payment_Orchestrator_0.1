@@ -125,7 +125,7 @@ The person may attach a screenshot, usually a payment the customer says was succ
 - Rails: IMPS up to Rs 5,00,000, RTGS from Rs 2,00,000, NEFT, or UPI to a UPI ID.
 
 ## Errors
-v1 order API: 400 INVALID_REQUEST when a field is missing or malformed, with "missing", "invalid" and "hints" (a field sent under another gateway's name, such as order_id for txnid or signature for hash); 401 "signature mismatch" also carries "hint", the signing rule; 401 "invalid key" (unknown or replaced key) or "signature mismatch"; 403 MERCHANT_BLOCKED, MERCHANT_SUSPENDED, PAYIN_NOT_ENABLED or LIVE_MODE_NOT_ACTIVATED; 409 FLOW_NOT_ENABLED, FLOW_NOT_SELECTED or FLOW_NOT_READY; 422 limit codes with "limit" and "actual"; 429 RATE_LIMITED.
+v1 order API: 400 INVALID_REQUEST when a field is missing or malformed, with "missing", "invalid" and "hints" (a field sent under another gateway's name, such as order_id for txnid or signature for hash); 401 "signature mismatch" also carries "hint", the signing rule; 401 "invalid key" (unknown or replaced key) or "signature mismatch"; 403 MERCHANT_BLOCKED, MERCHANT_SUSPENDED, PAYIN_NOT_ENABLED or LIVE_MODE_NOT_ACTIVATED; 409 FLOW_NOT_ENABLED, FLOW_NOT_SELECTED or FLOW_NOT_READY; 502 when the payment processor refused (502 GATEWAY_CREDENTIALS: the payment account's saved credentials are wrong, only Katana can fix it, so hand it to the team); 422 limit codes with "limit" and "actual"; 429 RATE_LIMITED.
 Payout API: 403 PAYOUT_NOT_ENABLED (account not set up for payouts); 404 "no beneficiary with beneficiary_ref ..."; 409 "beneficiary not whitelisted", "insufficient ... balance", or a rail or limit problem named in the message.
 The same codes in the v2 API:
 ${ERROR_LINES}

@@ -472,7 +472,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
       phone: input.customerPhone?.trim() || "9999999999",
       surl: `${base}/api/gateway/payu/return`, furl: `${base}/api/gateway/payu/return`,
     }, input.client ?? { ip: "127.0.0.1", deviceInfo: "Mozilla/5.0" });
-    if (!r.ok) throw new PayuIntentError(r.error);
+    if (!r.ok) throw new PayuIntentError(r.error, r.code);
 
     payId = r.paymentId ?? shortId("pay");
     deeplinks = { upi: r.links.upi, paytm: r.links.paytm, phonepe: r.links.phonepe };

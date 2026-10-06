@@ -22,6 +22,7 @@ import type { GatewayMid } from "@/lib/gateway-creds";
 import { payuRequestHash, type PayuOrder } from "@/lib/payu";
 import { rows } from "@/lib/pg";
 import { toMinor, fromMinor } from "@/lib/money";
+import { verifyPayuTxn } from "@/lib/payu-verify";
 
 const ISSUED = "payu upi intent issued";
 const REFUSED = "payu upi intent refused";
@@ -32,9 +33,13 @@ export function payuS2sUrl(env?: string): string {
     : "https://test.payu.in/_payment";
 }
 
-/** PayU refused to issue an intent, so no order was created. Routes answer 502 with the message. */
+/**
+ * PayU refused to issue an intent, so no order was created. Routes answer 502 with the message,
+ * and with `code` when the cause is known (GATEWAY_CREDENTIALS: the saved Key + Salt are wrong).
+ */
 export class PayuIntentError extends Error {
   readonly status = 502;
+  constructor(message: string, readonly code?: "GATEWAY_CREDENTIALS") { super(message); }
 }
 
 export interface PayuIntentLinks {
@@ -82,7 +87,7 @@ export interface PayuIntentClient {
 
 export type PayuIntentResult =
   | { ok: true; intentQuery: string; links: PayuIntentLinks; paymentId: string | null; payuStatus: string | null; raw: Record<string, unknown> }
-  | { ok: false; error: string; raw?: Record<string, unknown> };
+  | { ok: false; error: string; code?: "GATEWAY_CREDENTIALS"; raw?: Record<string, unknown> };
 
 export function payuIntentFields(mid: GatewayMid, o: PayuOrder, client: PayuIntentClient): Record<string, string> {
   return {
@@ -119,6 +124,12 @@ export async function createPayuUpiIntent(
     // PayU's rate limiter answers in plain text ("…Too many Requests. Please try after 60
     // seconds…"). That is not a credentials problem, so say what PayU said.
     if (res.status === 429) {
+      // PayU answers a request signed with the wrong Key + Salt with this same 429 (BBUY88,
+      // 2026-10-06). One verify_payment call with the same pair tells the two apart: PayU says
+      // "Invalid Hash" there when the pair is wrong.
+      const check = await verifyPayuTxn(mid, o.txnid).catch(() => null);
+      if (check && !check.found && /invalid hash/i.test(check.status))
+        return { ok: false, code: "GATEWAY_CREDENTIALS", error: "PayU refused the payment account's saved credentials (HTTP 429, Invalid Hash): re-enter the live Key and Salt on the banker's Pay-in gateway card" };
       const said = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
       return { ok: false, error: `PayU is rate-limiting this request (HTTP 429)${said ? `: ${said}` : ""}` };
     }
@@ -231,7 +242,7 @@ export async function issuePayuIntent(input: IssueIntentInput): Promise<{ httpSt
       INSERT INTO order_state_transitions (order_id, from_status, to_status, actor_kind, actor_id, reason, payload)
       VALUES ($1::uuid, 'CREATED', 'FAILED', 'gateway', $2, $3, $4::jsonb)
     `, [orderId, input.actor, REFUSED, JSON.stringify({ source: "s2s_intent", error: r.error, raw: r.raw ?? null })]).catch(() => {});
-    return { httpStatus: 502, body: { error: r.error, order: { id: orderId, txn_id: input.txnid, status: "FAILED" } } };
+    return { httpStatus: 502, body: { error: r.error, ...(r.code ? { code: r.code } : {}), order: { id: orderId, txn_id: input.txnid, status: "FAILED" } } };
   }
 
   await rows("checkout", `

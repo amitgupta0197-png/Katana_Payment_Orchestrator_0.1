@@ -207,7 +207,10 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
     if (err instanceof AccountNotLiveError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     // Every MID the banker's switch has is used up, paused or outside its hours (lib/mid-switch).
     if (err instanceof NoMidAvailableError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status, headers: { "retry-after": "60" } });
-    if (err instanceof PayuIntentError || err instanceof PayinSetupError) return NextResponse.json({ error: merchantSafeError(err.message, WHERE) }, { status: err.status });
+    if (err instanceof PayuIntentError || err instanceof PayinSetupError) {
+      const code = err instanceof PayuIntentError ? err.code : undefined;
+      return NextResponse.json({ error: merchantSafeError(err.message, WHERE), ...(code ? { code } : {}) }, { status: err.status });
+    }
     const a = activationErrorResponse(err);   // live key, live mode not activated
     if (a) return NextResponse.json(a.body, { status: a.status });
     const e = pgError(err); return NextResponse.json(e.body, { status: e.status });
