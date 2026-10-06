@@ -30,7 +30,12 @@ export interface LiveActivation {
   reason: string | null;
   checklist: { key: string; label: string; done: boolean; hint: string }[];
   ready: boolean;
+  /** What the banker needs before it can take live money; approving is refused while not empty. */
+  setup_missing?: string[];
 }
+
+// Shortest note live mode is switched on with while setup is incomplete (lib/live-activation).
+const OVERRIDE_NOTE_MIN = 5;
 
 const MUTED = "text-[color:var(--color-text-muted)]";
 
@@ -67,7 +72,10 @@ export function LiveActivationCard({ merchantId, canDecide = false }: { merchant
   const q = useLiveActivation(merchantId);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [overriding, setOverriding] = useState(false);
+  const [note, setNote] = useState("");
   const d = q.data;
+  const missing = d?.setup_missing ?? [];
 
   const act = useMutation({
     mutationFn: async (v: { body?: Record<string, unknown>; done: string }) => {
@@ -83,6 +91,8 @@ export function LiveActivationCard({ merchantId, canDecide = false }: { merchant
       qc.setQueryData(liveActivationKey(merchantId), state);
       setRejecting(false);
       setReason("");
+      setOverriding(false);
+      setNote("");
       toast.success(done);
     },
     onError: (e: Error) => toast.error("Failed", { description: e.message }),
@@ -154,7 +164,28 @@ export function LiveActivationCard({ merchantId, canDecide = false }: { merchant
 
             {merchantId && canDecide && (
               <div className="space-y-3 border-t pt-3">
-                {!d.ready && (
+                {missing.length > 0 ? (
+                  <div className="rounded-md border border-[color:var(--color-danger)]/30 bg-[color:var(--color-danger-muted)] px-3 py-2 text-xs">
+                    <div className="font-medium text-[color:var(--color-danger)]">This banker can&apos;t take live payments yet:</div>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {missing.map((m) => <li key={m}>{m}</li>)}
+                    </ul>
+                    <label className="mt-2 flex items-center gap-1.5">
+                      <input type="checkbox" checked={overriding} onChange={(e) => setOverriding(e.target.checked)} />
+                      Switch live mode on anyway. Live orders will be refused until this is fixed.
+                    </label>
+                    {overriding && (
+                      <div className="mt-2 space-y-1">
+                        <Label htmlFor="live-activation-note">Why (recorded in the audit log)</Label>
+                        <Input id="live-activation-note" value={note} maxLength={500}
+                          onChange={(e) => setNote(e.target.value)} placeholder="e.g. Payment account is being connected today" />
+                        {note.trim().length < OVERRIDE_NOTE_MIN && (
+                          <div className={MUTED}>At least {OVERRIDE_NOTE_MIN} characters.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : !d.ready && (
                   <p className="text-xs text-[color:var(--color-warning)]">
                     The checklist is not complete. Approving now overrides it and is recorded in the activity log.
                   </p>
@@ -174,9 +205,16 @@ export function LiveActivationCard({ merchantId, canDecide = false }: { merchant
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    <Button disabled={act.isPending}
-                      onClick={() => act.mutate({ body: { decision: "APPROVE" }, done: "Live mode activated" })}>
-                      {act.isPending ? "Saving…" : "Approve live mode"}
+                    <Button
+                      disabled={act.isPending || (missing.length > 0 && (!overriding || note.trim().length < OVERRIDE_NOTE_MIN))}
+                      title={missing.length > 0 && !overriding ? missing.join(". ") : undefined}
+                      onClick={() => act.mutate({
+                        body: missing.length > 0
+                          ? { decision: "APPROVE", override_setup: true, reason: note.trim() }
+                          : { decision: "APPROVE" },
+                        done: "Live mode activated",
+                      })}>
+                      {act.isPending ? "Saving…" : missing.length > 0 ? "Approve anyway" : "Approve live mode"}
                     </Button>
                     <Button variant="secondary" disabled={act.isPending} onClick={() => setRejecting(true)}>Reject</Button>
                   </div>

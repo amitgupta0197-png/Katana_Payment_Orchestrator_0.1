@@ -1,7 +1,9 @@
 // /api/merchants/[id]/live-activation — a banker's "Activate live mode" state, for operators.
 //   GET  → status + checklist. SUPER_ADMIN any; PROVIDER only for mapped merchants.
-//   POST { decision: "APPROVE" | "REJECT", reason? } → SUPER_ADMIN only. A reason is required to
-//        reject; approving may override an incomplete checklist. See lib/live-activation.ts.
+//   POST { decision: "APPROVE" | "REJECT", reason?, override_setup? } → SUPER_ADMIN only. A reason
+//        is required to reject; approving may override an incomplete checklist, but not a banker
+//        that cannot take live money (409 SETUP_INCOMPLETE) unless override_setup is sent with a
+//        reason. See lib/live-activation.ts.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -26,6 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const schema = z.object({
   decision: z.enum(["APPROVE", "REJECT"]),
   reason: z.string().max(500).optional(),
+  override_setup: z.boolean().optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +43,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
-    return NextResponse.json(await decideActivation(scope.code, body.decision, g.session.email, body.reason));
+    return NextResponse.json(await decideActivation(scope.code, body.decision, g.session.email, body.reason,
+      { overrideSetup: body.override_setup === true, actorId: g.session.user_id }));
   } catch (err) {
     const a = activationErrorResponse(err);
     if (a) return NextResponse.json(a.body, { status: a.status });

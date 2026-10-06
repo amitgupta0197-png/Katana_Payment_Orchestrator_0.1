@@ -129,6 +129,8 @@ export const fresh = (at: string | null, now: number, ms = CALLBACK_FRESH_MS) =>
 /** The MID gate's view of the merchant's flow (lib/chain midGate). */
 function midFacts(f: BankerFacts): MidGateFacts {
   return {
+    // Asked only for a banker on a TSP and bank (bankerHealth), so TSPs are in use.
+    tspsInUse: true,
     hasTsp: f.chain.hasTsp, hasBank: f.chain.hasBank, activeFlows: f.activeMidFlows,
     services: f.services, payinFlow: f.flow.flow,
   };

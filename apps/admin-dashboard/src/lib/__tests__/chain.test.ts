@@ -120,7 +120,7 @@ test("MID form", () => {
 });
 
 test("the MID_ISSUANCE gate asks for what the banker's flows need", () => {
-  const f = { hasTsp: true, hasBank: true, activeFlows: [] as ("INTENT" | "P2P" | "PAYOUT")[], services: "PAYIN" as const, payinFlow: "INTENT" as const };
+  const f = { tspsInUse: true, hasTsp: true, hasBank: true, activeFlows: [] as ("INTENT" | "P2P" | "PAYOUT")[], services: "PAYIN" as const, payinFlow: "INTENT" as const };
   assert.equal(midGate({ ...f, hasTsp: false }).result, "FAIL");
   assert.equal(midGate({ ...f, hasBank: false }).result, "FAIL");
   assert.deepEqual(midGate(f).missing, ["INTENT"]);
@@ -132,4 +132,12 @@ test("the MID_ISSUANCE gate asks for what the banker's flows need", () => {
   assert.equal(midGate({ ...f, services: "PAYOUT", payinFlow: "UNSET", activeFlows: ["PAYOUT"] }).result, "PASS");
   assert.equal(midGate({ ...f, services: "UNSET", payinFlow: "UNSET" }).result, "REVIEW");
   assert.equal(midGate({ ...f, services: "UNSET", payinFlow: "UNSET", activeFlows: ["P2P"] }).result, "PASS");
+  // No TSP is live anywhere: nobody can meet the gate, so it only flags (Intent is checked at Approval).
+  const none = { ...f, tspsInUse: false, hasTsp: false, hasBank: false };
+  assert.equal(midGate(none).result, "REVIEW");
+  assert.match(midGate(none).summary, /no TSPs in use/);
+  assert.deepEqual(midGate(none).missing, []);
+  assert.equal(midGate({ ...none, payinFlow: "P2P" }).result, "REVIEW");
+  // Once TSPs are in use, a banker on none fails as before.
+  assert.equal(midGate({ ...none, tspsInUse: true }).result, "FAIL");
 });

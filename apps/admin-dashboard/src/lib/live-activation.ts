@@ -17,10 +17,11 @@
 // key and webhook helpers import this module to gate themselves.
 
 import { rows } from "@/lib/pg";
+import { wormAppend } from "@/lib/worm";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
 import { getProviderServices } from "@/lib/merchant-services-store";
 import { flowReadiness } from "@/lib/payin-flow-api";
-import { liveChecklistNeeds } from "@/lib/merchant-services";
+import { liveChecklistNeeds, liveSetupMissing, setupItems } from "@/lib/merchant-services";
 
 export type ActivationStatus = "NOT_REQUESTED" | "REQUESTED" | "ACTIVATED" | "REJECTED";
 export const ACTIVATION_STATUSES: ActivationStatus[] = ["NOT_REQUESTED", "REQUESTED", "ACTIVATED", "REJECTED"];
@@ -33,17 +34,20 @@ export class LiveModeNotActivatedError extends Error {
 }
 
 export class ActivationError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
     this.name = "ActivationError";
   }
 }
 
+/** Shortest note a Super Admin may switch live mode on with while its setup is incomplete. */
+export const SETUP_OVERRIDE_NOTE_MIN = 5;
+
 /** For route catch blocks: the HTTP status + body for an activation error, or null for any other. */
 export function activationErrorResponse(err: unknown): { status: number; body: { error: string; code?: string } } | null {
   if (err instanceof LiveModeNotActivatedError)
     return { status: 403, body: { error: err.message, code: "LIVE_MODE_NOT_ACTIVATED" } };
-  if (err instanceof ActivationError) return { status: err.status, body: { error: err.message } };
+  if (err instanceof ActivationError) return { status: err.status, body: { error: err.message, ...(err.code ? { code: err.code } : {}) } };
   return null;
 }
 
@@ -207,6 +211,19 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
   return items.filter((i): i is ChecklistItem => !!i);
 }
 
+/**
+ * What the banker still needs before it can take live money: the go-live SETUP gate's rule
+ * (lib/merchant-services setupItems), in plain words. A payout gateway is optional, so it is
+ * never asked for here. A failed lookup propagates: live mode is not switched on blind.
+ */
+async function setupMissing(code: string): Promise<string[]> {
+  const flow = await getEffectiveFlow(code);
+  const [services, ready] = await Promise.all([getProviderServices(flow.providerId), flowReadiness([code])]);
+  const r = ready.get(code);
+  return liveSetupMissing(setupItems(services, { flow: flow.flow, active: flow.active },
+    { upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: true }));
+}
+
 export interface ActivationState {
   merchant_code: string;
   status: ActivationStatus;
@@ -219,10 +236,15 @@ export interface ActivationState {
   checklist: ChecklistItem[];
   /** Every checklist item is done — the banker may request activation. */
   ready: boolean;
+  /**
+   * What the banker needs before it can take live money (plain words); empty when nothing.
+   * Live mode is refused while this is not empty, unless a Super Admin overrides with a note.
+   */
+  setup_missing: string[];
 }
 
 export async function activationState(code: string): Promise<ActivationState> {
-  const [row, items] = await Promise.all([currentRow(code), checklist(code)]);
+  const [row, items, missing] = await Promise.all([currentRow(code), checklist(code), setupMissing(code)]);
   return {
     merchant_code: code,
     status: row?.status ?? "NOT_REQUESTED",
@@ -234,6 +256,7 @@ export async function activationState(code: string): Promise<ActivationState> {
     reason: row?.reason ?? null,
     checklist: items,
     ready: items.every((i) => i.done),
+    setup_missing: missing,
   };
 }
 
@@ -263,21 +286,31 @@ export async function requestActivation(code: string, actor: string): Promise<Ac
      WHERE merchant_live_activation.status IN ('NOT_REQUESTED', 'REJECTED')
   `, [code, actor]);
   await logActivity(code, "LIVE_ACTIVATION_REQUESTED", actor, {});
-  if (autoActivate()) return decideActivation(code, "APPROVE", "system:auto", "checklist complete; approved automatically");
+  // Approved at once only when it can really take money; otherwise it waits for a person.
+  if (autoActivate() && !s.setup_missing.length)
+    return decideActivation(code, "APPROVE", "system:auto", "checklist complete; approved automatically");
   return activationState(code);
 }
 
 /**
  * A Super Admin approves or rejects. Approval may override an incomplete checklist (an operator can
- * know something the checks cannot see); the log records whether it did.
+ * know something the checks cannot see); the log records whether it did. It is refused while the
+ * banker cannot take live money (`setup_missing`, 409 SETUP_INCOMPLETE) unless `overrideSetup` is
+ * sent with a note of at least SETUP_OVERRIDE_NOTE_MIN characters, which is recorded.
  */
 export async function decideActivation(
   code: string, decision: "APPROVE" | "REJECT", actor: string, reason?: string | null,
+  opts: { overrideSetup?: boolean; actorId?: string } = {},
 ): Promise<ActivationState> {
   const s = await activationState(code);
   if (s.status === "ACTIVATED") throw new ActivationError(409, "live mode is already active");
   const why = reason?.trim() || null;
   if (decision === "REJECT" && !why) throw new ActivationError(400, "give a reason so the banker knows what to fix");
+  const overriding = decision === "APPROVE" && s.setup_missing.length > 0;
+  if (overriding && !opts.overrideSetup)
+    throw new ActivationError(409, `This account can't take live payments yet: ${s.setup_missing.join("; ")}.`, "SETUP_INCOMPLETE");
+  if (overriding && (why?.length ?? 0) < SETUP_OVERRIDE_NOTE_MIN)
+    throw new ActivationError(400, `Say why live mode should be switched on anyway: at least ${SETUP_OVERRIDE_NOTE_MIN} characters.`, "OVERRIDE_NOTE_REQUIRED");
   const status: ActivationStatus = decision === "APPROVE" ? "ACTIVATED" : "REJECTED";
   await rows("merchant", `
     INSERT INTO merchant_live_activation (merchant_code, status, decided_at, decided_by, reason)
@@ -286,7 +319,14 @@ export async function decideActivation(
        SET status = $2, decided_at = now(), decided_by = $3, reason = $4, updated_at = now()
   `, [code, status, actor, why]);
   activatedCache.delete(code);
-  await logActivity(code, `LIVE_ACTIVATION_${status}`, actor, { reason: why, checklist_complete: s.ready, previous: s.status });
+  await logActivity(code, `LIVE_ACTIVATION_${status}`, actor, { reason: why, checklist_complete: s.ready, previous: s.status,
+    ...(overriding ? { setup_override: true, setup_missing: s.setup_missing } : {}) });
+  // Recorded like an onboarding gate override (api/merchants/[id]/advance).
+  if (overriding)
+    await wormAppend({
+      actorId: opts.actorId, actorEmail: actor, action: "merchant.live_activation.setup_override",
+      resourceType: "merchant", resourceId: code, after: { setup_missing: s.setup_missing }, notes: why ?? "",
+    }).catch(() => {});
   return activationState(code);
 }
 

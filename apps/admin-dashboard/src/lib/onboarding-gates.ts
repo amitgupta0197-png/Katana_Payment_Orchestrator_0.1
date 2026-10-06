@@ -185,13 +185,15 @@ export async function gateSetup(m: OnboardingSubject): Promise<GateOutcome> {
  * (each made active by a second person). See midGate in lib/chain for what is required.
  */
 export async function gateMidIssuance(m: OnboardingSubject): Promise<GateOutcome> {
-  const [chain, flows] = await Promise.all([
+  const [chain, flows, live] = await Promise.all([
     rows<{ parent_tsp_id: string | null; issuing_bank_id: string | null }>("merchant",
       `SELECT parent_tsp_id::text, issuing_bank_id::text FROM merchants WHERE id = $1::uuid`, [m.id]),
     rows<{ flow: Flow }>("merchant", `SELECT DISTINCT flow FROM issued_mids WHERE merchant_id = $1::uuid AND status = 'ACTIVE'`, [m.id]),
+    rows<{ n: number }>("merchant", `SELECT COUNT(*)::int AS n FROM tsps WHERE stage = 'LIVE'`),
   ]);
   const setup = m.merchant_code ? await bankerSetup(m.merchant_code).catch(() => null) : null;
   const facts = {
+    tspsInUse: (live[0]?.n ?? 0) > 0,
     hasTsp: !!chain[0]?.parent_tsp_id, hasBank: !!chain[0]?.issuing_bank_id, activeFlows: flows.map((f) => f.flow),
     services: (setup?.services ?? "UNSET") as "PAYIN" | "PAYOUT" | "BOTH" | "UNSET",
     payinFlow: (setup?.flow.flow ?? "UNSET") as "P2P" | "INTENT" | "BOTH" | "UNSET",

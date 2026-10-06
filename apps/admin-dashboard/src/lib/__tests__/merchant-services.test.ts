@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  allowsPayin, allowsPayout, liveChecklistNeeds, suggestChoice, parseServices, setupItems, setupVerdict, validateOnboardingChoice, type SetupFacts,
+  allowsPayin, allowsPayout, liveChecklistNeeds, liveSetupMissing, suggestChoice, parseServices, setupItems, setupVerdict, validateOnboardingChoice, type SetupFacts,
 } from "@/lib/merchant-services";
 
 const none: SetupFacts = { upiId: false, payinGateway: false, payoutGateway: false };
@@ -31,6 +31,21 @@ test("creating a merchant: pay-in needs a flow, Both flows need the one in use, 
   assert.match(validateOnboardingChoice("PAYIN", "BOTH", null)!, /select the default flow/);
   assert.match(validateOnboardingChoice("PAYIN", "P2P", "P2P")!, /only selected for Both/);
   assert.match(validateOnboardingChoice("PAYOUT", "P2P", null)!, /no pay-in flow/);
+});
+
+test("live mode waits for what the banker needs to take money, in plain words", () => {
+  // PAYATOM on 2026-10-06: its merchant chose nothing, the banker itself is on Intent, no gateway.
+  assert.deepEqual(liveSetupMissing(setupItems("UNSET", { flow: "INTENT", active: null }, none)),
+    ["Connect a payment account for Intent payments first"]);
+  assert.deepEqual(liveSetupMissing(setupItems("PAYIN", { flow: "P2P", active: null }, none)),
+    ["Save the UPI ID where P2P payments arrive first"]);
+  assert.deepEqual(liveSetupMissing(setupItems("PAYIN", { flow: "BOTH", active: "INTENT" }, { ...none, payinGateway: true })), [],
+    "with Both, only the flow in use is required");
+  assert.deepEqual(liveSetupMissing(setupItems("PAYOUT", { flow: "UNSET", active: null }, none)), [], "pay-out only needs no pay-in setup");
+  assert.deepEqual(liveSetupMissing(setupItems("BOTH", { flow: "P2P", active: null }, { ...none, upiId: true })), [],
+    "a payout gateway is optional");
+  assert.deepEqual(liveSetupMissing(setupItems("UNSET", { flow: "UNSET", active: null }, none)), [],
+    "a banker nobody chose for keeps today's behaviour");
 });
 
 test("a P2P banker needs its UPI ID, an Intent banker its gateway; neither is asked for the other's", () => {

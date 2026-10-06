@@ -322,6 +322,8 @@ export function maskMid(v: string): string {
 // ── The MID_ISSUANCE onboarding step ────────────────────────────────────────────────────────
 
 export interface MidGateFacts {
+  /** Any TSP is LIVE on the platform. While none is, bank-issued MIDs are not in use at all. */
+  tspsInUse: boolean;
   hasTsp: boolean;
   hasBank: boolean;
   /** Flows of the banker's ACTIVE MIDs. */
@@ -335,9 +337,13 @@ export interface MidGateFacts {
  * The MID_ISSUANCE gate. FAIL (a Super Admin may override with a note) when the banker has no
  * TSP or issuing bank, or takes Intent pay-ins with no ACTIVE Intent MID. A P2P pay-in lands
  * on the banker's own UPI ID, so it needs no bank MID; a missing payout MID, or a merchant
- * nobody chose for, is only flagged (REVIEW).
+ * nobody chose for, is only flagged (REVIEW). While no TSP is LIVE on the platform nobody can
+ * meet it, so it is only flagged: Intent payments then go through a connected payment account,
+ * which the Approval step's SETUP gate checks.
  */
 export function midGate(f: MidGateFacts): { result: "PASS" | "REVIEW" | "FAIL"; summary: string; missing: Flow[] } {
+  if (!f.tspsInUse && !f.hasTsp)
+    return { result: "REVIEW", summary: "no TSPs in use yet: Intent payments go through a connected payment account (checked at Approval)", missing: [] };
   if (!f.hasTsp) return { result: "FAIL", summary: "the banker is on no TSP", missing: [] };
   if (!f.hasBank) return { result: "FAIL", summary: "the banker has no issuing bank", missing: [] };
   const payin = f.services !== "PAYOUT";

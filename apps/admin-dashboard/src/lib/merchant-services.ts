@@ -105,6 +105,22 @@ export function setupItems(services: MerchantServicesSetting, flow: MerchantFlow
   return items;
 }
 
+// What each required item means to a person turning live mode on: what to do, in plain words.
+const LIVE_SETUP_WORDS: Partial<Record<SetupKey, string>> = {
+  CHOICE: "Choose how this merchant's customers pay (P2P, Intent or both) first",
+  P2P_UPI_ID: "Save the UPI ID where P2P payments arrive first",
+  INTENT_GATEWAY: "Connect a payment account for Intent payments first",
+};
+
+/**
+ * Why live mode cannot be switched on yet (lib/live-activation): one line per required item that
+ * is missing, the same rule as the go-live SETUP gate. Empty when nothing required is missing,
+ * which includes every banker nobody chose a flow for.
+ */
+export function liveSetupMissing(items: SetupItem[]): string[] {
+  return items.filter((i) => i.state === "MISSING").map((i) => LIVE_SETUP_WORDS[i.key] ?? i.label);
+}
+
 /** The go-live gate over those items: a required one missing fails, an optional one asks for a look. */
 export function setupVerdict(items: SetupItem[]): { result: "PASS" | "REVIEW" | "FAIL"; summary: string } {
   const missing = items.filter((i) => i.state === "MISSING");
