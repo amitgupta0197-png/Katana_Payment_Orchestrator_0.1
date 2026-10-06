@@ -43,6 +43,9 @@ export async function handlePayinWebhook(req: Request, input: {
   // Every event that arrives is recorded (lib/gateway-webhook-log), whatever comes of it.
   const seen = { gateway: input.provider, txnId: txnid || null };
   if (!txnid) {
+    // Field names only (never values): shows where this gateway puts its order reference.
+    const keysOf = (o: unknown) => (o && typeof o === "object" ? Object.keys(o).join(",") : "");
+    console.warn(`[gateway-webhook] ${input.provider} event with no order reference; keys=${keysOf(b.json)} data.keys=${keysOf((b.json as any)?.data)}`);
     recordGatewayWebhook({ ...seen, outcome: "IGNORED" });
     return ok({ ok: true, ignored: "no order reference" });
   }

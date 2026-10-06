@@ -57,6 +57,9 @@ export interface ChecklistItem { key: "PING" | "WEBHOOK" | "STATUS" | "RECORD"; 
 
 /** PayU with a Client ID + Secret is confirmed from its Payment Links API and sends no webhook. */
 export function gatewaySendsWebhooks(gateway: string, auth?: string | null): boolean {
+  // RubyVault's callbacks carry no order reference Katana can match yet (every one so far was
+  // IGNORED), so a paid live order confirmed by its status API stands in, as for PayU Client ID.
+  if (gateway === "RUBYVAULT") return false;
   return !(gateway === "PAYU" && auth === "client_credentials");
 }
 

@@ -53,6 +53,7 @@ test("PayU with a Client ID sends no webhook; every other account does", () => {
   assert.equal(gatewaySendsWebhooks("PAYU", "client_credentials"), false);
   assert.equal(gatewaySendsWebhooks("PAYU", "key_salt"), true);
   assert.equal(gatewaySendsWebhooks("RAZORPAY", null), true);
+  assert.equal(gatewaySendsWebhooks("RUBYVAULT", "key_salt"), false);
 });
 
 const gw = (o: Partial<Omit<GatewayHealth, "alerts">> = {}): Omit<GatewayHealth, "alerts"> => ({
