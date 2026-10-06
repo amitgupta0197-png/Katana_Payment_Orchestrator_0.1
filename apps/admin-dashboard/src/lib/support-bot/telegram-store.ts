@@ -4,17 +4,19 @@
 
 import { rows } from "@/lib/pg";
 import { createConversation } from "@/lib/support-bot/store";
-import { envStaffIds, newLinkCode } from "@/lib/support-bot/telegram-rules";
+import { answerModeOf, envStaffIds, newLinkCode, type AnswerMode } from "@/lib/support-bot/telegram-rules";
 import type { ScopeKey } from "@/lib/support-bot/scope";
 
 export interface TgGroup {
   chat_id: string; title: string | null; username: string | null; scope_key: ScopeKey | null;
   status: "ACTIVE" | "PAUSED"; linked_by: string | null; linked_at: string | null;
   unlinked_notice_at: string | null; conversation_id: string | null; conversation_day: string | null;
+  /** When the bot answers in this group (merchant 0025). */
+  answer_mode: AnswerMode;
 }
 
 const GROUP_COLS = `chat_id::text, title, username, scope_key, status, linked_by, linked_at, unlinked_notice_at,
-  conversation_id::text, conversation_day::text`;
+  conversation_id::text, conversation_day::text, answer_mode`;
 const IST_TODAY = `(now() AT TIME ZONE 'Asia/Kolkata')::date`;
 const IST_DAY_START = `(date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')`;
 
@@ -26,18 +28,25 @@ export async function touchGroup(chatId: number, title: string | null, username:
       username = EXCLUDED.username, updated_at = now()
     RETURNING ${GROUP_COLS}
   `, [chatId, title, username]);
-  return r[0];
+  return { ...r[0], answer_mode: answerModeOf(r[0]?.answer_mode) };
 }
 
 export async function getGroup(chatId: number | string): Promise<TgGroup | null> {
-  return (await rows<TgGroup>("merchant", `SELECT ${GROUP_COLS} FROM support_bot_tg_groups WHERE chat_id = $1::bigint`, [chatId]))[0] ?? null;
+  const g = (await rows<TgGroup>("merchant", `SELECT ${GROUP_COLS} FROM support_bot_tg_groups WHERE chat_id = $1::bigint`, [chatId]))[0];
+  return g ? { ...g, answer_mode: answerModeOf(g.answer_mode) } : null;
+}
+
+/** Only /ask (cheapest) or every question. */
+export async function setGroupMode(chatId: number | string, mode: AnswerMode): Promise<boolean> {
+  const r = await rows("merchant", `UPDATE support_bot_tg_groups SET answer_mode = $2, updated_at = now() WHERE chat_id = $1::bigint RETURNING 1`, [chatId, mode]);
+  return r.length > 0;
 }
 
 /** Telegram moved a group to a supergroup: the link moves with it. */
 export async function migrateGroup(fromChat: number, toChat: number): Promise<void> {
   await rows("merchant", `
-    INSERT INTO support_bot_tg_groups (chat_id, title, username, scope_key, status, linked_by, linked_at, unlinked_notice_at)
-    SELECT $2, title, username, scope_key, status, linked_by, linked_at, unlinked_notice_at FROM support_bot_tg_groups WHERE chat_id = $1
+    INSERT INTO support_bot_tg_groups (chat_id, title, username, scope_key, status, linked_by, linked_at, unlinked_notice_at, answer_mode)
+    SELECT $2, title, username, scope_key, status, linked_by, linked_at, unlinked_notice_at, answer_mode FROM support_bot_tg_groups WHERE chat_id = $1
     ON CONFLICT (chat_id) DO UPDATE SET scope_key = COALESCE(support_bot_tg_groups.scope_key, EXCLUDED.scope_key),
       linked_by = COALESCE(support_bot_tg_groups.linked_by, EXCLUDED.linked_by),
       linked_at = COALESCE(support_bot_tg_groups.linked_at, EXCLUDED.linked_at), updated_at = now()

@@ -14,8 +14,10 @@ import { rows } from "@/lib/pg";
 import type { askSupportBot } from "@/lib/support-bot/bot";
 import { handleTelegramUpdate } from "@/lib/support-bot/telegram";
 import { forgetTgMe } from "@/lib/support-bot/telegram-api";
-import { addStaff, createLinkCode, removeStaff, setGroupStatus } from "@/lib/support-bot/telegram-store";
-import { BOT_IDENTITY_REPLY, ESCALATION_REPLY, LINKED_REPLY, NOT_LINKED_REPLY } from "@/lib/support-bot/telegram-rules";
+import { addStaff, createLinkCode, removeStaff, setGroupMode, setGroupStatus } from "@/lib/support-bot/telegram-store";
+import { BOT_IDENTITY_REPLY, BUDGET_REPLY, ESCALATION_REPLY, HELP_REPLY, LINKED_REPLY, NOT_LINKED_REPLY } from "@/lib/support-bot/telegram-rules";
+import type { gateMessage } from "@/lib/support-bot/gate";
+import type { BudgetState } from "@/lib/support-bot/budget";
 
 const HOST = process.env.PG_HOST ?? "localhost";
 const LOCAL = ["localhost", "127.0.0.1", "::1"].includes(HOST);
@@ -23,7 +25,7 @@ const opts = { skip: LOCAL ? false : `refusing to write to a non-local database 
 const BANKER = process.env.TEST_BANKER ?? "M10001";
 const BOT_ID = 990001, STAFF_ID = 770001, MERCHANT_ID = 550001, STAFF_CHAT = -880001;
 const R = Number(String(Date.now()).slice(-6));
-const CHAT = -1000000000000 - R, CHAT2 = CHAT - 1;
+const CHAT = -1000000000000 - R, CHAT2 = CHAT - 1, CHAT3 = CHAT - 2;
 
 // ── The stand-in Telegram ─────────────────────────────────────────────────────────────────
 const sent: { chat_id: number; text: string; reply_to: number | null }[] = [];
@@ -57,15 +59,15 @@ after(async () => {
   server?.close();
   if (!LOCAL) return;
   await removeStaff(STAFF_ID);
-  const convs = await rows<{ id: string }>("merchant", `SELECT conversation_id::text AS id FROM support_bot_tg_answers WHERE chat_id IN ($1, $2) AND conversation_id IS NOT NULL`, [CHAT, CHAT2]);
-  await rows("merchant", `DELETE FROM support_bot_tg_answers WHERE chat_id IN ($1, $2)`, [CHAT, CHAT2]);
-  await rows("merchant", `DELETE FROM support_bot_tg_inbox WHERE chat_id IN ($1, $2)`, [CHAT, CHAT2]);
-  await rows("merchant", `DELETE FROM support_bot_tg_groups WHERE chat_id IN ($1, $2)`, [CHAT, CHAT2]);
-  await rows("merchant", `DELETE FROM support_bot_tg_link_codes WHERE used_chat IN ($1, $2) OR created_by = 'itest'`, [CHAT, CHAT2]);
+  const convs = await rows<{ id: string }>("merchant", `SELECT conversation_id::text AS id FROM support_bot_tg_answers WHERE chat_id IN ($1, $2, $3) AND conversation_id IS NOT NULL`, [CHAT, CHAT2, CHAT3]);
+  await rows("merchant", `DELETE FROM support_bot_tg_answers WHERE chat_id IN ($1, $2, $3)`, [CHAT, CHAT2, CHAT3]);
+  await rows("merchant", `DELETE FROM support_bot_tg_inbox WHERE chat_id IN ($1, $2, $3)`, [CHAT, CHAT2, CHAT3]);
+  await rows("merchant", `DELETE FROM support_bot_tg_groups WHERE chat_id IN ($1, $2, $3)`, [CHAT, CHAT2, CHAT3]);
+  await rows("merchant", `DELETE FROM support_bot_tg_link_codes WHERE used_chat IN ($1, $2, $3) OR created_by = 'itest'`, [CHAT, CHAT2, CHAT3]);
   await rows("merchant", `DELETE FROM support_bot_tg_updates WHERE update_id >= $1`, [R * 1000]);
   await rows("merchant", `DELETE FROM support_bot_conversations WHERE id = ANY($1::uuid[]) OR started_by LIKE $2`,
     [convs.map((c) => c.id), `telegram:${CHAT}%`]);
-  await rows("merchant", `DELETE FROM support_bot_conversations WHERE started_by IN ($1, $2)`, [`telegram:${CHAT}`, `telegram:${CHAT2}`]);
+  await rows("merchant", `DELETE FROM support_bot_conversations WHERE started_by IN ($1, $2, $3)`, [`telegram:${CHAT}`, `telegram:${CHAT2}`, `telegram:${CHAT3}`]);
 });
 
 // ── The stub model ────────────────────────────────────────────────────────────────────────
@@ -80,7 +82,13 @@ const ask: typeof askSupportBot = async (input) => {
     usage: { model: "stub", tier: "LIGHT", rounds: 1, ms: 1, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost_usd_estimate: 0, stop_reason: "end_turn" },
   } as Awaited<ReturnType<typeof askSupportBot>>;
 };
-const deps = { ask, sleep: async () => {} };
+// The cheap first check and the spending cap, stubbed too.
+let gateVerdicts: ("ANSWER" | "SILENT" | "ESCALATE")[] = [];
+const gated: string[] = [];
+const gate: typeof gateMessage = async (q) => { gated.push(q); return { verdict: gateVerdicts.shift() ?? "ANSWER", costUsd: 0.0001, model: "stub-gate" }; };
+let stopped = false;
+const budget = async (): Promise<BudgetState> => ({ spentInr: stopped ? 600 : 1, capInr: 500, ratio: stopped ? 1.2 : 0, warnNow: false, stop: stopped });
+const deps = { ask, gate, budget, sleep: async () => {} };
 
 let u = R * 1000, m = 1;
 const chat = (id = CHAT) => ({ id, type: "supergroup", title: "ITEST merchant group" });
@@ -98,6 +106,8 @@ test("a new group is told once it isn't set up, then linked with a code", opts, 
   assert.deepEqual(take().map((s) => s.text), [LINKED_REPLY]);
   await handleTelegramUpdate(message(`/link ${code}`), deps);
   assert.match(take()[0].text, /isn't valid/, "a code works once");
+  // The tests below are for a group that answers every question.
+  await setGroupMode(CHAT, "EVERY_QUESTION");
 });
 
 test("answers a question as a person would type it, in reply", opts, async () => {
@@ -153,7 +163,7 @@ test("a burst of messages gets one answer", opts, async () => {
   replies = ["Checked it, the order is waiting for the customer to pay."];
   const first = message("order not working");
   const second = message("txnid BBUY88-1791293656407 is still pending?");
-  await handleTelegramUpdate(first, { ask, sleep: async () => { await handleTelegramUpdate(second, deps); } });
+  await handleTelegramUpdate(first, { ...deps, sleep: async () => { await handleTelegramUpdate(second, deps); } });
   assert.equal(asked.length, before + 1, "asked once for both");
   assert.match(asked[asked.length - 1], /order not working[\s\S]*BBUY88-1791293656407/);
   const s = take();
@@ -169,4 +179,74 @@ test("the link survives a supergroup move; a paused group gets nothing", opts, a
   await setGroupStatus(CHAT2, "PAUSED");
   await handleTelegramUpdate(message("is it live?", MERCHANT_ID, {}, CHAT2), deps);
   assert.equal(take().length, 0);
+});
+
+test("every-question groups: the first check stops a message before the full assistant", opts, async () => {
+  // The group moved to CHAT2 above (an every-question group); resume it.
+  await setGroupStatus(CHAT2, "ACTIVE");
+  const before = asked.length;
+  gateVerdicts = ["SILENT"];
+  await handleTelegramUpdate(message("we will update the order list tomorrow, is that okay?", MERCHANT_ID, {}, CHAT2), deps);
+  assert.equal(asked.length, before, "the full assistant was not asked");
+  assert.equal(take().length, 0);
+  gateVerdicts = ["ESCALATE"];
+  await handleTelegramUpdate(message("why is my settlement late?", MERCHANT_ID, {}, CHAT2), deps);
+  assert.equal(asked.length, before);
+  assert.deepEqual(take().filter((x) => x.chat_id === CHAT2).map((x) => x.text), [ESCALATION_REPLY]);
+});
+
+test("at today's spending cap the team answers, and the model is not asked", opts, async () => {
+  const before = asked.length;
+  stopped = true;
+  try {
+    await handleTelegramUpdate(message("is the callback failing for 1vcevl?", MERCHANT_ID, {}, CHAT2), deps);
+    assert.equal(asked.length, before);
+    assert.deepEqual(take().filter((x) => x.chat_id === CHAT2).map((x) => x.text), [BUDGET_REPLY]);
+  } finally { stopped = false; }
+});
+
+test("only-/ask groups (the default): ordinary messages cost nothing; /ask, '/ …', /ask on a reply and follow-ups are answered", opts, async () => {
+  const { code } = await createLinkCode(`banker:${BANKER}`, "itest");
+  await handleTelegramUpdate(message(`/link ${code}`, MERCHANT_ID, {}, CHAT3), deps);
+  take();
+  const asked0 = asked.length, gated0 = gated.length;
+
+  await handleTelegramUpdate(message("why did order 1vcevl fail?", MERCHANT_ID, {}, CHAT3), deps);
+  assert.equal(asked.length, asked0, "a plain question is not answered");
+  assert.equal(gated.length, gated0, "and not even the first check runs");
+  assert.equal(take().length, 0);
+  const inbox = await rows("merchant", `SELECT 1 FROM support_bot_tg_inbox WHERE chat_id = $1`, [CHAT3]);
+  assert.equal(inbox.length, 0, "nothing is stored for it");
+
+  await handleTelegramUpdate(message("/help", MERCHANT_ID, {}, CHAT3), deps);
+  assert.deepEqual(take().map((x) => x.text), [HELP_REPLY]);
+
+  replies = ["It expired at 2:40 PM before the customer paid."];
+  await handleTelegramUpdate(message("/ask why did order 1vcevl fail?", MERCHANT_ID, {}, CHAT3), deps);
+  assert.equal(asked[asked.length - 1], "why did order 1vcevl fail?");
+  assert.equal(take().length, 1);
+
+  replies = ["Yes."];
+  await handleTelegramUpdate(message("/ask@KatanaTestBot is it live?", MERCHANT_ID, {}, CHAT3), deps);
+  assert.equal(asked[asked.length - 1], "is it live?");
+  replies = ["Yes."];
+  await handleTelegramUpdate(message("/ what is my minimum?", MERCHANT_ID, {}, CHAT3), deps);
+  assert.equal(asked[asked.length - 1], "what is my minimum?");
+  take();
+
+  replies = ["That order is still waiting for payment."];
+  await handleTelegramUpdate(message("/ask", MERCHANT_ID, { reply_to_message: { message_id: 5, from: { id: 1234, is_bot: false }, text: "order BBUY88-1791 pending since 10 min" } }, CHAT3), deps);
+  assert.equal(asked[asked.length - 1], "order BBUY88-1791 pending since 10 min", "asks about the message it replies to");
+  take();
+
+  replies = ["Then it will turn Paid on its own."];
+  await handleTelegramUpdate(message("and if they pay now?", MERCHANT_ID, { reply_to_message: { message_id: 6, from: { id: BOT_ID, is_bot: true }, text: "That order is still waiting for payment." } }, CHAT3), deps);
+  assert.equal(asked[asked.length - 1], "and if they pay now?", "a reply to the bot is a follow-up");
+  take();
+
+  const before = asked.length;
+  await handleTelegramUpdate(message("/ask please refund txnid 1vcevl", MERCHANT_ID, {}, CHAT3), deps);
+  assert.equal(asked.length, before, "refunds still go to a person");
+  assert.deepEqual(take().filter((x) => x.chat_id === CHAT3).map((x) => x.text), [ESCALATION_REPLY]);
+  assert.equal(gated.length, gated0, "/ask never needs the first check");
 });

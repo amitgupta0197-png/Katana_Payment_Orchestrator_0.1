@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 
 interface Group {
   chat_id: string; title: string | null; scope_key: string | null; status: "ACTIVE" | "PAUSED";
-  linked_at: string | null; today: number; last_answer_at: string | null;
+  linked_at: string | null; today: number; last_answer_at: string | null; answer_mode: "COMMAND_ONLY" | "EVERY_QUESTION";
 }
 interface Answer {
   id: string; chat_id: string; title: string | null; outcome: string; reason: string | null;
@@ -24,6 +24,7 @@ interface Answer {
 interface Data {
   enabled: boolean; paused_all: boolean; daily_limit: number; staff_chat_set: boolean;
   groups: Group[]; staff: { user_id: string; name: string | null }[]; env_staff_ids: string[]; answers: Answer[];
+  budget: { spent_inr: number; cap_inr: number; stopped: boolean } | null; can_set_budget: boolean;
 }
 
 const muted = "text-[color:var(--color-text-muted)]";
@@ -55,6 +56,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
   const [code, setCode] = useState<{ code: string; expires_at: string; for: string } | null>(null);
   const [staffId, setStaffId] = useState("");
   const [staffName, setStaffName] = useState("");
+  const [cap, setCap] = useState("");
   const act = useMutation({
     mutationFn: post,
     onSuccess: (d, body: Action) => {
@@ -77,7 +79,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
           </CardTitle>
           <CardDescription>
             The assistant answers merchants&apos; questions in their Telegram groups by itself, about the account each group is linked to.
-            Money owed, refunds, disputes, account changes and complaints go to the team. Up to {d?.daily_limit ?? 150} answers per group a day.
+            By default it answers only messages that start with /ask. Money owed, refunds, disputes, account changes and complaints go to the team. Up to {d?.daily_limit ?? 150} answers per group a day.
             {d && !d.staff_chat_set && " Escalations go to the ops alerts until TELEGRAM_SUPPORT_STAFF_CHAT is set."}
           </CardDescription>
         </CardHeader>
@@ -93,6 +95,20 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
               </Button>
             )}
           </div>
+          {d?.budget && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm">
+              <span className="font-medium">Spent today</span>
+              <InfoTip label="today's spend">What the assistant cost today, in all chats and portals together. At the cap it stops and the team answers. It starts again at midnight.</InfoTip>
+              <span>₹{d.budget.spent_inr.toFixed(2)} of ₹{d.budget.cap_inr}</span>
+              {d.budget.stopped && <Badge variant="danger">Cap reached: the team answers</Badge>}
+              {d.can_set_budget && (
+                <span className="ml-auto flex items-center gap-1">
+                  <Input className="h-8 w-28" inputMode="numeric" placeholder={`₹${d.budget.cap_inr}`} value={cap} onChange={(e) => setCap(e.target.value.replace(/\D/g, ""))} />
+                  <Button size="sm" variant="secondary" disabled={!cap || act.isPending} onClick={() => { act.mutate({ action: "budget", inr: Number(cap) }); setCap(""); }}>Set daily cap</Button>
+                </span>
+              )}
+            </div>
+          )}
           {code && (
             <div className="rounded-md border px-3 py-2 text-sm">
               In the Telegram group for <b>{code.for}</b>, post: <code className="font-mono">/link {code.code}</code>
@@ -103,13 +119,22 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className={`text-left text-xs ${muted}`}>
-                <tr><th className="py-1 pr-3">Group</th><th className="pr-3">Linked to</th><th className="pr-3">Status</th><th className="pr-3">Today</th><th className="pr-3">Last answer</th><th /></tr>
+                <tr><th className="py-1 pr-3">Group</th><th className="pr-3">Linked to</th>
+                  <th className="pr-3"><span className="inline-flex items-center gap-1">Answers <InfoTip label="answer mode">Only /ask is cheapest: the assistant answers only messages that start with /ask, and replies to its own answers. Every question answers anything that looks like a question, and costs more.</InfoTip></span></th>
+                  <th className="pr-3">Status</th><th className="pr-3">Today</th><th className="pr-3">Last answer</th><th /></tr>
               </thead>
               <tbody>
                 {(d?.groups ?? []).map((g) => (
                   <tr key={g.chat_id} className="border-t">
                     <td className="py-2 pr-3">{g.title ?? g.chat_id}</td>
                     <td className="pr-3 font-mono text-xs">{g.scope_key ?? <span className={muted}>not linked</span>}</td>
+                    <td className="pr-3">
+                      <select aria-label="When the assistant answers" className="h-8 rounded-md border bg-transparent px-2 text-xs" value={g.answer_mode ?? "COMMAND_ONLY"}
+                        disabled={act.isPending} onChange={(e) => act.mutate({ action: "mode", chat_id: g.chat_id, mode: e.target.value })}>
+                        <option value="COMMAND_ONLY">Only /ask (cheapest)</option>
+                        <option value="EVERY_QUESTION">Every question</option>
+                      </select>
+                    </td>
                     <td className="pr-3">{g.status === "ACTIVE" ? <Badge variant="success">Active</Badge> : <Badge variant="warning">Paused</Badge>}</td>
                     <td className="pr-3">{g.today}</td>
                     <td className={`pr-3 ${muted}`}>{when(g.last_answer_at)}</td>
@@ -124,7 +149,7 @@ export function TelegramPanel({ scope, scopeName }: { scope: string | null; scop
                     </td>
                   </tr>
                 ))}
-                {d && d.groups.length === 0 && <tr><td colSpan={6} className={`py-4 text-center ${muted}`}>The bot isn&apos;t in any group yet.</td></tr>}
+                {d && d.groups.length === 0 && <tr><td colSpan={7} className={`py-4 text-center ${muted}`}>The bot isn&apos;t in any group yet.</td></tr>}
               </tbody>
             </table>
           </div>

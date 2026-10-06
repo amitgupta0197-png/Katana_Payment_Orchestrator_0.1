@@ -21,6 +21,11 @@ import { createConversation, getConversation, listConversations, loadHistory, sa
 import { parseScopeKey, resolveScope, type ScopeKey } from "@/lib/support-bot/scope";
 import { botUser, canRead, dailyLimit, questionsToday } from "@/lib/support-bot/access";
 import { readImages } from "@/lib/support-bot/images";
+import { budgetNow } from "@/lib/support-bot/budget-store";
+import { raiseAlert } from "@/lib/ops-alert";
+
+/** Shown to a merchant while the assistant is over today's spending cap. */
+const RESTING = "The assistant is resting for today. The team has your question and will reply.";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -108,6 +113,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "You have reached today's limit of questions. Please contact Katana support, or try again tomorrow.", code: "DAILY_LIMIT" }, { status: 429 });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 
+  // The day's spending cap (all channels). Merchants' questions then go to the team; staff can
+  // still test.
+  if (!u.staff) {
+    const spend = await budgetNow().catch(() => null);
+    if (spend?.stop) {
+      await raiseAlert({
+        key: `support-bot:budget:question:${scopeKey}:${Date.now()}`, severity: "WARN",
+        title: "A merchant asked the assistant after today's spending cap",
+        body: `${scopeKey}: ${body.text.slice(0, 1200) || "[a screenshot]"}`,
+      }).catch(() => {});
+      return NextResponse.json({ error: RESTING, code: "BUDGET" }, { status: 429 });
+    }
+  }
+
   const scope = await resolveScope(scopeKey).catch(() => null);
   if (!scope) return NextResponse.json({ error: "banker or merchant not found" }, { status: 404 });
   if (!scope.accounts.length) return NextResponse.json({ error: "No account is linked yet, so there is nothing to look up.", code: "NO_ACCOUNT" }, { status: 409 });
@@ -127,6 +146,7 @@ export async function POST(req: Request) {
         });
         if (!conversationId) conversationId = await createConversation(key, channel, body.text, by);
         const answerId = await saveTurn(conversationId, { ...turn, question: body.text, images: img.images }, by);
+        await budgetNow({ alert: true }).catch(() => {});
         send({
           type: "done", conversation_id: conversationId,
           answer: { id: answerId, text: turn.reply, ...(u.staff ? { trace: turn.trace, usage: turn.usage } : {}) },

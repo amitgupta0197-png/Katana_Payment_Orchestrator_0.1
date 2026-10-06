@@ -77,8 +77,80 @@ export function escalationReason(text: string): EscalationReason | null {
 
 export const ESCALATION_REPLY = "Got it, I've passed this to the team. Someone will reply here shortly.";
 export const LIMIT_REPLY = "Passing this one to the team, someone will reply here shortly.";
-export const NOT_LINKED_REPLY = "Hi, this is Katana's support assistant. This group isn't set up with me yet, so I can't look anything up. The team will link it.";
-export const LINKED_REPLY = "Done, this group is set up. I'll answer questions about orders, payments, callbacks and integration here. Anything about money owed, refunds or account changes goes to the team.";
+export const HELP_REPLY = "To ask me something, start your message with /ask. Example: /ask why did order 1234 fail?";
+export const NOT_LINKED_REPLY = "Hi, this is Katana's support assistant. This group isn't set up with me yet, so I can't look anything up. The team will link it. After that, start a message with /ask to ask me something.";
+export const LINKED_REPLY = `Done, this group is set up. I'll answer questions about orders, payments, callbacks and integration here. Anything about money owed, refunds or account changes goes to the team. ${HELP_REPLY}`;
+export const BUDGET_REPLY = "Passing this one to the team, someone will reply here shortly.";
+
+// ── When to answer: per group ──────────────────────────────────────────────────────────────
+
+/**
+ * COMMAND_ONLY (the default, cheapest): only `/ask …`, `/ …`, `/ask` sent as a reply to another
+ * message, and replies to the bot's own answers. Everything else costs nothing.
+ * EVERY_QUESTION: every message that looks like a question, through the cheap gate first.
+ */
+export type AnswerMode = "COMMAND_ONLY" | "EVERY_QUESTION";
+export const ANSWER_MODES: readonly AnswerMode[] = ["COMMAND_ONLY", "EVERY_QUESTION"];
+export const answerModeOf = (v: unknown): AnswerMode => (v === "EVERY_QUESTION" ? "EVERY_QUESTION" : "COMMAND_ONLY");
+
+/** `/ask …`, `/ask@Bot …` or a bare `/ …`: the question after it ("" for `/ask` alone). Null if not an ask. */
+export function parseAsk(text: string): { text: string } | null {
+  const t = text.trim();
+  const m = /^\/ask(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(t);
+  if (m) return { text: (m[1] ?? "").trim() };
+  const bare = /^\/\s+([\s\S]+)$/.exec(t);
+  return bare ? { text: bare[1].trim() } : null;
+}
+
+/** What a message asks the bot to answer, by the group's mode. */
+export type Trigger =
+  | { kind: "ASK"; text: string; usePhoto: "OWN" | "REPLIED" | null }   // answer this text (and photo)
+  | { kind: "HELP" }                                                     // `/help`, or `/ask` with nothing to answer
+  | { kind: "CONSIDER" }                                                 // EVERY_QUESTION: the usual filter + gate
+  | { kind: "IGNORE"; why: string };
+
+export function triggerFor(mode: AnswerMode, m: {
+  text: string; hasPhoto: boolean; replyToBot: boolean;
+  /** The message this one replies to (another person's), if any. */
+  replied?: { text: string; hasPhoto: boolean } | null;
+}): Trigger {
+  const t = m.text.trim();
+  if (/^\/help(?:@\w+)?\s*$/i.test(t)) return { kind: "HELP" };
+  const ask = parseAsk(t);
+  if (ask) {
+    if (ask.text) return { kind: "ASK", text: ask.text, usePhoto: m.hasPhoto ? "OWN" : null };
+    if (m.replied && (m.replied.text.trim() || m.replied.hasPhoto))
+      return { kind: "ASK", text: m.replied.text.trim(), usePhoto: m.replied.hasPhoto ? "REPLIED" : null };
+    return { kind: "HELP" };
+  }
+  if (m.replyToBot && (t || m.hasPhoto)) return { kind: "ASK", text: t, usePhoto: m.hasPhoto ? "OWN" : null };
+  if (mode === "EVERY_QUESTION") return { kind: "CONSIDER" };
+  return { kind: "IGNORE", why: "only /ask in this group" };
+}
+
+// ── The cheap gate (EVERY_QUESTION) ─────────────────────────────────────────────────────────
+
+/** The gate's whole prompt: short, so a decision costs a fraction of a full answer. */
+export const GATE_SYSTEM = [
+  "You sort messages in a payment company's merchant support chat. Reply with exactly one word.",
+  "ANSWER: a question or problem about payments, orders, API errors, callbacks, keys, limits, going live or payouts that a support assistant should answer.",
+  "ESCALATE: refunds, money debited but not received, disputes, chargebacks, bank or account changes, payout requests, complaints, anger.",
+  "SILENT: anything else (people talking to each other, announcements, greetings, thanks, updates that need no reply).",
+].join("\n");
+
+export type GateVerdict = "ANSWER" | "SILENT" | "ESCALATE";
+
+/** The gate's one word; anything unclear is SILENT (no spend, no reply). */
+export function parseGate(reply: string): GateVerdict {
+  const w = reply.trim().toUpperCase().replace(/[^A-Z]/g, " ").trim().split(/\s+/)[0] ?? "";
+  return w === "ANSWER" || w === "ESCALATE" ? w : "SILENT";
+}
+
+/** What the gate reads: the last two messages for context, then the message. */
+export function gateInput(question: string, context: string[] = []): string {
+  const ctx = context.filter((c) => c.trim()).slice(-2).map((c) => `Earlier: ${c.trim().slice(0, 300)}`);
+  return [...ctx, `Message: ${question.trim().slice(0, 1500)}`].join("\n");
+}
 
 /**
  * What the model is told on Telegram, besides the support bot's own instructions: it may stay
@@ -171,6 +243,7 @@ export function splitForTelegram(text: string, max = TG_MAX): string[] {
 }
 
 export type TgCommand = { cmd: "link"; code: string } | { cmd: "unlink" } | { cmd: "start" } | null;
+// (/ask and /help are read by triggerFor, not parseCommand.)
 
 /** `/link CODE`, `/unlink`, `/start`, also as `/link@BotName CODE`. */
 export function parseCommand(text: string): TgCommand {

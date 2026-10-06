@@ -8,8 +8,9 @@
 //   fallback   server-side `fallbacks: "default"` where the model takes it: a request a safety
 //              classifier declines is re-run on Anthropic's recommended model instead of
 //              coming back as a refusal.
-//   caching    the instructions and tool list are the same for every request and cached; the
-//              scope line after them is not.
+//   caching    the tool list, the instructions and the channel note are the same for every
+//              request and cached for an hour (written once an hour, not once per question when
+//              questions are minutes apart); the scope line after them is not cached.
 //   progress   onStep is told each lookup as it starts, in plain words, so the person sees the
 //              bot working; the answer itself is only shown once scrubbed.
 //   history    appended to, never edited: each API message is stored as it was (thinking blocks
@@ -22,9 +23,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { stripGatewayNames } from "@/lib/merchant-safe";
 import { getCheckoutCreds } from "@/lib/merchant-checkout";
-import { SUPPORT_BOT_SYSTEM, scopeContext } from "@/lib/support-bot/knowledge";
+import { SUPPORT_BOT_SYSTEM, SUPPORT_BOT_TELEGRAM_SYSTEM, scopeContext } from "@/lib/support-bot/knowledge";
 import { SUPPORT_BOT_TOOLS, TOOL_STEP_LABEL, runSupportTool } from "@/lib/support-bot/tools";
-import { chooseModel, costEstimate, type Tier } from "@/lib/support-bot/router";
+import { chooseModel, chooseTelegramModel, costEstimate, type Tier } from "@/lib/support-bot/router";
 
 export { costEstimate };
 const MAX_ROUNDS = 8;
@@ -71,6 +72,23 @@ export function scrubReply(text: string, secrets: string[]): string {
   return out.trim();
 }
 
+/** The cache lifetime of the stable prefix (tools + instructions + channel note). */
+export const CACHE_1H = { type: "ephemeral" as const, ttl: "1h" as const };
+
+export type BotChannel = "PORTAL" | "TELEGRAM";
+
+/**
+ * The system blocks of a request. Pure. Everything before the cache breakpoint is the same for
+ * every request on a channel, so the cached prefix is byte-identical; the scope line comes after.
+ */
+export function systemBlocks(o: { channel?: BotChannel; scopeText: string; channelNote?: string }) {
+  const base = o.channel === "TELEGRAM" ? SUPPORT_BOT_TELEGRAM_SYSTEM : SUPPORT_BOT_SYSTEM;
+  const stable = o.channelNote
+    ? [{ type: "text" as const, text: base }, { type: "text" as const, text: o.channelNote, cache_control: CACHE_1H }]
+    : [{ type: "text" as const, text: base, cache_control: CACHE_1H }];
+  return [...stable, { type: "text" as const, text: o.scopeText }];
+}
+
 const REFUSED = "I can't help with that one here. Please send it to Katana support with your merchant code and the txnid.";
 const OUT_OF_ROUNDS = "I looked up several things but couldn't finish working this out. Please send it to Katana support with your merchant code and the txnid.";
 
@@ -80,8 +98,10 @@ export async function askSupportBot(input: {
   staffTest: boolean;
   history: Msg[]; question: string; images?: BotImage[];
   onStep?: (label: string) => void;
-  /** Extra instructions for the channel the answer goes to (Telegram), after the scope line. */
+  /** Extra instructions for the channel the answer goes to (Telegram); cached with the instructions. */
   channelNote?: string;
+  /** TELEGRAM: the short chat instructions and the cheaper model choice. */
+  channel?: BotChannel;
 }): Promise<BotTurn> {
   if (!process.env.ANTHROPIC_API_KEY?.trim())
     throw new SupportBotNotConfigured("The support bot needs ANTHROPIC_API_KEY in .env.local");
@@ -97,8 +117,10 @@ export async function askSupportBot(input: {
   step(input.images?.length ? "Reading your screenshot" : "Reading your question");
 
   const trace: TraceStep[] = [];
-  const tally = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const choice = chooseModel({ question: input.question, images: input.images?.length ?? 0 });
+  const tally = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
+  const pick = input.channel === "TELEGRAM" ? chooseTelegramModel : chooseModel;
+  const choice = pick({ question: input.question, images: input.images?.length ?? 0 });
+  const system = systemBlocks({ channel: input.channel, channelNote: input.channelNote, scopeText: scopeContext({ ...input.scope, staffTest: input.staffTest }) });
   let model = choice.model, stop: string | null = null, rounds = 0, reply = "";
 
   while (rounds < MAX_ROUNDS) {
@@ -108,12 +130,9 @@ export async function askSupportBot(input: {
       max_tokens: 16000,
       ...(choice.fallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       ...(choice.effort ? { output_config: { effort: choice.effort } } : {}),
+      // The conversation so far: the 5-minute cache, after the 1-hour prefix (longer TTLs first).
       cache_control: { type: "ephemeral" },
-      system: [
-        { type: "text", text: SUPPORT_BOT_SYSTEM, cache_control: { type: "ephemeral" } },
-        { type: "text", text: scopeContext({ ...input.scope, staffTest: input.staffTest }) },
-        ...(input.channelNote ? [{ type: "text" as const, text: input.channelNote }] : []),
-      ],
+      system,
       tools: SUPPORT_BOT_TOOLS,
       messages,
     });
@@ -122,6 +141,7 @@ export async function askSupportBot(input: {
     tally.output += res.usage.output_tokens ?? 0;
     tally.cacheRead += res.usage.cache_read_input_tokens ?? 0;
     tally.cacheWrite += res.usage.cache_creation_input_tokens ?? 0;
+    tally.cacheWrite1h += res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
     push({ role: "assistant", content: res.content });
 
     if (res.stop_reason === "refusal") { reply = REFUSED; break; }

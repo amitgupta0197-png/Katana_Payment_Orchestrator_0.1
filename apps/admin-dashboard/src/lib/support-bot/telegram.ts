@@ -5,15 +5,20 @@
 //      Katana staff (support_bot_tg_staff + TELEGRAM_SUPPORT_STAFF_IDS), never while paused
 //   2. /link CODE links the group to a scope (lib/support-bot/scope); an unlinked group is told
 //      once that it isn't set up, and nothing more; /unlink is for staff only
-//   3. considerMessage (pure): only what looks like a question, a problem or a screenshot
+//   3. the group's answer mode (triggerFor, pure): COMMAND_ONLY (the default) answers only /ask,
+//      "/ …", /ask sent as a reply, and replies to the bot, and ignores the rest at no cost;
+//      EVERY_QUESTION takes what considerMessage passes (a question, a problem, a screenshot)
+//      and asks the cheap gate (lib/support-bot/gate) before the full assistant. /help is one line.
 //   4. a burst is answered once: each message waits debounceMs, and the newest one's handler
 //      takes them all (support_bot_tg_inbox)
 //   5. "are you a bot?" gets the honest one-line answer; refunds, money disputes, chargebacks,
 //      account changes, payout requests, complaints and anger go to a person (escalationReason)
 //      without the model being asked; the group's daily cap does the same
-//   6. the support assistant (lib/support-bot/bot) answers about the group's scope only, with the
-//      Telegram note (TELEGRAM_NOTE); it may say SILENT or ESCALATE
-//   7. the answer, already scrubbed of gateway names and Salts by the bot, is made to read like a
+//   6. the daily spending cap (lib/support-bot/budget): at the cap the question goes to the team
+//   7. the support assistant (lib/support-bot/bot, Telegram channel: short instructions, Haiku
+//      unless there is a concrete case) answers about the group's scope only; it may say SILENT or
+//      ESCALATE
+//   8. the answer, already scrubbed of gateway names and Salts by the bot, is made to read like a
 //      person typed it (humanizeReply), split for Telegram, and posted as a reply
 //
 // A person is told through TELEGRAM_SUPPORT_STAFF_CHAT (the same bot posting to Katana's staff
@@ -26,10 +31,13 @@ import { raiseAlert } from "@/lib/ops-alert";
 import { MAX_IMAGES } from "@/lib/support-bot/images";
 import { tgMe, tgPhoto, tgSend } from "@/lib/support-bot/telegram-api";
 import {
-  BOT_IDENTITY_REPLY, ESCALATION_REPLY, LIMIT_REPLY, LINKED_REPLY, NOT_LINKED_REPLY, TELEGRAM_NOTE,
+  BOT_IDENTITY_REPLY, BUDGET_REPLY, ESCALATION_REPLY, HELP_REPLY, LIMIT_REPLY, LINKED_REPLY, NOT_LINKED_REPLY, TELEGRAM_NOTE,
   askedIfBot, combineQuestion, considerMessage, debounceMs, escalationReason, humanizeReply, messageLink,
-  parseCommand, readVerdict, splitForTelegram, telegramDailyLimit, telegramEnabled,
+  parseCommand, readVerdict, splitForTelegram, telegramDailyLimit, telegramEnabled, triggerFor,
 } from "@/lib/support-bot/telegram-rules";
+import { gateMessage } from "@/lib/support-bot/gate";
+import { budgetNow } from "@/lib/support-bot/budget-store";
+import type { BudgetState } from "@/lib/support-bot/budget";
 import {
   addToInbox, answersToday, claimBurst, firstSeen, getGroup, limitNoticeToday, logAnswer, markUnlinkedNotice,
   migrateGroup, pausedAll, staffIds, todaysConversation, touchGroup, unlinkGroup, useLinkCode, type InboxRow, type TgGroup,
@@ -38,9 +46,11 @@ import {
 /** What the handler calls out to; tests replace the model and the wait. */
 export interface TgDeps {
   ask: typeof askSupportBot;
+  gate: typeof gateMessage;
+  budget: (opts?: { alert?: boolean }) => Promise<BudgetState>;
   sleep: (ms: number) => Promise<void>;
 }
-const defaultDeps: TgDeps = { ask: askSupportBot, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
+const defaultDeps: TgDeps = { ask: askSupportBot, gate: gateMessage, budget: budgetNow, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Update = any;
@@ -106,15 +116,34 @@ export async function handleTelegramUpdate(update: Update, deps: Partial<TgDeps>
     }
     if (cmd) return;
 
-    const photo = Array.isArray(msg.photo) && msg.photo.length ? msg.photo[msg.photo.length - 1].file_id as string : null;
-    const consider = considerMessage({
-      text, hasPhoto: !!photo, fromBot: !!from.is_bot, fromStaff: isStaff,
-      replyToBot: !!me && msg.reply_to_message?.from?.id === me.id,
-      mentionsBot: !!me?.username && text.toLowerCase().includes(`@${me.username.toLowerCase()}`),
+    if (from.is_bot) return;
+    const lastPhoto = (m: any): string | null => Array.isArray(m?.photo) && m.photo.length ? m.photo[m.photo.length - 1].file_id as string : null;
+    const photo = lastPhoto(msg);
+    const rep = msg.reply_to_message;
+    const replyToBot = !!me && rep?.from?.id === me.id;
+    const trigger = triggerFor(group.answer_mode, {
+      text, hasPhoto: !!photo, replyToBot,
+      replied: rep && !replyToBot ? { text: String(rep.text ?? rep.caption ?? ""), hasPhoto: !!lastPhoto(rep) } : null,
     });
-    if (!consider.answer) return;
+    // Help costs nothing; neither does anything this group's mode doesn't answer.
+    if (trigger.kind === "HELP") { await tgSend(chat.id, HELP_REPLY, msg.message_id); return; }
+    if (trigger.kind === "IGNORE") return;
+    if (isStaff) return;
 
-    const inboxId = await addToInbox({ chatId: chat.id, messageId: msg.message_id, userId: from.id ?? null, userName: userName(from), text, photoFile: photo });
+    let askText = text, askPhoto = photo, gate = false;
+    if (trigger.kind === "ASK") {
+      askText = trigger.text;
+      askPhoto = trigger.usePhoto === "REPLIED" ? lastPhoto(rep) : trigger.usePhoto === "OWN" ? photo : null;
+    } else {
+      const consider = considerMessage({
+        text, hasPhoto: !!photo, fromBot: false, fromStaff: false, replyToBot,
+        mentionsBot: !!me?.username && text.toLowerCase().includes(`@${me.username.toLowerCase()}`),
+      });
+      if (!consider.answer) return;
+      gate = true;
+    }
+
+    const inboxId = await addToInbox({ chatId: chat.id, messageId: msg.message_id, userId: from.id ?? null, userName: userName(from), text: askText, photoFile: askPhoto });
     if (!inboxId) return;
     await d.sleep(debounceMs());
     const burst = await claimBurst(chat.id, inboxId);
@@ -122,13 +151,13 @@ export async function handleTelegramUpdate(update: Update, deps: Partial<TgDeps>
     // Paused or unlinked while it waited.
     const now = await getGroup(chat.id);
     if (!now?.scope_key || now.status === "PAUSED" || await pausedAll()) return;
-    await answerBurst(now, burst, d);
+    await answerBurst({ ...now, answer_mode: group.answer_mode }, burst, d, { gate });
   } catch (e) {
     console.error(`[support-bot:telegram] update ${update?.update_id}: ${(e as Error).stack ?? e}`);
   }
 }
 
-async function answerBurst(group: TgGroup, burst: InboxRow[], d: TgDeps): Promise<void> {
+async function answerBurst(group: TgGroup, burst: InboxRow[], d: TgDeps, o: { gate: boolean }): Promise<void> {
   const chatId = Number(group.chat_id);
   const last = burst[burst.length - 1];
   const replyTo = Number(last.message_id);
@@ -159,6 +188,36 @@ async function answerBurst(group: TgGroup, burst: InboxRow[], d: TgDeps): Promis
     return;
   }
 
+  // The day's spending cap (all channels): at the cap, a person answers.
+  const spend = await d.budget().catch(() => null);
+  if (spend?.stop) {
+    await tgSend(chatId, BUDGET_REPLY, replyTo);
+    await tellStaff(group, last, question, "the assistant reached today's spending cap");
+    await logAnswer({ ...base, outcome: "LIMIT", reason: "BUDGET", reply: BUDGET_REPLY });
+    return;
+  }
+
+  // Every-question groups: a tiny first look decides whether the full assistant is asked at all.
+  let gateCost = 0;
+  if (o.gate) {
+    try {
+      const g = await d.gate(question, burst.slice(0, -1).map((b) => b.text ?? ""));
+      gateCost = g.costUsd;
+      if (g.verdict === "SILENT") { await logAnswer({ ...base, outcome: "SILENT", reason: "GATE", model: g.model, cost: gateCost }); return; }
+      if (g.verdict === "ESCALATE") {
+        await tgSend(chatId, ESCALATION_REPLY, replyTo);
+        await tellStaff(group, last, question, "needs a person (first check)");
+        await logAnswer({ ...base, outcome: "ESCALATED", reason: "GATE", reply: ESCALATION_REPLY, model: g.model, cost: gateCost });
+        return;
+      }
+    } catch (e) {
+      // The gate failing must not cost a full answer: stay quiet and say why in the log.
+      console.error(`[support-bot:telegram] gate in ${chatId}: ${(e as Error).message}`);
+      await logAnswer({ ...base, outcome: "ERROR", reason: `GATE ${(e as Error).message.slice(0, 180)}` });
+      return;
+    }
+  }
+
   const scope = await resolveScope(group.scope_key as ScopeKey).catch(() => null);
   if (!scope?.accounts.length) {
     await tgSend(chatId, ESCALATION_REPLY, replyTo);
@@ -177,21 +236,25 @@ async function answerBurst(group: TgGroup, burst: InboxRow[], d: TgDeps): Promis
   try {
     conversationId = await todaysConversation(group, question);
     const history = await loadHistory(conversationId);
-    const turn = await d.ask({ scope, staffTest: false, history, question, images, channelNote: TELEGRAM_NOTE });
+    const turn = await d.ask({ scope, staffTest: false, history, question, images, channelNote: TELEGRAM_NOTE, channel: "TELEGRAM" });
     await saveTurn(conversationId, { ...turn, question: question || "Screenshot", images }, asker);
     const v = readVerdict(turn.reply);
-    const meta = { conversationId, model: turn.usage.model, cost: turn.usage.cost_usd_estimate };
-    if (v.kind === "SILENT") { await logAnswer({ ...base, ...meta, outcome: "SILENT" }); return; }
+    const meta = { conversationId, model: turn.usage.model, cost: Math.round((turn.usage.cost_usd_estimate + gateCost) * 10_000) / 10_000 };
+    // Counted after it is logged, so the 80% warning sees this answer's cost.
+    const tally = () => d.budget({ alert: true }).then(() => undefined, () => undefined);
+    if (v.kind === "SILENT") { await logAnswer({ ...base, ...meta, outcome: "SILENT" }); await tally(); return; }
     if (v.kind === "ESCALATE") {
       await tgSend(chatId, ESCALATION_REPLY, replyTo);
       await tellStaff(group, last, question, "the assistant could not answer it");
       await logAnswer({ ...base, ...meta, outcome: "ESCALATED", reason: "MODEL", reply: ESCALATION_REPLY });
+      await tally();
       return;
     }
     const reply = humanizeReply(v.text);
     const parts = splitForTelegram(reply);
     for (const [i, p] of parts.entries()) await tgSend(chatId, p, i === 0 ? replyTo : null);
     await logAnswer({ ...base, ...meta, outcome: "ANSWERED", reply });
+    await tally();
   } catch (e) {
     console.error(`[support-bot:telegram] answer in ${chatId}: ${(e as Error).message}`);
     await tgSend(chatId, ESCALATION_REPLY, replyTo);
