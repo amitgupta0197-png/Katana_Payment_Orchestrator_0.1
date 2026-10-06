@@ -148,25 +148,27 @@ export const HIGH_AMOUNT_HOLD = Number(process.env.HIGH_AMOUNT_HOLD ?? 50000);
 
 export class MerchantBlockedError extends Error {
   readonly code: string = "MERCHANT_BLOCKED";
-  constructor(public merchantId: string, message = `merchant ${merchantId} is blocked`) { super(message); }
+  // Merchant-facing text never starts with the banker's code: a code that contains a gateway's
+  // name would be scrubbed into nonsense ("The payment processor is …"; lib/merchant-safe).
+  constructor(public merchantId: string, message = "this account is blocked") { super(message); }
 }
 
 /** The banker, or the merchant it belongs to, is suspended or terminated. Answered like a block (403). */
 export class MerchantSuspendedError extends MerchantBlockedError {
   readonly code = "MERCHANT_SUSPENDED";
-  constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} is suspended`); }
+  constructor(merchantId: string) { super(merchantId, "this account is suspended"); }
 }
 
 /** The banker belongs to an exclusive partner (lib/partner): it takes partner orders only. Answered 403. */
 export class PartnerOnlyError extends MerchantBlockedError {
   readonly code = "PARTNER_ONLY";
-  constructor(merchantId: string) { super(merchantId, `merchant ${merchantId} takes orders through the partner API only`); }
+  constructor(merchantId: string) { super(merchantId, "this account takes orders through the partner API only"); }
 }
 
 /** The banker's merchant was onboarded for payouts only (lib/merchant-services). Answered 403. */
 export class PayinNotEnabledError extends MerchantBlockedError {
   readonly code = "PAYIN_NOT_ENABLED";
-  constructor(merchantId: string) { super(merchantId, `pay-ins are not enabled for merchant ${merchantId}`); }
+  constructor(merchantId: string) { super(merchantId, "pay-ins are not enabled for this account"); }
 }
 
 // Onboarding stages and merchant statuses that take no new pay-ins.
@@ -564,12 +566,12 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     // An Intent order that reached here has no gateway able to take it.
     if (livemode && flow === "INTENT") {
       throw new PayinFlowError(
-        `${input.merchantId ?? "this merchant"} is on the Intent flow but no pay-in gateway is connected that can take this payment`, "FLOW_NOT_READY");
+        "This account is on the Intent flow but no payment gateway is connected that can take this payment", "FLOW_NOT_READY");
     }
     if (livemode && !active) {
       throw new PayinSetupError(flow === "P2P"
-        ? `${input.merchantId ?? "this merchant"} is on the P2P flow but has no settlement UPI ID to be paid on`
-        : `${input.merchantId ?? "this merchant"} has no way to take this payment: connect a pay-in gateway or set a settlement UPI ID`);
+        ? "This account is on the P2P flow but has no settlement UPI ID to be paid on"
+        : "This account has no way to take this payment: a payment gateway or a settlement UPI ID must be set up first");
     }
     payId = shortId("pay");
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
