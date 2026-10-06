@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkPayinLimits, effectivePayinLimits, platformPayinLimits, validatePayinLimits, payinLimitBody,
+  accountMinimumBreach, gatewayMinimumFrom,
   NO_LIMITS, type PayinLimits, type PayinUsage,
 } from "@/lib/payin-limits";
 
@@ -84,4 +85,24 @@ test("limits that contradict each other cannot be saved", () => {
   assert.match(validatePayinLimits(own({ max: 5000, daily: 1000 }))!, /above the daily limit/);
   assert.match(validatePayinLimits(own({ min: 0 }))!, /above zero/);
   assert.match(validatePayinLimits(own({ maxTps: 1.5 }))!, /whole number/);
+});
+
+// The payment account's own minimum (2026-10-06: ₹200 and ₹500 orders on a ₹1,000-minimum account).
+
+test("an order under the payment account's minimum is AMOUNT_BELOW_MIN, naming no gateway", () => {
+  const b = accountMinimumBreach(500, 1000);
+  assert.deepEqual([b?.code, b?.status, b?.field, b?.limit, b?.actual], ["AMOUNT_BELOW_MIN", 422, "amount", 1000, 500]);
+  assert.equal(b?.message, "this payment account takes ₹1,000 or more per payment");
+  assert.equal(accountMinimumBreach(1000, 1000), null);
+  assert.equal(accountMinimumBreach(999.99, 1000)?.code, "AMOUNT_BELOW_MIN");
+  assert.equal(accountMinimumBreach(5, null), null);
+  assert.equal(accountMinimumBreach(5, undefined), null);
+});
+
+test("the minimum a gateway's refusal names", () => {
+  assert.equal(gatewayMinimumFrom("RubyVault did not start the checkout: Minimum amount should be 1000"), 1000);
+  assert.equal(gatewayMinimumFrom("Minimum checkout amount should be 500"), 500);
+  assert.equal(gatewayMinimumFrom("PayAtom refused: amount should be greater than : 200"), 201);
+  assert.equal(gatewayMinimumFrom("Invalid hash"), null);
+  assert.equal(gatewayMinimumFrom("No valid channel found"), null);
 });

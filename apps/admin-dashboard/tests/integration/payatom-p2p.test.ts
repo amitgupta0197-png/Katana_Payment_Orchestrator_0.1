@@ -11,6 +11,7 @@ import { createServer, type Server } from "http";
 import { createHash } from "crypto";
 import { rows } from "@/lib/pg";
 import { createKatanaOrder, PayinFlowError } from "@/lib/katana-order";
+import { PayinLimitError } from "@/lib/payin-limits";
 import { setProviderFlow } from "@/lib/payin-flow-store";
 import { getGatewayMid, storeGatewayMid, type GatewayMid } from "@/lib/gateway-creds";
 import { checkGatewayPayin } from "@/lib/gateway-payin";
@@ -102,7 +103,7 @@ const stored = async (id: string) => (await rows<{ channel_type: string; channel
   `SELECT channel_type, channel_id, status, rrn, vendor_txn_id, meta FROM vendor_payin_orders WHERE id = $1::uuid`, [id]))[0];
 
 test("a P2P order goes to the banker's P2P PayAtom account and is recorded as P2P via PayAtom", opts, async () => {
-  const r = await createKatanaOrder({ orderId: ref(), amount: 7, currency: "INR", merchantId: A, livemode: true, flow: "P2P" });
+  const r = await createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "P2P" });
   const s = await stored(r.order.id);
   assert.equal(s.channel_type, "P2P");
   assert.equal(s.channel_id, "PAYATOM");
@@ -120,9 +121,19 @@ test("a P2P order goes to the banker's P2P PayAtom account and is recorded as P2
   assert.equal(after.rrn, "UTR-ITEST-1");
 });
 
+test("a live order under the payment account's minimum is refused before PayAtom is asked", opts, async () => {
+  const seen = orders.size;
+  await assert.rejects(
+    createKatanaOrder({ orderId: ref(), amount: 7, currency: "INR", merchantId: A, livemode: true, flow: "P2P" }),
+    (e: unknown) => e instanceof PayinLimitError && e.breach.code === "AMOUNT_BELOW_MIN" && e.breach.limit === 201
+      && !/payatom/i.test(e.message),
+  );
+  assert.equal(orders.size, seen, "PayAtom was not asked");
+});
+
 test("an Intent order never goes to a P2P account: refused, the account is the wrong flow", opts, async () => {
   await assert.rejects(
-    createKatanaOrder({ orderId: ref(), amount: 7, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" }),
+    createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" }),
     (e: unknown) => e instanceof PayinFlowError && e.code === "FLOW_NOT_READY",
   );
 });
@@ -136,7 +147,7 @@ test("readiness: a P2P PayAtom account makes the banker P2P-ready, not Intent-re
     r = (await flowReadiness([A])).get(A)!;
     assert.equal(r.intent, true);
     // The same order on the Intent flow now goes to PayAtom as INTENT.
-    const o = await createKatanaOrder({ orderId: ref(), amount: 7, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" });
+    const o = await createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" });
     const s = await stored(o.order.id);
     assert.equal(s.channel_type, "INTENT");
     assert.equal(s.channel_id, "PAYATOM");

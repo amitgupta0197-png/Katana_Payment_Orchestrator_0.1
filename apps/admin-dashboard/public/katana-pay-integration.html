@@ -189,7 +189,7 @@ gateway's reason.</p>
 <pre>{ "error": "amount is above the maximum of ₹5,000", "code": "AMOUNT_ABOVE_MAX", "field": "amount", "limit": 5000, "actual": 5000.01 }</pre>
 <table>
   <tr><th><code>code</code></th><th>Meaning</th></tr>
-  <tr><td><code>AMOUNT_BELOW_MIN</code></td><td>The amount is under the minimum for one order.</td></tr>
+  <tr><td><code>AMOUNT_BELOW_MIN</code></td><td>The amount is under the minimum for one order: your account's own, or the minimum of the payment account behind it (some take ₹500 or ₹1,000 and more per payment). <code>limit</code> is the minimum that applies.</td></tr>
   <tr><td><code>AMOUNT_ABOVE_MAX</code></td><td>The amount is over your account's maximum for one order.</td></tr>
   <tr><td><code>UPI_LIMIT_EXCEEDED</code></td><td>The amount is over what one UPI payment can carry (₹1,00,000 unless your account has a higher maximum).</td></tr>
   <tr><td><code>DAILY_LIMIT_EXCEEDED</code></td><td>Today's orders plus this one would pass your daily limit; <code>actual</code> is the total it would reach. The day is the calendar day in India, and an order that fails or expires gives its amount back.</td></tr>

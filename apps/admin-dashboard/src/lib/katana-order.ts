@@ -11,13 +11,13 @@ import { getGatewayMid, payinProdId, payuKeySalt } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
-import { gatewayAccountChannel, gatewayName } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayDef, gatewayName } from "@/lib/pg-catalog";
 import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
 import { allowsPayin } from "@/lib/merchant-services";
 import { getProviderServices } from "@/lib/merchant-services-store";
-import { checkPayinLimits, effectivePayinLimits, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
+import { accountMinimumBreach, checkPayinLimits, effectivePayinLimits, gatewayMinimumFrom, platformPayinLimits, PayinLimitError } from "@/lib/payin-limits";
 import { getPayinLimits, getPayinUsage } from "@/lib/payin-limits-store";
 import { AccountNotLiveError, assertGoLiveAllows } from "@/lib/gateway-golive";
 import { insertOrderWithinLimits, pickMidForOrder, recordCreateFailure, type MidPick } from "@/lib/mid-switch-store";
@@ -446,6 +446,13 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // A gateway account that is still on its go-live checklist takes a few small verification
   // payments and nothing else (lib/gateway-golive). An account with no checklist is not gated.
   const gatewayId = payuMid ? "PAYU" : (otherGw ?? linkGw)?.mid.gateway ?? null;
+  // The payment account's own minimum (lib/pg-catalog minAmount): the gateway would refuse a smaller
+  // live order, so it is refused here with the same 422 as the banker's own limits. The switch
+  // offers it to the next account, which may take less.
+  if (livemode && gatewayId) {
+    const breach = accountMinimumBreach(input.amount, gatewayDef(gatewayId)?.payin.minAmount);
+    if (breach) throw Object.assign(new PayinLimitError(breach), gatewayPick ? { skippedMid: gatewayPick.mid } : {});
+  }
   // Per account: the one the switch picked, else the banker's first (vendorGateway 0041). An account
   // that may not take this order yet hands it to the next account in the switch.
   if (livemode && gatewayId && input.merchantId) {
@@ -575,6 +582,13 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   } catch (err) {
     // The processor account the switch picked could not create the order: createKatanaOrder
     // tries the next one.
+    // A gateway that refused for its own minimum (one the catalog does not know): answered as the
+    // same 422 as a limit, not as a processor error.
+    if (err instanceof PayuIntentError) {
+      const min = gatewayMinimumFrom(err.message);
+      const breach = min != null ? accountMinimumBreach(input.amount, min) : null;
+      if (breach) throw Object.assign(new PayinLimitError(breach), gatewayPick ? { skippedMid: gatewayPick.mid } : {});
+    }
     if (gatewayPick && err instanceof PayuIntentError) throw Object.assign(err, { failedMid: gatewayPick.mid });
     throw err;
   }

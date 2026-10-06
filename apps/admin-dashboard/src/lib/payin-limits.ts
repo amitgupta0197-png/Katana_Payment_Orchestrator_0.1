@@ -125,6 +125,30 @@ export function dailyBreach(amount: number, dayAmount: number, daily: number): P
     message: `this order would pass today's limit of ${inr(daily)} (${inr(dayAmount)} taken so far)` };
 }
 
+/**
+ * A live order under the connected payment account's own minimum (lib/pg-catalog minAmount): the
+ * gateway would refuse it, so it is refused first, as AMOUNT_BELOW_MIN with the account's minimum
+ * as `limit`. The message names no gateway.
+ */
+export function accountMinimumBreach(amount: number, min: number | null | undefined): PayinLimitBreach | null {
+  if (!min || paise(amount) >= paise(min)) return null;
+  return { code: "AMOUNT_BELOW_MIN", status: 422, field: "amount", limit: min, actual: amount,
+    message: `this payment account takes ${inr(min)} or more per payment` };
+}
+
+/**
+ * The minimum a gateway's refusal names, or null: "Minimum amount should be 1000",
+ * "Minimum checkout amount should be 500", "amount should be greater than : 200" (whole rupees,
+ * so 201). A fallback for a gateway or account whose minimum the catalog does not know.
+ */
+export function gatewayMinimumFrom(message: string): number | null {
+  const atLeast = /minimum (?:checkout |transaction |order )?amount (?:should be|is)\s*:?\s*(?:rs\.?|inr|₹)?\s*(\d+(?:\.\d+)?)/i.exec(message);
+  if (atLeast) return Number(atLeast[1]);
+  const above = /amount should be greater than\s*:?\s*(?:rs\.?|inr|₹)?\s*(\d+)/i.exec(message);
+  if (above) return Number(above[1]) + 1;
+  return null;
+}
+
 /** A pay-in order refused by a limit. The order API answers with its status, code, field and limit. */
 export class PayinLimitError extends Error {
   constructor(readonly breach: PayinLimitBreach) { super(breach.message); }
