@@ -25,6 +25,9 @@ import { channelAccounts, type ChannelAccount } from "@/lib/channel-accounts";
 import { RECON_LABEL, RECON_STATES } from "@/lib/payin-recon";
 import { chargebackProblems, listChargebacks } from "@/lib/chargebacks-store";
 import { merchantChargeback } from "@/lib/chargeback-view";
+import { bankerCheckFacts } from "@/lib/banker-check-store";
+import { getGoLive, verificationOrdersUsed, VERIFY_MAX_ORDERS } from "@/lib/gateway-golive";
+import { limitsView } from "@/lib/support-bot/limits-view";
 
 export interface ToolContext {
   /** The bankers every lookup is limited to. Never empty when a tool runs. */
@@ -48,6 +51,12 @@ export const SUPPORT_BOT_TOOLS: Tool[] = [
   {
     name: "get_account_setup",
     description: "How this merchant account is set up: services (pay-in, pay-out or both), pay-in flow (P2P, Intent or both, and the default), webhook URL and format, test and live keys (keys only, never Salts), live mode status with its checklist, limits, and whether it is blocked. Use it first for most questions. When the merchant has several accounts, it lists each one briefly.",
+    input_schema: obj({}),
+    strict: true,
+  },
+  {
+    name: "get_limits",
+    description: "What amounts a live payment can be on this account right now: the minimum and maximum per payment actually in force (the account's own limits, the payment account's own minimum, and the verification cap while the payment account is still being verified), the daily limit, how many verification payments are left, whether no amount works yet, and whether checkout is host-to-host (H2H: the order API returns the UPI link) or redirect (send the customer to pay_url). Use it for any question about minimum or maximum amounts, limits, 'amount too low/high' errors, verification or H2H.",
     input_schema: obj({}),
     strict: true,
   },
@@ -112,6 +121,7 @@ export const SUPPORT_BOT_TOOLS: Tool[] = [
 /** What the person sees while a lookup runs. */
 export const TOOL_STEP_LABEL: Record<string, string> = {
   get_account_setup: "Checking your account setup",
+  get_limits: "Checking your payment limits",
   list_recent_requests: "Reading your recent API calls",
   check_signature: "Checking the signature",
   find_order: "Finding the order",
@@ -196,6 +206,25 @@ async function getAccountSetup(ctx: ToolContext) {
       account: accountOf(ctx, a!.merchant_code), onboarding_stage: a!.onboarding_stage, blocked: a!.blocked,
       services: a!.services, payin_flow: a!.payin_flow, webhook_url: a!.webhook.url, live_mode: a!.live_mode, test_key: a!.test_key,
     })),
+    ...(ctx.codes.length > shown.length ? { not_shown: ctx.codes.length - shown.length } : {}),
+  };
+}
+
+async function limitsFor(code: string) {
+  const f = await bankerCheckFacts(code);
+  if (!f) return null;
+  const golive = f.account?.golive === "VERIFYING" ? await getGoLive(code, f.account.gateway).catch(() => null) : null;
+  const used = golive ? await verificationOrdersUsed(golive).catch(() => null) : null;
+  return limitsView(f, used, VERIFY_MAX_ORDERS);
+}
+
+async function getLimits(ctx: ToolContext) {
+  const shown = ctx.codes.slice(0, MAX_ACCOUNTS_DETAILED);
+  const all = await Promise.all(shown.map(async (c) => ({ code: c, limits: await limitsFor(c).catch(() => null) })));
+  if (ctx.codes.length === 1) return all[0].limits ?? { error: "Could not read this account's limits." };
+  return {
+    accounts_total: ctx.codes.length,
+    accounts: all.filter((a) => a.limits).map((a) => ({ account: accountOf(ctx, a.code), ...a.limits })),
     ...(ctx.codes.length > shown.length ? { not_shown: ctx.codes.length - shown.length } : {}),
   };
 }
@@ -397,6 +426,7 @@ async function listChargebacksTool(ctx: ToolContext, input: { limit?: number }) 
 
 const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown>> = {
   get_account_setup: getAccountSetup,
+  get_limits: getLimits,
   list_recent_requests: listRecentRequests,
   check_signature: checkSignature,
   find_order: findOrder,

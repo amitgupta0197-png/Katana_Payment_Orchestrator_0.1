@@ -146,19 +146,25 @@ export async function assertGoLiveAllows(merchantCode: string, gateway: string, 
   try { row = await getGoLive(merchantCode, gateway, account); }
   catch (err) { if (missing(err)) return; throw err; }
   if (!row || row.status === "LIVE") return;
+  const blocker = verifyingBlocker(amount, await verificationOrdersUsed(row), verifyMaxAmountFor(gateway));
+  if (blocker) throw new AccountNotLiveError(blocker);
+}
+
+/** Live orders a VERIFYING account has taken since it started verifying (they count against VERIFY_MAX_ORDERS). */
+export async function verificationOrdersUsed(row: Pick<GoLiveRow, "merchant_id" | "gateway" | "account" | "created_at">): Promise<number> {
+  const account = row.account ?? VAULT_LABEL;
   const [payins, checkouts] = await Promise.all([
     rows<{ n: number }>("vendorGateway", `
       SELECT COUNT(*)::int AS n FROM vendor_payin_orders
        WHERE vendor = 'KATANA' AND merchant_id = $1 AND livemode AND meta->'gateway'->>'provider' = $2 AND created_at >= $3
          AND ${ORDER_ACCOUNT_SQL("")} = $4`,
-      [merchantCode, gateway, row.created_at, account]),
+      [row.merchant_id, row.gateway, row.created_at, account]),
     // Checkout orders (/api/pay) are always made on the first account.
     account !== VAULT_LABEL ? Promise.resolve([{ n: 0 }]) : rows<{ n: number }>("checkout", `
       SELECT COUNT(*)::int AS n FROM checkout_orders WHERE merchant_id = $1 AND COALESCE(livemode, true) AND created_at >= $2`,
-      [merchantCode, row.created_at]).catch(() => [{ n: 0 }]),
+      [row.merchant_id, row.created_at]).catch(() => [{ n: 0 }]),
   ]);
-  const blocker = verifyingBlocker(amount, (payins[0]?.n ?? 0) + (checkouts[0]?.n ?? 0), verifyMaxAmountFor(gateway));
-  if (blocker) throw new AccountNotLiveError(blocker);
+  return (payins[0]?.n ?? 0) + (checkouts[0]?.n ?? 0);
 }
 
 /** As assertGoLiveAllows, for callers that answer with a message instead of throwing. */

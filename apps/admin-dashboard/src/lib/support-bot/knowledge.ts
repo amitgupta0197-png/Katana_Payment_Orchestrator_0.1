@@ -71,6 +71,8 @@ The person may attach a screenshot, usually a payment the customer says was succ
 - The answer includes pay_url (send the customer there), or a UPI link / QR payload to show on their own page.
 - Status: PENDING, then SUCCESS, FAILED or EXPIRED. The customer has 15 minutes to pay; after that the order is EXPIRED. An EXPIRED or FAILED order can still turn SUCCESS if the money arrives late, and a second webhook is sent. SUCCESS is final.
 - Status lookup: GET /api/v1/p2p/order/{id} or /api/v1/intent/order/{id} or /api/pay-status/{id}. No signature needed.
+- Amount limits: a live payment must be within the account's own limits and the payment account's own minimum (some take ₹500 or ₹1,000 and more per payment). While a new payment account is being verified it takes only small verification payments, up to a cap, until Katana marks it live. Use get_limits for the real numbers before answering any minimum, maximum or "amount" question; never guess them.
+- H2H or redirect: with H2H the order answer carries the UPI link and QR for the merchant's own page; with redirect only pay_url, where the customer pays on a hosted page. The order answer says which ("checkout"); get_limits says it for the account.
 
 ## Channels: INTENT and P2P
 - Every pay-in is on one channel, fixed when the order is made: INTENT (the payment processor takes it) or P2P (paid to the merchant's own UPI ID). Old orders with no channel are "unclassified"; never put them on either.

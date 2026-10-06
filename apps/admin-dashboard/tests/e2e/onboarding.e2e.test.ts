@@ -417,6 +417,10 @@ for (const [i, c] of COMBOS.entries()) {
       };
       const setup = await call("get_account_setup", {});
       assert.deepEqual([setup.merchant_code, setup.services, setup.payin_flow, setup.test_key], [bankerCode, "BOTH", "P2P", creds.key]);
+      // Its limits, on the P2P flow: no payment account minimum, the UPI link comes back (H2H).
+      const limits = await call("get_limits", {});
+      assert.deepEqual([limits.checkout, limits.being_verified, limits.no_amount_works], ["H2H", false, false]);
+      assert.ok(limits.min_per_payment_rupees >= 1 && (limits.max_per_payment_rupees ?? Infinity) >= limits.min_per_payment_rupees);
       // A request signed with the amount written differently: the bot must say exactly that.
       const bad = { txnid: `E2E-${RUN}-SIG`, amount: "25.00", productinfo: "e2e", email: "payer@katana.test" };
       const refused = await api("POST", "/api/v1/p2p/order", { key: creds.key, ...bad, hash: orderHash(creds, { ...bad, amount: "25" }) }, "");
