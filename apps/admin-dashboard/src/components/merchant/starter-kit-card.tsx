@@ -27,12 +27,13 @@ async function copyText(text: string): Promise<boolean> {
 
 export function StarterKitCard({ merchantId }: { merchantId: string }) {
   const [format, setFormat] = useState<KitFormat>("whatsapp");
+  const [length, setLength] = useState<"short" | "full">("short");
   const [copied, setCopied] = useState<number | "all" | null>(null);
 
   const q = useQuery({
-    queryKey: ["merchant", merchantId, "starter-kit", format],
+    queryKey: ["merchant", merchantId, "starter-kit", format, length],
     queryFn: async () => {
-      const r = await fetch(`/api/merchants/${merchantId}/starter-kit?format=${format}`, { cache: "no-store" });
+      const r = await fetch(`/api/merchants/${merchantId}/starter-kit?format=${format}&length=${length}`, { cache: "no-store" });
       const d = await r.json().catch(() => null);
       if (!r.ok) throw new Error((d && d.error) || `HTTP ${r.status}`);
       return d as Kit;
@@ -58,11 +59,20 @@ export function StarterKitCard({ merchantId }: { merchantId: string }) {
         <div className="min-w-0">
           <CardTitle className="flex items-center gap-2 text-base"><MessageSquareText className="h-4 w-4" /> Starter kit</CardTitle>
           <CardDescription>
-            Messages to send the merchant&rsquo;s developer: their setup, their test Key + Salt, how to create and test orders{" "}
-            and payouts, and what&rsquo;s left before going live. The live Salt is never included.
+            Short: one message with the test Key + Salt, where to send orders and a link to the full guide.
+            Full guide: step-by-step messages with examples. The live Salt is never included.
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div role="radiogroup" aria-label="Length" className="inline-flex rounded-md border p-0.5">
+            {([["short", "Short"], ["full", "Full guide"]] as const).map(([v, label]) => (
+              <button key={v} role="radio" aria-checked={length === v} onClick={() => setLength(v)}
+                className={`rounded px-2.5 py-1 text-xs font-medium ${length === v
+                  ? "bg-[color:var(--color-brand-muted)] text-[color:var(--color-brand)]" : MUTED}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div role="radiogroup" aria-label="Messenger" className="inline-flex rounded-md border p-0.5">
             {FORMATS.map((f) => (
               <button key={f.value} role="radio" aria-checked={format === f.value} onClick={() => setFormat(f.value)}

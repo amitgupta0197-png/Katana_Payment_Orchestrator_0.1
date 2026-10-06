@@ -25,6 +25,10 @@ export type KitFormat = (typeof KIT_FORMATS)[number];
 
 export const MAX_PART_CHARS = 3900;
 
+/** "short": one message with only what a developer needs to start; "full": the whole guide. */
+export const KIT_LENGTHS = ["short", "full"] as const;
+export type KitLength = (typeof KIT_LENGTHS)[number];
+
 export interface KitChecklistItem { label: string; done: boolean }
 
 export interface KitFacts {
@@ -362,6 +366,36 @@ function partErrorsAndLive(k: KitFacts, f: Fmt, n: number): KitPart {
   };
 }
 
+/** The short kit: one message, the essentials only, and a link to the full guide. */
+function partShort(k: KitFacts, f: Fmt): KitPart {
+  const payin = allowsPayin(k.services), payout = allowsPayout(k.services);
+  const api = payinApiFor(k.flow);
+  const t = k.testCreds;
+  const legacy = isLegacy(t?.scheme);
+  const live = k.liveMode === "ACTIVATED"
+    ? k.liveKey ? `Live Key: ${f.c(k.liveKey.key)} (live Salt: the one you were given; never sent in chat)` : "Live: on. Ask us for your live Key + Salt."
+    : "Live keys: after go-live. Test with the keys above until then.";
+  return {
+    title: "Starter kit",
+    text: lines(
+      f.b(`Katana: ${k.bankerName} (${k.merchantCode})`),
+      "",
+      t ? `Test Key: ${f.c(t.key)}` : "Test Key: on its way.",
+      t ? `Test Salt: ${f.c(t.salt)}` : null,
+      live,
+      "",
+      payin && `Create order: POST ${f.c(k.baseUrl + api.create)}`,
+      payin && `Hash: ${legacy ? `SHA-512 of ${f.c(LEGACY_ORDER_STRING)}` : `HMAC-SHA256 of ${f.c("txnid|amount|productinfo|email")}, key = Key+Salt`}`,
+      payin && k.checkout && `Checkout: ${k.checkout === "H2H" ? "host-to-host (UPI link in the answer)" : "redirect (send the customer to pay_url)"}`,
+      payout && `Payouts: POST ${f.c(k.baseUrl + "/api/v1/payouts/create")}`,
+      `Callback URL: ${k.webhook.url ?? "not set yet, please send us yours"}`,
+      "",
+      `Full guide: ${k.baseUrl}/katana-pay-integration.html`,
+      `Questions: reply here with the txnid.`,
+    ),
+  };
+}
+
 /** Split a message that is too long at a blank line, keeping every piece under the limit. */
 function fit(part: KitPart): KitPart[] {
   if (part.text.length <= MAX_PART_CHARS) return [part];
@@ -387,8 +421,9 @@ export function kitWarnings(k: KitFacts): string[] {
   return w;
 }
 
-export function buildStarterKit(k: KitFacts, format: KitFormat = "whatsapp"): StarterKit {
+export function buildStarterKit(k: KitFacts, format: KitFormat = "whatsapp", length: KitLength = "full"): StarterKit {
   const f = FMT[format];
+  if (length === "short") return { format, parts: [partShort(k, f)], warnings: kitWarnings(k) };
   const payin = allowsPayin(k.services), payout = allowsPayout(k.services);
   const parts: KitPart[] = [partWelcome(k, f)];
   if (payin) parts.push(partCreateOrder(k, f), partTestPayin(k, f));

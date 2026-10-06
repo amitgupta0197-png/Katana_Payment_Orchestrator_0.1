@@ -265,10 +265,10 @@ for (const [i, c] of COMBOS.entries()) {
     assert.deepEqual(keys, want);
 
     // ── 3b. The Starter Kit is ready without anyone making keys first: it makes the test pair.
-    const firstKit = await api("GET", `/api/merchants/${bankerId}/starter-kit?format=plain`);
+    const firstKit = await api("GET", `/api/merchants/${bankerId}/starter-kit?format=plain&length=full`);
     assert.deepEqual([firstKit.status, firstKit.body.issued_test_keys], [200, true], JSON.stringify(firstKit.body));
     assert.match(firstKit.body.parts[0].text, /Key: mk_test_[0-9a-f]+\nSalt: [0-9a-f]{32}/);
-    assert.equal((await api("GET", `/api/merchants/${bankerId}/starter-kit`)).body.issued_test_keys, false, "an existing pair is kept");
+    assert.equal((await api("GET", `/api/merchants/${bankerId}/starter-kit?length=full`)).body.issued_test_keys, false, "an existing pair is kept");
 
     // ── 4. A test Key + Salt, then every order API.
     const issued = await api("POST", `/api/merchants/${bankerId}/checkout-key`, { livemode: false });
@@ -369,7 +369,7 @@ for (const [i, c] of COMBOS.entries()) {
     // ── 5b. The Starter Kit follows the choice, carries the current test pair, and its own
     //        example requests work when pasted into a shell.
     for (const format of ["whatsapp", "telegram", "plain"]) {
-      const k = await api("GET", `/api/merchants/${bankerId}/starter-kit?format=${format}`);
+      const k = await api("GET", `/api/merchants/${bankerId}/starter-kit?format=${format}&length=full`);
       assert.equal(k.status, 200, JSON.stringify(k.body));
       const text = k.body.parts.map((p: { text: string }) => p.text).join("\n\n");
       assert.ok(text.includes(creds.key) && text.includes(creds.salt), `${format}: the current test pair`);
@@ -380,7 +380,7 @@ for (const [i, c] of COMBOS.entries()) {
       if (c.flow === "P2P") assert.ok(text.includes("/api/v1/p2p/order") && !text.includes("/api/v1/intent/order"));
       if (c.flow === "INTENT") assert.ok(text.includes("/api/v1/intent/order") && !text.includes("/api/v1/p2p/order"));
     }
-    const plain = (await api("GET", `/api/merchants/${bankerId}/starter-kit?format=plain`)).body.parts as { title: string; text: string }[];
+    const plain = (await api("GET", `/api/merchants/${bankerId}/starter-kit?format=plain&length=full`)).body.parts as { title: string; text: string }[];
     // A block of the plain kit is indented four spaces. Run it exactly as pasted, with this
     // server in place of the public address.
     const runBlock = (title: string) => {

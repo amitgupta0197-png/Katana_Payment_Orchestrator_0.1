@@ -1,4 +1,4 @@
-// GET /api/merchants/[id]/starter-kit?format=whatsapp|telegram|plain — a banker's Starter Kit
+// GET /api/merchants/[id]/starter-kit?format=whatsapp|telegram|plain&length=short|full — a banker's Starter Kit
 // (lib/starter-kit): chat messages to paste into WhatsApp or Telegram, written from what the
 // banker was set up for, with its test Key + Salt in full and its live Key without the Salt.
 //
@@ -15,7 +15,7 @@ import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { resolveMerchantScope } from "@/lib/merchant-keys";
 import { getCheckoutCreds, issueCheckoutCreds } from "@/lib/merchant-checkout";
-import { buildStarterKit, KIT_FORMATS, type KitFormat } from "@/lib/starter-kit";
+import { buildStarterKit, KIT_FORMATS, KIT_LENGTHS, type KitFormat, type KitLength } from "@/lib/starter-kit";
 import { starterKitFacts } from "@/lib/starter-kit-store";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const asked = new URL(req.url).searchParams.get("format") ?? "whatsapp";
   const format: KitFormat = (KIT_FORMATS as readonly string[]).includes(asked) ? (asked as KitFormat) : "whatsapp";
+  // Short (one message) unless the whole guide is asked for.
+  const askedLen = new URL(req.url).searchParams.get("length") ?? "short";
+  const length: KitLength = (KIT_LENGTHS as readonly string[]).includes(askedLen) ? (askedLen as KitLength) : "short";
 
   try {
     let issuedTestKeys = false;
@@ -40,7 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         VALUES ($1::uuid, 'TEST_KEYS_ISSUED', $2, $3::jsonb)
       `, [id, g.session.email, JSON.stringify({ reason: "starter kit" })]).catch(() => {});
     }
-    const kit = buildStarterKit(await starterKitFacts(scope.code), format);
+    const kit = buildStarterKit(await starterKitFacts(scope.code), format, length);
     // The kit carries a test Salt: never cached on the way.
     return NextResponse.json({ merchant_code: scope.code, issued_test_keys: issuedTestKeys, ...kit },
       { headers: { "Cache-Control": "no-store" } });

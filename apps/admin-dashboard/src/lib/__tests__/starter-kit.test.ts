@@ -109,3 +109,13 @@ test("warnings tell the sender what to fix first", () => {
   assert.equal(w.length, 4);
   assert.ok(!all({ ...base, testCreds: null }).includes("undefined"));
 });
+
+test("the short kit is one message with the essentials and a link to the full guide", () => {
+  const kit = buildStarterKit(base, "whatsapp", "short");
+  assert.equal(kit.parts.length, 1);
+  const t = kit.parts[0].text;
+  assert.ok(t.length < 1200, `short kit is ${t.length} characters`);
+  if (base.testCreds) { assert.ok(t.includes(base.testCreds.key)); assert.ok(t.includes(base.testCreds.salt)); }
+  assert.match(t, /katana-pay-integration\.html/);
+  assert.doesNotMatch(t, /payu|razorpay|rubyvault|cashfree|phonepe|paytm|ccavenue|payatom|ismartpay/i);
+});
