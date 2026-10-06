@@ -38,7 +38,8 @@ import { logApiRequest } from "@/lib/api-log";
 import { bankerLiveCheckoutMode } from "@/lib/checkout-mode-store";
 import { clientIp } from "@/lib/session-security";
 
-const schema = z.object({
+/** The order request every v1 order endpoint takes (also checked by the portal's "Test my integration"). */
+export const ORDER_REQUEST_SCHEMA = z.object({
   key: z.string().min(1),
   txnid: z.string().min(1).max(60),
   amount: z.union([z.number().positive(), z.string().min(1)]),
@@ -62,6 +63,8 @@ const schema = z.object({
   return_url: z.string().url().refine((u) => /^https?:\/\//i.test(u), "return_url must be http(s)").optional(),
   notify_url: z.string().url().refine((u) => /^https?:\/\//i.test(u), "notify_url must be http(s)").optional(),
 });
+
+const schema = ORDER_REQUEST_SCHEMA;
 
 async function parseBody(req: Request): Promise<Record<string, unknown>> {
   const ct = req.headers.get("content-type") ?? "";

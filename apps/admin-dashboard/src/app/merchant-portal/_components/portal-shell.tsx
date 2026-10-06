@@ -6,6 +6,7 @@
 import {
   Store, CreditCard, Percent, FileCheck2, LifeBuoy, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
   FileSpreadsheet, GitMerge, Search, Webhook, ScrollText, Sparkles, UserPlus, Wallet, Briefcase, Code2, BarChart3, KeyRound, ArrowRightLeft, Handshake,
+  FlaskConical,
 } from "lucide-react";
 import { PortalFrame, type NavGroup } from "@/components/portal/portal-frame";
 import { allowsPayin, type MerchantServicesSetting } from "@/lib/merchant-services";
@@ -53,6 +54,7 @@ const DEV: NavGroup = { id: "developers", label: "Developers", icon: Code2, item
   { href: `${B}/integration`, label: "Integration", icon: Plug },
   { href: `${B}/webhooks`, label: "Webhooks & keys", icon: Webhook },
   { href: `${B}/api-log`, label: "API log", icon: ScrollText },
+  { href: `${B}/test-integration`, label: "Test my integration", icon: FlaskConical },
 ] };
 
 export function ProviderPortalShell({

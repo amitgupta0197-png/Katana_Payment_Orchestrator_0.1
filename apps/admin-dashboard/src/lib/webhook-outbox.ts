@@ -152,6 +152,8 @@ async function deliver(row: OutboxRow): Promise<DeliveryResult> {
   const ts = Math.floor(Date.now() / 1000);
   const rawBody = JSON.stringify(row.payload);
   const headers: Record<string, string> = { "content-type": "application/json" };
+  // A sample event from the portal (lib/webhook-test) says so, so a server can tell it from a real one.
+  if (row.is_test) headers["X-Katana-Check"] = "1";
   let signature: string | null = null, err: string | null = null;
 
   if (row.version === "v2") {
