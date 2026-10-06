@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { InfoTip } from "@/components/ui/info-tip";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -78,7 +79,14 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
   return (
     <Card className="mb-4">
       <CardHeader>
-        <CardTitle className="text-base">TSP webhook link</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">
+          TSP webhook link
+          <InfoTip label="the TSP webhook link">
+            Only needed when a TSP or payment gateway reports this banker&apos;s payments to Katana itself (instead of Katana asking
+            the gateway). Give them this link and the secret; they post each payment result to it, signed with the secret, and
+            Katana marks the order paid or failed. If no TSP does this for the banker, you can ignore this card.
+          </InfoTip>
+        </CardTitle>
         <CardDescription>Give this link to the merchant&apos;s payment gateway / TSP. They post this merchant&apos;s payment results to it, signed with the test or live secret.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -100,6 +108,9 @@ export function MerchantTspWebhookCard({ merchantId, merchantCode }: { merchantI
                 <div key={live ? "live" : "test"} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <ModeBadge live={live} />
+                    {live
+                      ? <InfoTip label="the live secret">Signs results for real (live) orders. Rotate it only if it leaked; the TSP must switch to the new secret at the same time.</InfoTip>
+                      : <InfoTip label="the test secret">Signs results for test orders, so the TSP can test their side without touching real payments. Generate it when the TSP wants to test.</InfoTip>}
                     <span className={`truncate text-xs ${configured(live) ? "" : "text-[color:var(--color-warning)]"}`}>
                       {configured(live) ? "Secret issued · sealed" : live && liveLocked ? "Locked until live mode is activated" : "No secret yet"}
                     </span>
