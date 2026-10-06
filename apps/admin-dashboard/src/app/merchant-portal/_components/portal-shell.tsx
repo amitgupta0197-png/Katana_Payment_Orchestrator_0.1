@@ -7,6 +7,7 @@ import {
   Store, CreditCard, Percent, FileCheck2, LifeBuoy, Receipt, HelpCircle, Contact, Banknote, Plug, ShieldAlert,
   FileSpreadsheet, GitMerge, Search, Webhook, ScrollText, Sparkles, UserPlus, Wallet, Briefcase, Code2, BarChart3, KeyRound, ArrowRightLeft, Handshake,
   FlaskConical,
+  HandCoins,
 } from "lucide-react";
 import { PortalFrame, type NavGroup } from "@/components/portal/portal-frame";
 import { allowsPayin, type MerchantServicesSetting } from "@/lib/merchant-services";
@@ -15,12 +16,13 @@ const B = "/merchant-portal";
 
 // Pages that are about pay-ins only. A merchant onboarded for payouts only (lib/merchant-services)
 // takes none, so its portal leaves them out; the pages themselves stay reachable and empty.
-const PAYIN_ONLY = new Set([`${B}/orders`, `${B}/reconciliation`, `${B}/chargebacks`, `${B}/sub-mids`, `${B}/mid-switch`]);
+const PAYIN_ONLY = new Set([`${B}/unmatched`, `${B}/orders`, `${B}/reconciliation`, `${B}/chargebacks`, `${B}/sub-mids`, `${B}/mid-switch`]);
 
 const GROUPS: NavGroup[] = [
   { id: "payments", label: "Payments", icon: Receipt, items: [
     { href: `${B}/orders`, label: "Orders", icon: Search },
     { href: `${B}/transactions`, label: "Transactions", icon: Receipt },
+    { href: `${B}/unmatched`, label: "Unmatched payments", icon: HandCoins },
     { href: `${B}/reconciliation`, label: "Matching", icon: GitMerge },
     { href: `${B}/statements`, label: "Statements", icon: FileSpreadsheet },
     { href: `${B}/chargebacks`, label: "Chargebacks", icon: ShieldAlert },

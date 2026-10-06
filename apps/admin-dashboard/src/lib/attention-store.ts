@@ -161,12 +161,17 @@ async function gather(): Promise<AttentionItem[]> {
 
     // Money that arrived with no order it could be matched to.
     (async () => {
-      const r = await rows<{ code: string; n: number; total: string; since: string }>("vendorGateway", `
+      const q = (marked: string) => `
         SELECT merchant_id AS code, COUNT(*)::int AS n, SUM(amount)::text AS total, MIN(event_time)::text AS since
-          FROM vendor_txn_alerts
+          FROM vendor_txn_alerts a
          WHERE livemode AND direction ILIKE 'CR%' AND outcome IN ('UNMATCHED', 'AMBIGUOUS')
            AND matched_order_id IS NULL AND merchant_id IS NOT NULL AND event_time > now() - interval '7 days'
-         GROUP BY 1`).catch(() => []);
+           ${marked}
+         GROUP BY 1`;
+      // A payment someone marked "not an order payment" (lib/unmatched, vendorGateway 0045) is left out.
+      const r = await rows<{ code: string; n: number; total: string; since: string }>("vendorGateway", q(`AND NOT EXISTS (
+            SELECT 1 FROM unmatched_credit_reviews u WHERE u.alert_id = a.id AND u.decision = 'NOT_ORDER' AND u.status = 'DONE')`))
+        .catch(() => rows<{ code: string; n: number; total: string; since: string }>("vendorGateway", q("")).catch(() => []));
       for (const x of r) items.push({
         key: `UNMATCHED_MONEY:${x.code}`, category: "UNMATCHED_MONEY", ...who(x.code),
         title: `${x.n} payment${x.n === 1 ? "" : "s"} to ${x.code} with no order (${inr(Number(x.total))})`,
