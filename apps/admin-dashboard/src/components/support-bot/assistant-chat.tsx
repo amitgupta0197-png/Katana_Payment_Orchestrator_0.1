@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 
 interface TraceStep { tool: string; input: unknown; output: string; is_error: boolean; ms: number }
 interface Usage { model: string; tier?: string; rounds: number; ms: number; cost_usd_estimate: number }
-export interface Conversation { id: string; scope_key: string; channel: "STAFF" | "PORTAL"; title: string | null; started_by: string; updated_at: string; questions: number }
+export interface Conversation { id: string; scope_key: string; channel: "STAFF" | "PORTAL" | "TELEGRAM"; title: string | null; started_by: string; updated_at: string; questions: number }
 interface Message {
   id: string; role: "user" | "assistant"; text: string; attachments: string[] | null;
   trace: TraceStep[] | null; usage: Usage | null;
@@ -375,7 +375,7 @@ export function AssistantChat({ staff, scope, name, banner, conversations, confi
               <div className="truncate">{c.title || "Untitled"}</div>
               <div className={`mt-0.5 text-xs ${MUTED}`}>
                 {shortTime(c.updated_at)}{staff ? `, ${c.scope_key.replace(/^merchant:(.{8}).*/, "merchant $1…").replace(/^banker:/, "")}` : ""}
-                {staff && c.channel === "PORTAL" ? ", asked by the merchant" : ""}
+                {staff && c.channel === "PORTAL" ? ", asked by the merchant" : staff && c.channel === "TELEGRAM" ? ", in their Telegram group" : ""}
               </div>
             </button>
           ))}

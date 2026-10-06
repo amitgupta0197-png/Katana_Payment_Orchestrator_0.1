@@ -80,6 +80,8 @@ export async function askSupportBot(input: {
   staffTest: boolean;
   history: Msg[]; question: string; images?: BotImage[];
   onStep?: (label: string) => void;
+  /** Extra instructions for the channel the answer goes to (Telegram), after the scope line. */
+  channelNote?: string;
 }): Promise<BotTurn> {
   if (!process.env.ANTHROPIC_API_KEY?.trim())
     throw new SupportBotNotConfigured("The support bot needs ANTHROPIC_API_KEY in .env.local");
@@ -110,6 +112,7 @@ export async function askSupportBot(input: {
       system: [
         { type: "text", text: SUPPORT_BOT_SYSTEM, cache_control: { type: "ephemeral" } },
         { type: "text", text: scopeContext({ ...input.scope, staffTest: input.staffTest }) },
+        ...(input.channelNote ? [{ type: "text" as const, text: input.channelNote }] : []),
       ],
       tools: SUPPORT_BOT_TOOLS,
       messages,

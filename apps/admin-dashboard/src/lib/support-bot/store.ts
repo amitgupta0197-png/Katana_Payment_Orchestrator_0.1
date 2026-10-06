@@ -4,7 +4,8 @@
 // message holds a reference to it, filled back in by loadHistory.
 //
 // A conversation belongs to a scope (lib/support-bot/scope) and a channel: STAFF for a staff
-// test, PORTAL for the merchant or banker asking for itself.
+// test, PORTAL for the merchant or banker asking for itself, TELEGRAM for its Telegram group
+// (lib/support-bot/telegram, merchant 0023).
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { rows } from "@/lib/pg";
@@ -12,7 +13,7 @@ import type { BotImage, BotUsage, TraceStep } from "@/lib/support-bot/bot";
 import type { ScopeKey } from "@/lib/support-bot/scope";
 
 type Msg = Anthropic.Beta.BetaMessageParam;
-export type Channel = "STAFF" | "PORTAL";
+export type Channel = "STAFF" | "PORTAL" | "TELEGRAM";
 
 export interface ConversationRow {
   id: string; merchant_code: string | null; scope_key: ScopeKey; channel: Channel; title: string | null;

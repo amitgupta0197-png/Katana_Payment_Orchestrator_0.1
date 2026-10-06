@@ -3,7 +3,8 @@
 // The support assistant, as staff test it (lib/support-bot): pick a banker, or a merchant with all
 // its bankers, and ask what they would ask. Each answer shows what the bot looked up, which model
 // answered and what it cost, and can be rated with a note on what the right answer was. Merchants'
-// own conversations from the portals are listed here too.
+// own conversations from the portals and their Telegram groups are listed here too; the Telegram
+// tab links groups and shows what the bot did in them (components/support-bot/telegram-panel).
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -11,6 +12,8 @@ import { Bot } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { AssistantChat, type Conversation } from "@/components/support-bot/assistant-chat";
+import { TelegramPanel } from "@/components/support-bot/telegram-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Banker { id: string; code: string; name: string; stage: string }
 interface Merchant { id: string; code: string; name: string }
@@ -59,16 +62,27 @@ export default function SupportBotPage() {
         </select>
       </label>
 
-      <AssistantChat
-        staff
-        heightClass="h-[calc(100dvh-15.5rem)]"
-        scope={scope || null}
-        name={chosen?.name ?? null}
-        configured={list.data?.configured ?? true}
-        conversations={list.data?.conversations ?? []}
-        onAnswered={() => qc.invalidateQueries({ queryKey: ["support-bot", "list"] })}
-        onPickConversation={(c) => setScope(c.scope_key)}
-      />
+      <Tabs defaultValue="test">
+        <TabsList>
+          <TabsTrigger value="test">Test</TabsTrigger>
+          <TabsTrigger value="telegram">Telegram groups</TabsTrigger>
+        </TabsList>
+        <TabsContent value="test">
+          <AssistantChat
+            staff
+            heightClass="h-[calc(100dvh-18rem)]"
+            scope={scope || null}
+            name={chosen?.name ?? null}
+            configured={list.data?.configured ?? true}
+            conversations={list.data?.conversations ?? []}
+            onAnswered={() => qc.invalidateQueries({ queryKey: ["support-bot", "list"] })}
+            onPickConversation={(c) => setScope(c.scope_key)}
+          />
+        </TabsContent>
+        <TabsContent value="telegram">
+          <TelegramPanel scope={scope || null} scopeName={chosen?.name ?? null} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

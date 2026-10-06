@@ -469,6 +469,16 @@ for (const [i, c] of COMBOS.entries()) {
       const notImage = await api("POST", "/api/support-bot", { scope: `banker:${bankerCode}`, text: "look", images: [Buffer.from("%PDF-1.7 not a picture").toString("base64")] });
       assert.deepEqual([notImage.status, notImage.body.code], [400, "BAD_IMAGE"]);
 
+      // Telegram groups: staff can make a link code for this banker; the bot's webhook takes
+      // nothing without Telegram's secret (404 while the bot is off, 401 when on).
+      const tg = await api("GET", "/api/support-bot/telegram");
+      assert.equal(tg.status, 200, JSON.stringify(tg.body));
+      const code = await api("POST", "/api/support-bot/telegram", { action: "link_code", scope: `banker:${bankerCode}` });
+      assert.match(String(code.body.code), /^[A-HJ-NP-Z2-9]{8}$/, JSON.stringify(code.body));
+      await rows("merchant", `DELETE FROM support_bot_tg_link_codes WHERE code = $1`, [code.body.code]);
+      const hook = await fetch(`${BASE}/api/telegram/support/webhook`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ update_id: 1 }) });
+      assert.ok([401, 404].includes(hook.status), `webhook without its secret answered ${hook.status}`);
+
       // The banker's and the merchant's own logins: their own scope only, never a staff test.
       const bankerLogin = await login(bankerEmail, made.body.branch.login.password);
       const providerEmail = `e2e-p-${RUN.toLowerCase()}-${i}@katana.test`;
