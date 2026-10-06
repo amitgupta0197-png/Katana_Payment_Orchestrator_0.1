@@ -17,6 +17,8 @@ import { effectivePayinLimits, platformPayinLimits } from "@/lib/payin-limits";
 import { getPayinLimits } from "@/lib/payin-limits-store";
 import { getCheckoutCredsStatus } from "@/lib/merchant-checkout";
 import { checkBanker, type BankerCheckFacts, type BankerCheckResult } from "@/lib/banker-check";
+import type { BankerTodoFacts } from "@/lib/banker-todo";
+import { plainRefusal, type PlainRefusal } from "@/lib/plain-errors";
 
 /** Heartbeat fresher than this = online (as the devices route). */
 const ONLINE_SEC = 600;
@@ -106,4 +108,49 @@ export async function bankerCheckFacts(merchantId: string): Promise<BankerCheckF
 export async function checkBankerById(merchantId: string): Promise<{ facts: BankerCheckFacts; result: BankerCheckResult } | null> {
   const facts = await bankerCheckFacts(merchantId);
   return facts ? { facts, result: checkBanker(facts) } : null;
+}
+
+// ── The banker page's "What's left" (lib/banker-todo) and today's refused orders ─────────────
+
+export async function bankerTodoFacts(merchantId: string): Promise<BankerTodoFacts | null> {
+  const check = await bankerCheckFacts(merchantId);
+  if (!check) return null;
+  const code = check.code;
+  const [steps, golive, paid] = await Promise.all([
+    rows<{ a: boolean; k: boolean; s: boolean; b: boolean; p: boolean }>("merchant", `
+      SELECT step_application AS a, step_kyb_docs AS k, step_screening AS s, step_bank_verify AS b, step_approval AS p
+        FROM merchants WHERE merchant_code = $1`, [code]).catch(() => []),
+    check.account ? getGoLive(code, check.account.gateway).catch(() => null) : Promise.resolve(null),
+    rows<{ intent: number; p2p: number }>("vendorGateway", `
+      SELECT COUNT(*) FILTER (WHERE channel_type = 'INTENT')::int AS intent,
+             COUNT(*) FILTER (WHERE channel_type = 'P2P')::int AS p2p
+        FROM vendor_payin_orders WHERE merchant_id = $1 AND livemode AND status IN ('SUCCESS', 'SUCCEEDED')`, [code]).catch(() => []),
+  ]);
+  const s = steps[0];
+  return {
+    check,
+    steps: { application: !!s?.a, kyb: !!s?.k, screening: !!s?.s, bankVerify: !!s?.b, approval: !!s?.p },
+    golive: golive ? { webhookAt: golive.webhook_at, statusAt: golive.status_at } : null,
+    livePaid: { intent: paid[0]?.intent ?? 0, p2p: paid[0]?.p2p ?? 0 },
+  };
+}
+
+export interface RefusedOrder { at: string; endpoint: string; http_status: number; code: string | null; amount: string | null; txnid: string | null; plain: PlainRefusal }
+
+/** Live orders this banker's merchant sent today (India day) that were refused, newest first. Staff only. */
+export async function refusedOrdersToday(merchantCode: string, limit = 20): Promise<RefusedOrder[]> {
+  const r = await rows<{ at: string; endpoint: string; http_status: number; error_code: string | null; error: string | null; amount: string | null; txnid: string | null }>("audit", `
+    SELECT created_at::text AS at, endpoint, http_status, error_code,
+           COALESCE(response_body->>'error', response_body->>'message', response_body->'error'->>'message') AS error,
+           -- v2 amounts are paise; v1 amounts are rupees as sent.
+           CASE WHEN endpoint LIKE '/v2/%' AND request_body->>'amount' ~ '^[0-9]+$'
+                THEN ((request_body->>'amount')::numeric / 100)::text
+                ELSE request_body->>'amount' END AS amount,
+           COALESCE(request_body->>'txnid', request_body->>'reference') AS txnid
+      FROM api_request_log
+     WHERE merchant_id = $1 AND http_status >= 400 AND COALESCE(livemode, true)
+       AND endpoint ~ '(order|/pay$|/v2/orders)'
+       AND created_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
+     ORDER BY created_at DESC LIMIT $2`, [merchantCode, limit]).catch(() => []);
+  return r.map((x) => ({ at: x.at, endpoint: x.endpoint, http_status: x.http_status, code: x.error_code, amount: x.amount, txnid: x.txnid, plain: plainRefusal(x.error_code, x.error) }));
 }

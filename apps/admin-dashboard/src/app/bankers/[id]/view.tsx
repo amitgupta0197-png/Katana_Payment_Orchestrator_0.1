@@ -42,6 +42,7 @@ import { useAccess, useSeesGatewayNames } from "@/lib/use-access";
 import { BankerMids } from "@/components/merchant/banker-mids";
 import { IntegrationTab } from "@/components/integration/integration-tab";
 import { BankerCheckButton } from "@/components/merchant/banker-check";
+import { BankerTodoCard } from "@/components/merchant/banker-todo";
 
 interface Merchant {
   id: string; merchant_code: string; legal_name: string; brand_name?: string;
@@ -538,6 +539,9 @@ export default function MerchantDetailView({ id }: { id: string }) {
 
   const merchant = merchantQ.data;
   const [tab, setTabState] = useState<TabKey>("overview");
+  // The onboarding stages (Application … Approval) sit under "Advanced": the to-do list above them
+  // says what's left. A step's "Approve" / "Open onboarding steps" opens them.
+  const [stagesOpen, setStagesOpen] = useState(false);
   // The open tab lives in the URL (?tab=), so a reload or a shared link lands on it.
   useEffect(() => {
     const raw = new URLSearchParams(window.location.search).get("tab");
@@ -634,14 +638,36 @@ export default function MerchantDetailView({ id }: { id: string }) {
             {merchant.risk_tier && <Badge variant={statusVariant(merchant.risk_tier)}>{titleCase(merchant.risk_tier)} risk</Badge>}
           </div>
         </div>
-        <div className="mt-4 border-t pt-4">
-          <JourneyBar
-            steps={STEPS.map((st, i) => ({ label: st.label, done: stepsDone[i] }))}
-            stage={merchant.stage}
-            action={nextStepIndex >= 0 && !stopped ? <AdvanceDialog merchant={merchant} stepIndex={nextStepIndex} /> : undefined}
-          />
-        </div>
+        {named ? (
+          <details id="onboarding-stages" className="group mt-4 border-t pt-3" open={stagesOpen}
+            onToggle={(e) => setStagesOpen((e.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer select-none text-xs text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]">
+              Advanced: onboarding stages <span className="text-[color:var(--color-text-subtle)]">(Application → Approval)</span>
+            </summary>
+            <div className="mt-3">
+              <JourneyBar
+                steps={STEPS.map((st, i) => ({ label: st.label, done: stepsDone[i] }))}
+                stage={merchant.stage}
+                action={nextStepIndex >= 0 && !stopped ? <AdvanceDialog merchant={merchant} stepIndex={nextStepIndex} /> : undefined}
+              />
+            </div>
+          </details>
+        ) : (
+          <div className="mt-4 border-t pt-4">
+            <JourneyBar
+              steps={STEPS.map((st, i) => ({ label: st.label, done: stepsDone[i] }))}
+              stage={merchant.stage}
+              action={nextStepIndex >= 0 && !stopped ? <AdvanceDialog merchant={merchant} stepIndex={nextStepIndex} /> : undefined}
+            />
+          </div>
+        )}
       </section>
+
+      {/* What's left before it takes live money, ticked from real state (staff: it names the gateway). */}
+      {named && (
+        <BankerTodoCard merchantId={merchant.id} onOpenTab={openTab}
+          onAdvance={() => { setStagesOpen(true); document.getElementById("onboarding-stages")?.scrollIntoView({ behavior: "smooth", block: "center" }); }} />
+      )}
 
       {/* What this banker can do right now; each light opens its tab */}
       <StatusLights merchantId={merchant.id} onOpen={openTab} />

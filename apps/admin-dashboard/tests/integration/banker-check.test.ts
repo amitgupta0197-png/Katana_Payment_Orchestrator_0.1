@@ -45,3 +45,17 @@ test("an exclusive partner's banker is refused with PARTNER_ONLY", opts, async (
     assert.ok(r.blockers.some((b) => b.key === "PARTNER_ONLY"));
   }
 });
+
+test("the banker page's to-do and today's refused orders read from the local database", opts, async () => {
+  const { bankerTodoFacts, refusedOrdersToday } = await import("@/lib/banker-check-store");
+  const { bankerTodo } = await import("@/lib/banker-todo");
+  const f = await bankerTodoFacts(BANKER);
+  assert.ok(f);
+  const t = bankerTodo(f);
+  assert.equal(t.steps.length, 5);
+  assert.equal(t.done, t.steps.filter((s) => s.done).length);
+  assert.equal(t.live, t.done === 5);
+  const refused = await refusedOrdersToday(BANKER);
+  assert.ok(Array.isArray(refused));
+  for (const r of refused) assert.ok(r.plain.text && r.http_status >= 400);
+});
