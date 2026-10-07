@@ -23,6 +23,8 @@ export interface LimitsView {
   no_amount_works: boolean;
   /** H2H: the order API returns the UPI link for the merchant's own page. REDIRECT: send the customer to pay_url. */
   checkout: "H2H" | "REDIRECT" | null;
+  /** Why checkout is what it is. REDIRECT comes from the kind of payment account, never from verification. */
+  checkout_note: string | null;
   /** Where each number comes from, in plain words, so the answer can say why. */
   why: string[];
 }
@@ -64,6 +66,9 @@ export function limitsView(f: BankerCheckFacts, verificationUsed: number | null,
     verification_payments_left: left,
     no_amount_works: (max != null && min > max) || (verifying && left === 0),
     checkout,
+    checkout_note: checkout === "REDIRECT"
+      ? "this payment account only offers a hosted payment page, so orders return pay_url and no UPI link. Being verified or set live does not change this; only Katana connecting a different payment account makes it H2H."
+      : checkout === "H2H" ? "orders return the UPI link and QR for the merchant's own page." : null,
     why,
   };
 }

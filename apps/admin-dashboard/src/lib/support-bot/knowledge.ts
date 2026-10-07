@@ -72,7 +72,7 @@ The person may attach a screenshot, usually a payment the customer says was succ
 - Status: PENDING, then SUCCESS, FAILED or EXPIRED. The customer has 15 minutes to pay; after that the order is EXPIRED. An EXPIRED or FAILED order can still turn SUCCESS if the money arrives late, and a second webhook is sent. SUCCESS is final.
 - Status lookup: GET /api/v1/p2p/order/{id} or /api/v1/intent/order/{id} or /api/pay-status/{id}. No signature needed.
 - Amount limits: a live payment must be within the account's own limits and the payment account's own minimum (some take ₹500 or ₹1,000 and more per payment). While a new payment account is being verified it takes only small verification payments, up to a cap, until Katana marks it live. Use get_limits for the real numbers before answering any minimum, maximum or "amount" question; never guess them.
-- H2H or redirect: with H2H the order answer carries the UPI link and QR for the merchant's own page; with redirect only pay_url, where the customer pays on a hosted page. The order answer says which ("checkout"); get_limits says it for the account.
+- H2H or redirect: with H2H the order answer carries the UPI link and QR for the merchant's own page; with redirect only pay_url, where the customer pays on a hosted page. The order answer says which ("checkout"); get_limits says it for the account. Redirect or H2H depends only on the kind of payment account, not on verification, limits or live status: never tell them it will change once the account is verified or live. Only the Katana team can make it H2H, by connecting a different payment account; say the team will confirm when.
 
 ## Channels: INTENT and P2P
 - Every pay-in is on one channel, fixed when the order is made: INTENT (the payment processor takes it) or P2P (paid to the merchant's own UPI ID). Old orders with no channel are "unclassified"; never put them on either.
@@ -154,7 +154,7 @@ export const SUPPORT_BOT_TELEGRAM_SYSTEM = `You are Katana's support helper in a
 - Same txnid again returns the same order ("reused": true), so retrying is safe.
 - Test keys (mk_test_) never move real money. Live keys need live mode switched on (else 403 LIVE_MODE_NOT_ACTIVATED).
 - A new payment account takes only small verification payments until Katana marks it live; some accounts take only ₹1,000 or more per payment. Always use get_limits for the numbers.
-- "checkout" in the order answer: H2H (UPI link in the answer for their own page) or REDIRECT (send the customer to pay_url).
+- "checkout" in the order answer: H2H (UPI link in the answer for their own page) or REDIRECT (send the customer to pay_url). It depends only on the kind of payment account, never on verification or live status; only the Katana team can change it.
 - Callbacks: their server must answer HTTP 200; Katana retries after 1 min, 5 min, 15 min, 1 h, 6 h and 24 h. A check from Katana carries X-Katana-Check: 1 and a test order id.
 - Error codes: 400 INVALID_REQUEST, 401 signature mismatch / invalid key, 403 MERCHANT_BLOCKED / PAYIN_NOT_ENABLED / LIVE_MODE_NOT_ACTIVATED / PARTNER_ONLY, 409 FLOW_NOT_ENABLED / FLOW_NOT_READY / TXNID_IN_USE, 422 AMOUNT_BELOW_MIN / AMOUNT_ABOVE_MAX / DAILY_LIMIT_EXCEEDED (with limit and actual), 429 RATE_LIMITED, 502 the payment processor refused (502 GATEWAY_CREDENTIALS: only Katana can fix it), 503 NO_ACCOUNT_AVAILABLE.
 
