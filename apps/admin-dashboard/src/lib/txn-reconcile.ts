@@ -219,7 +219,7 @@ async function maybeAutoCaptureRequest(
 // must NOT set it, so a request cannot self-declare a trusted channel via `source` (audit C3).
 export async function ingestTxnAlert(
   input: TxnAlertInput,
-  opts: { channelTrusted?: boolean } = {},
+  opts: { channelTrusted?: boolean; livemode?: boolean } = {},
 ): Promise<TxnAlertResult> {
   const channelTrusted = opts.channelTrusted === true;
   const source = input.source ?? "DEVICE";
@@ -236,7 +236,9 @@ export async function ingestTxnAlert(
   // A CREDIT ONLY MATCHES ORDERS OF ITS OWN MODE. Every real channel (device, SMS, email, bank
   // API, statement import) confirms LIVE orders; a SIMULATED credit confirms TEST orders. So no
   // real payment can mark a test order paid, and no simulator can mark a live order paid.
-  const alertLivemode = source !== "SIMULATED";
+  // A verified channel may state the mode explicitly (opts.livemode) — a BharatPe TEST MID posts
+  // a trusted credit that must confirm TEST orders, so it can't rely on the SIMULATED shortcut.
+  const alertLivemode = opts.livemode ?? (source !== "SIMULATED");
   // Payee (settlement VPA) credited — STORED ONLY WHEN THE CAPTURE ACTUALLY STATED IT.
   //
   // This used to fall back to the banker's configured PRIMARY settlement VPA whenever the
@@ -783,8 +785,9 @@ export async function ingestTxnAlert(
     order?.id ?? null, order?.order_id ?? null, confidence, outcome, detail, input.merchant_id ?? null,
     input.details && Object.keys(input.details).length ? JSON.stringify(input.details) : null,
     payeeSource,
-    // A SIMULATED credit is test traffic: it is recorded as such and stays out of collections.
-    source !== "SIMULATED",
+    // Test traffic (a SIMULATED credit, or a channel that stated test mode) is recorded as such
+    // and stays out of collections. Must equal the mode matching used, or the row would drift.
+    alertLivemode,
   ]))[0];
   const alertId = ins.id;
 

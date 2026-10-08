@@ -59,13 +59,14 @@ export async function POST(req: Request) {
   if (isAuthMessage(body.raw) || isAuthMessage(body.narration))
     return NextResponse.json({ ok: true, outcome: "REJECTED", detail: "auth/OTP message ignored" });
 
-  // A LIVE MID's verified post is a channel-trusted BharatPe credit (auto-confirms a live order);
-  // a TEST MID is recorded as simulated traffic (SIMULATED → livemode false, never auto-confirms).
+  // A verified BharatPe post is channel-trusted; the MID's env decides the mode it confirms. A LIVE
+  // MID confirms live orders, a TEST MID confirms TEST orders (opts.livemode is stated explicitly,
+  // so a trusted test credit isn't forced down the SIMULATED path that never auto-confirms).
   const live = envOfApiKey(apiKey) === "PROD";
   try {
     const r = await ingestTxnAlert(
       {
-        source: live ? "BHARATPE" : "SIMULATED",
+        source: "BHARATPE",
         merchant_id: mid.merchant_code,
         bank: "BharatPe",
         amount: body.amount,
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
         nonce: body.nonce,
         details: body.bharatpe_txn_id ? { bharatpe_txn_id: body.bharatpe_txn_id, mid: mid.label } : { mid: mid.label },
       },
-      { channelTrusted: live },
+      { channelTrusted: true, livemode: live },
     );
     return NextResponse.json({ ok: true, ...r });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
