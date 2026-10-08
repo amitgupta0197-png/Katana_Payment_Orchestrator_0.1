@@ -115,7 +115,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
             </div>
             {needsH2h && checkout === "REDIRECT" && (
               <div className="rounded-md border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] p-2 text-xs">
-                This merchant needs host-to-host checkout, but this account only redirects to the gateway&apos;s payment page: orders carry no UPI link for the merchant&apos;s own page. Connect a host-to-host gateway.
+                This banker needs host-to-host checkout, but this account only redirects to the gateway&apos;s payment page: orders carry no UPI link for the merchant&apos;s own page. Connect a host-to-host gateway.
               </div>
             )}
             {golive?.status === "VERIFYING" && (
@@ -147,7 +147,7 @@ export function PayinGatewayCard({ merchantId, merchantCode }: { merchantId: str
         ) : (
           <div className="rounded-md border px-3 py-2 text-xs text-[color:var(--color-text-muted)]">
             No gateway connected. Connect PayU, Razorpay, Cashfree, CCAvenue, PhonePe, Paytm, RubyVault, iSmartPay or PayAtom.
-            {needsH2h && " This merchant needs host-to-host checkout: choose a gateway marked H2H."}
+            {needsH2h && " This banker needs host-to-host checkout: choose a gateway marked H2H."}
           </div>
         )}
       </CardContent>

@@ -56,7 +56,7 @@ export function GatewayCredentialsDialog({
   onSave: (form: GatewayForm) => Promise<unknown>;
   /** Adds a further account for the MID switch instead of replacing the first one. */
   addAnother?: boolean;
-  /** The banker's merchant needs host-to-host checkout (providers.needs_h2h). */
+  /** The banker needs host-to-host checkout (its own choice, else its merchant's; lib/checkout-mode-store). */
   needsH2h?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -193,7 +193,7 @@ export function GatewayCredentialsDialog({
           )}
           {blockedH2h && (
             <div className="space-y-2 rounded-md border border-[color:var(--color-warning)]/40 bg-[color:var(--color-warning-muted)] px-3 py-2 text-xs">
-              <div>This merchant needs host-to-host checkout, and this account only offers a redirect to the gateway&apos;s payment page. Choose a host-to-host gateway, or save anyway (Super Admin) with a note.</div>
+              <div>This banker needs host-to-host checkout, and this account only offers a redirect to the gateway&apos;s payment page. Choose a host-to-host gateway, or save anyway (Super Admin) with a note.</div>
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
                 Save anyway. The note is recorded as the reason.

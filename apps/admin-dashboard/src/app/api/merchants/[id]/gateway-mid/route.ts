@@ -12,9 +12,10 @@
 // (as before: saving replaces it); "new" adds another for the MID switch (lib/mid-switch); a
 // vault label from `accounts` rotates that one. GET lists every account (`accounts`).
 //
-// A banker whose merchant needs host-to-host (providers.needs_h2h, lib/checkout-mode-store) may
+// A banker that needs host-to-host (its own merchants.needs_h2h, else its merchant's providers.needs_h2h;
+// lib/checkout-mode-store) may
 // not be given a redirect-only Intent account: 409 H2H_REQUIRED, unless `override_h2h: true`
-// comes with a `note` of 5+ characters (recorded). GET says the merchant's need and each
+// comes with a `note` of 5+ characters (recorded). GET says the banker's need and each
 // account's checkout mode (lib/pg-catalog gatewayCheckoutMode).
 
 import { NextResponse } from "next/server";
@@ -113,7 +114,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (h2hOverride) {
     if (!body.override_h2h)
       return NextResponse.json({
-        error: `${code}'s merchant needs host-to-host checkout, and ${def.name}${alt ? ` (${alt.label})` : ""} only offers a redirect to its own payment page. Choose a host-to-host gateway, or save anyway with a note.`,
+        error: `${code} needs host-to-host checkout, and ${def.name}${alt ? ` (${alt.label})` : ""} only offers a redirect to its own payment page. Choose a host-to-host gateway, or save anyway with a note.`,
         code: "H2H_REQUIRED",
       }, { status: 409 });
     if ((body.note ?? "").trim().length < 5)

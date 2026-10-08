@@ -70,7 +70,7 @@ export interface SetupFacts {
   payinGateway: boolean;
   /** A payout gateway is connected for the banker. */
   payoutGateway: boolean;
-  /** The banker's merchant needs host-to-host checkout (providers.needs_h2h). */
+  /** The banker needs host-to-host checkout: its own choice, else its merchant's (lib/checkout-mode-store). */
   needsH2h?: boolean;
   /** The checkout mode of the banker's pay-in account (lib/pg-catalog gatewayCheckoutMode). */
   intentCheckout?: "H2H" | "REDIRECT" | null;
@@ -104,7 +104,7 @@ export function setupItems(services: MerchantServicesSetting, flow: MerchantFlow
     if (intent && facts.needsH2h && facts.payinGateway)
       items.push({ key: "INTENT_H2H", label: `${PAYIN_FLOW_LABEL.INTENT}: host-to-host payment account`,
         state: facts.intentCheckout === "H2H" ? "DONE" : "OPTIONAL_MISSING",
-        hint: "The merchant needs host-to-host checkout, but this banker's payment account only redirects to the gateway's page. Connect a host-to-host gateway." });
+        hint: "This banker is set to host-to-host checkout, but its payment account only redirects to the gateway's page. Connect a host-to-host gateway." });
   }
   if (payout && services !== "UNSET") {
     items.push({ key: "PAYOUT_GATEWAY", label: "Pay-out: payout gateway connected",

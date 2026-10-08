@@ -26,6 +26,7 @@ import { MerchantTspWebhookCard } from "@/components/merchant/tsp-webhook-card";
 import { MerchantCheckoutKeyCard } from "@/components/merchant/checkout-key-card";
 import { StarterKitCard } from "@/components/merchant/starter-kit-card";
 import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
+import { BankerH2hCard } from "@/components/merchant/banker-h2h-card";
 import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
@@ -777,6 +778,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         <TabsContent value="intent">
           <FlowFitNote bankerId={merchant.id} flow="INTENT" />
           {named && <>
+            <BankerH2hCard merchantId={merchant.id} />
             <PayatomConnectCard merchantId={merchant.id} />
             <PayinGatewayCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             <div className="mt-4">

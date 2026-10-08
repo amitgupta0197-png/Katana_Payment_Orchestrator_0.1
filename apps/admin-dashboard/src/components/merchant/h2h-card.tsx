@@ -76,7 +76,7 @@ export function H2hCard({ providerId }: { providerId: string }) {
           })}
         </div>
         <div className="text-xs text-[color:var(--color-text-muted)]">
-          Changing this does not change a payment account already connected: a banker on a redirect-only account stays on redirect until its account is replaced.
+          A banker with its own choice (banker page → Pays via gateway) keeps it. Changing this does not change a payment account already connected: a banker on a redirect-only account stays on redirect until its account is replaced.
           {last && <> Last changed {new Date(last.changed_at).toLocaleString("en-IN")}{last.changed_by ? ` by ${last.changed_by}` : ""}.</>}
         </div>
       </CardContent>

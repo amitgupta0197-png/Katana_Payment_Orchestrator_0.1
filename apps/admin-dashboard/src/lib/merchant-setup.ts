@@ -9,7 +9,7 @@ import { rows } from "@/lib/pg";
 import { setAlert } from "@/lib/ops-alert";
 import { merchantFlowOf, type MerchantFlow } from "@/lib/payin-flow";
 import { getProviderServices } from "@/lib/merchant-services-store";
-import { bankerLiveCheckoutMode, getProviderNeedsH2h } from "@/lib/checkout-mode-store";
+import { bankerLiveCheckoutMode, bankerNeedsH2h, bankersOwnH2h, effectiveNeedsH2h } from "@/lib/checkout-mode-store";
 import {
   parseServices, setupItems, setupVerdict, type MerchantEvidence, type MerchantServicesSetting, type SetupItem,
 } from "@/lib/merchant-services";
@@ -31,7 +31,7 @@ export async function bankerSetup(merchantCode: string): Promise<BankerSetup> {
     getProviderServices(flow.providerId),
     flowReadiness([merchantCode]),
     activePayoutProvider(merchantCode).catch(() => null),
-    getProviderNeedsH2h(flow.providerId),
+    bankerNeedsH2h(merchantCode),
   ]);
   const r = ready.get(merchantCode);
   const intentCheckout = needsH2h && r?.intent ? await bankerLiveCheckoutMode(merchantCode) : null;
@@ -103,10 +103,14 @@ export async function merchantReadiness(only?: string | null, proposed?: Propose
   // A database without provider 0023 has none.
   const h2hProviders = new Set((await rows<{ id: string }>("provider",
     `SELECT id::text FROM providers WHERE needs_h2h AND ($1::text IS NULL OR id::text = $1)`, [only ?? null]).catch(() => [])).map((r) => r.id));
+  // A banker's own choice wins over its merchant's (merchant 0026).
+  const ownH2h = await bankersOwnH2h(mine.map((b) => b.merchant_code));
+  const needsH2hOf = (code: string, pid: string | null | undefined) =>
+    effectiveNeedsH2h(ownH2h.get(code) ?? null, !!pid && h2hProviders.has(pid));
   const h2hMode = new Map<string, "H2H" | "REDIRECT" | null>();
   for (const b of mine) {
     const pid = mapped.get(b.id) ?? mapped.get(b.merchant_code);
-    if (pid && h2hProviders.has(pid) && ready.get(b.merchant_code)?.intent)
+    if (needsH2hOf(b.merchant_code, pid) && ready.get(b.merchant_code)?.intent)
       h2hMode.set(b.merchant_code, await bankerLiveCheckoutMode(b.merchant_code).catch(() => null));
   }
   const ownFlow = new Map(own.map((o) => [o.merchant_code, merchantFlowOf(o.payin_flow, o.payin_active_flow)]));
@@ -120,7 +124,7 @@ export async function merchantReadiness(only?: string | null, proposed?: Propose
       const r = ready.get(b.merchant_code);
       const items = setupItems(services, eff, {
         upiId: !!r?.p2p, payinGateway: !!r?.intent, payoutGateway: hasPayout.has(b.merchant_code),
-        needsH2h: h2hProviders.has(p.id), intentCheckout: h2hMode.get(b.merchant_code) ?? null,
+        needsH2h: needsH2hOf(b.merchant_code, p.id), intentCheckout: h2hMode.get(b.merchant_code) ?? null,
       });
       return { id: b.id, merchant_code: b.merchant_code, name: b.name, stage: b.stage, flow: eff, own_flow: !!o, items, result: setupVerdict(items).result };
     });
