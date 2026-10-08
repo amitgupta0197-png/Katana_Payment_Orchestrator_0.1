@@ -21,6 +21,7 @@ import {
 } from "@/lib/merchant-services";
 import { PAYIN_FLOW_LABEL, type OrderFlow, type PayinFlow, type MerchantFlow } from "@/lib/payin-flow";
 import { MERCHANT_CODE, codeFromName } from "@/lib/merchant-code";
+import { CHECKOUT_MODE_WORDS, type CheckoutMode } from "@/lib/pg-catalog";
 
 // ── The answers ──────────────────────────────────────────────────────────────────────────
 
@@ -28,18 +29,20 @@ interface Answers {
   legal_name: string; code: string; kind: string;
   contact_email: string; contact_phone: string;
   services: MerchantServices | null; flow: PayinFlow | null; active: OrderFlow | null;
+  /** How Intent customers pay: H2H (providers.needs_h2h on) or Redirect (off). Only asked for Intent. */
+  checkout: CheckoutMode | null;
   merchant_login: boolean; dt_banker_login: boolean;
   first_banker: boolean; banker_code: string; banker_name: string; banker_email: string;
   note: string;
 }
 const EMPTY: Answers = {
   legal_name: "", code: "", kind: "PROVIDER", contact_email: "", contact_phone: "",
-  services: null, flow: null, active: null,
+  services: null, flow: null, active: null, checkout: null,
   merchant_login: true, dt_banker_login: false, first_banker: true, banker_code: "", banker_name: "", banker_email: "",
   note: "",
 };
 
-type StepKey = "name" | "contact" | "services" | "flow" | "default" | "people" | "review";
+type StepKey = "name" | "contact" | "services" | "flow" | "default" | "checkout" | "people" | "review";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CODE = MERCHANT_CODE;
 
@@ -47,9 +50,15 @@ function stepsFor(mode: "create" | "existing", a: Answers): StepKey[] {
   const s: StepKey[] = mode === "create" ? ["name", "contact", "services"] : ["services"];
   if (a.services && allowsPayin(a.services)) s.push("flow");
   if (a.services && allowsPayin(a.services) && a.flow === "BOTH") s.push("default");
+  if (usesIntent(a)) s.push("checkout");
   if (mode === "create") s.push("people");
   s.push("review");
   return s;
+}
+
+/** Intent is on the merchant's choice: only then is H2H or Redirect asked (P2P always gives a UPI link). */
+function usesIntent(a: Answers): boolean {
+  return !!a.services && allowsPayin(a.services) && (a.flow === "INTENT" || a.flow === "BOTH");
 }
 
 function problemAt(step: StepKey, a: Answers): string | null {
@@ -63,6 +72,7 @@ function problemAt(step: StepKey, a: Answers): string | null {
     case "services": return a.services ? null : "Choose what they will use Katana for";
     case "flow": return a.flow ? null : "Choose how their customers will pay";
     case "default": return a.active ? null : "Choose the default flow";
+    case "checkout": return a.checkout ? null : "Choose host-to-host or redirect";
     case "people":
       if (!a.first_banker) return null;
       if (!CODE.test(a.banker_code.trim())) return "The banker code is 2 to 60 letters, digits, - or _";
@@ -188,6 +198,7 @@ const QUESTION: Record<StepKey, { rail: string; title: string; body: string }> =
   services: { rail: "Services", title: "What will they use Katana for?", body: "Their bankers take only what is chosen here. You can change it later." },
   flow: { rail: "How customers pay", title: "How will their customers pay?", body: "Choose the pay-in flow. A merchant can be on one or both." },
   default: { rail: "Default flow", title: "Which flow should orders take when they don't say?", body: "The P2P and Intent order APIs always use their own flow. The general order API and v2 don't name one, so they use this default." },
+  checkout: { rail: "Intent checkout", title: "Will they show the UPI link on their own page?", body: "This decides which payment accounts their bankers can be given for Intent. You can change it later on the merchant's page." },
   people: { rail: "Logins", title: "Who needs a login?", body: "Logins get a one-time password, shown once on the last screen." },
   review: { rail: "Review", title: "Check everything, then confirm", body: "Nothing is saved until you confirm." },
 };
@@ -199,6 +210,7 @@ function answerFor(step: StepKey, a: Answers): string | null {
     case "services": return a.services ? SERVICES_LABEL[a.services] : null;
     case "flow": return a.flow ? PAYIN_FLOW_LABEL[a.flow] : null;
     case "default": return a.active ? PAYIN_FLOW_LABEL[a.active] : null;
+    case "checkout": return a.checkout ? CHECKOUT_MODE_WORDS[a.checkout].label : null;
     case "people": return [a.merchant_login && "Merchant", a.first_banker && (a.banker_code || "First banker"), a.dt_banker_login && "DT banker"].filter(Boolean).join(", ") || "None";
     case "review": return null;
   }
@@ -212,6 +224,8 @@ interface Created {
   provider_login?: { email?: string; password?: string | null; existing?: boolean; error?: string };
   banker_login?: { email?: string; password?: string | null; existing?: boolean; error?: string; banker_id?: string };
   branch?: { merchant_code?: string; login?: { email?: string; password?: string | null; existing?: boolean }; error?: string };
+  /** The merchant was created but its Intent checkout choice was not saved. */
+  checkout_error?: string;
 }
 
 export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, onNext }: {
@@ -260,6 +274,22 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
   });
   const suggestion = sug.data?.suggestion ?? null;
 
+  // An existing merchant's saved H2H choice. Off with no history means nobody chose yet: asked again.
+  const h2h = useQuery({
+    queryKey: ["provider", merchant?.id, "h2h"],
+    enabled: open && mode === "existing" && !!merchant,
+    queryFn: async () => {
+      const r = await fetch(`/api/providers/${merchant!.id}/h2h`);
+      if (!r.ok) return null;
+      return (await r.json()) as { needs_h2h: boolean; history: unknown[] };
+    },
+  });
+  useEffect(() => {
+    if (!open || mode !== "existing" || !h2h.data) return;
+    const saved: CheckoutMode | null = h2h.data.needs_h2h ? "H2H" : h2h.data.history.length ? "REDIRECT" : null;
+    if (saved) setA((p) => (p.checkout ? p : { ...p, checkout: saved }));
+  }, [open, mode, h2h.data]);
+
   // A fresh start each time it opens; an existing merchant starts from its saved choice, or
   // from the suggestion when nothing is saved.
   useEffect(() => {
@@ -300,7 +330,7 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
   }, [mode, step, a.code, a.legal_name]); // eslint-disable-line react-hooks/exhaustive-deps
   const codeTaken = step === "name" && !!taken && taken.code.toUpperCase() === a.code.trim().toUpperCase();
   const problem = problemAt(step, a) ?? (codeTaken ? `${taken!.code} is already used by another merchant` : null);
-  const showMap = step === "services" || step === "flow" || step === "default" || step === "review";
+  const showMap = step === "services" || step === "flow" || step === "default" || step === "checkout" || step === "review";
   const primary = useRef<HTMLButtonElement>(null);
   // The first field or the chosen answer; on the review, the confirm button, so Enter confirms.
   const focusQuestion = () => requestAnimationFrame(() => {
@@ -309,6 +339,21 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
     el?.focus();
   });
   useEffect(() => { if (open) focusQuestion(); }, [step, done, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The Intent checkout is providers.needs_h2h (lib/checkout-mode-store), saved after the merchant.
+  // Returns why it was not saved, or null.
+  const saveCheckout = async (providerId: string): Promise<string | null> => {
+    if (!usesIntent(a) || !a.checkout) return null;
+    try {
+      const r = await fetch(`/api/providers/${providerId}/h2h`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ needs_h2h: a.checkout === "H2H", note: mode === "create" ? "chosen when the merchant was created" : a.note.trim() || undefined }),
+      });
+      if (r.ok) return null;
+      const d = await r.json().catch(() => ({}));
+      return d.error ?? `HTTP ${r.status}`;
+    } catch (e) { return (e as Error).message; }
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -324,6 +369,8 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error ?? "Could not save");
+        const h = await saveCheckout(merchant!.id);
+        if (h) throw new Error(`Services and flow saved, but not the Intent checkout: ${h}`);
         return { saved: true } as const;
       }
       const r = await fetch("/api/providers", {
@@ -342,12 +389,14 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Could not create the merchant");
-      return d as Created;
+      const h = d.id ? await saveCheckout(d.id) : null;
+      return { ...d, ...(h ? { checkout_error: h } : {}) } as Created;
     },
     onSuccess: (d) => {
       setDone(d);
       toast.success(mode === "create" ? "Merchant created" : "Saved", { description: mode === "create" ? a.legal_name : merchant?.name });
       for (const k of ["providers", "merchant-readiness", "merchant-services", "payin-flow", "payin-flows"]) qc.invalidateQueries({ queryKey: [k] });
+      qc.invalidateQueries({ queryKey: ["provider"] });
     },
     onError: (e: Error) => toast.error(mode === "create" ? "Not created" : "Not saved", { description: e.message }),
   });
@@ -543,6 +592,15 @@ export function MerchantWizard({ open, onOpenChange, mode, merchant, remaining, 
                         ]} />
                     )}
 
+                    {step === "checkout" && (
+                      <Choice<CheckoutMode> value={a.checkout}
+                        onChange={(v) => set({ checkout: v })}
+                        options={[
+                          { value: "H2H", title: "Host-to-host (H2H)", body: "The order API returns the UPI link and QR, and they show it on their own page. Their bankers can only be given payment accounts that send that link." },
+                          { value: "REDIRECT", title: "Redirect is fine", body: "They send the customer to pay_url, who pays on a hosted payment page. Any payment account can be used." },
+                        ]} />
+                    )}
+
                     {step === "people" && (
                       <div className="space-y-1">
                         <Toggle on={a.merchant_login} onChange={(v) => set({ merchant_login: v })}
@@ -658,7 +716,9 @@ function Finished({ mode, a, done, merchant, remaining, onClose, onNext }: {
   const usesIntent = payin && (a.flow === "INTENT" || a.flow === "BOTH");
   const nextSteps = [
     usesP2P && "Save each banker's settlement UPI ID (banker page → Collection).",
-    usesIntent && "Connect each banker's pay-in gateway (banker page → Gateways & payouts).",
+    usesIntent && (a.checkout === "H2H"
+      ? "Connect each banker's pay-in gateway with an H2H account: PayU Key + Salt, Razorpay, Cashfree, PhonePe, Paytm or PayAtom (banker page → Pays via gateway)."
+      : "Connect each banker's pay-in gateway (banker page → Pays via gateway)."),
     a.services && allowsPayout(a.services) && "Optional: connect a payout gateway; without one, payouts are paid from the Katana balance.",
     mode === "create" && a.first_banker && "Take the first banker through onboarding to go-live.",
   ].filter(Boolean) as string[];
@@ -667,7 +727,8 @@ function Finished({ mode, a, done, merchant, remaining, onClose, onNext }: {
     created.branch?.login && { who: `Banker ${created.branch.merchant_code ?? ""}`, ...created.branch.login },
     created.banker_login && !created.banker_login.error && { who: "DT banker", ...created.banker_login },
   ].filter(Boolean) as { who: string; email?: string; password?: string | null; existing?: boolean }[] : [];
-  const failed = created ? [created.provider_login?.error, created.banker_login?.error, created.branch?.error].filter(Boolean) as string[] : [];
+  const failed = created ? [created.provider_login?.error, created.banker_login?.error, created.branch?.error,
+    created.checkout_error && `Intent checkout not saved (${created.checkout_error}); set it on the merchant's page`].filter(Boolean) as string[] : [];
 
   return (
     <div className="mx-auto max-w-[560px]">
@@ -676,7 +737,7 @@ function Finished({ mode, a, done, merchant, remaining, onClose, onNext }: {
         {mode === "create" ? `${name} is created` : `${name} is set up`}
       </DialogTitle>
       <DialogDescription className="mt-2 text-[15px] text-[color:var(--color-text-muted)]">
-        {SERVICES_LABEL[a.services ?? "UNSET"]}{payin && a.flow ? `, ${PAYIN_FLOW_LABEL[a.flow]}${a.flow === "BOTH" && a.active ? ` with ${PAYIN_FLOW_LABEL[a.active]} by default` : ""}` : ""}.
+        {SERVICES_LABEL[a.services ?? "UNSET"]}{payin && a.flow ? `, ${PAYIN_FLOW_LABEL[a.flow]}${a.flow === "BOTH" && a.active ? ` with ${PAYIN_FLOW_LABEL[a.active]} by default` : ""}` : ""}{usesIntent && a.checkout ? `, Intent checkout ${CHECKOUT_MODE_WORDS[a.checkout].label.toLowerCase()}` : ""}.
       </DialogDescription>
 
       {logins.length > 0 && (

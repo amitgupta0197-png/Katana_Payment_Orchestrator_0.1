@@ -34,39 +34,51 @@ export function H2hCard({ providerId }: { providerId: string }) {
       if (!r.ok) throw new Error(d.error ?? "Failed");
       return d as H2hState;
     },
-    onSuccess: (d) => { qc.setQueryData(key, d); toast.success(d.needs_h2h ? "Needs host-to-host: on" : "Needs host-to-host: off"); },
+    onSuccess: (d) => { qc.setQueryData(key, d); toast.success(d.needs_h2h ? "Intent checkout: H2H" : "Intent checkout: Redirect"); },
     onError: (e: Error) => toast.error("Not saved", { description: e.message }),
   });
   if (q.data === null) return null;   // not staff with access
   const on = q.data?.needs_h2h === true;
   const last = q.data?.history?.[0];
+  // Off with no history: nobody has chosen yet (every merchant from before provider 0023).
+  const chosen = on || !!q.data?.history?.length;
+  const busy = q.isLoading || save.isPending;
+  const options: { value: boolean; title: string; body: string }[] = [
+    { value: true, title: `${CHECKOUT_MODE_WORDS.H2H.label} (H2H)`, body: `${CHECKOUT_MODE_WORDS.H2H.detail}. Its bankers can only be given payment accounts that send the UPI link; a redirect-only account needs a Super Admin's note.` },
+    { value: false, title: "Redirect is fine", body: `${CHECKOUT_MODE_WORDS.REDIRECT.detail}. Any payment account can be used.` },
+  ];
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-2">
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
-            Host-to-host checkout <InfoTip label="host-to-host checkout">Turn this on if the merchant shows the UPI link on their own page. Then its bankers can only get gateways that send that link.</InfoTip> {on && <Badge variant="info">Needed</Badge>}
+            Intent checkout <InfoTip label="Intent checkout">How this merchant&apos;s customers pay on the Intent flow. H2H: the merchant shows the UPI link on its own page, so its bankers can only get gateways that send that link. Redirect: the customer pays on a hosted page.</InfoTip>
+            {chosen ? <Badge variant={on ? "info" : "default"}>{on ? "H2H" : "Redirect"}</Badge> : <Badge variant="warning">Not chosen</Badge>}
           </CardTitle>
-          <CardDescription>
-            {CHECKOUT_MODE_WORDS.H2H.label}: {CHECKOUT_MODE_WORDS.H2H.detail}. {CHECKOUT_MODE_WORDS.REDIRECT.label}: {CHECKOUT_MODE_WORDS.REDIRECT.detail}.
-          </CardDescription>
+          <CardDescription>Will this merchant show the UPI link on its own page, or send customers to a payment page?</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        <label className="flex items-start gap-2">
-          <input type="checkbox" className="mt-1" checked={on} disabled={q.isLoading || save.isPending}
-            onChange={(e) => save.mutate(e.target.checked)} />
-          <span>
-            This merchant needs host-to-host. Its bankers can only be given payment accounts whose order API returns the UPI link;
-            a redirect-only account needs a Super Admin&apos;s note.
-          </span>
-        </label>
-        {last && (
-          <div className="text-xs text-[color:var(--color-text-muted)]">
-            Last changed {new Date(last.changed_at).toLocaleString("en-IN")}{last.changed_by ? ` by ${last.changed_by}` : ""}.
-          </div>
-        )}
+        <div role="radiogroup" aria-label="Intent checkout" className="grid gap-2 sm:grid-cols-2">
+          {options.map((o) => {
+            const sel = chosen && on === o.value;
+            return (
+              <button key={String(o.value)} type="button" role="radio" aria-checked={sel} disabled={busy}
+                onClick={() => { if (!sel) save.mutate(o.value); }}
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${sel
+                  ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-muted)]"
+                  : "border-[color:var(--color-border)] hover:border-[color:var(--color-text-muted)]"}`}>
+                <span className="block font-medium">{o.title}</span>
+                <span className="mt-0.5 block text-xs text-[color:var(--color-text-muted)]">{o.body}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-xs text-[color:var(--color-text-muted)]">
+          Changing this does not change a payment account already connected: a banker on a redirect-only account stays on redirect until its account is replaced.
+          {last && <> Last changed {new Date(last.changed_at).toLocaleString("en-IN")}{last.changed_by ? ` by ${last.changed_by}` : ""}.</>}
+        </div>
       </CardContent>
     </Card>
   );
