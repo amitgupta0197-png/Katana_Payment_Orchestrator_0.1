@@ -28,6 +28,7 @@ import { StarterKitCard } from "@/components/merchant/starter-kit-card";
 import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
 import { BankerH2hCard } from "@/components/merchant/banker-h2h-card";
 import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
+import { BharatPeConnectCard } from "@/components/merchant/bharatpe-connect";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
 import { PayinLimitsCard } from "@/components/merchant/payin-limits-card";
@@ -764,6 +765,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
           {named && <PayatomConnectCard merchantId={merchant.id} />}
+          {named && <BharatPeConnectCard merchantId={merchant.id} />}
           <KatanaPayConfigCard merchantId={merchant.id} />
           <div className="mt-4">
             <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />

@@ -70,6 +70,8 @@ export const SEALED_COLUMNS: { db: DbKey; table: string; key: string; column: st
   { db: "merchant", table: "merchant_bank_accounts", key: "id", column: "bank_account_no" },
   // A partner's webhook signing secret (vendorGateway 0044, lib/partner). Written sealed from the start.
   { db: "vendorGateway", table: "partners", key: "id", column: "webhook_secret" },
+  // A BharatPe MID's agent↔Katana HMAC secret (vendorGateway 0046, lib/bharatpe-store). Sealed from the start.
+  { db: "vendorGateway", table: "bharatpe_mids", key: "id", column: "secret_sealed" },
 ];
 
 /**

@@ -39,7 +39,7 @@ export type ManualReason =
   | "UNTRUSTED_DEVICE" | "SUSPICIOUS_DEVICE" | "AMOUNT_CONFLICT";
 
 export interface TxnAlertInput {
-  source?: string;        // DEVICE | SMS | NOTIFICATION | BANK_API | SIMULATED
+  source?: string;        // DEVICE | SMS | NOTIFICATION | BANK_API | BHARATPE | SIMULATED
   device_id?: string;
   merchant_id?: string;   // merchant the forwarder device belongs to
   bank?: string;
@@ -633,15 +633,16 @@ export async function ingestTxnAlert(
 
   // 6) Auto-match policy: confidence >= 90 AND device TRUSTED AND not duplicate.
   const fakeSender = isFakeSender(input.sender, source);
-  // EMAIL / BANK_API are SERVER-side channels (the merchant's authenticated mailbox /
-  // a signed gateway) — higher trust than a phone, so they don't need a TRUSTED device.
+  // EMAIL / BANK_API / BHARATPE are SERVER-side channels (the merchant's authenticated mailbox,
+  // a signed gateway, or a BharatPe credit the agent signed with its MID's HMAC secret, verified
+  // by /api/v1/bharatpe/credit) — higher trust than a phone, so they don't need a TRUSTED device.
   // But that elevated trust is granted ONLY when the caller proved it came through such a
-  // channel (channelTrusted, set by the internal poller) — never because the request BODY
-  // said so. A public request that merely sets source:"EMAIL"/"BANK_API" gets no trust and
-  // must still present a TRUSTED device (audit C3).
+  // channel (channelTrusted, set by the internal poller / verified endpoint) — never because the
+  // request BODY said so. A public request that merely sets source:"EMAIL"/"BANK_API"/"BHARATPE"
+  // gets no trust and must still present a TRUSTED device (audit C3).
   const trusted =
     deviceStatus === "TRUSTED" ||
-    (channelTrusted && (source === "EMAIL" || source === "BANK_API"));
+    (channelTrusted && (source === "EMAIL" || source === "BANK_API" || source === "BHARATPE"));
   const willConfirm = !!order && !duplicate && !fakeSender && trusted && confidence >= CONFIDENCE_THRESHOLD;
 
   let outcome: TxnAlertResult["outcome"];
