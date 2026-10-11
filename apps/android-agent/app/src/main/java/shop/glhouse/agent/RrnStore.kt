@@ -129,9 +129,12 @@ object RrnStore {
         if (capturedRows.add(rowKey)) persist()
     }
 
-    /** @return true if newly recorded, false if a duplicate RRN. */
+    /**
+     * @return true if newly recorded, false if a duplicate RRN.
+     * [send] false: record only; the caller uploads it its own way (BharatPe: BharatpeUploader).
+     */
     @Synchronized
-    fun record(rec: RrnRecord): Boolean {
+    fun record(rec: RrnRecord, send: Boolean = true): Boolean {
         val maskedNew = capturedMasked.add(rec.maskedRef)
         if (!writtenRrns.add(rec.rrn)) {
             if (maskedNew) persist()   // still note the masked ref we just saw
@@ -140,7 +143,7 @@ object RrnStore {
         }
         persist()
         Log.d(TAG, "captured RRN ${rec.rrn} amount=${rec.amount} payer=${rec.payer}")
-        appCtx?.let { Prefs.noteCapture(it); AlertUploader.sendCapture(it, rec) }
+        appCtx?.let { Prefs.noteCapture(it); if (send) AlertUploader.sendCapture(it, rec) }
         return true
     }
 }

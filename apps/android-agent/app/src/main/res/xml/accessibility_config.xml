@@ -14,5 +14,5 @@
     android:canPerformGestures="true"
     android:canTakeScreenshot="true"
     android:notificationTimeout="100"
-    android:packageNames="net.one97.paytm.merchant,com.paytm.business,com.apbl.merchant,com.google.android.apps.nbu.paisa.merchant,com.phonepe.app.business,com.pinelabs.pinelabsone"
+    android:packageNames="net.one97.paytm.merchant,com.paytm.business,com.apbl.merchant,com.google.android.apps.nbu.paisa.merchant,com.phonepe.app.business,com.pinelabs.pinelabsone,com.bharatpe.app,com.bharatpe.business,com.bharatpe.merchant"
     android:description="@string/accessibility_desc" />

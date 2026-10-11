@@ -82,6 +82,10 @@ class MainActivity : AppCompatActivity() {
         b.appPhonepeSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PHONEPE, v) }
         b.appPinelabsSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_PINELABS)
         b.appPinelabsSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_PINELABS, v) }
+        b.appBharatpeSwitch.isChecked = Prefs.captureAppOn(this, Prefs.APP_BHARATPE)
+        b.appBharatpeSwitch.setOnCheckedChangeListener { _, v -> setCaptureApp(Prefs.APP_BHARATPE, v) }
+        showBharatpeStatus()
+        b.bpSaveBtn.setOnClickListener { saveBharatpeKey() }
         b.autoCaptureSwitch.isChecked = Prefs.autoCapture(this)
         b.autoCaptureSwitch.setOnCheckedChangeListener { _, v -> Prefs.setAutoCapture(this, v) }
         b.keepAwakeSwitch.isChecked = Prefs.keepAwake(this)
@@ -182,6 +186,8 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_GPAY -> RrnAccessibilityService.GPAY_PKG
         Prefs.APP_PHONEPE -> "com.phonepe.app.business"
         Prefs.APP_PINELABS -> RrnAccessibilityService.PINELABS_PKG
+        Prefs.APP_BHARATPE -> (Prefs.bharatpePkgs(this) + RrnAccessibilityService.BHARATPE_PKGS)
+            .firstOrNull { runCatching { packageManager.getLaunchIntentForPackage(it) }.getOrNull() != null }
         else -> null
     }
 
@@ -196,6 +202,7 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_GPAY -> "Google Pay"
         Prefs.APP_PHONEPE -> "PhonePe"
         Prefs.APP_PINELABS -> "Pine Labs"
+        Prefs.APP_BHARATPE -> "BharatPe"
         else -> app
     }
 
@@ -205,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         Prefs.APP_GPAY -> "Google Pay Business"
         Prefs.APP_PHONEPE -> "PhonePe Business"
         Prefs.APP_PINELABS -> "Pine Labs One"
+        Prefs.APP_BHARATPE -> "BharatPe for Business"
         else -> app
     }
 
@@ -219,10 +227,31 @@ class MainActivity : AppCompatActivity() {
             b.appGpaySwitch to Prefs.APP_GPAY,
             b.appPhonepeSwitch to Prefs.APP_PHONEPE,
             b.appPinelabsSwitch to Prefs.APP_PINELABS,
+            b.appBharatpeSwitch to Prefs.APP_BHARATPE,
         )
         pairs.forEach { (sw, _) -> sw.setOnCheckedChangeListener(null) }
         pairs.forEach { (sw, app) -> sw.isChecked = Prefs.captureAppOn(this, app) }
         pairs.forEach { (sw, app) -> sw.setOnCheckedChangeListener { _, v -> setCaptureApp(app, v) } }
+    }
+
+    private fun showBharatpeStatus() {
+        b.bpStatus.text = when {
+            BharatpeUploader.configured(this) ->
+                "✓ ${if (BharatpeUploader.isLive(this)) "Live" else "Test"} key ${BharatpeUploader.keyHint(this)}" +
+                    (if (BharatpeUploader.isLive(this)) " — confirms live orders" else " — confirms test orders only") +
+                    BharatpeUploader.queued(this).let { if (it > 0) " · $it waiting to send" else "" }
+            else -> "No key: BharatPe payments are recorded, but don't confirm orders by themselves"
+        }
+        if (BharatpeUploader.configured(this) && b.bpKey.text.isNullOrBlank()) b.bpKey.setText(BharatpeUploader.apiKey(this))
+    }
+
+    private fun saveBharatpeKey() {
+        val err = BharatpeUploader.save(this, b.bpKey.text?.toString().orEmpty(), b.bpSecret.text?.toString().orEmpty())
+        if (err != null) { toast(err); return }
+        b.bpSecret.setText("")
+        showBharatpeStatus()
+        toast("BharatPe key saved")
+        thread { BharatpeUploader.flush(this) }
     }
 
     private fun requestRuntimePerms() {

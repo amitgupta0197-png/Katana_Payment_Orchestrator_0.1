@@ -11,6 +11,12 @@ import android.service.notification.StatusBarNotification
 class TxnNotificationListener : NotificationListenerService() {
 
     companion object {
+        // BharatPe for Business: "Received Rs 1.00 from LINCOLN KUSHWAH and settled instantly to
+        // your account xx2506" (7.5.7.1). Amount, then payer.
+        private val BHARATPE_CREDIT = Regex(
+            "Received\\s+(?:Rs\\.?|₹|INR)\\s?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s+from\\s+(.+?)(?:\\s+and\\s+|\\s*$)",
+            RegexOption.IGNORE_CASE)
+
         // Denylist of known non-payment apps. Notifications from these (email, chat,
         // browsers, social, system) are ignored so a bank/Paytm *email* in Gmail can
         // never be mistaken for a credit — while every payment/bank app (Paytm for
@@ -66,6 +72,28 @@ class TxnNotificationListener : NotificationListenerService() {
         // distinct shape (redacted, digit runs masked) and let the data say whether the business
         // is recoverable. Diagnostic only — no capture behaviour depends on it.
         if (sbn.packageName == RrnAccessibilityService.GPAY_PKG) reportNotificationShape(sbn, extras)
+
+        // BharatPe: learn its package (so its screens are watched) and report each new kind of
+        // push it sends, redacted, so its capture can be built without ADB on that phone.
+        if (RrnAccessibilityService.isBharatpe(sbn.packageName)) {
+            RrnAccessibilityService.learnBharatpePackage(applicationContext, sbn.packageName)
+            reportNotificationShape(sbn, extras, "bharatpe-notif", byText = content)
+
+            // With BharatPe capture on, the push only starts the engine: the payment is sent once
+            // its UTR has been read off the payment's screen. Sending the push itself as well would
+            // add a UTR-less copy, and the same-amount check below would merge two ₹1 payments
+            // three minutes apart into one. If the engine can't take it, fall through and record
+            // the push as before.
+            val m = BHARATPE_CREDIT.find(content)
+            val amount = m?.groupValues?.get(1)?.replace(",", "")?.toDoubleOrNull()
+            if (amount != null && sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
+                RrnAccessibilityService.bharatpeNotified(applicationContext, amount, m.groupValues[2].trim(), sbn.notification.contentIntent)
+            ) {
+                Prefs.bump(applicationContext, "seen")
+                AlertStore.log(applicationContext, "${nowTag()} 🎯 bharatpe: ₹$amount from ${m.groupValues[2].trim().take(24)} — opening it to read the UTR")
+                return
+            }
+        }
 
         val isPaytm = sbn.packageName?.contains("paytm", ignoreCase = true) == true
 
@@ -205,9 +233,14 @@ class TxnNotificationListener : NotificationListenerService() {
      * Once per distinct field shape, digit runs masked: a shop label survives, an amount or
      * reference does not. Diagnostic only — no capture behaviour depends on it.
      */
-    private fun reportNotificationShape(sbn: StatusBarNotification, extras: android.os.Bundle) {
+    private fun reportNotificationShape(
+        sbn: StatusBarNotification, extras: android.os.Bundle,
+        label: String = "gpay-notif-shape",
+        byText: String? = null,   // also report each new redacted wording, not just each new set of fields
+    ) {
         val n = sbn.notification ?: return
         val lines = mutableListOf<String>()
+        lines += "pkg=${sbn.packageName} flags=${n.flags} intent=${n.contentIntent != null}"
         lines += "tag=${sbn.tag ?: "-"}"
         lines += "channel=${n.channelId ?: "-"}"
         lines += "group=${n.group ?: "-"} groupKey=${sbn.groupKey ?: "-"}"
@@ -222,9 +255,10 @@ class TxnNotificationListener : NotificationListenerService() {
             if (text.isBlank()) continue
             lines += "$key=${redact(text).take(120)}"
         }
-        val key = "notif-shape|${sbn.tag}|${n.channelId}|${extras.keySet().sorted().joinToString(",")}"
+        val key = "notif-shape|${sbn.packageName}|${sbn.tag}|${n.channelId}|${extras.keySet().sorted().joinToString(",")}" +
+            (byText?.let { "|" + redact(it).hashCode() } ?: "")
         if (AlertStore.seenRecently(applicationContext, key)) return
-        AlertUploader.sendAgentDebug(applicationContext, "gpay-notif-shape", lines.joinToString("\n"))
+        AlertUploader.sendAgentDebug(applicationContext, label, lines.joinToString("\n"))
         AlertStore.log(applicationContext, "${nowTag()} 🔎 reported notification shape (${lines.size} fields)")
     }
 

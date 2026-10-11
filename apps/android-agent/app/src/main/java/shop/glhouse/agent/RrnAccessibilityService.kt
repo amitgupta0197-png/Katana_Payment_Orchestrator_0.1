@@ -374,6 +374,50 @@ class RrnAccessibilityService : AccessibilityService() {
         const val GPAY_PKG = "com.google.android.apps.nbu.paisa.merchant"
         const val PINELABS_PKG = "com.pinelabs.pinelabsone"
 
+        /**
+         * BharatPe for Business. Its exact package is not confirmed (the app refuses to open with
+         * developer options on, so it has never been inspected over ADB): the likely names are
+         * watched from the start, and any other BharatPe package the phone posts a notification
+         * from is added at once (learnBharatpePackage).
+         */
+        val BHARATPE_PKGS = listOf("com.bharatpe.app", "com.bharatpe.business", "com.bharatpe.merchant")
+        fun isBharatpe(pkg: String?): Boolean = pkg?.contains("bharatpe", ignoreCase = true) == true
+
+        /** A BharatPe payment its push announced, waiting for its UTR to be read. */
+        data class BpPending(val amount: Double, val payer: String, val at: Long, val intent: PendingIntent?)
+        private val bpQueue = ArrayDeque<BpPending>()
+        @Volatile private var bpActive: BpPending? = null
+        @Volatile private var bpGen = 0
+        private const val BP_DEADLINE_MS = 30_000L
+
+        /**
+         * A BharatPe credit push arrived: queue it for the engine to open and read its UTR.
+         * False when the engine can't (not running, or auto-capture paused): the caller then
+         * records the push the ordinary way, so the payment is not lost.
+         */
+        fun bharatpeNotified(ctx: Context, amount: Double, payer: String, intent: PendingIntent?): Boolean {
+            val svc = instance ?: return false
+            if (!Prefs.enabled(ctx) || !Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, Prefs.APP_BHARATPE)) return false
+            synchronized(bpQueue) {
+                if (bpQueue.size >= 20) { bpQueue.removeFirstOrNull(); Prefs.bump(ctx, "capture_drop") }
+                bpQueue.addLast(BpPending(amount, payer, System.currentTimeMillis(), intent))
+            }
+            pump.post { svc.bpPump() }
+            return true
+        }
+
+        fun learnBharatpePackage(ctx: Context, pkg: String) {
+            if (!Prefs.addBharatpePkg(ctx, pkg) || pkg in BHARATPE_PKGS) return
+            AlertStore.log(ctx, "🔎 bharatpe: watching $pkg")
+            val s = instance ?: return
+            try {
+                s.serviceInfo = s.serviceInfo?.apply {
+                    // null means "every app": leave it alone rather than narrow it to one.
+                    packageNames?.let { packageNames = (it + pkg).distinct().toTypedArray() }
+                }
+            } catch (e: Exception) { Log.w("RRNCAP", "bharatpe watch failed: ${e.message}") }
+        }
+
         // Pine Labs One timings. Every row costs an open + read + back (as on GPay), so the list
         // is only swept when its own "N Transactions" header says something arrived.
         // How often a parked phone refreshes the list. Pine Labs One posted no notification for
@@ -662,7 +706,7 @@ class RrnAccessibilityService : AccessibilityService() {
                     AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
                     AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
                 notificationTimeout = 100
-                packageNames = arrayOf(
+                packageNames = (arrayOf(
                     "net.one97.paytm.merchant", "com.paytm.business", "com.apbl.merchant",
                     "com.google.android.apps.nbu.paisa.merchant",
                     // PhonePe for Business. Adding it to accessibility_config.xml alone changed
@@ -672,7 +716,7 @@ class RrnAccessibilityService : AccessibilityService() {
                     // called (2026-08-22).
                     "com.phonepe.app.business",
                     PINELABS_PKG,
-                )
+                ) + BHARATPE_PKGS + Prefs.bharatpePkgs(this@RrnAccessibilityService)).distinct().toTypedArray()
             }
         } catch (e: Exception) { Log.w(TAG, "setServiceInfo failed: ${e.message}") }
         Log.d(TAG, "service connected (sdk=${Build.VERSION.SDK_INT}); watching ${serviceInfo?.packageNames?.joinToString()}")
@@ -697,8 +741,264 @@ class RrnAccessibilityService : AccessibilityService() {
             "com.google.android.apps.nbu.paisa.merchant" -> if (Prefs.captureAppOn(this, Prefs.APP_GPAY)) handleGpay(root)  // Google Pay for Business
             "com.phonepe.app.business" -> if (Prefs.captureAppOn(this, Prefs.APP_PHONEPE)) handlePhonePe(root)  // PhonePe for Business
             PINELABS_PKG -> if (Prefs.captureAppOn(this, Prefs.APP_PINELABS)) handlePinelabs(root)  // Pine Labs One
-            else -> return
+            else -> if (isBharatpe(root.packageName?.toString())) {
+                if (Prefs.captureAppOn(this, Prefs.APP_BHARATPE)) handleBharatpe(root) else bharatpeDiag(root)
+            }
         }
+    }
+
+    // ---------------------------------------------------------------- BharatPe
+    //
+    // BharatPe for Business (com.bharatpe.app, seen on 7.5.7.1). Its credit push says
+    // "Received Rs 1.00 from NAME and settled instantly to your account xx2506": amount and payer,
+    // no UTR. The UTR is only on the payment's own screen:
+    //
+    //   Money Received · Name <payer> · Payment mode <app> · UTR <12 digits> ·
+    //   Date "11th Oct '26 • 6:11 PM" · Credited / Instantly settled · ₹1
+    //
+    // reached from Payments → Transactions, a list whose rows read
+    //   <payer> · "11 Oct'26 | 06:11 pm" · "₹" "1"
+    //
+    // So: the push queues the payment (bharatpeNotified); the engine opens the push (or the app),
+    // goes to Transactions if it is not already there, taps the row with that amount and minute,
+    // reads the detail and goes back. Any detail screen the merchant opens by hand is read too.
+    // It taps only list rows and the Payments tab, never anything that moves money (clickNode
+    // refuses those), and gives up on a payment after BP_DEADLINE_MS.
+
+    private var bpWaitUntil = 0L      // let the screen settle after the engine acts
+    private var bpBacks = 0           // BACK presses used finding our way to the list, per payment
+    private var bpListMisses = 0      // list seen with no matching row, per payment
+    private val bpTapped = HashSet<String>()
+    private var bpLastRow: String? = null
+
+    private val bpTimeRx = Regex("^(\\d{1,2})\\s*([A-Za-z]{3})\\s*'\\s*(\\d{2})\\s*\\|\\s*(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])$")
+    private val bpDateRx = Regex("(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]{3})\\s+'(\\d{2})\\s*•\\s*(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])")
+    private val bpAmountRx = Regex("^₹\\s?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)$")
+    private val bpNumberRx = Regex("^[0-9][0-9,]*(?:\\.[0-9]{1,2})?$")
+    private val bpUtrRx = Regex("^[0-9]{12}$")
+
+    private fun handleBharatpe(root: AccessibilityNodeInfo) {
+        val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>().also { flattenAll(root, it) }
+        val texts = nodes.map { it.first.trim() }
+        // A WebView mid-load ("No Details Found", a blank frame) is not a place to act from.
+        if (texts.size < 3 || texts.any { it == "No Details Found" }) return
+        val active = bpActive
+        when {
+            texts.contains("UTR") && (texts.contains("Money Received") || texts.contains("Credited")) -> bpReadDetail(nodes, texts)
+            texts.contains("Transactions") && texts.contains("Select Dates") -> if (active != null) bpOnList(nodes, texts, active)
+            active != null && (texts.contains("Today’s Collection") || nodes.any { it.second.viewIdResourceName?.endsWith(":id/merchantName") == true }) -> bpOnHome(nodes)
+            active != null -> bpOnOther()
+            else -> bharatpeDiag(root)   // a screen the engine does not know yet: keep learning it
+        }
+    }
+
+    private fun bpReadDetail(nodes: List<Pair<String, AccessibilityNodeInfo>>, texts: List<String>) {
+        fun after(label: String, ok: (Int) -> Boolean = { true }): String? {
+            val i = texts.indexOf(label).takeIf { it >= 0 } ?: return null
+            return (i + 1 until minOf(texts.size, i + 4)).firstOrNull { j ->
+                texts[j].isNotBlank() && nodes[j].second.className?.toString()?.endsWith("Image") != true && ok(j)
+            }?.let { texts[it] }
+        }
+        val utr = after("UTR") { bpUtrRx.matches(texts[it]) } ?: return   // not drawn yet
+        val amount = texts.lastOrNull { bpAmountRx.matches(it) }?.let { bpAmountRx.find(it)!!.groupValues[1].replace(",", "") }
+            ?: texts.indices.firstOrNull { texts[it] == "₹" && it + 1 < texts.size && bpNumberRx.matches(texts[it + 1]) }
+                ?.let { texts[it + 1].replace(",", "") }
+            ?: return
+        val payer = after("Name").orEmpty()
+        val date = after("Date").orEmpty()
+        val details = linkedMapOf<String, String>()
+        after("Payment mode")?.let { details["Payment mode"] = it }
+        if (texts.contains("Instantly settled")) details["Settlement"] = "Instantly settled"
+        texts.firstOrNull { it.endsWith("%") }?.let { details["UPI fee"] = it }
+
+        val rec = RrnRecord(
+            rrn = utr, capturedAt = System.currentTimeMillis(), amount = amount, payer = payer, upiId = "",
+            paidAt = date, maskedRef = "bp:$utr", bank = "BHARATPE", details = details,
+            eventTime = bpIso(bpDateRx.find(date)?.groupValues),
+        )
+        if (RrnStore.record(rec, send = false)) {
+            AlertStore.log(applicationContext, "${nowTag()} 🎯 bharatpe: ₹$amount UTR $utr ${payer.take(24)}")
+            Prefs.bump(this, "capture_ok")
+            BharatpeUploader.send(applicationContext, rec)
+        }
+        bpLastRow?.let { RrnStore.recordRow(it) }; bpLastRow = null
+
+        val active = bpActive ?: return
+        if (amount.toDoubleOrNull()?.let { Math.abs(it - active.amount) < 0.005 } == true) {
+            bpFinish(goBack = true)                       // ours: done, back to where it was
+        } else if (bpTapped.isNotEmpty()) {
+            performGlobalAction(GLOBAL_ACTION_BACK)       // a row we tapped was the wrong one: keep looking
+            bpWaitUntil = System.currentTimeMillis() + 1_200L
+        }
+    }
+
+    private fun bpOnList(nodes: List<Pair<String, AccessibilityNodeInfo>>, texts: List<String>, active: BpPending) {
+        val now = System.currentTimeMillis()
+        if (now < bpWaitUntil) return
+        data class Row(val key: String, val payer: String, val at: Long?, val amount: Double?, val node: AccessibilityNodeInfo)
+        val rows = texts.indices.mapNotNull { i ->
+            val m = bpTimeRx.find(texts[i]) ?: return@mapNotNull null
+            val payer = texts.getOrNull(i - 1).orEmpty()
+            var amt: String? = null
+            for (j in i + 1 until minOf(texts.size, i + 4)) {
+                val whole = bpAmountRx.find(texts[j])
+                if (whole != null) { amt = whole.groupValues[1]; break }
+                if (texts[j] == "₹" && j + 1 < texts.size && bpNumberRx.matches(texts[j + 1])) { amt = texts[j + 1]; break }
+            }
+            val g = m.groupValues
+            Row("bp|$payer|${texts[i]}|$amt", payer, bpMillis(g[1], g[2], g[3], g[4], g[5], g[6]), amt?.replace(",", "")?.toDoubleOrNull(), nodes[i].second)
+        }
+        val payerWant = active.payer.lowercase()
+        val match = rows.filter { r ->
+            r.amount != null && Math.abs(r.amount - active.amount) < 0.005 &&
+                r.key !in bpTapped && !RrnStore.isRowCaptured(r.key) &&
+                (r.at == null || Math.abs(r.at - active.at) <= 3 * 60_000L)
+        }.sortedByDescending { payerWant.isNotBlank() && it.payer.lowercase() == payerWant }.firstOrNull()
+        if (match == null) {
+            // The list may not show the new payment yet: give it a moment, then give up quietly
+            // (the deadline ends this payment; the bank SMS / unmatched queue still has it).
+            if (++bpListMisses == 1) AlertStore.log(applicationContext, "${nowTag()} bharatpe: ₹${active.amount} not on the list yet")
+            bpWaitUntil = now + 1_500L
+            return
+        }
+        if (clickNode(match.node)) {
+            bpTapped += match.key; bpLastRow = match.key
+            bpWaitUntil = now + 2_000L
+        }
+    }
+
+    private fun bpOnHome(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        val now = System.currentTimeMillis()
+        if (now < bpWaitUntil) return
+        val tab = nodes.firstOrNull { (t, n) -> t.trim() == "Payments" && n.viewIdResourceName?.contains("navigation_bar") == true }
+            ?: nodes.firstOrNull { (t, n) -> t.trim() == "Payments" && n.contentDescription?.toString() == "Payments" }
+            ?: return
+        if (clickNode(tab.second)) bpWaitUntil = now + 2_500L
+    }
+
+    private fun bpOnOther() {
+        val now = System.currentTimeMillis()
+        if (now < bpWaitUntil || bpBacks >= 2) return
+        // The push landed on some other BharatPe screen (its QR page, a promotion): step back
+        // towards home, where the Payments tab is. At most twice per payment.
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        bpBacks++
+        bpWaitUntil = now + 1_500L
+    }
+
+    /** Start the next queued BharatPe payment if none is in flight. */
+    fun bpPump() {
+        if (bpActive != null) return
+        if (captureBusy) { pump.postDelayed({ instance?.bpPump() }, 2_000L); return }   // another app's capture has the screen
+        val now = System.currentTimeMillis()
+        var next: BpPending? = null
+        synchronized(bpQueue) {
+            while (next == null) {
+                val p = bpQueue.removeFirstOrNull() ?: break
+                if (now - p.at < 10 * 60_000L) next = p
+            }
+        }
+        val p = next ?: return
+        bpActive = p
+        val gen = ++bpGen
+        bpBacks = 0; bpListMisses = 0; bpTapped.clear(); bpLastRow = null
+        bpWaitUntil = now + 1_000L
+        val opened = p.intent?.let { runCatching { it.send(); true }.getOrDefault(false) } ?: false
+        if (!opened) {
+            val pkg = (Prefs.bharatpePkgs(this) + BHARATPE_PKGS).firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
+            pkg?.let { packageManager.getLaunchIntentForPackage(it) }?.let {
+                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { startActivity(it) }
+            }
+        }
+        // A screen that opens and stays still sends no event: look once it has had time to draw.
+        main.postDelayed({
+            if (bpGen == gen && bpActive != null) rootInActiveWindow?.takeIf { isBharatpe(it.packageName?.toString()) }?.let { handleBharatpe(it) }
+        }, 2_500L)
+        main.postDelayed({
+            if (bpGen == gen && bpActive != null) {
+                AlertStore.log(applicationContext, "${nowTag()} ⚠️ bharatpe: no UTR for ₹${p.amount} within ${BP_DEADLINE_MS / 1000}s")
+                Prefs.bump(this, "capture_timeout")
+                bpFinish(goBack = false)
+            }
+        }, BP_DEADLINE_MS)
+    }
+
+    private fun bpFinish(goBack: Boolean) {
+        bpActive = null
+        bpGen++
+        if (goBack) performGlobalAction(GLOBAL_ACTION_BACK)
+        main.postDelayed({ bpPump() }, 900L)
+    }
+
+    private fun bpMillis(d: String, mon: String, yy: String, h: String, mi: String, ap: String): Long? = try {
+        java.text.SimpleDateFormat("d MMM yy h:mm a", java.util.Locale.ENGLISH).apply {
+            timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        }.parse("$d $mon $yy $h:$mi ${ap.uppercase()}")?.time
+    } catch (e: Exception) { null }
+
+    /** "11th Oct '26 • 6:11 PM" → "2026-10-11T18:11:00+05:30". */
+    private fun bpIso(g: List<String>?): String? {
+        if (g == null || g.size < 7) return null
+        val ms = bpMillis(g[1], g[2], g[3], g[4], g[5], g[6]) ?: return null
+        return java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        }.format(java.util.Date(ms))
+    }
+
+    // ---------------------------------------------------------------- BharatPe (diagnostic)
+    //
+    // BharatPe for Business will not open while developer options are on, so its screens can't be
+    // read over ADB. Until its capture engine is written, each distinct screen is uploaded to
+    // /api/v1/agent-debug (text, view id, class, bounds, as the Airtel dump does) so the engine is
+    // built from what the app really shows. Nothing is captured or sent as a credit from here.
+
+    private var bpLastDumpAt = 0L
+    private var bpDay = ""
+    private var bpDumpsToday = 0
+    private val bpSeen = HashSet<Int>()
+
+    private fun bharatpeDiag(root: AccessibilityNodeInfo) {
+        val now = System.currentTimeMillis()
+        if (now - bpLastDumpAt < 1_500L) return
+        val day = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+        if (day != bpDay) { bpDay = day; bpDumpsToday = 0; bpSeen.clear() }
+        if (bpDumpsToday >= 60) return
+
+        val lines = ArrayList<String>()
+        fun walk(n: AccessibilityNodeInfo?, depth: Int) {
+            if (n == null || depth > 40) return
+            val text = n.text?.toString()?.takeIf { it.isNotBlank() }
+            val desc = n.contentDescription?.toString()?.takeIf { it.isNotBlank() }
+            if (text != null || desc != null || n.isClickable) {
+                val r = Rect().also { n.getBoundsInScreen(it) }
+                lines += buildString {
+                    append("  ".repeat(depth.coerceAtMost(12)))
+                    append('"').append(text ?: "").append('"')
+                    if (desc != null && desc != text) append(" desc=\"").append(desc).append('"')
+                    n.viewIdResourceName?.let { append(" id=").append(it.substringAfter(":id/")) }
+                    append(' ').append(n.className?.toString()?.substringAfterLast('.') ?: "?")
+                    append(" [${r.left},${r.top}][${r.right},${r.bottom}]")
+                    if (n.isClickable) append(" click")
+                    if (n.isScrollable) append(" scroll")
+                }
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
+        }
+        walk(root, 0)
+        if (lines.isEmpty()) return
+        // One upload per distinct screen: digits are ignored for the comparison, so a ticking
+        // clock or a new amount on the same screen does not upload it again.
+        val sig = lines.joinToString("\n") { it.replace(Regex("[0-9]"), "") }.hashCode()
+        if (!bpSeen.add(sig)) return
+        bpLastDumpAt = now
+        bpDumpsToday++
+
+        val pkg = root.packageName?.toString() ?: "?"
+        val ver = try { packageManager.getPackageInfo(pkg, 0).versionName } catch (e: Exception) { "?" }
+        val head = "pkg=$pkg version=$ver nodes=${lines.size} dump=$bpDumpsToday/60"
+        AlertUploader.sendAgentDebug(applicationContext, "bharatpe-screen", (head + "\n" + lines.joinToString("\n")).take(19_500))
+        AlertStore.log(applicationContext, "${nowTag()} 🔎 bharatpe: sent screen layout (${lines.size} items)")
     }
 
     /** Run the Paytm engine on whatever is on screen now, without waiting for an event. */

@@ -498,15 +498,9 @@
 
                 <View style="@style/RowDivider" />
 
-                <!-- BharatPe. Deliberately NOT a switch.
-                     Every other row here selects which app the on-screen reader drives, and
-                     selection is EXCLUSIVE (Prefs.setCaptureAppExclusive) — turning one on turns
-                     the others off. There is no BharatPe screen-reading engine, so a BharatPe
-                     switch would silently stop the merchant's working Paytm/PhonePe capture and
-                     give nothing back. It is also unnecessary: BharatPe emails the whole payment
-                     (payer, UTR, amount, time, account), which the server parses directly, so the
-                     phone has no part to play. The row exists so a BharatPe merchant can see they
-                     are covered instead of assuming the agent does not support them. -->
+                <!-- BharatPe for Business (v3.17): its push says amount + payer; the engine opens
+                     the payment and reads the UTR, then posts it signed with the BharatPe MID key
+                     set below. Exclusive like the others (Prefs.setCaptureAppExclusive). -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -535,20 +529,50 @@
                         android:layout_weight="1"
                         android:layout_marginEnd="12dp"
                         android:orientation="vertical">
-                        <TextView style="@style/PermTitle" android:text="BharatPe" />
-                        <TextView style="@style/PermSub" android:text="Captured from the payment email — this phone does nothing" />
+                        <TextView style="@style/PermTitle" android:text="BharatPe for Business" />
+                        <TextView style="@style/PermSub" android:text="UTR read off the payment, under Payments → Transactions" />
                     </LinearLayout>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_soon_pill"
-                        android:paddingHorizontal="10dp"
-                        android:paddingVertical="4dp"
-                        android:text="EMAIL"
-                        android:textColor="@color/on_surface_variant"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/appBharatpeSwitch"
+                        style="@style/SwitchKatana" />
                 </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- BharatPe MID: the key + secret its captures are signed with -->
+        <TextView style="@style/SectionLabel" android:text="BHARATPE MID" />
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="From the banker page → Pays UPI ID → BharatPe. The secret is shown there once; it is stored encrypted on this phone and never shown again."
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="12sp"
+                    android:paddingBottom="8dp" />
+                <com.google.android.material.textfield.TextInputLayout style="@style/Field" android:hint="API key (bpk_live_… or bpk_test_…)">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/bpKey" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textNoSuggestions" android:importantForAutofill="no" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.textfield.TextInputLayout style="@style/Field" android:hint="Secret">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/bpSecret" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword" android:importantForAutofill="no" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <TextView
+                    android:id="@+id/bpStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/on_surface"
+                    android:textSize="12sp"
+                    android:paddingTop="4dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/bpSaveBtn"
+                    style="@style/BtnSecondary"
+                    android:layout_marginTop="8dp"
+                    android:text="Save BharatPe key" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

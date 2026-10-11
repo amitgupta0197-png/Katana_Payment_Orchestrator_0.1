@@ -129,10 +129,23 @@ object Prefs {
     const val APP_GPAY = "GPAY"
     const val APP_PHONEPE = "PHONEPE"
     const val APP_PINELABS = "PINELABS"
+    const val APP_BHARATPE = "BHARATPE"
     fun captureApps(ctx: Context): Set<String> =
         sp(ctx).getStringSet("capture_apps", null)?.toSet()
             ?: setOf(APP_PAYTM, APP_AIRTEL, APP_GPAY, APP_PHONEPE, APP_PINELABS)
     fun captureAppOn(ctx: Context, app: String): Boolean = captureApps(ctx).contains(app)
+
+    // BharatPe packages this phone has posted a notification from (RrnAccessibilityService
+    // .learnBharatpePackage). Its exact package name is not confirmed yet, so it is learned.
+    fun bharatpePkgs(ctx: Context): Set<String> =
+        sp(ctx).getStringSet("bharatpe_pkgs", null)?.toSet() ?: emptySet()
+    /** True when [pkg] was new. */
+    fun addBharatpePkg(ctx: Context, pkg: String): Boolean {
+        val cur = bharatpePkgs(ctx)
+        if (pkg in cur) return false
+        sp(ctx).edit().putStringSet("bharatpe_pkgs", cur + pkg).apply()
+        return true
+    }
     fun setCaptureApp(ctx: Context, app: String, on: Boolean) {
         val next = captureApps(ctx).toMutableSet().also { if (on) it.add(app) else it.remove(app) }
         sp(ctx).edit().putStringSet("capture_apps", next).apply()

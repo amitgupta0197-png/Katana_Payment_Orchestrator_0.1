@@ -19,6 +19,7 @@ class AgentWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) 
         val notifAccess = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
         runCatching { AlertUploader.heartbeatSync(ctx, notifAccess) }
         runCatching { AlertUploader.flushOutbox(ctx) }
+        runCatching { BharatpeUploader.flush(ctx) }
         return Result.success()
     }
 

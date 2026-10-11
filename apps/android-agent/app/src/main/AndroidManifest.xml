@@ -35,6 +35,11 @@
         <package android:name="com.google.android.apps.nbu.paisa.merchant" />
         <package android:name="com.phonepe.app.business" />
         <package android:name="com.pinelabs.pinelabsone" />
+        <!-- BharatPe for Business: the likely package names (not confirmed yet, see
+             RrnAccessibilityService.BHARATPE_PKGS). -->
+        <package android:name="com.bharatpe.app" />
+        <package android:name="com.bharatpe.business" />
+        <package android:name="com.bharatpe.merchant" />
     </queries>
 
     <application
