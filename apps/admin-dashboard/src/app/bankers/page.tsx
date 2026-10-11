@@ -19,7 +19,8 @@ import {
 import { DataView } from "@/components/world-class/data-view";
 import { RowActions } from "@/components/world-class/row-actions";
 import { AssignProviderDialog } from "@/components/merchant/assign-provider";
-import { useCan } from "@/lib/use-access";
+import { BankerWizard } from "@/components/merchant/banker-wizard";
+import { useAccess, useCan } from "@/lib/use-access";
 import { formatDateTime, statusVariant } from "@/lib/utils";
 import { HealthRing, useHealthScores } from "@/components/health/health-ring";
 
@@ -212,6 +213,7 @@ const STAGE_ORDER = ["APPLICATION", "DOCS_PENDING", "SCREENING", "BANK_VERIFY", 
 
 export default function MerchantsPage() {
   const canCreate = useCan("merchants", "create");
+  const isSuper = useAccess().data?.persona === "SUPER_ADMIN";
   const canAssignProvider = useCan("providers", "create"); // assign endpoint is super-admin only
   const sp = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
@@ -308,7 +310,11 @@ export default function MerchantsPage() {
           />
         )}
       />
-      <OnboardDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {/* Super Admin: the step-by-step banker onboarding (P2P scan and pay / quasi, or Intent).
+          Others who may create bankers keep the one-screen form: the wizard's setup steps are Super Admin only. */}
+      {isSuper
+        ? <BankerWizard open={createOpen} onOpenChange={setCreateOpen} />
+        : <OnboardDialog open={createOpen} onOpenChange={setCreateOpen} />}
       {assignFor && (
         <AssignProviderDialog
           merchantId={assignFor.id}

@@ -6,7 +6,7 @@
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { gatewayAccountChannel } from "@/lib/pg-catalog";
-import { asP2pMethod, type P2pFacts, type P2pMethod } from "@/lib/p2p-method";
+import { asP2pApp, asP2pMethod, type P2pApp, type P2pFacts, type P2pMethod } from "@/lib/p2p-method";
 
 const ONLINE_SEC = 600;
 
@@ -16,6 +16,18 @@ export async function getP2pMethod(merchantCode: string | null | undefined): Pro
   const r = await rows<{ m: string | null }>("merchant",
     `SELECT p2p_method AS m FROM merchants WHERE merchant_code = $1`, [merchantCode]).catch(() => []);
   return asP2pMethod(r[0]?.m);
+}
+
+/** The payment app a scan-and-pay banker's QR belongs to (merchant 0028), or null. */
+export async function getP2pApp(merchantCode: string): Promise<P2pApp | null> {
+  const r = await rows<{ a: string | null }>("merchant",
+    `SELECT p2p_app AS a FROM merchants WHERE merchant_code = $1`, [merchantCode]).catch(() => []);
+  return asP2pApp(r[0]?.a);
+}
+
+/** Record the app (null clears it). Not a routing setting, so it is not part of the method history. */
+export async function setP2pApp(merchantCode: string, app: P2pApp | null): Promise<void> {
+  await rows("merchant", `UPDATE merchants SET p2p_app = $2 WHERE merchant_code = $1`, [merchantCode, app]);
 }
 
 /** Chosen methods of many bankers; bankers with none are left out. */

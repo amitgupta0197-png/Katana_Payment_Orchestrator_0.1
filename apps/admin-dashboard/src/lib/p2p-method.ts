@@ -15,24 +15,55 @@ export const P2P_METHODS: P2pMethod[] = ["UPI_ID", "BHARATPE", "PAYATOM"];
 
 export const P2P_METHOD_INFO: Record<P2pMethod, { title: string; line: string; confirmedBy: string; needs: string[] }> = {
   UPI_ID: {
-    title: "UPI ID",
-    line: "Customers pay the banker's own UPI ID.",
+    title: "UPI ID / QR",
+    line: "Scan and pay: customers pay the banker's own UPI ID or QR (Google Pay, PhonePe, Paytm, other).",
     confirmedBy: "A phone with the Katana agent reads the payment app or bank SMS.",
     needs: ["The UPI ID customers pay", "A capture phone online"],
   },
   BHARATPE: {
     title: "BharatPe",
-    line: "Customers pay the banker's BharatPe QR.",
+    line: "Scan and pay: customers pay the banker's BharatPe QR.",
     confirmedBy: "The Katana agent reads BharatPe on the banker's phone and sends each payment with its UTR.",
     needs: ["A BharatPe MID (its UPI ID becomes the one customers pay)", "The MID's key in the agent, on a phone that is online"],
   },
   PAYATOM: {
     title: "PayAtom",
-    line: "PayAtom gives the customer the payment link and QR.",
+    line: "Scan, pay and verify (quasi): PayAtom gives the customer the payment link and QR.",
     confirmedBy: "PayAtom confirms each payment to Katana. No phone needed.",
     needs: ["A PayAtom account set to P2P (money lands with the banker)"],
   },
 };
+
+/**
+ * The two kinds of P2P (Katana's banker model): SCAN_PAY — the customer scans the banker's own
+ * static QR and the capture phone confirms it (UPI_ID, BHARATPE); QUASI — "scan, pay and verify",
+ * also called P2P intent: a processor issues the payment link, the money still lands with the
+ * banker, and the processor verifies it (PAYATOM).
+ */
+export type P2pKind = "SCAN_PAY" | "QUASI";
+export const P2P_KIND_OF: Record<P2pMethod, P2pKind> = { UPI_ID: "SCAN_PAY", BHARATPE: "SCAN_PAY", PAYATOM: "QUASI" };
+export const P2P_KIND_INFO: Record<P2pKind, { title: string; line: string }> = {
+  SCAN_PAY: { title: "Scan and pay", line: "The customer scans the banker's own QR and pays. A phone with the Katana agent confirms it." },
+  QUASI: { title: "Scan, pay and verify", line: "Quasi channel (P2P intent): a processor gives the customer the payment link, the money lands with the banker, and the processor verifies it." },
+};
+
+/** The payment app a scan-and-pay banker's QR belongs to (merchant 0028, merchants.p2p_app). */
+export type P2pApp = "BHARATPE" | "GPAY" | "PHONEPE" | "PAYTM" | "OTHER";
+export const P2P_APPS: P2pApp[] = ["BHARATPE", "GPAY", "PHONEPE", "PAYTM", "OTHER"];
+export const P2P_APP_INFO: Record<P2pApp, { title: string; agent: string }> = {
+  BHARATPE: { title: "BharatPe", agent: "BharatPe for Business" },
+  GPAY: { title: "Google Pay", agent: "Google Pay for Business" },
+  PHONEPE: { title: "PhonePe", agent: "PhonePe for Business" },
+  PAYTM: { title: "Paytm", agent: "Paytm for Business" },
+  OTHER: { title: "Other static QR", agent: "bank SMS / Airtel / Pine Labs" },
+};
+export function asP2pApp(v: unknown): P2pApp | null {
+  return typeof v === "string" && (P2P_APPS as string[]).includes(v) ? (v as P2pApp) : null;
+}
+/** The method a scan-and-pay app runs on: BharatPe has its own (MID key); every other QR is a UPI ID. */
+export function methodForApp(app: P2pApp): P2pMethod {
+  return app === "BHARATPE" ? "BHARATPE" : "UPI_ID";
+}
 
 export function asP2pMethod(v: unknown): P2pMethod | null {
   return typeof v === "string" && (P2P_METHODS as string[]).includes(v) ? (v as P2pMethod) : null;

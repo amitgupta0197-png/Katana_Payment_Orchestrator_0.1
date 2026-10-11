@@ -2,7 +2,8 @@
 //
 //   GET  SUPER_ADMIN, ADMIN, OPERATOR   chosen method, the one routing uses today when none is
 //                                       chosen, what each method has set up, history
-//   PUT  SUPER_ADMIN, ADMIN             { method: "UPI_ID" | "BHARATPE" | "PAYATOM" | null, note? }
+//   PUT  SUPER_ADMIN, ADMIN             { method: "UPI_ID" | "BHARATPE" | "PAYATOM" | null, app?, note? }
+//                                       app: the scan-and-pay QR's payment app (merchant 0028)
 //
 // Staff only: it names the processors.
 
@@ -11,13 +12,14 @@ import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
 import { inferP2pMethod, P2P_METHODS, p2pSteps } from "@/lib/p2p-method";
-import { getP2pMethod, p2pFacts, p2pMethodHistory, setP2pMethod } from "@/lib/p2p-method-store";
+import { getP2pApp, getP2pMethod, p2pFacts, p2pMethodHistory, setP2pApp, setP2pMethod } from "@/lib/p2p-method-store";
 import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
   method: z.enum(["UPI_ID", "BHARATPE", "PAYATOM"]).nullable(),
+  app: z.enum(["BHARATPE", "GPAY", "PHONEPE", "PAYTM", "OTHER"]).nullable().optional(),
   note: z.string().trim().max(300).optional(),
 });
 
@@ -28,9 +30,10 @@ async function bankerCode(id: string): Promise<string | null> {
 }
 
 async function state(code: string) {
-  const [method, facts, history] = await Promise.all([getP2pMethod(code), p2pFacts(code), p2pMethodHistory(code)]);
+  const [method, app, facts, history] = await Promise.all([getP2pMethod(code), getP2pApp(code), p2pFacts(code), p2pMethodHistory(code)]);
   return {
     method,
+    app,
     inferred: inferP2pMethod(facts),
     facts,
     methods: Object.fromEntries(P2P_METHODS.map((m) => [m, p2pSteps(m, facts)])),
@@ -60,6 +63,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const before = await getP2pMethod(code);
     const r = await setP2pMethod(code, { value: body.method, by: g.session.email, note: body.note });
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 404 });
+    // The app goes with a scan-and-pay method; BharatPe's is implied, PayAtom has none.
+    if (body.app !== undefined || body.method === "BHARATPE" || body.method === "PAYATOM") {
+      await setP2pApp(code, body.method === "BHARATPE" ? "BHARATPE" : body.method === "PAYATOM" ? null : (body.app ?? null));
+    }
     if (before !== body.method) {
       wormAppend({
         actorId: g.session.user_id, actorEmail: g.session.email, action: "merchant.p2p_method",

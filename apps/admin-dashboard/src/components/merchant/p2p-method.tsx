@@ -16,10 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { P2P_METHOD_INFO, P2P_METHODS, switchSummary, type P2pFacts, type P2pMethod, type P2pStep } from "@/lib/p2p-method";
+import { P2P_APP_INFO, P2P_METHOD_INFO, P2P_METHODS, switchSummary, type P2pApp, type P2pFacts, type P2pMethod, type P2pStep } from "@/lib/p2p-method";
 
 interface P2pState {
   method: P2pMethod | null;
+  app: P2pApp | null;
   inferred: P2pMethod | null;
   facts: P2pFacts;
   methods: Record<P2pMethod, { steps: P2pStep[]; ready: boolean }>;
@@ -50,6 +51,18 @@ export function P2pMethodPanel({ merchantId, canEdit, setup }: {
   });
   const [asking, setAsking] = useState<P2pMethod | null>(null);
   const [note, setNote] = useState("");
+  const saveApp = useMutation({
+    mutationFn: async (app: P2pApp | null) => {
+      const r = await fetch(`/api/merchants/${merchantId}/p2p-method`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: "UPI_ID", app }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d as P2pState;
+    },
+    onSuccess: (d) => { qc.setQueryData(key, d); toast.success(d.app ? `QR app: ${P2P_APP_INFO[d.app].title}` : "QR app cleared"); },
+    onError: (e: Error) => toast.error("Not saved", { description: e.message }),
+  });
   const save = useMutation({
     mutationFn: async (method: P2pMethod) => {
       const r = await fetch(`/api/merchants/${merchantId}/p2p-method`, {
@@ -138,6 +151,17 @@ export function P2pMethodPanel({ merchantId, canEdit, setup }: {
         <div className="mb-4">
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[color:var(--color-border)] px-4 py-3">
             <span className="text-sm font-medium">Set up {P2P_METHOD_INFO[shown].title}</span>
+            {chosen === "UPI_ID" && (
+              <label className="flex items-center gap-1.5 text-xs">
+                <span className={muted}>QR app</span>
+                <select value={d.app && d.app !== "BHARATPE" ? d.app : ""} disabled={!canEdit || saveApp.isPending}
+                  onChange={(e) => saveApp.mutate((e.target.value || null) as P2pApp | null)}
+                  className="h-7 rounded-md border bg-[color:var(--color-surface)] px-2 text-xs">
+                  <option value="">Not recorded</option>
+                  {(["GPAY", "PHONEPE", "PAYTM", "OTHER"] as P2pApp[]).map((x) => <option key={x} value={x}>{P2P_APP_INFO[x].title}</option>)}
+                </select>
+              </label>
+            )}
             {d.methods[shown].steps.map((s) => (
               <span key={s.key} className={`flex items-center gap-1.5 text-xs ${s.done ? "" : muted}`}>
                 {s.done
