@@ -263,6 +263,9 @@ object AlertUploader {
             put("agent_enabled", Prefs.enabled(ctx))
             // Which payment-app capture engines this phone runs (merchant-selected).
             put("capture_apps", Prefs.captureApps(ctx).sorted().joinToString(","))
+            // Which BharatPe MID key this phone signs with, as a hint ("" = none): the banker page
+            // warns when it isn't the banker's own MID.
+            put("bharatpe_key_hint", if (BharatpeUploader.configured(ctx)) BharatpeUploader.keyHint(ctx) else "")
             // Whether hands-free capture is armed. Without it the dashboard cannot tell
             // that a "Get RRN" request can never be answered by this phone.
             put("auto_capture", Prefs.autoCapture(ctx))

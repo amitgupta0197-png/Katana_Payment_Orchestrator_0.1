@@ -58,6 +58,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Pairing QR (v3.23): https://katanapay.co/pair/<code> opens the agent, which pairs
+                 itself (AgentPairing). Verified by katanapay.co/.well-known/assetlinks.json. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="katanapay.co" android:pathPrefix="/pair/" />
+            </intent-filter>
         </activity>
 
         <!-- Bank SMS receiver. Fires even when the app process is not running. -->

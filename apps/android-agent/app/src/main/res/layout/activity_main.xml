@@ -661,6 +661,32 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Pair with Katana (v3.23): sets the banker, server, payment app and BharatPe key at once -->
+        <TextView style="@style/SectionLabel" android:text="PAIR WITH KATANA" />
+        <com.google.android.material.card.MaterialCardView style="@style/Card">
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Scan the pairing QR from the banker page with this phone's camera, or type its 8-letter code here. It sets everything below by itself."
+                    android:textColor="@color/on_surface_variant"
+                    android:textSize="12sp"
+                    android:paddingBottom="8dp" />
+                <com.google.android.material.textfield.TextInputLayout style="@style/Field" android:hint="Pairing code (e.g. ABCD-2345)">
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/pairCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapCharacters|textNoSuggestions" android:importantForAutofill="no" />
+                </com.google.android.material.textfield.TextInputLayout>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pairBtn"
+                    style="@style/BtnSecondary"
+                    android:layout_marginTop="8dp"
+                    android:text="Pair with a code" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Connection -->
         <TextView style="@style/SectionLabel" android:text="CONNECTION" />
         <com.google.android.material.card.MaterialCardView style="@style/Card">

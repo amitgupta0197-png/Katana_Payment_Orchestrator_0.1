@@ -28,8 +28,8 @@ android {
         applicationId = "shop.glhouse.agent"
         minSdk = 24
         targetSdk = 34
-        versionCode = 136
-        versionName = "3.22"
+        versionCode = 137
+        versionName = "3.23"
 
         buildConfigField("String", "AGENT_SIGNING_SECRET", "\"$agentSigningSecret\"")
     }

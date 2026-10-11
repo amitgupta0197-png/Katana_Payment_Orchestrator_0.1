@@ -37,6 +37,12 @@ class MainActivity : AppCompatActivity() {
 
         handleControlIntent(intent)
 
+        b.pairBtn.setOnClickListener {
+            val code = AgentPairing.normalise(b.pairCode.text?.toString().orEmpty())
+            if (code == null) { toast("The pairing code is 8 letters and digits, like ABCD-2345"); return@setOnClickListener }
+            startPairing(Prefs.baseUrl(this), code)
+        }
+
         b.saveBtn.setOnClickListener {
             Prefs.save(this, b.baseUrl.text.toString(), b.deviceId.text.toString(), b.merchantCode.text.toString(), b.enabled.isChecked)
             refreshState()
@@ -118,7 +124,34 @@ class MainActivity : AppCompatActivity() {
      *
      * Handled from both entry points now, and setIntent() keeps getIntent() honest afterwards.
      */
+    /** Pair with the banker behind [code] and show the result; the fields below are refreshed. */
+    private fun startPairing(base: String, code: String) {
+        b.pairBtn.isEnabled = false
+        toast("Pairing…")
+        AgentPairing.pair(this, base, code) { ok, msg ->
+            runOnUiThread {
+                b.pairBtn.isEnabled = true
+                toast(msg)
+                if (ok) {
+                    b.pairCode.setText("")
+                    b.baseUrl.setText(Prefs.baseUrl(this))
+                    b.merchantCode.setText(Prefs.merchantCode(this))
+                    b.enabled.isChecked = Prefs.enabled(this)
+                    syncAppSwitches()
+                    showBharatpeStatus()
+                    AgentWorker.schedule(this)
+                    Handler(Looper.getMainLooper()).postDelayed({ refreshState() }, 1600)
+                }
+            }
+        }
+    }
+
     private fun handleControlIntent(i: Intent?) {
+        // The pairing QR opened us (https://katanapay.co/pair/<code>): pair straight away.
+        AgentPairing.fromLink(i?.data)?.let { (base, code) ->
+            i?.data = null
+            startPairing(base, code)
+        }
         // BACKFILL AFTER AN OUTAGE. `--ez backfill true` arms one deep sweep: the engine walks
         // the whole payments list instead of stopping where new payments end. Needed on
         // 2026-08-21, when a day of payments went uncaptured and therefore sat BELOW the rows
