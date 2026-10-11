@@ -16,6 +16,7 @@ import { setProviderFlow } from "@/lib/payin-flow-store";
 import { getGatewayMid, storeGatewayMid, type GatewayMid } from "@/lib/gateway-creds";
 import { checkGatewayPayin } from "@/lib/gateway-payin";
 import { flowReadiness } from "@/lib/payin-flow-api";
+import { setP2pMethod } from "@/lib/p2p-method-store";
 import { payatomEncrypt } from "@/lib/payin-providers/payatom";
 
 const HOST = process.env.PG_HOST ?? "localhost";
@@ -153,5 +154,40 @@ test("readiness: a P2P PayAtom account makes the banker P2P-ready, not Intent-re
     assert.equal(s.channel_id, "PAYATOM");
   } finally {
     await storeGatewayMid(A, payatomMid("P2P"));
+  }
+});
+
+// ── One P2P method per banker (lib/p2p-method, merchant 0027) ────────────────────────────────
+test("the chosen P2P method decides: UPI ID skips the PayAtom account, PayAtom never falls back to the UPI ID", opts, async () => {
+  try {
+    // UPI ID chosen: the PayAtom P2P account is ignored and the order pays the banker's own UPI ID.
+    await setP2pMethod(A, { value: "UPI_ID", by: BY });
+    const u = await createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "P2P" });
+    const su = await stored(u.order.id);
+    assert.equal(su.channel_type, "P2P");
+    assert.notEqual(su.meta.gateway?.provider, "PAYATOM");
+    assert.equal((await flowReadiness([A])).get(A)!.p2pMethod, "UPI_ID");
+
+    // PayAtom chosen but its account is set to Intent: refused, never paid to the bare UPI ID.
+    await setP2pMethod(A, { value: "PAYATOM", by: BY });
+    await storeGatewayMid(A, payatomMid("INTENT"));
+    await assert.rejects(
+      createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "P2P" }),
+      (e: unknown) => e instanceof PayinFlowError && e.code === "FLOW_NOT_READY" && !/payatom/i.test(e.message),
+    );
+    assert.equal((await flowReadiness([A])).get(A)!.p2p, false);
+
+    // BharatPe chosen with no BharatPe MID for its UPI ID: refused too.
+    await storeGatewayMid(A, payatomMid("P2P"));
+    await setP2pMethod(A, { value: "BHARATPE", by: BY });
+    await assert.rejects(
+      createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "P2P" }),
+      (e: unknown) => e instanceof PayinFlowError && e.code === "FLOW_NOT_READY",
+    );
+  } finally {
+    await storeGatewayMid(A, payatomMid("P2P"));
+    await setP2pMethod(A, { value: null, by: BY });
+    await rows("merchant", "DELETE FROM merchant_p2p_method_history WHERE changed_by = $1", [BY]).catch(() => {});
+    await rows("merchant", "UPDATE merchants SET p2p_method_set_by = NULL, p2p_method_set_at = NULL WHERE p2p_method_set_by = $1", [BY]).catch(() => {});
   }
 });

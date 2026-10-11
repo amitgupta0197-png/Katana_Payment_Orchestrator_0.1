@@ -3,6 +3,7 @@
 // fails reads as the unsafe answer (not set / not working), so the check may under-report readiness,
 // never over-report it.
 
+import { getP2pMethod } from "@/lib/p2p-method-store";
 import { rows } from "@/lib/pg";
 import { CLOSED_STAGES, CLOSED_STATUSES } from "@/lib/katana-order";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
@@ -93,6 +94,7 @@ export async function bankerCheckFacts(merchantId: string): Promise<BankerCheckF
       minAmount: gatewayDef(status.gateway)?.payin.minAmount ?? null,
     } : null,
     upiId: c?.vpa?.trim() || extraVpa?.trim() || null,
+    p2pMethod: await getP2pMethod(code),
     phones: { enrolled: phones[0]?.enrolled ?? 0, online: phones[0]?.online ?? 0, lastHeartbeat: phones[0]?.last ?? null },
     limits: { min: lim.min, max: lim.max, daily: lim.daily, upiMax: lim.upiMax },
     liveKey: key.configured,

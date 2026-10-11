@@ -187,7 +187,7 @@ async function checklist(code: string): Promise<ChecklistItem[]> {
     },
     needs.settlementVpa && {
       // A P2P processor account (lib/pg-catalog gatewayAccountChannel) takes P2P payments in its place.
-      key: "settlement_vpa", label: "Settlement UPI ID saved", done: !!c?.vpa?.trim() || extraVpas || !!ready?.get(code)?.p2p,
+      key: "settlement_vpa", label: "Settlement UPI ID saved", done: ready?.get(code)?.p2pMethod ? !!ready.get(code)?.p2p : !!c?.vpa?.trim() || extraVpas || !!ready?.get(code)?.p2p,
       hint: "The UPI ID your live payments are paid to. Your Katana account manager sets it.",
     },
     needs.payinGateway && {

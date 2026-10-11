@@ -12,6 +12,8 @@ import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/l
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
 import { gatewayAccountChannel, gatewayDef, gatewayName } from "@/lib/pg-catalog";
+import { p2pProcessorAllowed } from "@/lib/p2p-method";
+import { bharatpeReadyCodes, getP2pMethod } from "@/lib/p2p-method-store";
 import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
@@ -322,7 +324,11 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // ID of the banker's own and the processor confirms it, e.g. PayAtom); an Intent order never
   // does. With no flow selected either may take it, as the routing always did.
   const gatewayAllowed = flow !== "P2P";
-  const p2pProviderAllowed = flow !== "INTENT";
+  // THE BANKER'S ONE P2P METHOD (lib/p2p-method, merchant 0027): with its UPI ID or BharatPe
+  // chosen, a P2P order never goes to a P2P processor account; with PayAtom chosen it never falls
+  // back to the bare UPI ID (below). Not chosen: routed as before.
+  const p2pMethod = livemode && flow !== "INTENT" ? await getP2pMethod(input.merchantId) : null;
+  const p2pProviderAllowed = flow !== "INTENT" && p2pProcessorAllowed(p2pMethod);
 
   // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses
   // the parent merchant's API key but carries its own identity, so payin volume is
@@ -404,6 +410,13 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   const connected = anyAccount && (accountChannel === "P2P" ? p2pProviderAllowed && !!anyAccount.connector.upiIntent : gatewayAllowed)
     ? anyAccount : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
+  if (livemode && flow === "P2P" && p2pMethod === "PAYATOM" && !(connected && accountChannel === "P2P")) {
+    throw new PayinFlowError("This account takes P2P payments through its payment processor, which is not connected", "FLOW_NOT_READY");
+  }
+  if (livemode && flow === "P2P" && p2pMethod === "BHARATPE" && input.merchantId
+      && !(await bharatpeReadyCodes([input.merchantId])).has(input.merchantId)) {
+    throw new PayinFlowError("This account's P2P payment method is not set up", "FLOW_NOT_READY");
+  }
   // Gateways with no UPI intent take the payment on their own hosted page: PayU with a Client ID +
   // Secret (payment links), RubyVault and iSmartPay. The order gets that page and the customer pays
   // there; the gateway's answer settles it. CCAvenue has none either, but its merchants keep the

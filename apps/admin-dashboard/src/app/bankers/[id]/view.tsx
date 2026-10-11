@@ -29,6 +29,7 @@ import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
 import { BankerH2hCard } from "@/components/merchant/banker-h2h-card";
 import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
 import { BharatPeConnectCard } from "@/components/merchant/bharatpe-connect";
+import { P2pMethodPanel } from "@/components/merchant/p2p-method";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
 import { PayinLimitsCard } from "@/components/merchant/payin-limits-card";
@@ -761,14 +762,27 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </div>
         </TabsContent>
 
-        {/* P2P: the payer pays the banker's own UPI ID; the agent phone sees the bank credit. */}
+        {/* P2P: one method at a time (lib/p2p-method) — the banker's UPI ID, BharatPe or PayAtom.
+            Only the chosen method's setup is shown; then the live test and the P2P orders. */}
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
-          {named && <PayatomConnectCard merchantId={merchant.id} />}
-          {named && <BharatPeConnectCard merchantId={merchant.id} />}
-          <KatanaPayConfigCard merchantId={merchant.id} />
+          {named ? (
+            <P2pMethodPanel merchantId={merchant.id} canEdit={canEditMids} setup={{
+              UPI_ID: <>
+                <KatanaPayConfigCard merchantId={merchant.id} />
+                <div className="mt-4"><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
+              </>,
+              BHARATPE: <>
+                <BharatPeConnectCard merchantId={merchant.id} />
+                <div className="mt-4"><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
+              </>,
+              PAYATOM: <PayatomConnectCard merchantId={merchant.id} />,
+            }} />
+          ) : <>
+            <KatanaPayConfigCard merchantId={merchant.id} />
+            <div className="mt-4"><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
+          </>}
           <div className="mt-4">
-            <MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />
             {named && <IntentLiveTestCard merchantId={merchant.id} merchantCode={merchant.merchant_code} flow="P2P" />}
             <PayinOperationsCard merchantId={merchant.id} channel="P2P" />
             <MerchantCapturedCreditsCard merchantId={merchant.id} />

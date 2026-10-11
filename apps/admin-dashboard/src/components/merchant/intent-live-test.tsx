@@ -118,8 +118,7 @@ export function IntentLiveTestCard({ merchantId, merchantCode, flow = "INTENT" }
         <CardTitle className="flex items-center gap-2 text-base"><FlaskConical className="h-4 w-4" /> {p2p ? "P2P live test" : "Intent live test"}{p2p ? <InfoTip label="the P2P live test">A real payment you make yourself to this banker&apos;s UPI ID. It proves money arrives. The banker&apos;s server gets no message for it.</InfoTip> : <InfoTip label="the Intent live test">A real payment you make yourself through the gateway. It proves the gateway takes money and tells Katana. The banker&apos;s server gets no message for it.</InfoTip>}</CardTitle>
         <CardDescription>
           {p2p
-            ? <>A real P2P payment on this banker: through its P2P processor account if it has one, otherwise to its own UPI ID
-                (confirmed by the bank credit). Create a link, open it on a phone and pay.</>
+            ? <>A real P2P payment on this banker, through the P2P method chosen above. Create a link, open it on a phone and pay.</>
             : <>A real payment through this banker&apos;s pay-in gateway. Create a link, open it on a phone and pay; the gateway
                 confirms it here.</>}
           {" "}The banker&apos;s server is not sent a callback for it.

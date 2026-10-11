@@ -42,6 +42,8 @@ export interface BankerCheckFacts {
   };
   /** A settlement UPI ID is saved (katana_pay.settlement_vpa / settlement_vpas). */
   upiId: string | null;
+  /** The banker's chosen P2P method (lib/p2p-method); null when none is chosen. */
+  p2pMethod?: "UPI_ID" | "BHARATPE" | "PAYATOM" | null;
   /** Capture phones: enrolled, and online with permissions now. */
   phones: { enrolled: number; online: number; lastHeartbeat: string | null };
   /** Effective limits in rupees (lib/payin-limits effectivePayinLimits). */
@@ -103,7 +105,10 @@ export function checkBanker(f: BankerCheckFacts, now: Date = new Date()): Banker
   if (f.flow.flow === "UNSET") notes.push({ key: "FLOW_UNSET", title: "No payment flow chosen", detail: "Orders are routed the old way: a connected gateway if there is one, else its UPI ID.", fix: { label: "Choose how customers pay", tab: "overview" } });
   else pass("FLOW", "How customers pay", flow === "P2P" ? "Customer pays the banker's UPI ID (P2P)" : flow === "INTENT" ? "Customer pays through a payment gateway (Intent)" : "Both flows");
   for (const m of missing) {
-    if (m.key === "P2P_UPI_ID") blockers.push({ key: "NO_UPI_ID", title: "No UPI ID for payments to land on", detail: "It is on P2P, so a live order needs the UPI ID the customer pays.", fix: { label: "Save the UPI ID", tab: "p2p" } });
+    if (m.key === "P2P_UPI_ID") blockers.push(
+      f.p2pMethod === "PAYATOM" ? { key: "NO_P2P_METHOD", title: "PayAtom is not connected", detail: "Its P2P payments go through PayAtom, so a live order needs a PayAtom account set to P2P.", fix: { label: "Connect PayAtom", tab: "p2p" } }
+      : f.p2pMethod === "BHARATPE" ? { key: "NO_P2P_METHOD", title: "No BharatPe MID connected", detail: "Its P2P payments go to its BharatPe QR, so a live order needs an active BharatPe MID for the UPI ID customers pay.", fix: { label: "Connect BharatPe", tab: "p2p" } }
+      : { key: "NO_UPI_ID", title: "No UPI ID for payments to land on", detail: "It is on P2P, so a live order needs the UPI ID the customer pays.", fix: { label: "Save the UPI ID", tab: "p2p" } });
     else if (m.key === "INTENT_GATEWAY") blockers.push({ key: "NO_PAYMENT_ACCOUNT", title: "No payment account connected", detail: "It is on Intent, so a live order needs a gateway account to take the payment.", fix: { label: "Connect a payment account", tab: "intent" } });
     else if (m.key === "CHOICE") blockers.push({ key: "NO_FLOW", title: "No payment flow chosen", detail: "Its merchant takes pay-ins but no flow is selected.", fix: { label: "Choose how customers pay", tab: "overview" } });
   }
@@ -118,8 +123,12 @@ export function checkBanker(f: BankerCheckFacts, now: Date = new Date()): Banker
     if (a.minAmount) notes.push({ key: "GATEWAY_MINIMUM", title: `${a.gatewayName} takes ${rupees(a.minAmount)} or more`, detail: `Smaller orders are refused by the gateway.${a.golive === "VERIFYING" && a.minAmount > a.verifyCap ? " That is above the verification cap, so no order can be paid until the cap allows it." : ""}` });
   }
   if (flow === "P2P" || (flow === null && !(a && a.channel === "INTENT"))) {
-    if (f.upiId) pass("UPI_ID", "Where money lands", `UPI ID ${f.upiId.length > 12 ? `${f.upiId.slice(0, 10)}…` : f.upiId}`);
-    if (!(a && a.channel === "P2P")) {
+    const method = f.p2pMethod ?? null;
+    const viaProcessor = method ? method === "PAYATOM" && !!a && a.channel === "P2P" : !!a && a.channel === "P2P";
+    if (method) pass("P2P_METHOD", "P2P method", method === "PAYATOM" ? "PayAtom gives the payment link and confirms it" : method === "BHARATPE" ? "Customers pay its BharatPe QR; the agent reads BharatPe" : "Customers pay its UPI ID; a phone confirms");
+    else notes.push({ key: "P2P_METHOD_UNSET", title: "No P2P method chosen", detail: "P2P orders are routed the old way: a P2P processor account if its first account is one, else its UPI ID.", fix: { label: "Choose the P2P method", tab: "p2p" } });
+    if (f.upiId && method !== "PAYATOM") pass("UPI_ID", "Where money lands", `UPI ID ${f.upiId.length > 12 ? `${f.upiId.slice(0, 10)}…` : f.upiId}`);
+    if (!viaProcessor) {
       if (f.phones.online > 0) pass("PHONE", "Phone reading payments", `Last heard ${ago(f.phones.lastHeartbeat, now)}`);
       else notes.push({ key: "PHONE_OFFLINE", title: f.phones.enrolled ? "No capture phone online" : "No capture phone installed", detail: f.phones.enrolled ? `Last heard ${ago(f.phones.lastHeartbeat, now)}. P2P payments won't be confirmed until one is back.` : "Without a phone reading bank messages, P2P payments aren't confirmed by themselves.", fix: { label: "Open P2P pay-ins", tab: "p2p" } });
     }

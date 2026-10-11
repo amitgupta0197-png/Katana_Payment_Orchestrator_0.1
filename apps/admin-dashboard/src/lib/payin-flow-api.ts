@@ -4,6 +4,8 @@ import { z } from "zod";
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { gatewayAccountChannel } from "@/lib/pg-catalog";
+import type { P2pMethod } from "@/lib/p2p-method";
+import { bharatpeReadyCodes, getP2pMethods } from "@/lib/p2p-method-store";
 
 export const flowChangeSchema = z.object({
   // UNSET clears the selection: a merchant goes back to "not selected", a banker back to
@@ -16,15 +18,21 @@ export const flowChangeSchema = z.object({
 
 /** What each flow needs before a banker can take a live order on it. */
 export interface FlowReadiness {
-  /** P2P: a settlement UPI ID to be paid on, or a P2P processor account (e.g. PayAtom on P2P). */
+  /**
+   * P2P: what its chosen method needs (lib/p2p-method): UPI ID → a settlement UPI ID; BharatPe →
+   * an active BharatPe MID whose UPI ID is the settlement one; PayAtom → its first account is a P2P
+   * processor account. None chosen: a settlement UPI ID or a P2P processor account, as before.
+   */
   p2p: boolean;
+  /** The banker's chosen P2P method, null when none is chosen. */
+  p2pMethod: P2pMethod | null;
   /** Intent: a pay-in gateway account connected that runs on the Intent flow. */
   intent: boolean;
 }
 
 /** Readiness of many bankers at once, keyed by merchant_code. */
 export async function flowReadiness(codes: string[]): Promise<Map<string, FlowReadiness>> {
-  const out = new Map<string, FlowReadiness>(codes.map((c) => [c, { p2p: false, intent: false }]));
+  const out = new Map<string, FlowReadiness>(codes.map((c) => [c, { p2p: false, intent: false, p2pMethod: null }]));
   if (!codes.length) return out;
   const [vpas, mids] = await Promise.all([
     rows<{ merchant_code: string }>("merchant", `
@@ -37,14 +45,28 @@ export async function flowReadiness(codes: string[]): Promise<Map<string, FlowRe
          AND enabled = true AND owner_id = ANY($1::text[])
     `, [codes]).catch(() => []),
   ]);
-  for (const v of vpas) { const r = out.get(v.merchant_code); if (r) r.p2p = true; }
+  const methods = await getP2pMethods(codes);
+  const bharatpe = await bharatpeReadyCodes([...methods].filter(([, m]) => m === "BHARATPE").map(([c]) => c));
+  const hasVpa = new Set(vpas.map((v) => v.merchant_code));
   // Which flow the first account runs on is inside its sealed credentials (lib/pg-catalog
   // gatewayAccountChannel); a credential that cannot be read counts as Intent, as before.
-  const channels = await Promise.all(mids.map(async (m) =>
-    [m.owner_id, gatewayAccountChannel(await getGatewayMid(m.owner_id).catch(() => null) ?? { gateway: "" })] as const));
-  for (const [code, ch] of channels) {
+  const channels = await Promise.all(mids.map(async (m) => {
+    const mid = await getGatewayMid(m.owner_id).catch(() => null);
+    return [m.owner_id, gatewayAccountChannel(mid ?? { gateway: "" }), mid?.gateway ?? ""] as const;
+  }));
+  const p2pAccount = new Map<string, string>();
+  for (const [code, ch, gw] of channels) {
     const r = out.get(code);
-    if (r) { if (ch === "P2P") r.p2p = true; else r.intent = true; }
+    if (!r) continue;
+    if (ch === "P2P") p2pAccount.set(code, gw); else r.intent = true;
+  }
+  for (const [code, r] of out) {
+    const method = methods.get(code) ?? null;
+    r.p2pMethod = method;
+    r.p2p = method === "UPI_ID" ? hasVpa.has(code)
+      : method === "BHARATPE" ? bharatpe.has(code)
+      : method === "PAYATOM" ? p2pAccount.get(code) === "PAYATOM"
+      : hasVpa.has(code) || p2pAccount.has(code);
   }
   return out;
 }
