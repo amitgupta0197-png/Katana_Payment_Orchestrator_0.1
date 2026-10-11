@@ -15,7 +15,8 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { pgError } from "@/lib/pg";
+import { pgError, rows } from "@/lib/pg";
+import { genRrn } from "@/lib/katana-pay";
 import { ingestTxnAlert, isAuthMessage } from "@/lib/txn-reconcile";
 import { bharatpeMidByApiKey } from "@/lib/bharatpe-store";
 import { envOfApiKey, timestampFresh, verifyBharatPeSignature } from "@/lib/bharatpe-setup";
@@ -59,10 +60,43 @@ export async function POST(req: Request) {
   if (isAuthMessage(body.raw) || isAuthMessage(body.narration))
     return NextResponse.json({ ok: true, outcome: "REJECTED", detail: "auth/OTP message ignored" });
 
+  // THE UTR, LATER. The agent posts a payment as soon as BharatPe's push or banner announces it
+  // (amount + payer, no UTR), so a unique-amount order is confirmed at once, and posts again with
+  // the UTR once it has read the payment's page, carrying the same bharatpe_txn_id (the agent's
+  // own capture key). That second post adds the UTR to the first record — and replaces the
+  // reference Katana made up for the order (genRrn) — instead of becoming a second credit.
+  const live = envOfApiKey(apiKey) === "PROD";
+  const utr = body.utr?.trim() && /^\d{12}$/.test(body.utr.trim()) ? body.utr.trim() : null;
+  if (utr && body.bharatpe_txn_id) {
+    try {
+      const prior = (await rows<{ id: string; utr: string | null; order_id: string | null }>("vendorGateway", `
+        SELECT id::text, utr, matched_order_id::text AS order_id FROM vendor_txn_alerts
+         WHERE merchant_id = $1 AND source = 'BHARATPE' AND details->>'bharatpe_txn_id' = $2
+           AND livemode = $3 AND created_at >= now() - interval '1 day'
+         ORDER BY created_at LIMIT 1`, [mid.merchant_code, body.bharatpe_txn_id, live]))[0];
+      if (prior) {
+        if (prior.utr === utr) return NextResponse.json({ ok: true, alert_id: prior.id, outcome: "DUPLICATE", detail: "UTR already recorded" });
+        await rows("vendorGateway", `
+          UPDATE vendor_txn_alerts
+             SET utr = $2, payer_name = COALESCE(payer_name, $3),
+                 detail = COALESCE(detail, '') || ' · +UTR from the BharatPe payment screen'
+           WHERE id = $1::uuid AND (utr IS NULL OR utr !~ '^[0-9]{12}$')`,
+          [prior.id, utr, body.payer_name ?? null]);
+        if (prior.order_id) {
+          const o = (await rows<{ id: string; rrn: string | null }>("vendorGateway",
+            `SELECT id::text, rrn FROM vendor_payin_orders WHERE id = $1::uuid`, [prior.order_id]))[0];
+          if (o && (!o.rrn || o.rrn === genRrn(o.id))) {
+            await rows("vendorGateway", `UPDATE vendor_payin_orders SET rrn = $2, updated_at = now() WHERE id = $1::uuid`, [o.id, utr]);
+          }
+        }
+        return NextResponse.json({ ok: true, alert_id: prior.id, outcome: "UTR_ADDED", detail: "UTR added to the payment already recorded" });
+      }
+    } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
+  }
+
   // A verified BharatPe post is channel-trusted; the MID's env decides the mode it confirms. A LIVE
   // MID confirms live orders, a TEST MID confirms TEST orders (opts.livemode is stated explicitly,
   // so a trusted test credit isn't forced down the SIMULATED path that never auto-confirms).
-  const live = envOfApiKey(apiKey) === "PROD";
   try {
     const r = await ingestTxnAlert(
       {
