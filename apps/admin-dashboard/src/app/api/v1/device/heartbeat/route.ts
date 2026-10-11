@@ -23,6 +23,9 @@ const schema = z.object({
   // which means on-screen RRN capture is PAUSED on the device — the difference between a
   // phone that can return an RRN and one that never will.
   capture_apps: z.string().max(200).optional(),
+  // The BharatPe MID key this phone signs with, as a hint ("bpk_live_dm_F…xy"; "" = none), from
+  // agent v3.23. Lets "Check this banker" say when the phone holds another MID's key.
+  bharatpe_key_hint: z.string().max(40).optional(),
   // Hands-free capture armed. "Get RRN" is a no-op on the device without it.
   auto_capture: z.boolean().optional(),
   // Whether this phone's screen will stay on by itself. On-screen capture needs a live
@@ -183,6 +186,12 @@ export async function POST(req: Request) {
         counters ? JSON.stringify(counters) : null, body.parser_version ?? null, rebound,
         body.keep_awake ?? null, body.overlay_ok ?? null, body.charging ?? null, body.install_id ?? null,
         body.access_ok ?? null]);
+
+    // Apart from the upsert, so a database without vendorGateway 0047 still takes the heartbeat.
+    if (body.bharatpe_key_hint !== undefined) {
+      await rows("vendorGateway", `UPDATE vendor_devices SET bharatpe_key_hint = NULLIF($2, '') WHERE device_id = $1`,
+        [body.device_id, body.bharatpe_key_hint]).catch(() => {});
+    }
 
     // Validate the merchant code so the app can confirm it's correct.
     let merchantKnown = false;

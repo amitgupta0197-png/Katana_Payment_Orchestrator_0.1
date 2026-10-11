@@ -57,7 +57,7 @@ test("calls: create first with the upper-case code, then flow, the method's own 
 
 test("what is left afterwards names the agent app and the go-live steps", () => {
   assert.match(afterSteps({ ...base, type: "P2P", kind: "SCAN_PAY", app: "PAYTM" })[0], /Paytm for Business/);
-  assert.match(afterSteps({ ...base, type: "P2P", kind: "SCAN_PAY", app: "BHARATPE" })[0], /BharatPe key/);
+  assert.match(afterSteps({ ...base, type: "P2P", kind: "SCAN_PAY", app: "BHARATPE" })[0], /pairing QR/);
   assert.match(afterSteps({ ...base, type: "INTENT", connectLater: true })[0], /Pays via gateway/);
   assert.match(afterSteps(base).at(-1)!, /live mode/);
 });

@@ -5,7 +5,7 @@
 
 export const ATTENTION_CATEGORIES = [
   "REFUSES_LIVE", "PAID_NOT_TOLD", "CALLBACK_FAILING", "WRONG_CREDENTIALS", "UNMATCHED_MONEY",
-  "STUCK_PENDING", "PHONE_OFFLINE", "REFUSALS", "VERIFYING_STUCK",
+  "STUCK_PENDING", "PHONE_OFFLINE", "PHONE_MISMATCH", "REFUSALS", "VERIFYING_STUCK",
 ] as const;
 export type AttentionCategory = (typeof ATTENTION_CATEGORIES)[number];
 
@@ -27,6 +27,8 @@ export const CATEGORY: Record<AttentionCategory, { label: string; severity: 1 | 
     info: "A new payment account still takes only small test payments. Make one real payment, then set it live on Gateway go-live." },
   PHONE_OFFLINE: { label: "Payment phone offline", severity: 2,
     info: "The phone that reads this banker's payments is offline. UPI payments to the banker can't be confirmed until it is back." },
+  PHONE_MISMATCH: { label: "Phone doesn't fit the banker", severity: 2,
+    info: "The phone online for this banker reads another payment app than its QR, or holds another BharatPe MID's key. Its payments won't be confirmed until it is paired again." },
   REFUSALS: { label: "Many refused orders", severity: 3,
     info: "The merchant sent many orders today that Katana refused for the same reason. Their integration probably has one mistake." },
 };

@@ -177,7 +177,7 @@ export function afterSteps(a: WizardAnswers): string[] {
   const out: string[] = [];
   if (a.type === "P2P" && a.kind === "SCAN_PAY") {
     out.push(a.app === "BHARATPE"
-      ? "Install the Katana Agent on the banker's phone, switch on BharatPe for Business and paste the BharatPe key + secret shown below."
+      ? "Install the Katana Agent on the banker's phone and scan the pairing QR below: it switches on BharatPe for Business and saves the BharatPe key by itself."
       : `Install the Katana Agent on the banker's phone and switch on ${a.app === "OTHER" ? "bank SMS / the QR's app" : (a.app ? { GPAY: "Google Pay for Business", PHONEPE: "PhonePe for Business", PAYTM: "Paytm for Business" }[a.app as "GPAY" | "PHONEPE" | "PAYTM"] : "its payment app")}.`);
   }
   if (a.type === "P2P" && a.kind === "QUASI") out.push(a.connectLater

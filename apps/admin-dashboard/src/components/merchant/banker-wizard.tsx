@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { AgentPairPanel } from "@/components/merchant/agent-pair";
+import { TakeLivePanel } from "@/components/merchant/take-live";
 import { codeFromName } from "@/lib/merchant-code";
 import { GATEWAYS, gatewayCheckoutMode, CHECKOUT_MODE_WORDS, type AuthModeId, type CredField } from "@/lib/pg-catalog";
 import { P2P_APP_INFO, P2P_APPS, P2P_KIND_INFO, type P2pApp, type P2pKind } from "@/lib/p2p-method";
@@ -223,6 +225,9 @@ export function BankerWizard({ open, onOpenChange }: { open: boolean; onOpenChan
                           <Field label="Latitude"><Input value={a.payatom.latitude} placeholder="19.0760" onChange={(e) => set({ payatom: { ...a.payatom, latitude: e.target.value } })} /></Field>
                           <Field label="Longitude"><Input value={a.payatom.longitude} placeholder="72.8777" onChange={(e) => set({ payatom: { ...a.payatom, longitude: e.target.value } })} /></Field>
                         </div>
+                        <CredTest note="Sends PayAtom one signed ₹201 request that is never paid: the only call that proves the secret key."
+                          body={{ gateway: "PAYATOM", env: a.payatom.env, payatom: { pid: a.payatom.pid, secret: a.payatom.secret, api_key: a.payatom.apiKey, api_base: a.payatom.apiBase, latitude: a.payatom.latitude, longitude: a.payatom.longitude } }}
+                          ready={!stepProblem("payatom", a)} />
                       </>)}
                     </>)}
 
@@ -276,6 +281,8 @@ export function BankerWizard({ open, onOpenChange }: { open: boolean; onOpenChan
                         </Field>
                       ))}
                       {gw.payin.creds && <p className="text-xs text-[color:var(--color-text-muted)]">{gw.payin.creds}</p>}
+                      <CredTest note={`Asks ${gw.name} about a made-up order with these credentials. Nothing is saved or charged.`}
+                        body={{ gateway: gw.id, env: a.gatewayEnv, auth: a.gatewayAuth, fields: a.gatewayFields }} ready={!problem} />
                     </>)}
 
                     {step === "review" && (
@@ -367,6 +374,15 @@ function Finished({ a, done, onClose }: { a: WizardAnswers; done: Done; onClose:
           {done.bharatpe?.secret && <Secret label="BharatPe secret" value={done.bharatpe.secret} />}
         </div>
       )}
+      {done.id && a.type === "P2P" && a.kind === "SCAN_PAY" && !failed && (
+        <div className="rounded-2xl border border-[color:var(--color-border)] px-4 py-3">
+          <div className="mb-2 text-sm font-medium">Pair the banker&apos;s phone</div>
+          <AgentPairPanel merchantId={done.id} compact />
+        </div>
+      )}
+      {done.id && !failed && (
+        <TakeLivePanel merchantId={done.id} merchantCode={done.code} flow={a.type === "INTENT" ? "INTENT" : "P2P"} alwaysShow />
+      )}
       <div>
         <div className="mb-2 text-sm font-medium">Still to do</div>
         <ul className="list-disc space-y-1 pl-5 text-sm text-[color:var(--color-text-muted)]">{afterSteps(a).map((s) => <li key={s}>{s}</li>)}</ul>
@@ -375,6 +391,40 @@ function Finished({ a, done, onClose }: { a: WizardAnswers; done: Done; onClose:
         {done.id && <Button asChild><Link href={`/bankers/${done.id}?tab=${a.type === "INTENT" ? "intent" : "p2p"}`}>Open the banker</Link></Button>}
         <Button variant="secondary" onClick={onClose}>Close</Button>
       </div>
+    </div>
+  );
+}
+
+/** "Test connection": tries the entered credentials (POST /api/gateways/credential-test). Optional. */
+function CredTest({ body, ready, note }: { body: Record<string, unknown>; ready: boolean; note: string }) {
+  const [state, setState] = useState<{ busy: boolean; v: { result: string; message: string } | null; sent: string }>({ busy: false, v: null, sent: "" });
+  const sig = JSON.stringify(body);
+  const stale = state.v && state.sent !== sig;
+  async function test() {
+    setState({ busy: true, v: null, sent: sig });
+    try {
+      const r = await fetch("/api/gateways/credential-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: sig });
+      const d = await r.json().catch(() => ({}));
+      setState({ busy: false, sent: sig, v: r.ok ? d : { result: "UNKNOWN", message: d.error ?? `HTTP ${r.status}` } });
+    } catch (e) { setState({ busy: false, sent: sig, v: { result: "UNKNOWN", message: (e as Error).message } }); }
+  }
+  const tone = !state.v || stale ? "" : state.v.result === "OK" ? "border-[color:var(--color-success)] bg-[color:var(--color-success-muted)]"
+    : state.v.result === "WRONG" ? "border-[color:var(--color-danger)] bg-[color:var(--color-danger-muted)]"
+    : "border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)]";
+  return (
+    <div className="space-y-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="secondary" size="sm" onClick={test} disabled={!ready || state.busy}>
+          {state.busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Testing…</> : "Test connection"}
+        </Button>
+        <span className="text-xs text-[color:var(--color-text-muted)]">{note}</span>
+      </div>
+      {state.v && !stale && (
+        <div role="status" className={cn("rounded-xl border px-3 py-2 text-sm", tone)}>
+          <b>{state.v.result === "OK" ? "Works" : state.v.result === "WRONG" ? "Doesn't work" : state.v.result === "WARN" ? "Works, with a catch" : "Couldn't tell"}</b> — {state.v.message}
+        </div>
+      )}
+      {stale && <div className="text-xs text-[color:var(--color-text-muted)]">The details changed since the last test.</div>}
     </div>
   );
 }

@@ -3,7 +3,8 @@
 // fails reads as the unsafe answer (not set / not working), so the check may under-report readiness,
 // never over-report it.
 
-import { getP2pMethod } from "@/lib/p2p-method-store";
+import { getP2pApp, getP2pMethod } from "@/lib/p2p-method-store";
+import { bharatpeKeyHint } from "@/lib/agent-pair";
 import { rows } from "@/lib/pg";
 import { CLOSED_STAGES, CLOSED_STATUSES } from "@/lib/katana-order";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
@@ -95,6 +96,9 @@ export async function bankerCheckFacts(merchantId: string): Promise<BankerCheckF
     } : null,
     upiId: c?.vpa?.trim() || extraVpa?.trim() || null,
     p2pMethod: await getP2pMethod(code),
+    p2pApp: await getP2pApp(code),
+    bharatpeKeyHint: await bharatpeHintFor(code, c?.vpa ?? null),
+    onlinePhones: await onlinePhones(code),
     phones: { enrolled: phones[0]?.enrolled ?? 0, online: phones[0]?.online ?? 0, lastHeartbeat: phones[0]?.last ?? null },
     limits: { min: lim.min, max: lim.max, daily: lim.daily, upiMax: lim.upiMax },
     liveKey: key.configured,
@@ -155,4 +159,26 @@ export async function refusedOrdersToday(merchantCode: string, limit = 20): Prom
        AND created_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')
      ORDER BY created_at DESC LIMIT $2`, [merchantCode, limit]).catch(() => []);
   return r.map((x) => ({ at: x.at, endpoint: x.endpoint, http_status: x.http_status, code: x.error_code, amount: x.amount, txnid: x.txnid, plain: plainRefusal(x.error_code, x.error) }));
+}
+
+/** The hint of the active BharatPe MID's key for the UPI ID customers pay, or null. */
+async function bharatpeHintFor(code: string, vpa: string | null): Promise<string | null> {
+  const r = await rows<{ api_key: string }>("vendorGateway", `
+    SELECT api_key FROM bharatpe_mids WHERE merchant_code = $1 AND status = 'ACTIVE'
+       AND ($2::text IS NULL OR lower(payee_vpa) = lower($2)) ORDER BY created_at DESC LIMIT 1`, [code, vpa]).catch(() => []);
+  return r[0] ? bharatpeKeyHint(r[0].api_key) : null;
+}
+
+/** Phones online now with what they read; reportsKey = an agent new enough to send its key hint (3.23+). */
+async function onlinePhones(code: string): Promise<NonNullable<BankerCheckFacts["onlinePhones"]>> {
+  const r = await rows<{ device_id: string; capture_apps: string | null; hint: string | null; v: string | null }>("vendorGateway", `
+    SELECT device_id, capture_apps, bharatpe_key_hint AS hint, app_version AS v FROM vendor_devices
+     WHERE merchant_id = $1 AND status = 'TRUSTED' AND notif_access = true AND agent_enabled IS DISTINCT FROM false
+       AND last_heartbeat >= now() - ($2 || ' seconds')::interval`, [code, String(ONLINE_SEC)]).catch(() => []);
+  const newEnough = (v: string | null) => { const [a, b] = (v ?? "0.0").split(".").map(Number); return a > 3 || (a === 3 && b >= 23); };
+  return r.map((x) => ({
+    deviceId: x.device_id,
+    captureApps: (x.capture_apps ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    bharatpeKeyHint: x.hint, reportsKey: newEnough(x.v),
+  }));
 }

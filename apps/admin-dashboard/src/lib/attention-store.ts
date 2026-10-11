@@ -77,6 +77,13 @@ async function gather(): Promise<AttentionItem[]> {
             fix: first.fix ? { label: first.fix.label, href: first.fix.href ?? bankerHref(b.id, b.code, first.fix.tab) } : { label: "Check this banker", href: bankerHref(b.id, b.code) },
           });
           const onP2p = defaultOrderFlow(f.flow) === "P2P" || (f.flow.flow === "UNSET" && !!f.upiId && f.account?.channel !== "INTENT");
+          const mismatch = c.result.notes.find((n) => n.key === "PHONE_APP_MISMATCH" || n.key === "BHARATPE_KEY_MISMATCH");
+          if (onP2p && mismatch) out.push({
+            key: `PHONE_MISMATCH:${b.code}:${mismatch.key}`, category: "PHONE_MISMATCH", ...who(b.code),
+            title: `${b.code}: ${mismatch.title.charAt(0).toLowerCase()}${mismatch.title.slice(1)}`,
+            detail: mismatch.detail, since: null, count: 1,
+            fix: { label: "Pair the phone again", href: bankerHref(b.id, b.code, "p2p") },
+          });
           if (onP2p && p2pActive.has(b.code) && f.phones.online === 0) out.push({
             key: `PHONE_OFFLINE:${b.code}`, category: "PHONE_OFFLINE", ...who(b.code),
             title: `${b.code}'s payment phone is offline`,

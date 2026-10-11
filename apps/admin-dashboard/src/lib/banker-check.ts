@@ -44,6 +44,12 @@ export interface BankerCheckFacts {
   upiId: string | null;
   /** The banker's chosen P2P method (lib/p2p-method); null when none is chosen. */
   p2pMethod?: "UPI_ID" | "BHARATPE" | "PAYATOM" | null;
+  /** The scan-and-pay QR's payment app (merchant 0028), null when not recorded. */
+  p2pApp?: "BHARATPE" | "GPAY" | "PHONEPE" | "PAYTM" | "OTHER" | null;
+  /** Hint of the active BharatPe MID's key for the UPI ID customers pay (lib/agent-pair bharatpeKeyHint). */
+  bharatpeKeyHint?: string | null;
+  /** Phones online now: what each reads, and which BharatPe key it holds (agent v3.23+; null before). */
+  onlinePhones?: { deviceId: string; captureApps: string[]; bharatpeKeyHint: string | null; reportsKey: boolean }[];
   /** Capture phones: enrolled, and online with permissions now. */
   phones: { enrolled: number; online: number; lastHeartbeat: string | null };
   /** Effective limits in rupees (lib/payin-limits effectivePayinLimits). */
@@ -61,6 +67,40 @@ export interface BankerCheckResult {
   blockers: CheckItem[];
   notes: CheckItem[];
   passed: CheckItem[];
+}
+
+const APP_WORD: Record<string, string> = { BHARATPE: "BharatPe", GPAY: "Google Pay", PHONEPE: "PhonePe", PAYTM: "Paytm", AIRTEL: "Airtel", PINELABS: "Pine Labs" };
+
+/**
+ * Phones that don't fit the banker: none of the online phones reads the QR's app, or (BharatPe) none
+ * holds this MID's key. Only phones that are online count; an offline phone is its own note.
+ */
+export function phoneMismatches(f: Pick<BankerCheckFacts, "p2pMethod" | "p2pApp" | "bharatpeKeyHint" | "onlinePhones">): CheckItem[] {
+  const phones = f.onlinePhones ?? [];
+  if (!phones.length) return [];
+  const out: CheckItem[] = [];
+  const app = f.p2pMethod === "BHARATPE" ? "BHARATPE" : f.p2pMethod === "UPI_ID" && f.p2pApp && f.p2pApp !== "OTHER" ? f.p2pApp : null;
+  if (app && !phones.some((p) => p.captureApps.includes(app))) {
+    const reads = [...new Set(phones.flatMap((p) => p.captureApps))].map((a) => APP_WORD[a] ?? a);
+    out.push({
+      key: "PHONE_APP_MISMATCH", title: `The phone doesn't read ${APP_WORD[app]}`,
+      detail: `Customers pay its ${APP_WORD[app]} QR, but the phone ${reads.length ? `reads ${reads.join(", ")}` : "has no payment app switched on"}. Those payments won't be confirmed.`,
+      fix: { label: "Pair the phone again", tab: "p2p" },
+    });
+  }
+  if (f.p2pMethod === "BHARATPE" && f.bharatpeKeyHint) {
+    const reporting = phones.filter((p) => p.reportsKey);
+    if (reporting.length && !reporting.some((p) => p.bharatpeKeyHint === f.bharatpeKeyHint)) {
+      const other = reporting.find((p) => p.bharatpeKeyHint)?.bharatpeKeyHint;
+      out.push({
+        key: "BHARATPE_KEY_MISMATCH", title: other ? "The phone has another BharatPe MID's key" : "The phone has no BharatPe key",
+        detail: other ? `It signs with ${other}, not this banker's ${f.bharatpeKeyHint}. Its payments go to the other MID's banker, or are refused.`
+          : "BharatPe payments are recorded but can't confirm orders by themselves.",
+        fix: { label: "Pair the phone again", tab: "p2p" },
+      });
+    }
+  }
+  return out;
 }
 
 const rupees = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -128,6 +168,7 @@ export function checkBanker(f: BankerCheckFacts, now: Date = new Date()): Banker
     if (method) pass("P2P_METHOD", "P2P method", method === "PAYATOM" ? "PayAtom gives the payment link and confirms it" : method === "BHARATPE" ? "Customers pay its BharatPe QR; the agent reads BharatPe" : "Customers pay its UPI ID; a phone confirms");
     else notes.push({ key: "P2P_METHOD_UNSET", title: "No P2P method chosen", detail: "P2P orders are routed the old way: a P2P processor account if its first account is one, else its UPI ID.", fix: { label: "Choose the P2P method", tab: "p2p" } });
     if (f.upiId && method !== "PAYATOM") pass("UPI_ID", "Where money lands", `UPI ID ${f.upiId.length > 12 ? `${f.upiId.slice(0, 10)}…` : f.upiId}`);
+    for (const m of phoneMismatches(f)) notes.push(m);
     if (!viaProcessor) {
       if (f.phones.online > 0) pass("PHONE", "Phone reading payments", `Last heard ${ago(f.phones.lastHeartbeat, now)}`);
       else notes.push({ key: "PHONE_OFFLINE", title: f.phones.enrolled ? "No capture phone online" : "No capture phone installed", detail: f.phones.enrolled ? `Last heard ${ago(f.phones.lastHeartbeat, now)}. P2P payments won't be confirmed until one is back.` : "Without a phone reading bank messages, P2P payments aren't confirmed by themselves.", fix: { label: "Open P2P pay-ins", tab: "p2p" } });

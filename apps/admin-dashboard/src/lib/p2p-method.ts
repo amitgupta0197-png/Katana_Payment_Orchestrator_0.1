@@ -113,7 +113,7 @@ export function p2pSteps(method: P2pMethod, f: P2pFacts): { steps: P2pStep[]; re
     ]
     : method === "BHARATPE" ? [
       { key: "BHARATPE_MID", label: "BharatPe MID connected", done: !!f.bharatpeMid, required: true },
-      { key: "PHONE", label: "Agent phone online, with the MID key", done: f.phones.online > 0, required: false },
+      { key: "PHONE", label: "Agent phone online", done: f.phones.online > 0, required: false },
     ]
     : [
       { key: "PAYATOM", label: "PayAtom account on P2P", done: !!f.payatomP2p, required: true },

@@ -30,6 +30,9 @@ import { BankerH2hCard } from "@/components/merchant/banker-h2h-card";
 import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
 import { BharatPeConnectCard } from "@/components/merchant/bharatpe-connect";
 import { P2pMethodPanel } from "@/components/merchant/p2p-method";
+import { AgentPairCard } from "@/components/merchant/agent-pair";
+import { PhoneFitBanner } from "@/components/merchant/phone-fit";
+import { TakeLivePanel } from "@/components/merchant/take-live";
 import { PayoutGatewayCard } from "@/components/merchant/payout-gateway-card";
 import { PayoutPolicyCard } from "@/components/merchant/payout-policy-card";
 import { PayinLimitsCard } from "@/components/merchant/payin-limits-card";
@@ -676,6 +679,9 @@ export default function MerchantDetailView({ id }: { id: string }) {
           onAdvance={() => { setStagesOpen(true); document.getElementById("onboarding-stages")?.scrollIntoView({ behavior: "smooth", block: "center" }); }} />
       )}
 
+      {/* Take live: onboarding approval, live mode, account go-live and a real payment, in one place. */}
+      {persona === "SUPER_ADMIN" && <TakeLivePanel merchantId={merchant.id} merchantCode={merchant.merchant_code} />}
+
       {/* What this banker can do right now; each light opens its tab */}
       <StatusLights merchantId={merchant.id} onOpen={openTab} />
 
@@ -766,15 +772,16 @@ export default function MerchantDetailView({ id }: { id: string }) {
             Only the chosen method's setup is shown; then the live test and the P2P orders. */}
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
+          {named && <PhoneFitBanner merchantId={merchant.id} />}
           {named ? (
             <P2pMethodPanel merchantId={merchant.id} canEdit={canEditMids} setup={{
               UPI_ID: <>
                 <KatanaPayConfigCard merchantId={merchant.id} />
-                <div className="mt-4"><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
+                <div className="mt-4"><AgentPairCard merchantId={merchant.id} /><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
               </>,
               BHARATPE: <>
                 <BharatPeConnectCard merchantId={merchant.id} />
-                <div className="mt-4"><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
+                <div className="mt-4"><AgentPairCard merchantId={merchant.id} /><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
               </>,
               PAYATOM: <PayatomConnectCard merchantId={merchant.id} />,
             }} />

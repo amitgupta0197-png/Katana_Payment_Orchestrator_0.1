@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "shop.glhouse.agent",
+    "sha256_cert_fingerprints": ["8F:1B:55:3E:16:29:6C:93:2A:CA:39:CD:21:B8:77:C3:80:D2:85:57:5A:E4:80:1A:FD:15:51:D3:A6:8E:C2:33"]
+  }
+}]
