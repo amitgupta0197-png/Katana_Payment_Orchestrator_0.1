@@ -114,10 +114,13 @@ object BharatpeUploader {
      * Send one captured BharatPe payment. With no MID key on the phone it goes the ordinary way
      * (txn-alert), so it still shows up as captured.
      */
-    fun send(ctx: Context, rec: RrnRecord) {
+    fun send(ctx: Context, rec: RrnRecord, key: String? = null) {
         if (!Prefs.enabled(ctx)) return
         if (!configured(ctx)) { AlertUploader.sendCapture(ctx, rec); return }
         val body = JSONObject().apply {
+            // The capture key of the push this payment was first posted from: the server adds
+            // this UTR to that record instead of recording the payment twice.
+            key?.let { put("bharatpe_txn_id", it) }
             put("amount", rec.amount.replace(Regex("[^0-9.]"), ""))
             put("utr", rec.rrn)
             rec.payer.takeIf { it.isNotBlank() }?.let { put("payer_name", it.take(140)) }
@@ -128,6 +131,28 @@ object BharatpeUploader {
             put("nonce", UUID.randomUUID().toString())
         }.toString()
         post(ctx, body, "₹${rec.amount} ${rec.rrn}")
+    }
+
+    /**
+     * Post a payment the moment BharatPe announces it (push or in-app banner): amount, payer and
+     * time, no UTR yet. A unique-amount order is confirmed at once; the UTR follows under the same
+     * [key] once the engine has read the payment's page (send). Only with a MID key: without one
+     * the payment is recorded once, when its UTR is read.
+     */
+    fun sendPush(ctx: Context, amount: Double, payer: String, key: String, at: Long): Boolean {
+        if (!Prefs.enabled(ctx) || !configured(ctx)) return false
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US).format(Date(at))
+        val body = JSONObject().apply {
+            put("amount", String.format(Locale.US, "%.2f", amount))
+            if (payer.isNotBlank()) put("payer_name", payer.take(140))
+            put("event_time", iso)
+            put("bharatpe_txn_id", key)
+            put("narration", "BharatPe: received from ${payer.take(80)}")
+            put("raw", "BharatPe push $key ₹$amount from $payer")
+            put("nonce", UUID.randomUUID().toString())
+        }.toString()
+        post(ctx, body, "₹$amount ${payer.take(20)} (push)")
+        return true
     }
 
     private fun request(ctx: Context, body: String): Request? {

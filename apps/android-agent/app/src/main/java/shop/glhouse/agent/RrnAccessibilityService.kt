@@ -3,6 +3,7 @@ package shop.glhouse.agent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -383,12 +384,47 @@ class RrnAccessibilityService : AccessibilityService() {
         val BHARATPE_PKGS = listOf("com.bharatpe.app", "com.bharatpe.business", "com.bharatpe.merchant")
         fun isBharatpe(pkg: String?): Boolean = pkg?.contains("bharatpe", ignoreCase = true) == true
 
+        /**
+         * Open a payment app's own notification intent from the background.
+         *
+         * Android 14+ blocks an activity start from a PendingIntent unless the SENDER opts in, and
+         * Android 16 enforces it ("Background activity launch blocked!", Galaxy S24 / SDK 36,
+         * 2026-10-11): BharatPe's push was sent, created its activity, and the screen never came
+         * to the front, so every capture waited out its deadline. The agent runs a foreground
+         * service and holds the notification's own allowlist token, so opting in is enough.
+         */
+        fun sendOpening(ctx: Context, pi: PendingIntent) {
+            if (Build.VERSION.SDK_INT >= 34) {
+                // 36+: MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS (3); the older ALLOWED (1) only
+                // counts there when the sender is visible, which a background agent never is.
+                val mode = if (Build.VERSION.SDK_INT >= 36) 3 else ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                val opts = ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(mode).toBundle()
+                pi.send(ctx, 0, null, null, null, null, opts)
+            } else pi.send()
+        }
+
         /** A BharatPe payment its push announced, waiting for its UTR to be read. */
-        data class BpPending(val amount: Double, val payer: String, val at: Long, val intent: PendingIntent?)
+        data class BpPending(val amount: Double, val payer: String, val at: Long, val intent: PendingIntent?, val key: String)
+        /** Payments already posted from their push, waiting for their UTR (newest last). */
+        private val bpPosted = ArrayDeque<BpPending>()
+        /** The posted payment a payment screen belongs to: same amount, same payer, same few minutes. */
+        @Synchronized fun bpPostedFor(amount: Double, payer: String, at: Long?): BpPending? {
+            val now = System.currentTimeMillis()
+            bpPosted.removeAll { now - it.at > 30 * 60_000L }
+            val want = payer.trim().lowercase()
+            return bpPosted.firstOrNull { p ->
+                Math.abs(p.amount - amount) < 0.005 &&
+                    (want.isEmpty() || p.payer.trim().lowercase().let { it == want || it.startsWith(want) || want.startsWith(it) }) &&
+                    (at == null || Math.abs(at - p.at) <= 3 * 60_000L)
+            }?.also { bpPosted.remove(it) }
+        }
         private val bpQueue = ArrayDeque<BpPending>()
         @Volatile private var bpActive: BpPending? = null
         @Volatile private var bpGen = 0
         private const val BP_DEADLINE_MS = 30_000L
+        // BharatPe posts one payment's push twice, milliseconds apart (2026-10-11 23:16:17.152
+        // and .157): the second must not queue a second hunt for the same payment.
+        private var bpLastPush: Triple<Double, String, Long>? = null
 
         /**
          * A BharatPe credit push arrived: queue it for the engine to open and read its UTR.
@@ -398,9 +434,18 @@ class RrnAccessibilityService : AccessibilityService() {
         fun bharatpeNotified(ctx: Context, amount: Double, payer: String, intent: PendingIntent?): Boolean {
             val svc = instance ?: return false
             if (!Prefs.enabled(ctx) || !Prefs.autoCapture(ctx) || !Prefs.captureAppOn(ctx, Prefs.APP_BHARATPE)) return false
+            val now = System.currentTimeMillis()
             synchronized(bpQueue) {
+                val last = bpLastPush
+                bpLastPush = Triple(amount, payer, now)
+                if (last != null && last.first == amount && last.second == payer && now - last.third < 5_000L) return true
+                val p = BpPending(amount, payer, now, intent, "bp-" + java.util.UUID.randomUUID().toString().take(13))
+                // Post it now (the order is confirmed in about a second); the UTR follows.
+                if (BharatpeUploader.sendPush(ctx, amount, payer, p.key, now)) synchronized(this) {
+                    bpPosted.addLast(p); while (bpPosted.size > 50) bpPosted.removeFirst()
+                }
                 if (bpQueue.size >= 20) { bpQueue.removeFirstOrNull(); Prefs.bump(ctx, "capture_drop") }
-                bpQueue.addLast(BpPending(amount, payer, System.currentTimeMillis(), intent))
+                bpQueue.addLast(p)
             }
             pump.post { svc.bpPump() }
             return true
@@ -564,7 +609,7 @@ class RrnAccessibilityService : AccessibilityService() {
             // GPay's transactions list is a static search result that must be re-run; Paytm's
             // sweep re-reads whatever the list shows, so it needs no refresh flag.
             if (app == Prefs.APP_GPAY) gpayRefreshPending = true
-            val ok = try { next.send(); true } catch (e: Exception) {
+            val ok = try { sendOpening(ctx, next); true } catch (e: Exception) {
                 Log.w("RRNCAP", "${app.lowercase()}: queued intent failed: ${e.javaClass.simpleName}"); false
             }
             if (!ok) requestAppCapture(ctx, app)
@@ -777,17 +822,45 @@ class RrnAccessibilityService : AccessibilityService() {
     private val bpNumberRx = Regex("^[0-9][0-9,]*(?:\\.[0-9]{1,2})?$")
     private val bpUtrRx = Regex("^[0-9]{12}$")
 
+    // In-app banners already turned into a capture, so one banner is never queued twice.
+    private val bpBannersSeen = LinkedHashMap<String, Long>()
+    private val bpBannerRx = Regex("Received\\s+(?:Rs\\.?|₹|INR)\\s?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s+from\\s+(.+?)(?:\\s+and\\s+|\\s*$)", RegexOption.IGNORE_CASE)
+
+    /**
+     * WITH BHARATPE OPEN, A PAYMENT POSTS NO NOTIFICATION. It shows its own banner at the top of
+     * the app instead ("BharatPe for Business" · "Received Rs 1.00 from RAGHAVENDRA K and settled
+     * instantly to your account xx2506", id tvText; 2026-10-11 23:38:50) and the push listener
+     * never hears of it. The banner is treated as the push.
+     */
+    private fun bpCheckBanner(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+        val banner = nodes.firstOrNull { it.second.viewIdResourceName?.endsWith(":id/tvText") == true }?.first?.trim() ?: return
+        val m = bpBannerRx.find(banner) ?: return
+        val amount = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: return
+        val now = System.currentTimeMillis()
+        bpBannersSeen.entries.removeAll { now - it.value > 10 * 60_000L }
+        if (bpBannersSeen.containsKey(banner)) return
+        bpBannersSeen[banner] = now
+        val payer = m.groupValues[2].trim()
+        if (bharatpeNotified(applicationContext, amount, payer, null)) {
+            Prefs.bump(this, "seen")
+            AlertStore.log(applicationContext, "${nowTag()} 🎯 bharatpe (in-app banner): ₹$amount from ${payer.take(24)} — finding its UTR")
+        }
+    }
+
     private fun handleBharatpe(root: AccessibilityNodeInfo) {
         val nodes = ArrayList<Pair<String, AccessibilityNodeInfo>>().also { flattenAll(root, it) }
+        bpCheckBanner(nodes)
         val texts = nodes.map { it.first.trim() }
+        // The payment screen is read whenever it shows a UTR, loaded or not: its web page can keep
+        // a "No Details Found" placeholder in the tree after the details have drawn.
+        if (texts.contains("UTR") && (texts.contains("Money Received") || texts.contains("Credited"))) { bpReadDetail(nodes, texts); return }
         // A WebView mid-load ("No Details Found", a blank frame) is not a place to act from.
-        if (texts.size < 3 || texts.any { it == "No Details Found" }) return
+        if (texts.size < 3 || texts.any { it == "No Details Found" }) { bpNoteScreen("loading", texts); return }
         val active = bpActive
         when {
-            texts.contains("UTR") && (texts.contains("Money Received") || texts.contains("Credited")) -> bpReadDetail(nodes, texts)
             texts.contains("Transactions") && texts.contains("Select Dates") -> if (active != null) bpOnList(nodes, texts, active)
-            active != null && (texts.contains("Today’s Collection") || nodes.any { it.second.viewIdResourceName?.endsWith(":id/merchantName") == true }) -> bpOnHome(nodes)
-            active != null -> bpOnOther()
+            active != null && (texts.contains("Today’s Collection") || nodes.any { it.second.viewIdResourceName?.endsWith(":id/merchantName") == true }) -> bpOnHome(root, nodes)
+            active != null -> { bpNoteScreen("other", texts); bpOnOther() }
             else -> bharatpeDiag(root)   // a screen the engine does not know yet: keep learning it
         }
     }
@@ -817,9 +890,11 @@ class RrnAccessibilityService : AccessibilityService() {
             eventTime = bpIso(bpDateRx.find(date)?.groupValues),
         )
         if (RrnStore.record(rec, send = false)) {
-            AlertStore.log(applicationContext, "${nowTag()} 🎯 bharatpe: ₹$amount UTR $utr ${payer.take(24)}")
+            val at = bpDateRx.find(date)?.groupValues?.let { g -> bpMillis(g[1], g[2], g[3], g[4], g[5], g[6]) }
+            val posted = amount.toDoubleOrNull()?.let { bpPostedFor(it, payer, at) }
+            AlertStore.log(applicationContext, "${nowTag()} 🎯 bharatpe: ₹$amount UTR $utr ${payer.take(24)}${if (posted != null) " (adds to its push)" else ""}")
             Prefs.bump(this, "capture_ok")
-            BharatpeUploader.send(applicationContext, rec)
+            BharatpeUploader.send(applicationContext, rec, posted?.key)
         }
         bpLastRow?.let { RrnStore.recordRow(it) }; bpLastRow = null
 
@@ -858,27 +933,94 @@ class RrnAccessibilityService : AccessibilityService() {
             // The list may not show the new payment yet: give it a moment, then give up quietly
             // (the deadline ends this payment; the bank SMS / unmatched queue still has it).
             if (++bpListMisses == 1) AlertStore.log(applicationContext, "${nowTag()} bharatpe: ₹${active.amount} not on the list yet")
-            bpWaitUntil = now + 1_500L
+            // The list is the one the last payment left open and may predate this one: after a
+            // few looks, back to home, whose "View all transactions" loads it afresh.
+            if (bpListMisses == 4) { performGlobalAction(GLOBAL_ACTION_BACK); bpTapped.removeAll { it.startsWith("home|") } }
+            bpWaitUntil = now + 500L
             return
         }
         if (clickNode(match.node)) {
             bpTapped += match.key; bpLastRow = match.key
-            bpWaitUntil = now + 2_000L
+            bpWaitUntil = now + 1_200L
         }
     }
 
-    private fun bpOnHome(nodes: List<Pair<String, AccessibilityNodeInfo>>) {
+    private var bpTabTaps = 0         // Payments-tab taps used, per payment (last resort)
+
+    /**
+     * Home → the payment. BharatPe's home shows the latest payment as a card (payer ·
+     * "11 Oct '26 | 11:27 PM" · ₹1) with "View all transactions" under it, which opens the
+     * Transactions list (the bottom "Payments" tab does not: tapped eight times on 2026-10-11
+     * 23:27 and home never changed). The card has no text of its own, so it is found by its id,
+     * not through flattenAll.
+     */
+    private fun bpOnHome(root: AccessibilityNodeInfo, nodes: List<Pair<String, AccessibilityNodeInfo>>) {
         val now = System.currentTimeMillis()
         if (now < bpWaitUntil) return
+        val active = bpActive ?: return
+        val pkg = root.packageName?.toString() ?: return
+        fun textOf(id: String) = nodes.firstOrNull { it.second.viewIdResourceName?.endsWith(":id/$id") == true }?.first?.trim()
+        val card = runCatching { root.findAccessibilityNodeInfosByViewId("$pkg:id/secondarySectionContainer").firstOrNull() }.getOrNull()
+        val cardTime = textOf("secondarySectionStartTv2")
+        val cardAmt = textOf("secondarySectionEndTv1")?.let { bpAmountRx.find(it)?.groupValues?.get(1)?.replace(",", "")?.toDoubleOrNull() }
+        val cardAt = cardTime?.let { bpTimeRx.find(it) }?.groupValues?.let { g -> bpMillis(g[1], g[2], g[3], g[4], g[5], g[6]) }
+        val cardKey = "home|$cardTime|$cardAmt"
+        // 1. The latest-payment card, when it is this payment (same amount, same few minutes).
+        if (card != null && cardAmt != null && Math.abs(cardAmt - active.amount) < 0.005 && cardKey !in bpTapped
+            && (cardAt == null || Math.abs(cardAt - active.at) <= 3 * 60_000L) && clickNode(card)) {
+            bpTapped += cardKey
+            AlertStore.log(applicationContext, "${nowTag()} bharatpe: opening the latest payment from home")
+            bpWaitUntil = now + 1_500L
+            return
+        }
+        // 2. "View all transactions": the list, where the new row is (the card may still be stale).
+        val all = nodes.firstOrNull { it.first.trim().equals("View all transactions", ignoreCase = true) }
+        if (all != null && "home|all|$cardKey" !in bpTapped && clickNode(all.second)) {
+            bpTapped += "home|all|$cardKey"
+            AlertStore.log(applicationContext, "${nowTag()} bharatpe: opening all transactions")
+            bpWaitUntil = now + 1_500L
+            return
+        }
+        // 3. Last resort, twice at most: the bottom Payments tab.
+        if (bpTabTaps >= 2) return
         val tab = nodes.firstOrNull { (t, n) -> t.trim() == "Payments" && n.viewIdResourceName?.contains("navigation_bar") == true }
             ?: nodes.firstOrNull { (t, n) -> t.trim() == "Payments" && n.contentDescription?.toString() == "Payments" }
             ?: return
-        if (clickNode(tab.second)) bpWaitUntil = now + 2_500L
+        if (clickNode(tab.second)) {
+            bpTabTaps++
+            AlertStore.log(applicationContext, "${nowTag()} bharatpe: opening Payments")
+            bpWaitUntil = now + 1_500L
+        }
+    }
+
+    // Screens met while fetching a payment, one upload per distinct screen per payment, so a stall
+    // can be read from the server without a cable (label "bharatpe-active").
+    private val bpNoted = HashSet<Int>()
+    private fun bpNoteScreen(kind: String, texts: List<String>) {
+        val sig = (kind + texts.joinToString("|")).replace(Regex("[0-9]"), "").hashCode()
+        if (!bpNoted.add(sig) || bpNoted.size > 12) return
+        AlertStore.log(applicationContext, "${nowTag()} bharatpe: on a $kind screen (${texts.size} items)")
+        AlertUploader.sendAgentDebug(applicationContext, "bharatpe-active", "$kind\n" + texts.take(80).joinToString("\n").take(6000))
+    }
+
+    /**
+     * While a payment is being fetched, look again every 1.5 s. BharatPe's payment and list
+     * screens are web pages that fill in after they open, and a page that finishes loading does
+     * not always send an event (2026-10-11 23:49:53: the card opened its WebViewActivity and the
+     * engine never heard from it again).
+     */
+    private fun bpTick(gen: Int) {
+        if (bpGen != gen || bpActive == null) return
+        rootInActiveWindow?.takeIf { isBharatpe(it.packageName?.toString()) }?.let { runCatching { handleBharatpe(it) } }
+        main.postDelayed({ bpTick(gen) }, 500L)
     }
 
     private fun bpOnOther() {
         val now = System.currentTimeMillis()
         if (now < bpWaitUntil || bpBacks >= 2) return
+        // After the engine tapped a card or row, an unknown screen is that page still loading:
+        // wait for it. Pressing BACK there closed the payment before its UTR had drawn.
+        if (bpTapped.isNotEmpty()) return
         // The push landed on some other BharatPe screen (its QR page, a promotion): step back
         // towards home, where the Payments tab is. At most twice per payment.
         performGlobalAction(GLOBAL_ACTION_BACK)
@@ -901,9 +1043,13 @@ class RrnAccessibilityService : AccessibilityService() {
         val p = next ?: return
         bpActive = p
         val gen = ++bpGen
-        bpBacks = 0; bpListMisses = 0; bpTapped.clear(); bpLastRow = null
-        bpWaitUntil = now + 1_000L
-        val opened = p.intent?.let { runCatching { it.send(); true }.getOrDefault(false) } ?: false
+        bpBacks = 0; bpListMisses = 0; bpTabTaps = 0; bpTapped.clear(); bpLastRow = null; bpNoted.clear()
+        bpWaitUntil = now + 300L
+        // Already in BharatPe (a burst, or the banner case): carry on from the screen it is on —
+        // relaunching would throw away the Transactions list the last payment left open.
+        val inApp = rootInActiveWindow?.packageName?.toString()?.let { isBharatpe(it) } == true
+        val opened = inApp || (p.intent?.let { runCatching { sendOpening(this, it); true }.getOrDefault(false) } ?: false)
+        AlertStore.log(applicationContext, "${nowTag()} bharatpe: ${if (inApp) "already open" else if (opened) "opened its notification" else "opening the app"} for ₹${p.amount}")
         if (!opened) {
             val pkg = (Prefs.bharatpePkgs(this) + BHARATPE_PKGS).firstOrNull { packageManager.getLaunchIntentForPackage(it) != null }
             pkg?.let { packageManager.getLaunchIntentForPackage(it) }?.let {
@@ -912,9 +1058,7 @@ class RrnAccessibilityService : AccessibilityService() {
             }
         }
         // A screen that opens and stays still sends no event: look once it has had time to draw.
-        main.postDelayed({
-            if (bpGen == gen && bpActive != null) rootInActiveWindow?.takeIf { isBharatpe(it.packageName?.toString()) }?.let { handleBharatpe(it) }
-        }, 2_500L)
+        main.postDelayed({ bpTick(gen) }, 300L)
         main.postDelayed({
             if (bpGen == gen && bpActive != null) {
                 AlertStore.log(applicationContext, "${nowTag()} ⚠️ bharatpe: no UTR for ₹${p.amount} within ${BP_DEADLINE_MS / 1000}s")
@@ -928,7 +1072,9 @@ class RrnAccessibilityService : AccessibilityService() {
         bpActive = null
         bpGen++
         if (goBack) performGlobalAction(GLOBAL_ACTION_BACK)
-        main.postDelayed({ bpPump() }, 900L)
+        // In a burst the next payment starts as soon as the list is back.
+        val more = synchronized(bpQueue) { bpQueue.isNotEmpty() }
+        main.postDelayed({ bpPump() }, if (more) 350L else 900L)
     }
 
     private fun bpMillis(d: String, mon: String, yy: String, h: String, mi: String, ap: String): Long? = try {
