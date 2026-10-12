@@ -37,10 +37,12 @@ export function remainingSteps(m: BankerStage): (typeof ONBOARDING_STEPS)[number
 
 export interface GoLiveAccount {
   gateway: string; account: string; account_label?: string; status: string; can_go_live?: boolean;
+  /** Where the account's money lands: P2P (a P2P processor account) or INTENT (null = INTENT). */
+  channel?: string | null;
   checklist?: { key: string; label: string; done: boolean }[];
 }
 
-export type LiveItemKey = "ONBOARDING" | "LIVE_MODE" | "ACCOUNT" | "TEST";
+export type LiveItemKey = "ONBOARDING" | "LIVE_MODE" | "SETUP" | "ACCOUNT" | "TEST";
 export interface LiveItem { key: LiveItemKey; label: string; done: boolean; detail: string }
 
 /** The whole picture: onboarding, live mode, accounts still verifying, and a real payment. */
@@ -58,6 +60,52 @@ export function takeLiveItems(m: BankerStage, liveStatus: string, accounts: GoLi
     { key: "TEST", label: "A real payment went through", done: paidLive,
       detail: paidLive ? "A live payment was paid." : "Make a small live test payment below." },
   ];
+}
+
+export type LiveFlow = "P2P" | "INTENT";
+
+/** Steps every banker needs whatever its flow: onboarding approved and live mode on. */
+export function commonLiveItems(m: BankerStage, liveStatus: string): LiveItem[] {
+  return takeLiveItems(m, liveStatus, [], false).slice(0, 2);
+}
+
+/** The flows a banker's setting uses (BOTH and not chosen yet: both). */
+export function flowsInUse(flow: string | null | undefined): LiveFlow[] {
+  return flow === "P2P" ? ["P2P"] : flow === "INTENT" ? ["INTENT"] : ["P2P", "INTENT"];
+}
+
+export const accountFlow = (a: GoLiveAccount): LiveFlow => (a.channel === "P2P" ? "P2P" : "INTENT");
+
+const P2P_SETUP: Record<string, { need: string; done: string }> = {
+  UPI_ID: { need: "No settlement UPI ID yet: add it on the Pays UPI ID tab.", done: "Paid on its own UPI ID; the UPI ID is set." },
+  BHARATPE: { need: "No active BharatPe MID for the settlement UPI ID: set it up on the Pays UPI ID tab.", done: "Paid on its BharatPe QR; the MID is active." },
+  PAYATOM: { need: "No PayAtom P2P account connected: set it up on the Pays UPI ID tab.", done: "Paid through PayAtom; the P2P account is connected." },
+};
+
+/**
+ * One flow's own checklist, nothing from the other flow: how it is paid, its accounts still
+ * verifying (P2P only lists P2P processor accounts, and only when it has one — a UPI ID or
+ * BharatPe banker has nothing to verify), and a real payment on that flow.
+ */
+export function flowLiveItems(flow: LiveFlow, f: {
+  ready: boolean; p2pMethod?: string | null; accounts: GoLiveAccount[]; paidLive: boolean;
+}): LiveItem[] {
+  const accounts = f.accounts.filter((a) => accountFlow(a) === flow);
+  const verifying = accounts.filter((a) => a.status === "VERIFYING");
+  const words = flow === "P2P"
+    ? P2P_SETUP[f.p2pMethod ?? ""] ?? { need: "No P2P method chosen and no settlement UPI ID: choose one on the Pays UPI ID tab.", done: "A settlement UPI ID or P2P processor account is set." }
+    : { need: "No payment gateway connected for Intent: connect one on the Pays via gateway tab.", done: "A payment gateway is connected." };
+  const items: LiveItem[] = [
+    { key: "SETUP", label: flow === "P2P" ? "UPI ID set up" : "Payment gateway connected", done: f.ready, detail: f.ready ? words.done : words.need },
+  ];
+  if (flow === "INTENT" || accounts.length) {
+    items.push({ key: "ACCOUNT", label: "Payment account live", done: verifying.length === 0,
+      detail: verifying.length === 0 ? (accounts.length ? "Every payment account is live." : "No payment account on the go-live checklist.")
+        : `${verifying.map((a) => `${a.gateway}${a.account_label && a.account !== "gateway_mid" ? ` (${a.account_label})` : ""}`).join(", ")} still verifying: one real payment, then set live.` });
+  }
+  items.push({ key: "TEST", label: `A real ${flow === "P2P" ? "P2P" : "Intent"} payment went through`, done: f.paidLive,
+    detail: f.paidLive ? "A live payment was paid." : `Make a small live ${flow === "P2P" ? "P2P" : "Intent"} test payment below.` });
+  return items;
 }
 
 /** Words for a gate the onboarding step was refused on ({ gate, result, summary }). */

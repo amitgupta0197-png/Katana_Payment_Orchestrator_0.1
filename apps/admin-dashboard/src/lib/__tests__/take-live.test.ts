@@ -1,7 +1,7 @@
 // "Take live" (lib/take-live) and the phone-fit checks (lib/banker-check phoneMismatches).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gateWords, nextOnboardingStep, remainingSteps, takeLiveItems } from "@/lib/take-live";
+import { commonLiveItems, flowLiveItems, flowsInUse, gateWords, nextOnboardingStep, remainingSteps, takeLiveItems } from "@/lib/take-live";
 import { phoneMismatches } from "@/lib/banker-check";
 import { bharatpeKeyHint, normalisePairCode, pairCodeFrom, showPairCode, agentAppFor } from "@/lib/agent-pair";
 import { readPayatomAnswer, readPayuVerify, readStatusAnswer } from "@/lib/credential-test";
@@ -23,6 +23,28 @@ test("take-live items say what is left", () => {
   assert.match(items[2].detail, /PAYU still verifying/);
   assert.deepEqual(takeLiveItems({ stage: "LIVE" }, "ACTIVATED", [], true).map((i) => i.done), [true, true, true, true]);
   assert.match(gateWords({ gate: "MID_ISSUANCE", result: "FAIL", summary: "no TSP" }), /Mid issuance: failed — no TSP/);
+});
+
+test("each flow's checklist shows only that flow", () => {
+  const accounts = [
+    { gateway: "RUBYVAULT", account: "gateway_mid", status: "VERIFYING", channel: null },
+    { gateway: "PAYATOM", account: "gateway_mid:x", status: "VERIFYING", channel: "P2P" },
+  ];
+  assert.deepEqual(commonLiveItems({ stage: "LIVE" }, "ACTIVATED").map((i) => i.key), ["ONBOARDING", "LIVE_MODE"]);
+  // A UPI ID banker: no P2P processor account, so no account step and nothing from Intent.
+  const upi = flowLiveItems("P2P", { ready: true, p2pMethod: "UPI_ID", accounts: [accounts[0]], paidLive: false });
+  assert.deepEqual(upi.map((i) => i.key), ["SETUP", "TEST"]);
+  assert.ok(!upi.some((i) => /RUBYVAULT/.test(i.detail)));
+  const payatom = flowLiveItems("P2P", { ready: true, p2pMethod: "PAYATOM", accounts, paidLive: false });
+  assert.match(payatom[1].detail, /^PAYATOM still verifying/);
+  const intent = flowLiveItems("INTENT", { ready: true, accounts, paidLive: true });
+  assert.deepEqual(intent.map((i) => i.key), ["SETUP", "ACCOUNT", "TEST"]);
+  assert.match(intent[1].detail, /^RUBYVAULT still verifying/);
+  assert.equal(intent[2].done, true);
+  assert.match(flowLiveItems("INTENT", { ready: false, accounts: [], paidLive: false })[0].detail, /No payment gateway connected/);
+  assert.deepEqual(flowsInUse("P2P"), ["P2P"]);
+  assert.deepEqual(flowsInUse("BOTH"), ["P2P", "INTENT"]);
+  assert.deepEqual(flowsInUse("UNSET"), ["P2P", "INTENT"]);
 });
 
 test("phone fit: wrong app, other BharatPe key, no key; old agents and offline phones don't count", () => {

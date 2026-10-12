@@ -5,16 +5,22 @@
 // (lib/take-live). Each button calls the existing route with its checks; a refused step shows why
 // and, where a Super Admin may, takes a note to go ahead anyway — the same overrides as the
 // individual pages, recorded the same way. Renders nothing once everything is live.
+// Onboarding and live mode are the banker's own; below them one tab per flow (P2P, Intent), each
+// with only that flow's setup, accounts, real payment and live test.
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Circle, Loader2, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
 import { cn } from "@/lib/utils";
-import { gateWords, nextOnboardingStep, takeLiveItems, type GoLiveAccount } from "@/lib/take-live";
+import {
+  accountFlow, commonLiveItems, flowLiveItems, flowsInUse, gateWords, nextOnboardingStep,
+  type GoLiveAccount, type LiveFlow, type LiveItem,
+} from "@/lib/take-live";
 
 interface Merchant { id: string; merchant_code: string; stage: string; step_config?: boolean }
 interface Gate { gate: string; result: string; summary?: string }
@@ -39,20 +45,28 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
         fetch(`/api/merchants/${merchantId}/live-activation`).then((r) => r.json()).catch(() => ({})),
         fetch(`/api/ops/gateway-golive?merchant=${encodeURIComponent(merchantCode)}`).then((r) => r.json()).catch(() => ({ accounts: [] })),
         fetch(`/api/merchants/${merchantId}/intent-test`).then((r) => r.json()).catch(() => ({ tests: [] })),
-        flow ? Promise.resolve(null) : fetch(`/api/merchants/${merchantId}/payin-flow`).then((r) => r.json()).catch(() => null),
+        fetch(`/api/merchants/${merchantId}/payin-flow`).then((r) => r.json()).catch(() => null),
       ]);
       const m = ((list.merchants ?? []) as Merchant[]).find((x) => x.id === merchantId || x.merchant_code === merchantCode) ?? null;
       return {
         m, live: String(act.status ?? "NOT_REQUESTED"), setupMissing: (act.setup_missing ?? []) as string[],
         accounts: (gl.accounts ?? []) as (GoLiveAccount & { checklist?: { key: string; label: string; done: boolean }[] })[],
-        paidLive: ((tests.tests ?? []) as { status: string }[]).some((t) => t.status === "SUCCESS"),
-        flow: (flow ?? (fl?.active === "INTENT" || fl?.flow === "INTENT" ? "INTENT" : "P2P")) as "P2P" | "INTENT",
+        paid: ((tests.tests ?? []) as { status: string; channel_type: string | null }[])
+          .filter((t) => t.status === "SUCCESS").map((t) => (t.channel_type === "P2P" ? "P2P" : "INTENT") as LiveFlow),
+        // The wizard knows the flow it just set; the page reads the banker's setting.
+        inUse: flow ? [flow] : flowsInUse(fl?.flow),
+        active: (flow ?? (fl?.active === "INTENT" || fl?.flow === "INTENT" ? "INTENT" : "P2P")) as LiveFlow,
+        ready: { P2P: !!fl?.readiness?.p2p, INTENT: !!fl?.readiness?.intent } as Record<LiveFlow, boolean>,
+        p2pMethod: (fl?.readiness?.p2pMethod ?? null) as string | null,
       };
     },
     refetchInterval: 15_000,
   });
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  // Where a message belongs: the common steps or one flow's tab.
+  const [msg, setMsgAt] = useState<{ tone: "ok" | "bad"; text: string; at: "COMMON" | LiveFlow } | null>(null);
+  const setMsg = (m: { tone: "ok" | "bad"; text: string } | null, at: "COMMON" | LiveFlow = "COMMON") => setMsgAt(m && { ...m, at });
+  const [tab, setTab] = useState<LiveFlow | null>(null);
   const [ask, setAsk] = useState<Ask>(null);
   const [note, setNote] = useState("");
   const [risk, setRisk] = useState<"LOW" | "MEDIUM" | "HIGH">("LOW");
@@ -60,8 +74,12 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
 
   const d = q.data;
   if (!d?.m) return q.isLoading ? null : null;
-  const items = takeLiveItems(d.m, d.live, d.accounts, d.paidLive);
-  if (!alwaysShow && items.every((i) => i.done)) return null;
+  const common = commonLiveItems(d.m, d.live);
+  const perFlow = Object.fromEntries((["P2P", "INTENT"] as const).map((f) => [f, flowLiveItems(f, {
+    ready: d.ready[f], p2pMethod: d.p2pMethod, accounts: d.accounts, paidLive: d.paid.includes(f),
+  })])) as Record<LiveFlow, LiveItem[]>;
+  if (!alwaysShow && common.every((i) => i.done) && d.inUse.every((f) => perFlow[f].every((i) => i.done))) return null;
+  const liveOn = common[1].done;
 
   /** Approve onboarding step after step; stops at a refusal and asks for an override note. */
   async function approveSteps(override = false) {
@@ -103,19 +121,28 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
 
   async function setAccountLive(a: GoLiveAccount) {
     setBusy(`ACCOUNT:${a.account}`); setMsg(null);
+    const at = accountFlow(a);
     for (const action of ["ping", "webhook", "status", "live"] as const) {
       const r = await post("/api/ops/gateway-golive", { merchant_id: merchantCode, gateway: a.gateway, account: a.account, action });
       if (!r.ok) {
         setMsg({ tone: "bad", text: action === "webhook" || action === "status"
           ? `${a.gateway}: ${r.d.error ?? "no confirmed real payment yet"}. Make the live test payment below, then try again.`
-          : `${a.gateway} (${action}): ${r.d.error ?? `HTTP ${r.status}`}` });
+          : `${a.gateway} (${action}): ${r.d.error ?? `HTTP ${r.status}`}` }, at);
         setBusy(null); refresh(); return;
       }
     }
-    setMsg({ tone: "ok", text: `${a.gateway} is live.` }); setBusy(null); refresh();
+    setMsg({ tone: "ok", text: `${a.gateway} is live.` }, at); setBusy(null); refresh();
   }
 
-  const verifying = d.accounts.filter((a) => a.status === "VERIFYING");
+  const mark = (it: LiveItem) => it.done
+    ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-success)]" />
+    : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-warning)]" />;
+  const message = (at: "COMMON" | LiveFlow) => msg?.at === at && (
+    <div role="status" className={cn("rounded-xl border px-3 py-2", msg.tone === "ok"
+      ? "border-[color:var(--color-success)] bg-[color:var(--color-success-muted)]" : "border-[color:var(--color-danger)] bg-[color:var(--color-danger-muted)]")}>{msg.text}</div>
+  );
+  const shownTab = tab ?? (d.inUse.includes(d.active) ? d.active : d.inUse[0]);
+
   return (
     <Card className="mb-4">
       <CardHeader>
@@ -124,9 +151,9 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <ol className="space-y-3">
-          {items.map((it) => (
+          {common.map((it) => (
             <li key={it.key} className="flex gap-3">
-              {it.done ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-success)]" /> : <Circle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-warning)]" />}
+              {mark(it)}
               <div className="min-w-0 flex-1 space-y-2">
                 <div><span className="font-medium">{it.label}</span><span className="text-[color:var(--color-text-muted)]"> — {it.detail}</span></div>
 
@@ -146,33 +173,16 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
                 )}
 
                 {it.key === "LIVE_MODE" && !it.done && (
-                  <Button size="sm" onClick={() => switchOnLive()} disabled={!!busy || !items[0].done}>
+                  <Button size="sm" onClick={() => switchOnLive()} disabled={!!busy || !common[0].done}>
                     {busy === "LIVE_MODE" ? <><Loader2 className="h-4 w-4 animate-spin" /> Switching on…</> : "Switch on live mode"}
                   </Button>
                 )}
-
-                {it.key === "ACCOUNT" && verifying.map((a) => (
-                  <div key={a.account} className="rounded-xl border border-[color:var(--color-border)] px-3 py-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">{a.gateway}{a.account !== "gateway_mid" && a.account_label ? ` · ${a.account_label}` : ""}</span>
-                      <Button size="sm" variant="secondary" onClick={() => setAccountLive(a)} disabled={!!busy || !items[1].done}>
-                        {busy === `ACCOUNT:${a.account}` ? <><Loader2 className="h-4 w-4 animate-spin" /> Checking…</> : "Check and set live"}
-                      </Button>
-                    </div>
-                    <ul className="mt-1 space-y-0.5 text-xs text-[color:var(--color-text-muted)]">
-                      {(a.checklist ?? []).filter((c) => c.key !== "RECORD").map((c) => <li key={c.key}>{c.done ? "✓" : "○"} {c.label}</li>)}
-                    </ul>
-                  </div>
-                ))}
               </div>
             </li>
           ))}
         </ol>
 
-        {msg && (
-          <div role="status" className={cn("rounded-xl border px-3 py-2", msg.tone === "ok"
-            ? "border-[color:var(--color-success)] bg-[color:var(--color-success-muted)]" : "border-[color:var(--color-danger)] bg-[color:var(--color-danger-muted)]")}>{msg.text}</div>
-        )}
+        {message("COMMON")}
 
         {ask && (
           <div className="space-y-2 rounded-xl border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] px-3 py-3">
@@ -186,11 +196,64 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
           </div>
         )}
 
-        {items[1].done && (
-          <div className="border-t border-[color:var(--color-border)] pt-4">
-            <IntentLiveTestCard merchantId={merchantId} merchantCode={merchantCode} flow={d.flow} />
-          </div>
-        )}
+        <Tabs value={shownTab} onValueChange={(v) => { setTab(v as LiveFlow); setMsg(null); }} className="border-t border-[color:var(--color-border)] pt-4">
+          <TabsList>
+            {(["P2P", "INTENT"] as const).map((f) => {
+              const left = perFlow[f].filter((i) => !i.done).length;
+              return (
+                <TabsTrigger key={f} value={f}>
+                  {f === "P2P" ? "P2P · pays UPI ID" : "Intent · pays via gateway"}
+                  {!d.inUse.includes(f) ? <span className="text-xs font-normal text-[color:var(--color-text-muted)]">(not used)</span>
+                    : left ? <span className="text-xs font-normal text-[color:var(--color-warning)]">{left} left</span>
+                    : <Check className="h-3.5 w-3.5 text-[color:var(--color-success)]" />}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+
+          {(["P2P", "INTENT"] as const).map((f) => (
+            <TabsContent key={f} value={f} className="space-y-4 pt-4">
+              {!d.inUse.includes(f) && (
+                <p className="text-xs text-[color:var(--color-text-muted)]">
+                  This banker takes pay-ins on {f === "P2P" ? "Intent" : "P2P"} only, so nothing here stops it going live. Shown for reference.
+                </p>
+              )}
+              <ol className="space-y-3">
+                {perFlow[f].map((it) => (
+                  <li key={it.key} className="flex gap-3">
+                    {mark(it)}
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div><span className="font-medium">{it.label}</span><span className="text-[color:var(--color-text-muted)]"> — {it.detail}</span></div>
+                      {it.key === "ACCOUNT" && d.accounts.filter((a) => a.status === "VERIFYING" && accountFlow(a) === f).map((a) => (
+                        <div key={a.account} className="rounded-xl border border-[color:var(--color-border)] px-3 py-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{a.gateway}{a.account !== "gateway_mid" && a.account_label ? ` · ${a.account_label}` : ""}</span>
+                            <Button size="sm" variant="secondary" onClick={() => setAccountLive(a)} disabled={!!busy || !liveOn}>
+                              {busy === `ACCOUNT:${a.account}` ? <><Loader2 className="h-4 w-4 animate-spin" /> Checking…</> : "Check and set live"}
+                            </Button>
+                          </div>
+                          <ul className="mt-1 space-y-0.5 text-xs text-[color:var(--color-text-muted)]">
+                            {(a.checklist ?? []).filter((c) => c.key !== "RECORD").map((c) => <li key={c.key}>{c.done ? "✓" : "○"} {c.label}</li>)}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {message(f)}
+
+              {liveOn ? (
+                <div className="border-t border-[color:var(--color-border)] pt-4">
+                  <IntentLiveTestCard merchantId={merchantId} merchantCode={merchantCode} flow={f} />
+                </div>
+              ) : (
+                <p className="text-xs text-[color:var(--color-text-muted)]">The live test payment appears here once live mode is on.</p>
+              )}
+            </TabsContent>
+          ))}
+        </Tabs>
       </CardContent>
     </Card>
   );
