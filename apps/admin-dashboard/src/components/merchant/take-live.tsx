@@ -5,17 +5,20 @@
 // (lib/take-live). Each button calls the existing route with its checks; a refused step shows why
 // and, where a Super Admin may, takes a note to go ahead anyway — the same overrides as the
 // individual pages, recorded the same way. Renders nothing once everything is live.
-// Onboarding and live mode are the banker's own; below them one tab per flow (P2P, Intent), each
-// with only that flow's setup, accounts, real payment and live test.
+// Onboarding and live mode are the banker's own. Then how customers pay — P2P, Intent or Both —
+// saved as the banker's pay-in flow (PUT …/payin-flow, after the same "Before you save" check as
+// the flow card), with a P2P ⇄ Intent switch while one flow is chosen (off with Both). Below, one
+// tab per flow in use, each with only that flow's setup, accounts, real payment and live test.
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Circle, Loader2, Rocket } from "lucide-react";
+import { ArrowLeftRight, Check, Circle, Loader2, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IntentLiveTestCard } from "@/components/merchant/intent-live-test";
+import { useImpactConfirm } from "@/components/merchant/confirm-impact";
 import { cn } from "@/lib/utils";
 import {
   accountFlow, commonLiveItems, flowLiveItems, flowsInUse, gateWords, nextOnboardingStep,
@@ -53,8 +56,10 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
         accounts: (gl.accounts ?? []) as (GoLiveAccount & { checklist?: { key: string; label: string; done: boolean }[] })[],
         paid: ((tests.tests ?? []) as { status: string; channel_type: string | null }[])
           .filter((t) => t.status === "SUCCESS").map((t) => (t.channel_type === "P2P" ? "P2P" : "INTENT") as LiveFlow),
-        // The wizard knows the flow it just set; the page reads the banker's setting.
-        inUse: flow ? [flow] : flowsInUse(fl?.flow),
+        // The banker's flow in force (its own, or its merchant's). The wizard's flow is the fallback.
+        setting: (fl?.flow ?? flow ?? "UNSET") as "P2P" | "INTENT" | "BOTH" | "UNSET",
+        inherited: fl?.source === "MERCHANT",
+        inUse: fl ? flowsInUse(fl.flow) : flow ? [flow] : flowsInUse(null),
         active: (flow ?? (fl?.active === "INTENT" || fl?.flow === "INTENT" ? "INTENT" : "P2P")) as LiveFlow,
         ready: { P2P: !!fl?.readiness?.p2p, INTENT: !!fl?.readiness?.intent } as Record<LiveFlow, boolean>,
         p2pMethod: (fl?.readiness?.p2pMethod ?? null) as string | null,
@@ -67,6 +72,7 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
   const [msg, setMsgAt] = useState<{ tone: "ok" | "bad"; text: string; at: "COMMON" | LiveFlow } | null>(null);
   const setMsg = (m: { tone: "ok" | "bad"; text: string } | null, at: "COMMON" | LiveFlow = "COMMON") => setMsgAt(m && { ...m, at });
   const [tab, setTab] = useState<LiveFlow | null>(null);
+  const impact = useImpactConfirm();
   const [ask, setAsk] = useState<Ask>(null);
   const [note, setNote] = useState("");
   const [risk, setRisk] = useState<"LOW" | "MEDIUM" | "HIGH">("LOW");
@@ -119,6 +125,24 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
     setBusy(null); refresh();
   }
 
+  /** Save how customers pay (the banker's own flow). With Both, the flow in use stays the one it was on. */
+  async function changeFlow(to: "P2P" | "INTENT" | "BOTH") {
+    if (!d || to === d.setting || busy) return;
+    if (!(await impact.ask(`/api/merchants/${merchantId}/impact?change=FLOW&to=${to}`))) return;
+    setBusy("FLOW"); setMsg(null);
+    const r = await fetch(`/api/merchants/${merchantId}/payin-flow`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flow: to, active: to === "BOTH" ? d.active : null, note: "changed from Take live" }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) setMsg({ tone: "bad", text: body.error ?? `HTTP ${r.status}` });
+    else {
+      setMsg({ tone: "ok", text: to === "BOTH" ? "This banker now takes P2P and Intent." : `This banker now takes ${to === "P2P" ? "P2P" : "Intent"} only.` });
+      setTab(to === "BOTH" ? null : to);
+    }
+    setBusy(null); refresh(); qc.invalidateQueries({ queryKey: ["payin-flow"] }); qc.invalidateQueries({ queryKey: ["payin-flows"] });
+  }
+
   async function setAccountLive(a: GoLiveAccount) {
     setBusy(`ACCOUNT:${a.account}`); setMsg(null);
     const at = accountFlow(a);
@@ -141,7 +165,7 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
     <div role="status" className={cn("rounded-xl border px-3 py-2", msg.tone === "ok"
       ? "border-[color:var(--color-success)] bg-[color:var(--color-success-muted)]" : "border-[color:var(--color-danger)] bg-[color:var(--color-danger-muted)]")}>{msg.text}</div>
   );
-  const shownTab = tab ?? (d.inUse.includes(d.active) ? d.active : d.inUse[0]);
+  const shownTab = tab && d.inUse.includes(tab) ? tab : d.inUse.includes(d.active) ? d.active : d.inUse[0];
 
   return (
     <Card className="mb-4">
@@ -184,6 +208,49 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
 
         {message("COMMON")}
 
+        <div className="space-y-3 border-t border-[color:var(--color-border)] pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">How customers pay</span>
+            {d.setting === "UNSET" && <span className="text-xs text-[color:var(--color-warning)]">not chosen yet</span>}
+            {d.inherited && <span className="text-xs text-[color:var(--color-text-muted)]">(from its merchant; a change here is this banker&apos;s own)</span>}
+          </div>
+          <div role="radiogroup" aria-label="How customers pay" className="inline-flex rounded-lg border border-[color:var(--color-border)] p-0.5">
+            {([["P2P", "P2P"], ["INTENT", "Intent"], ["BOTH", "Both"]] as const).map(([v, label]) => (
+              <button key={v} type="button" role="radio" aria-checked={d.setting === v} disabled={!!busy}
+                onClick={() => changeFlow(v)}
+                className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-60",
+                  d.setting === v ? "bg-[color:var(--color-brand)] text-white" : "text-[color:var(--color-text-muted)] hover:text-[color:var(--color-text)]")}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {(() => {
+            const single = d.setting === "P2P" || d.setting === "INTENT";
+            const other = d.setting === "P2P" ? "INTENT" : "P2P";
+            return (
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" role="switch" aria-checked={d.setting === "INTENT"} aria-label="Switch between P2P and Intent"
+                  disabled={!single || !!busy} onClick={() => changeFlow(other)}
+                  className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    d.setting === "INTENT" ? "bg-[color:var(--color-brand)]" : "bg-[color:var(--color-border)]")}>
+                  <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all", d.setting === "INTENT" ? "left-[22px]" : "left-0.5")} />
+                </button>
+                <span className="flex items-center gap-1.5 text-sm">
+                  <span className={d.setting === "P2P" ? "font-medium" : "text-[color:var(--color-text-muted)]"}>P2P</span>
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-[color:var(--color-text-muted)]" />
+                  <span className={d.setting === "INTENT" ? "font-medium" : "text-[color:var(--color-text-muted)]"}>Intent</span>
+                </span>
+                <span className="text-xs text-[color:var(--color-text-muted)]">
+                  {busy === "FLOW" ? "Saving…"
+                    : d.setting === "BOTH" ? `Switch off: both flows are on. Orders that don't name a flow use ${d.active === "P2P" ? "P2P" : "Intent"}.`
+                    : single ? `Switch to take ${other === "P2P" ? "P2P" : "Intent"} instead.`
+                    : "Choose P2P or Intent first."}
+                </span>
+              </div>
+            );
+          })()}
+        </div>
+
         {ask && (
           <div className="space-y-2 rounded-xl border border-[color:var(--color-warning)] bg-[color:var(--color-warning-muted)] px-3 py-3">
             <div className="font-medium">{ask.kind === "GATE" ? `Mark “${ask.label}” done anyway?` : "Switch on live mode anyway?"}</div>
@@ -198,26 +265,20 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
 
         <Tabs value={shownTab} onValueChange={(v) => { setTab(v as LiveFlow); setMsg(null); }} className="border-t border-[color:var(--color-border)] pt-4">
           <TabsList>
-            {(["P2P", "INTENT"] as const).map((f) => {
+            {d.inUse.map((f) => {
               const left = perFlow[f].filter((i) => !i.done).length;
               return (
                 <TabsTrigger key={f} value={f}>
                   {f === "P2P" ? "P2P · pays UPI ID" : "Intent · pays via gateway"}
-                  {!d.inUse.includes(f) ? <span className="text-xs font-normal text-[color:var(--color-text-muted)]">(not used)</span>
-                    : left ? <span className="text-xs font-normal text-[color:var(--color-warning)]">{left} left</span>
+                  {left ? <span className="text-xs font-normal text-[color:var(--color-warning)]">{left} left</span>
                     : <Check className="h-3.5 w-3.5 text-[color:var(--color-success)]" />}
                 </TabsTrigger>
               );
             })}
           </TabsList>
 
-          {(["P2P", "INTENT"] as const).map((f) => (
+          {d.inUse.map((f) => (
             <TabsContent key={f} value={f} className="space-y-4 pt-4">
-              {!d.inUse.includes(f) && (
-                <p className="text-xs text-[color:var(--color-text-muted)]">
-                  This banker takes pay-ins on {f === "P2P" ? "Intent" : "P2P"} only, so nothing here stops it going live. Shown for reference.
-                </p>
-              )}
               <ol className="space-y-3">
                 {perFlow[f].map((it) => (
                   <li key={it.key} className="flex gap-3">
@@ -255,6 +316,7 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
           ))}
         </Tabs>
       </CardContent>
+      {impact.dialog}
     </Card>
   );
 }
