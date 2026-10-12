@@ -47,7 +47,9 @@ test("calls: create first with the upper-case code, then flow, the method's own 
 
   const q = wizardCalls({ ...base, type: "P2P", kind: "QUASI", payatom: { ...base.payatom, pid: "1", secret: "s", apiKey: "k", apiBase: "https://x", latitude: "1", longitude: "2" } });
   assert.deepEqual(q.map((c) => c.key), ["create", "flow", "payatom", "method"]);
-  assert.deepEqual((q[2].body.want as object), { p2p: true, intent: false });
+  // PayAtom is P2P only: the wizard sends no product choice, just the P2P details.
+  assert.equal(q[2].body.want, undefined);
+  assert.equal((q[2].body.p2p as { pid: string }).pid, "1");
 
   const i = wizardCalls({ ...base, type: "INTENT", gateway: "PAYU", gatewayFields: { key: " k ", salt: "s", mid_code: "" } });
   assert.deepEqual(i.map((c) => c.key), ["create", "flow", "gateway"]);

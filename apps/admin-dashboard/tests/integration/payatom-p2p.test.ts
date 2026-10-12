@@ -139,19 +139,18 @@ test("an Intent order never goes to a P2P account: refused, the account is the w
   );
 });
 
-test("readiness: a P2P PayAtom account makes the banker P2P-ready, not Intent-ready; as Intent, the reverse", opts, async () => {
+test("readiness: a P2P PayAtom account makes the banker P2P-ready, not Intent-ready; a PayAtom Intent account is P2P only now, so neither", opts, async () => {
   let r = (await flowReadiness([A])).get(A)!;
   assert.equal(r.intent, false);
   assert.equal(r.p2p, true);
   await storeGatewayMid(A, payatomMid("INTENT"));
   try {
     r = (await flowReadiness([A])).get(A)!;
-    assert.equal(r.intent, true);
-    // The same order on the Intent flow now goes to PayAtom as INTENT.
-    const o = await createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" });
-    const s = await stored(o.order.id);
-    assert.equal(s.channel_type, "INTENT");
-    assert.equal(s.channel_id, "PAYATOM");
+    // Katana uses PayAtom for P2P only (2026-10-12): an Intent account saved before takes nothing.
+    assert.equal(r.intent, false);
+    await assert.rejects(
+      createKatanaOrder({ orderId: ref(), amount: 250, currency: "INR", merchantId: A, livemode: true, flow: "INTENT" }),
+      (e: Error & { code?: string }) => e.code === "FLOW_NOT_READY");
   } finally {
     await storeGatewayMid(A, payatomMid("P2P"));
   }

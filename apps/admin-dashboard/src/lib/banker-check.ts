@@ -11,7 +11,7 @@ import type { MerchantFlow } from "@/lib/payin-flow";
 import { decideOrderFlow } from "@/lib/payin-flow";
 import type { MerchantServicesSetting, SetupItem } from "@/lib/merchant-services";
 import { allowsPayin } from "@/lib/merchant-services";
-import type { CheckoutMode } from "@/lib/pg-catalog";
+import { gatewayTakesIntent, type CheckoutMode } from "@/lib/pg-catalog";
 
 export interface BankerCheckFacts {
   code: string;
@@ -156,7 +156,8 @@ export function checkBanker(f: BankerCheckFacts, now: Date = new Date()): Banker
   // 5. Where the money lands.
   const a = f.account;
   if (a && a.channel === "INTENT" && flow !== "P2P") {
-    if (!a.connector) blockers.push({ key: "ACCOUNT_NOT_USABLE", title: `${a.gatewayName} account saved but not usable`, detail: "Katana can't take payments through this gateway yet.", fix: { label: "Open the payment account", tab: "intent" } });
+    if (!gatewayTakesIntent(a.gateway)) blockers.push({ key: "ACCOUNT_NOT_USABLE", title: `${a.gatewayName} is used for P2P only`, detail: `This ${a.gatewayName} account is saved for Intent, which Katana no longer uses, so it takes no Intent orders. Connect another gateway for Intent, or save ${a.gatewayName} for P2P.`, fix: { label: "Open the payment account", tab: "intent" } });
+    else if (!a.connector) blockers.push({ key: "ACCOUNT_NOT_USABLE", title: `${a.gatewayName} account saved but not usable`, detail: "Katana can't take payments through this gateway yet.", fix: { label: "Open the payment account", tab: "intent" } });
     else if (a.env !== "PROD") blockers.push({ key: "ACCOUNT_SANDBOX", title: `${a.gatewayName} account is a test account`, detail: "Live orders need the gateway's live credentials.", fix: { label: "Open the payment account", tab: "intent" } });
     else pass("ACCOUNT", "Where money lands", `${a.gatewayName} account (${a.checkout === "H2H" ? "host-to-host" : a.checkout === "REDIRECT" ? "redirect" : "live"})`);
     if (a.golive === "VERIFYING") notes.push({ key: "VERIFYING", title: "Payment account is still being verified", detail: `Only payments up to ${rupees(a.verifyCap)} are taken until one real payment is confirmed and it is set live.`, fix: { label: "Open Gateway go-live", href: "/gateway-golive" } });

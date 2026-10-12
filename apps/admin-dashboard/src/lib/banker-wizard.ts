@@ -157,7 +157,7 @@ export function wizardCalls(a: WizardAnswers): WizardCall[] {
       const p = a.payatom;
       calls.push({ key: "payatom", label: "Connect PayAtom (P2P: money lands with the banker)", method: "POST",
         path: (id) => `/api/merchants/${id}/payatom`,
-        body: { want: { p2p: true, intent: false }, env: p.env, latitude: p.latitude.trim(), longitude: p.longitude.trim(),
+        body: { env: p.env, latitude: p.latitude.trim(), longitude: p.longitude.trim(),
           p2p: { pid: p.pid.trim(), secret: p.secret.trim(), api_key: p.apiKey.trim(), api_base: p.apiBase.trim() } } });
     }
     if (method) calls.push({ key: "method", label: "Choose its P2P method", method: "PUT",

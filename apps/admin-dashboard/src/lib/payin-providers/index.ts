@@ -13,7 +13,7 @@ import { ismartpayPayin } from "@/lib/payin-providers/ismartpay";
 import { payatomPayin } from "@/lib/payin-providers/payatom";
 import { payuLinksPayin } from "@/lib/payin-providers/payu-links";
 import type { PayinConnector } from "@/lib/payin-providers/types";
-import { gatewayAccountChannel } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayTakesIntent } from "@/lib/pg-catalog";
 
 const CONNECTORS: Record<string, PayinConnector> = {
   RAZORPAY: razorpayPayin,
@@ -52,9 +52,9 @@ export async function gatewayPayinFor(merchantCode: string, label?: string): Pro
 /**
  * As gatewayPayinFor, for a NEW checkout order (/api/pay, test payments): those are Intent orders,
  * so a P2P processor account (the money lands with the banker; lib/pg-catalog
- * gatewayAccountChannel) never takes one.
+ * gatewayAccountChannel) never takes one, nor does a P2P-only gateway's account (PayAtom).
  */
 export async function intentGatewayPayinFor(merchantCode: string): Promise<{ mid: GatewayMid; connector: PayinConnector } | null> {
   const gw = await gatewayPayinFor(merchantCode);
-  return gw && gatewayAccountChannel(gw.mid) === "INTENT" ? gw : null;
+  return gw && gatewayAccountChannel(gw.mid) === "INTENT" && gatewayTakesIntent(gw.mid.gateway) ? gw : null;
 }

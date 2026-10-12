@@ -65,6 +65,11 @@ export interface GatewayService {
    */
   p2p?: boolean;
   /**
+   * Pay-ins: false when Katana uses the gateway for P2P only (PayAtom). Its accounts are saved as
+   * P2P only and an Intent order never uses one, even one saved as Intent before (gatewayTakesIntent).
+   */
+  intent?: false;
+  /**
    * Pay-ins: the smallest live payment the gateway accepts, in rupees (from its docs). A verifying
    * account's small-payment cap is never below it (lib/gateway-golive verifyMaxAmountFor), or no
    * verification payment could be made at all.
@@ -275,7 +280,8 @@ export const GATEWAYS: GatewayDef[] = [
     id: "PAYATOM", name: "PayAtom", logo: null, color: "#5B3FD9",
     payin: {
       // PayAtom refuses smaller payments ("amount should be greater than : 200", live, 2026-10-05).
-      connector: true, p2p: true, minAmount: 201, h2h: true,
+      // P2P only (2026-10-12): Katana does not use PayAtom's Intent (P2C) product.
+      connector: true, p2p: true, intent: false, minAmount: 201, h2h: true,
       env: { TEST: "UAT (enter PayAtom's UAT URL below)", PROD: "Live (enter PayAtom's live URL below)" },
       creds: "PayAtom doesn't use a Client ID / Secret. PayAtom gives the PID, the API key and the secret key at onboarding.",
       note: "UPI on PayAtom's P2P Seamless product: Katana's pay page shows PayAtom's UPI string and PayAtom confirms the payment. Whole rupees only. Before it works, PayAtom must whitelist Katana's server IP (72.61.227.233) and set Katana's payment events URL as the callback URL for this PID; neither is sent per order. PayAtom requires a location with every request: enter the one PayAtom agreed for this account.",
@@ -283,7 +289,6 @@ export const GATEWAYS: GatewayDef[] = [
         {
           name: "channel", label: "Where the customer's money lands", show: true,
           options: [
-            { value: "INTENT", label: "PayAtom's accounts, PayAtom settles to the banker (Intent flow)" },
             { value: "P2P", label: "The banker's own bank accounts (P2P flow)" },
           ],
         },
@@ -338,6 +343,11 @@ export function validateCredFields(svc: GatewayService, input: Record<string, un
 export function gatewayAccountChannel(mid: { gateway: string; extra?: Record<string, string> } | null | undefined): "INTENT" | "P2P" {
   if (!mid) return "INTENT";
   return gatewayDef(mid.gateway)?.payin.p2p && mid.extra?.channel === "P2P" ? "P2P" : "INTENT";
+}
+
+/** Whether an Intent order may use an account of this gateway (false: P2P only, e.g. PayAtom). */
+export function gatewayTakesIntent(gateway: string | null | undefined): boolean {
+  return gatewayDef(gateway ?? "")?.payin.intent !== false;
 }
 
 /** How a gateway account's customer pays: H2H (the order API returns the UPI intent) or REDIRECT. */

@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
-import { gatewayAccountChannel } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayTakesIntent } from "@/lib/pg-catalog";
 import type { P2pMethod } from "@/lib/p2p-method";
 import { bharatpeReadyCodes, getP2pMethods } from "@/lib/p2p-method-store";
 
@@ -58,7 +58,8 @@ export async function flowReadiness(codes: string[]): Promise<Map<string, FlowRe
   for (const [code, ch, gw] of channels) {
     const r = out.get(code);
     if (!r) continue;
-    if (ch === "P2P") p2pAccount.set(code, gw); else r.intent = true;
+    // A P2P-only gateway's Intent account (PayAtom, saved before 2026-10-12) takes no Intent order.
+    if (ch === "P2P") p2pAccount.set(code, gw); else if (gatewayTakesIntent(gw)) r.intent = true;
   }
   for (const [code, r] of out) {
     const method = methods.get(code) ?? null;

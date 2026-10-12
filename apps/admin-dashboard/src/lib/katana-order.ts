@@ -11,7 +11,7 @@ import { getGatewayMid, payinProdId, payuKeySalt } from "@/lib/gateway-creds";
 import { createPayuUpiIntent, PayuIntentError, type PayuIntentClient } from "@/lib/payu-intent";
 import { gatewayPayinFor } from "@/lib/payin-providers";
 import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-providers/types";
-import { gatewayAccountChannel, gatewayDef, gatewayName } from "@/lib/pg-catalog";
+import { gatewayAccountChannel, gatewayDef, gatewayName, gatewayTakesIntent } from "@/lib/pg-catalog";
 import { p2pProcessorAllowed } from "@/lib/p2p-method";
 import { bharatpeReadyCodes, getP2pMethod } from "@/lib/p2p-method-store";
 import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
@@ -406,8 +406,11 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // Only an account of this order's flow. A P2P processor account needs a UPI intent (the customer
   // pays the banker's UPI ID in it); the MID switch only picks for Intent, so a P2P order uses the
   // banker's first account. An Intent order the switch put on a P2P account moves on (below).
+  // A P2P-only gateway's account (PayAtom) never takes an Intent order, even one saved as Intent
+  // before Katana stopped using PayAtom for Intent.
   const accountChannel = anyAccount ? gatewayAccountChannel(anyAccount.mid) : null;
-  const connected = anyAccount && (accountChannel === "P2P" ? p2pProviderAllowed && !!anyAccount.connector.upiIntent : gatewayAllowed)
+  const connected = anyAccount && (accountChannel === "P2P" ? p2pProviderAllowed && !!anyAccount.connector.upiIntent
+    : gatewayAllowed && gatewayTakesIntent(anyAccount.mid.gateway))
     ? anyAccount : null;
   const otherGw = connected?.connector.upiIntent ? connected : null;
   if (livemode && flow === "P2P" && p2pMethod === "PAYATOM" && !(connected && accountChannel === "P2P")) {
