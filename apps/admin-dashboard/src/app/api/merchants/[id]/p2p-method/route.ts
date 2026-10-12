@@ -11,14 +11,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { rows, pgError } from "@/lib/pg";
 import { gateOrResponse } from "@/lib/scope";
-import { inferP2pMethod, P2P_METHODS, p2pSteps } from "@/lib/p2p-method";
+import { inferP2pMethod, P2P_METHODS, p2pSteps, type P2pMethod } from "@/lib/p2p-method";
 import { getP2pApp, getP2pMethod, p2pFacts, p2pMethodHistory, setP2pApp, setP2pMethod } from "@/lib/p2p-method-store";
 import { wormAppend } from "@/lib/worm";
 
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  method: z.enum(["UPI_ID", "BHARATPE", "PAYATOM"]).nullable(),
+  method: z.enum(P2P_METHODS as [P2pMethod, ...P2pMethod[]]).nullable(),
   app: z.enum(["BHARATPE", "GPAY", "PHONEPE", "PAYTM", "OTHER"]).nullable().optional(),
   note: z.string().trim().max(300).optional(),
 });
