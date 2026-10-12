@@ -3,6 +3,7 @@
 // Reads fail soft to "not chosen" (null), which is the old routing: a database without the
 // migration, or a read that fails, never refuses an order.
 
+import { headlessAccounts } from "@/lib/headless-store";
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
 import { gatewayAccountChannel } from "@/lib/pg-catalog";
@@ -75,6 +76,7 @@ export async function p2pFacts(merchantCode: string): Promise<P2pFacts> {
     bharatpeMid: bp ? { label: bp.label, env: bp.env } : null,
     bharatpeAny: mids.length,
     payatomP2p: first && first.gateway === "PAYATOM" && gatewayAccountChannel(first) === "P2P" ? { env: first.env ?? "TEST" } : null,
+    headlessPsps: (await headlessAccounts(merchantCode, false).catch(() => [])).map((a) => a.psp),
     phones: { enrolled: phones[0]?.enrolled ?? 0, online: phones[0]?.online ?? 0 },
   };
 }

@@ -3,6 +3,7 @@
 // fails reads as the unsafe answer (not set / not working), so the check may under-report readiness,
 // never over-report it.
 
+import { headlessAccounts } from "@/lib/headless-store";
 import { getP2pApp, getP2pMethod } from "@/lib/p2p-method-store";
 import { bharatpeKeyHint } from "@/lib/agent-pair";
 import { rows } from "@/lib/pg";
@@ -96,6 +97,7 @@ export async function bankerCheckFacts(merchantId: string): Promise<BankerCheckF
     } : null,
     upiId: c?.vpa?.trim() || extraVpa?.trim() || null,
     p2pMethod: await getP2pMethod(code),
+    headlessPsps: (await headlessAccounts(code, true).catch(() => [])).map((x) => x.psp),
     p2pApp: await getP2pApp(code),
     bharatpeKeyHint: await bharatpeHintFor(code, c?.vpa ?? null),
     onlinePhones: await onlinePhones(code),

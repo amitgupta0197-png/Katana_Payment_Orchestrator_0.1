@@ -196,7 +196,8 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PHONEPE", name: "PhonePe Payment Gateway", logo: "/gateways/phonepe.svg", color: "#5F259F",
     payin: {
-      connector: true, h2h: true,
+      // p2p: an account may be saved for P2P, for quasi-headless (lib/headless).
+      connector: true, h2h: true, p2p: true,
       env: { TEST: "UAT (api-preprod.phonepe.com)", PROD: "Production (api.phonepe.com)" },
       creds: "Enter the Client ID, Client Secret and Client Version from the PhonePe dashboard.",
       note: "For webhooks, add Katana's payment events URL in the PhonePe dashboard with a username and password, and enter the same two here.",
@@ -207,6 +208,15 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "mid_code", label: "Merchant ID", optional: true },
         { name: "webhook_username", label: "Webhook username", optional: true },
         { name: "webhook_password", label: "Webhook password", secret: true, optional: true },
+        {
+          // Quasi-headless (lib/headless): an account saved for P2P is offered on Katana's hosted
+          // checkout to a banker whose P2P method is HEADLESS; blank = Intent, as before.
+          name: "channel", label: "Which flow this account takes", show: true, optional: true,
+          options: [
+            { value: "INTENT", label: "Intent (the usual)" },
+            { value: "P2P", label: "P2P quasi-headless: customers pick this app on Katana's checkout" },
+          ],
+        },
       ],
     },
     payout: null,
@@ -214,7 +224,7 @@ export const GATEWAYS: GatewayDef[] = [
   {
     id: "PAYTM", name: "Paytm Payment Gateway", logo: "/gateways/paytm.svg", color: "#00BAF2",
     payin: {
-      connector: true, h2h: true,
+      connector: true, h2h: true, p2p: true,
       env: { TEST: "Staging (securegw-stage.paytm.in)", PROD: "Production (securegw.paytm.in)" },
       creds: "Paytm pay-ins don't use a Client ID / Secret. Ask Paytm for the MID and Merchant Key.",
       note: "Optionally add Katana's payment events URL as the payment notification URL in the Paytm dashboard.",
@@ -222,6 +232,15 @@ export const GATEWAYS: GatewayDef[] = [
         { name: "key", label: "MID" },
         { name: "salt", label: "Merchant Key", secret: true },
         { name: "website", label: "Website name", placeholder: "WEBSTAGING or DEFAULT" },
+        {
+          // Quasi-headless (lib/headless): an account saved for P2P is offered on Katana's hosted
+          // checkout to a banker whose P2P method is HEADLESS; blank = Intent, as before.
+          name: "channel", label: "Which flow this account takes", show: true, optional: true,
+          options: [
+            { value: "INTENT", label: "Intent (the usual)" },
+            { value: "P2P", label: "P2P quasi-headless: customers pick this app on Katana's checkout" },
+          ],
+        },
       ],
     },
     payout: {

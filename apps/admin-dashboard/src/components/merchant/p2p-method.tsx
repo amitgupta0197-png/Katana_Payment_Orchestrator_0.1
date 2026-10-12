@@ -9,7 +9,7 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Circle, Link2, QrCode, Smartphone } from "lucide-react";
+import { Check, Circle, Link2, QrCode, Smartphone, MonitorSmartphone } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ interface P2pState {
   history: { from_method: string | null; to_method: string | null; changed_by: string | null; note: string | null; changed_at: string }[];
 }
 
-const ICON: Record<P2pMethod, typeof Smartphone> = { UPI_ID: Smartphone, BHARATPE: QrCode, PAYATOM: Link2 };
+const ICON: Record<P2pMethod, typeof Smartphone> = { UPI_ID: Smartphone, BHARATPE: QrCode, PAYATOM: Link2, HEADLESS: MonitorSmartphone };
 const muted = "text-[color:var(--color-text-muted)]";
 
 export function P2pMethodPanel({ merchantId, canEdit, setup }: {
@@ -109,7 +109,7 @@ export function P2pMethodPanel({ merchantId, canEdit, setup }: {
                 : <>Nothing is set up for P2P, so live P2P orders are refused. Choose a method to start.</>}
             </div>
           )}
-          <div role="radiogroup" aria-label="P2P method" className="grid gap-2 md:grid-cols-3">
+          <div role="radiogroup" aria-label="P2P method" className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
             {P2P_METHODS.map((m) => {
               const info = P2P_METHOD_INFO[m];
               const Icon = ICON[m];

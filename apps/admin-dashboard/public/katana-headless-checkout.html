@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Katana Pay — Quasi-headless Checkout</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a30; --mut:#8aa0c6; --txt:#e8eefb; --brand:#4f7cff; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --bd:#26304d; --code:#0e1426; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 22px 80px; }
+  header { border-bottom:1px solid var(--bd); padding-bottom:20px; margin-bottom:28px; }
+  h1 { font-size:30px; margin:0 0 6px; }
+  h2 { font-size:21px; margin:38px 0 12px; padding-top:10px; border-top:1px solid var(--bd); }
+  h3 { font-size:16px; margin:22px 0 8px; color:var(--brand); }
+  .sub { color:var(--mut); }
+  code { background:var(--code); padding:2px 6px; border-radius:5px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; }
+  pre { background:var(--code); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12.5px; line-height:1.55; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bd); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--bd); }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .brand { color:var(--brand); }
+  .note { background:var(--card); border:1px solid var(--bd); border-left:3px solid var(--brand); border-radius:8px; padding:12px 14px; margin:14px 0; }
+  .warnbox { border-left-color:var(--warn); }
+  .badbox { border-left-color:var(--bad); }
+  .toc a { color:var(--brand); text-decoration:none; display:block; padding:2px 0; }
+  .step { display:inline-flex; width:24px; height:24px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:50%; font-size:13px; margin-right:8px; }
+  ul { padding-left:20px; } li { margin:4px 0; }
+  ol { padding-left:22px; } ol li { margin:6px 0; }
+  @media print {
+    body{background:#fff;color:#111} pre,code{background:#f4f6fb;color:#111} .note{background:#f7f9ff} a{color:#1746c8}
+    /* On paper there is nothing to scroll, so a long line must wrap or it is silently
+       cut off — and these samples exist to be copied. */
+    pre{white-space:pre-wrap;word-break:break-word;overflow:visible}
+    /* Keep a code block or callout whole, but let a long table flow across pages —
+       holding one back leaves half a page blank. Rows still stay intact. */
+    pre,.note{break-inside:avoid} tr{break-inside:avoid} h2,h3{break-after:avoid}
+    thead{display:table-header-group}
+    .wrap{max-width:none;padding:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Quasi-headless checkout</h1>
+  <div class="sub">Open Katana's hosted UPI checkout inside your own app, in a WebView with no browser chrome. The customer picks their UPI app, confirms and pays; your app closes the WebView when Katana says the payment is done.</div>
+</header>
+
+<div class="toc">
+  <a href="#flow">1. How it works</a>
+  <a href="#order">2. Create the order</a>
+  <a href="#webview">3. Open the checkout in a WebView</a>
+  <a href="#android">4. Android (Kotlin)</a>
+  <a href="#ios">5. iOS (Swift)</a>
+  <a href="#messages">6. Messages from the checkout</a>
+  <a href="#truth">7. The callback is the truth</a>
+  <a href="#payout">8. Leg 2: pay the receiver</a>
+  <a href="#test">9. Testing</a>
+</div>
+
+<h2 id="flow">1. How it works</h2>
+<ol>
+  <li><b>Your server</b> creates a P2P order (step 2) with your order id as <code>txnid</code>. Katana answers a <code>checkout_url</code>.</li>
+  <li><b>Your app</b> opens <code>checkout_url</code> + <code>?embed=1</code> in a WebView: no address bar, no navigation buttons.</li>
+  <li>The checkout shows who is being paid, the amount and the note, and lets the customer choose the UPI app. The app is pre-selected from the customer's own UPI ID when you send <code>customer_vpa</code>.</li>
+  <li>The customer taps <b>Pay</b>. The checkout opens a UPI app link (<code>upi://</code> or the app's own scheme). <b>Your app hands that link to the operating system</b>; the WebView must never open it in-frame. NPCI requires the UPI app to own the PIN screen.</li>
+  <li>The customer approves in the UPI app and comes back. The checkout shows the result, sends your app a message and, with <code>embed=1</code>, navigates to <code>katana://checkout/done?…</code> so your app closes the WebView.</li>
+  <li>Katana sends your server the signed payment callback. <b>That callback, not the WebView, is the result.</b></li>
+</ol>
+
+<h2 id="order">2. Create the order</h2>
+<p>Use the P2P order API you already use, signed with your Key + Salt exactly as in the main integration guide. Nothing new to sign.</p>
+<pre>POST https://katanapay.co/api/v1/p2p/order
+Content-Type: application/json
+
+{
+  "key": "YOUR_KEY",
+  "txnid": "ORD-10023",            // your order id: the idempotency key, never reuse it
+  "amount": "499",
+  "productinfo": "Wallet top-up",
+  "customer_vpa": "rahul@ybl",     // optional: the payer's UPI ID, pre-selects their app
+  "phone": "9876543210",
+  "hash": "…"                      // as in the main guide
+}</pre>
+<p>Answer (extra field for quasi-headless accounts):</p>
+<pre>{
+  "verified": true,
+  "flow": "P2P",
+  "order": { "id": "3f1c…", "order_id": "ORD-10023", "status": "PENDING", … },
+  "pay_url": "https://katanapay.co/pay/3f1c…",
+  "checkout_url": "https://katanapay.co/pay/3f1c…/checkout"
+}</pre>
+<div class="note">Retrying the same <code>txnid</code> after a timeout returns the same order and the same <code>checkout_url</code>: a network retry never creates a second payment. A malformed <code>customer_vpa</code> is refused with <code>INVALID_VPA</code>.</div>
+
+<h2 id="webview">3. Open the checkout in a WebView</h2>
+<ul>
+  <li>Load <code>checkout_url + "?embed=1"</code>. Allow JavaScript and DOM storage.</li>
+  <li>Hide every browser control: no address bar, no back / forward buttons, no title bar showing the URL.</li>
+  <li>Let <code>https://katanapay.co</code> pages load inside the WebView. Any other <code>https</code> address: open it outside, in the system browser.</li>
+  <li><b>Any other scheme</b> (<code>upi:</code>, <code>phonepe:</code>, <code>paytmmp:</code>, <code>tez:</code>, <code>gpay:</code>, <code>intent:</code>…): cancel the WebView navigation and give the link to the OS. If no app can open it, tell the customer to install a UPI app.</li>
+  <li><code>katana://checkout/done?id=…&amp;order_id=…&amp;status=…</code>: close the WebView and show your own result screen, then confirm with your server (step 7).</li>
+  <li>When your app comes back to the foreground after the UPI app, keep the WebView as it was: the checkout checks the payment again by itself.</li>
+</ul>
+
+<h2 id="android">4. Android (Kotlin)</h2>
+<pre>class KatanaCheckoutActivity : AppCompatActivity() {
+  private lateinit var web: WebView
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    web = WebView(this)
+    setContentView(web)                                   // full screen: no toolbar, no URL
+    web.settings.javaScriptEnabled = true
+    web.settings.domStorageEnabled = true
+    web.addJavascriptInterface(Bridge(), "KatanaShell")   // window.KatanaShell.postMessage(json)
+    web.webViewClient = object : WebViewClient() {
+      override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
+        val uri = req.url
+        return when {
+          uri.scheme == "https" &amp;&amp; uri.host == "katanapay.co" -&gt; false          // stays in the WebView
+          uri.scheme == "katana" -&gt; { finishWith(uri.getQueryParameter("status")); true }
+          uri.scheme == "intent" -&gt; { openOutside(Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)); true }
+          else -&gt; { openOutside(Intent(Intent.ACTION_VIEW, uri)); true }        // upi:, phonepe:, paytmmp:, https elsewhere
+        }
+      }
+    }
+    web.loadUrl(intent.getStringExtra("checkout_url") + "?embed=1")
+  }
+
+  private fun openOutside(i: Intent) {
+    try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    catch (e: ActivityNotFoundException) { Toast.makeText(this, "Install a UPI app to pay", Toast.LENGTH_LONG).show() }
+  }
+
+  private fun finishWith(status: String?) {
+    setResult(RESULT_OK, Intent().putExtra("status", status)); finish()
+  }
+
+  inner class Bridge {
+    @JavascriptInterface fun postMessage(json: String) {
+      // {"type":"katana.checkout.done","status":"SUCCESS",…} — optional: log or react early
+    }
+  }
+
+  override fun onBackPressed() { finishWith("CANCELLED") }    // your app decides; the order stays open until it expires
+}</pre>
+<p>Android 11+ only lets your app see UPI apps it declares. Add to <code>AndroidManifest.xml</code>:</p>
+<pre>&lt;queries&gt;
+  &lt;intent&gt;
+    &lt;action android:name="android.intent.action.VIEW" /&gt;
+    &lt;data android:scheme="upi" /&gt;
+  &lt;/intent&gt;
+  &lt;package android:name="com.phonepe.app" /&gt;
+  &lt;package android:name="net.one97.paytm" /&gt;
+&lt;/queries&gt;</pre>
+
+<h2 id="ios">5. iOS (Swift)</h2>
+<pre>final class KatanaCheckoutViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
+  var checkoutURL: URL!
+  var onDone: ((String?) -&gt; Void)?
+  private var web: WKWebView!
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    let config = WKWebViewConfiguration()
+    config.userContentController.add(self, name: "katana")    // window.webkit.messageHandlers.katana
+    web = WKWebView(frame: view.bounds, configuration: config)
+    web.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    web.navigationDelegate = self
+    view.addSubview(web)                                        // present full screen, no navigation bar
+    var c = URLComponents(url: checkoutURL, resolvingAgainstBaseURL: false)!
+    c.queryItems = (c.queryItems ?? []) + [URLQueryItem(name: "embed", value: "1")]
+    web.load(URLRequest(url: c.url!))
+  }
+
+  func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+               decisionHandler: @escaping (WKNavigationActionPolicy) -&gt; Void) {
+    guard let url = action.request.url else { return decisionHandler(.cancel) }
+    if url.scheme == "https" &amp;&amp; url.host == "katanapay.co" { return decisionHandler(.allow) }
+    decisionHandler(.cancel)
+    if url.scheme == "katana" {
+      let status = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "status" }?.value
+      dismiss(animated: true) { self.onDone?(status) }
+      return
+    }
+    UIApplication.shared.open(url) { opened in                 // upi:, phonepe:, paytmmp:, other https
+      if !opened { /* tell the customer to install a UPI app */ }
+    }
+  }
+
+  func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+    // m.body: ["type": "katana.checkout.done", "status": "SUCCESS", …]
+  }
+}</pre>
+<p>List the UPI schemes your app may open in <code>Info.plist</code>:</p>
+<pre>&lt;key&gt;LSApplicationQueriesSchemes&lt;/key&gt;
+&lt;array&gt;&lt;string&gt;upi&lt;/string&gt;&lt;string&gt;phonepe&lt;/string&gt;&lt;string&gt;paytmmp&lt;/string&gt;&lt;string&gt;tez&lt;/string&gt;&lt;/array&gt;</pre>
+
+<h2 id="messages">6. Messages from the checkout</h2>
+<p>The checkout posts each message on every bridge it finds: <code>window.KatanaShell.postMessage(json)</code> (Android), <code>window.webkit.messageHandlers.katana.postMessage(obj)</code> (iOS), <code>window.ReactNativeWebView.postMessage(json)</code> (React Native) and <code>window.parent.postMessage</code> (an iframe).</p>
+<table>
+  <tr><th>type</th><th>When</th><th>Fields</th></tr>
+  <tr><td><code>katana.checkout.open_app</code></td><td>The customer tapped Pay and a UPI app link is about to open</td><td><code>id</code>, <code>app</code>, <code>url</code>, <code>fallback</code> (a plain <code>upi://</code> link)</td></tr>
+  <tr><td><code>katana.checkout.done</code></td><td>The payment is final</td><td><code>id</code>, <code>order_id</code> (your txnid), <code>status</code>: <code>SUCCESS</code> / <code>FAILED</code> / <code>EXPIRED</code></td></tr>
+</table>
+<p>About 2.5 seconds after <code>katana.checkout.done</code>, a checkout opened with <code>embed=1</code> navigates to <code>katana://checkout/done?id=…&amp;order_id=…&amp;status=…</code>.</p>
+
+<h2 id="truth">7. The callback is the truth</h2>
+<div class="note warnbox">The WebView result and the <code>katana://</code> link are for the screen only: a page or a redirect can be faked on the customer's phone. Credit the customer, or start leg 2, only on Katana's signed payment callback to your server (verify its signature as in the main guide), or on your own server-side status check: <code>GET https://katanapay.co/api/v1/p2p/order/{order id}</code>.</div>
+
+<h2 id="payout">8. Leg 2: pay the receiver</h2>
+<p>When the callback says the payment succeeded, your server pays the receiver with the payout API you already use (<code>POST /api/v1/payouts/create</code>, a beneficiary with a UPI ID, rail <code>UPI</code>). Send the order's <code>txnid</code> as the payout <code>txnid</code> (payout txnids are 1–40 letters, digits, <code>_</code> or <code>-</code>): a repeated txnid returns the first payout instead of making a second, so a retried callback never pays twice.</p>
+
+<h2 id="test">9. Testing</h2>
+<ul>
+  <li>Sign the order with your <b>test</b> Key + Salt. The test checkout shows a TEST badge and two buttons, <b>Simulate success</b> and <b>Simulate failure</b>. No money moves.</li>
+  <li>The simulated result sends your server the same signed callback as a real payment, so you can test step 7 and step 8 end to end.</li>
+  <li>Open <code>checkout_url</code> in a phone's normal browser first, then inside your WebView with <code>embed=1</code>, and check that Pay leaves your app for the UPI app and comes back.</li>
+</ul>
+</div>
+</body>
+</html>

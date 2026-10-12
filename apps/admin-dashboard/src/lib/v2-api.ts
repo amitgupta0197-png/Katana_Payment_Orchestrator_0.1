@@ -57,7 +57,7 @@ export function toV2Error(err: unknown, where: string): V2Error {
       : new V2Error(err.code === "MERCHANT_SUSPENDED" ? "MERCHANT_SUSPENDED" : "MERCHANT_BLOCKED", "this account takes no orders");
   if (err instanceof LiveModeNotActivatedError) return new V2Error("LIVE_MODE_NOT_ACTIVATED", err.message);
   if (err instanceof AccountNotLiveError) return new V2Error("ACCOUNT_NOT_LIVE", err.message);
-  if (err instanceof PayinFlowError) return new V2Error(err.code, safe(err.message));
+  if (err instanceof PayinFlowError) return new V2Error(err.code === "INVALID_VPA" ? "INVALID_REQUEST" : err.code, safe(err.message));
   if (err instanceof PayinSetupError) return new V2Error("SETUP_INCOMPLETE", safe(err.message));
   if (err instanceof PayuIntentError) return new V2Error("PROCESSOR_ERROR", safe(err.message));
   if (err instanceof NoMidAvailableError) return new V2Error("NO_ACCOUNT_AVAILABLE", err.message, { "retry-after": "60" });

@@ -27,6 +27,11 @@ export interface PayStatusPayload {
   payment_page_url: string | null;
   checkout_url: string | null;   // hosted-page orders (PayU Client ID, RubyVault, iSmartPay): Katana's link to the page the customer pays on
   checkout_methods: "ALL" | "UPI" | null;   // what that page takes: UPI only, or cards / net banking / wallets too
+  /**
+   * Quasi-headless (lib/headless): the apps the hosted checkout offers (PHONEPE / PAYTM), the one
+   * pre-selected, the one the customer started in (null before Pay) and the note. Null otherwise.
+   */
+  headless: { psps: string[]; default: string | null; chosen: string | null; note: string | null; link: { app: string; upi: string } | null } | null;
 }
 
 // The payee name (pn) and VPA (pa) are already public inside the UPI intent the
@@ -133,6 +138,13 @@ export async function readOrderStatus(id: string): Promise<PayStatusPayload | nu
     payment_page_url: typeof meta.gateway?.page_url === "string" ? `${publicBase()}/pay/${order.id}/go` : null,
     checkout_url: typeof meta.gateway?.checkout_url === "string" ? `${publicBase()}/pay/${order.id}/go` : null,
     checkout_methods: typeof meta.gateway?.checkout_url === "string" ? (meta.gateway.provider === "PAYU" ? "ALL" : "UPI") : null,
+    headless: meta.headless && typeof meta.headless === "object" ? {
+      psps: Array.isArray(meta.headless.psps) ? meta.headless.psps : [],
+      default: meta.headless.default ?? null,
+      chosen: meta.headless.chosen ?? null,
+      note: typeof meta.headless.note === "string" ? meta.headless.note : null,
+      link: meta.headless.link && typeof meta.headless.link.app === "string" ? meta.headless.link : null,
+    } : null,
   };
 }
 

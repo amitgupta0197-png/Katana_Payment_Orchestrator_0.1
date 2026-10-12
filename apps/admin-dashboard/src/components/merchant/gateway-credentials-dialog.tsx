@@ -46,7 +46,7 @@ export function serviceOf(id: GatewayId, kind: GatewayKind): GatewayService | nu
 }
 
 export function GatewayCredentialsDialog({
-  kind, merchantCode, configured, current, saving, onSave, addAnother = false, needsH2h = false,
+  kind, merchantCode, configured, current, saving, onSave, addAnother = false, needsH2h = false, only, fixed, trigger,
 }: {
   kind: GatewayKind;
   merchantCode: string;
@@ -58,6 +58,12 @@ export function GatewayCredentialsDialog({
   addAnother?: boolean;
   /** The banker needs host-to-host checkout (its own choice, else its merchant's; lib/checkout-mode-store). */
   needsH2h?: boolean;
+  /** Offer only these gateways (quasi-headless: PhonePe and Paytm). */
+  only?: GatewayId[];
+  /** Field values set by the caller and not asked (quasi-headless: channel P2P). */
+  fixed?: Record<string, string>;
+  /** The button's words, in place of Connect / Change / Add another account. */
+  trigger?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [gateway, setGateway] = useState<GatewayId>(current ?? "PAYU");
@@ -68,12 +74,12 @@ export function GatewayCredentialsDialog({
   const [note, setNote] = useState("");
 
   // Start from the saved gateway each time the dialog opens; secrets are never prefilled.
-  useEffect(() => { if (open) { setGateway(current ?? "PAYU"); setEnv("TEST"); setAuth("key_salt"); setFields({}); setOverride(false); setNote(""); } }, [open, current]);
+  useEffect(() => { if (open) { setGateway(current ?? only?.[0] ?? "PAYU"); setEnv("TEST"); setAuth("key_salt"); setFields({ ...fixed }); setOverride(false); setNote(""); } }, [open, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const svc = serviceOf(gateway, kind);
   // The chosen sign-in mode, when the gateway offers more than one (PayU pay-ins).
   const mode = svc?.altAuth?.find((m) => m.id === auth);
-  const shown = svc ? authFields(svc, mode?.id) : [];
+  const shown = svc ? authFields(svc, mode?.id).filter((f) => !(fixed && f.name in fixed)) : [];
   const missing = !svc || shown.some((f) => !f.optional && !(fields[f.name] ?? "").trim());
   const what = kind === "payin" ? "pay-in" : "payout";
   // The chosen account's checkout mode. An account on the P2P flow (PayAtom) pays through a UPI link: H2H.
@@ -88,13 +94,13 @@ export function GatewayCredentialsDialog({
       setOpen(false);
     } catch { /* the caller shows the error */ }
   };
-  const pickAuth = (id: AuthModeId) => { setAuth(id); setFields({}); };
+  const pickAuth = (id: AuthModeId) => { setAuth(id); setFields({ ...fixed }); };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm" variant={configured || addAnother ? "secondary" : "default"}>
-          <KeyRound className="h-4 w-4" /> {addAnother ? "Add another account" : configured ? "Change" : "Connect gateway"}
+          <KeyRound className="h-4 w-4" /> {trigger ?? (addAnother ? "Add another account" : configured ? "Change" : "Connect gateway")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -110,7 +116,7 @@ export function GatewayCredentialsDialog({
           <div className="space-y-1.5">
             <Label id="gateway-pick">Gateway</Label>
             <div role="radiogroup" aria-labelledby="gateway-pick" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {GATEWAYS.map((g) => {
+              {(only ? GATEWAYS.filter((g) => only.includes(g.id)) : GATEWAYS).map((g) => {
                 const s = kind === "payin" ? g.payin : g.payout;
                 const selected = g.id === gateway;
                 const modes = kind === "payin" ? payinModes(g.id) : [];
@@ -124,7 +130,7 @@ export function GatewayCredentialsDialog({
                     role="radio"
                     aria-checked={selected}
                     disabled={!s}
-                    onClick={() => { setGateway(g.id); setAuth("key_salt"); setFields({}); }}
+                    onClick={() => { setGateway(g.id); setAuth("key_salt"); setFields({ ...fixed }); }}
                     className={cn(
                       "flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-brand)]",

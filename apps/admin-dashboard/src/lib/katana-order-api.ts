@@ -194,6 +194,9 @@ async function handle(req: Request, api: KatanaOrderApi, requestId: string, seen
       upi_intent: h2h ? r.upiIntent : null,
       qr_payload: h2h ? r.upiIntent : null,
       pay_url: `${base}/pay/${r.order.id}`,   // hand the customer's browser here
+      // Quasi-headless (P2P method HEADLESS): Katana's hosted checkout, for the merchant app's
+      // WebView with no browser chrome. The customer picks the app and pays there.
+      ...(r.headless ? { checkout_url: `${base}/pay/${r.order.id}/checkout` } : {}),
       ...(hosted ? { gateway_url: `${base}/pay/${r.order.id}/go` } : {}),
     }, WHERE), { status: r.reused ? 200 : 201 });
   } catch (err) {

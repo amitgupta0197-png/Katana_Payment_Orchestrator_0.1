@@ -1,5 +1,6 @@
 // Shared pieces of the pay-in flow admin APIs.
 
+import { headlessAccounts } from "@/lib/headless-store";
 import { z } from "zod";
 import { rows } from "@/lib/pg";
 import { getGatewayMid } from "@/lib/gateway-creds";
@@ -46,6 +47,9 @@ export async function flowReadiness(codes: string[]): Promise<Map<string, FlowRe
     `, [codes]).catch(() => []),
   ]);
   const methods = await getP2pMethods(codes);
+  // Quasi-headless: any live PhonePe / Paytm account of the banker saved for P2P (not only its first).
+  const headless = new Set((await Promise.all([...methods].filter(([, m]) => m === "HEADLESS")
+    .map(async ([c]) => ((await headlessAccounts(c, true).catch(() => [])).length ? c : null)))).filter(Boolean) as string[]);
   const bharatpe = await bharatpeReadyCodes([...methods].filter(([, m]) => m === "BHARATPE").map(([c]) => c));
   const hasVpa = new Set(vpas.map((v) => v.merchant_code));
   // Which flow the first account runs on is inside its sealed credentials (lib/pg-catalog
@@ -67,6 +71,7 @@ export async function flowReadiness(codes: string[]): Promise<Map<string, FlowRe
     r.p2p = method === "UPI_ID" ? hasVpa.has(code)
       : method === "BHARATPE" ? bharatpe.has(code)
       : method === "PAYATOM" ? p2pAccount.get(code) === "PAYATOM"
+      : method === "HEADLESS" ? headless.has(code)
       : hasVpa.has(code) || p2pAccount.has(code);
   }
   return out;

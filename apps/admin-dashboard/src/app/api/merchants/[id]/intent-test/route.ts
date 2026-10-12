@@ -47,7 +47,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       SELECT id::text, order_id, amount::float AS amount, status, COALESCE(rrn,'') AS rrn, created_at, updated_at,
              meta->'staff_test'->>'by' AS by, meta->'gateway'->>'provider' AS gateway, channel_type,
              COALESCE(meta->'mid'->>'name', meta->'mid'->>'vault_label') AS account,
-             (meta->'gateway'->>'checkout_url') IS NOT NULL AS hosted
+             (meta->'gateway'->>'checkout_url') IS NOT NULL AS hosted,
+             (meta->'headless') IS NOT NULL AS headless
         FROM vendor_payin_orders
        WHERE vendor = 'KATANA' AND merchant_id = $1 AND livemode AND meta ? 'staff_test'
        ORDER BY created_at DESC LIMIT 20
@@ -56,7 +57,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       merchant_code: scope.code,
       limits: { max_amount: VERIFY_MAX_AMOUNT, max_orders: VERIFY_MAX_ORDERS },
       // An order paid on the processor's own page: the link goes straight there (/pay/{id}/go).
-      tests: tests.map(({ hosted, ...t }) => ({ ...t, pay_link: `${base()}/pay/${t.id}${hosted ? "/go" : ""}`, terminal: KATANA_TERMINAL.has(t.status) })),
+      // A quasi-headless order is paid on Katana's hosted checkout (lib/headless).
+      tests: tests.map(({ hosted, headless, ...t }) => ({ ...t, pay_link: `${base()}/pay/${t.id}${headless ? "/checkout" : hosted ? "/go" : ""}`, terminal: KATANA_TERMINAL.has(t.status) })),
     });
   } catch (err) { const e = pgError(err); return NextResponse.json(e.body, { status: e.status }); }
 }
@@ -113,7 +115,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       : null;
     return NextResponse.json({
       order: { id: r.order.id, order_id: r.order.order_id, amount: Number(r.order.amount), status: r.order.status, created_at: r.order.created_at },
-      pay_link: `${base()}/pay/${r.order.id}${r.checkoutUrl ? "/go" : ""}`,
+      pay_link: `${base()}/pay/${r.order.id}${r.headless ? "/checkout" : r.checkoutUrl ? "/go" : ""}`,
       gateway: meta.gateway?.provider ?? null,
       account: meta.mid?.name ?? meta.mid?.vault_label ?? null,
       channel: r.order.channel_type,

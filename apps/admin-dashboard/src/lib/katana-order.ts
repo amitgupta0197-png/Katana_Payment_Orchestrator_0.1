@@ -14,6 +14,8 @@ import { payinProdEnabled, payinReturnUrl, payinWebhookUrl } from "@/lib/payin-p
 import { gatewayAccountChannel, gatewayDef, gatewayName, gatewayTakesIntent } from "@/lib/pg-catalog";
 import { p2pProcessorAllowed } from "@/lib/p2p-method";
 import { bharatpeReadyCodes, getP2pMethod } from "@/lib/p2p-method-store";
+import { headlessAccounts } from "@/lib/headless-store";
+import { defaultPsp, HEADLESS_PSPS, validVpa } from "@/lib/headless";
 import { classifyPayinOrder, SANDBOX_CHANNEL_ID } from "@/lib/payin-channel";
 import { decideOrderFlow, type OrderFlow } from "@/lib/payin-flow";
 import { getEffectiveFlow } from "@/lib/payin-flow-store";
@@ -96,7 +98,7 @@ export class PayinSetupError extends Error {
 
 /** The merchant's selected pay-in flow (lib/payin-flow) does not allow this order. */
 export class PayinFlowError extends PayinSetupError {
-  constructor(message: string, readonly code: "FLOW_NOT_SELECTED" | "FLOW_NOT_ENABLED" | "FLOW_NOT_READY") { super(message); }
+  constructor(message: string, readonly code: "FLOW_NOT_SELECTED" | "FLOW_NOT_ENABLED" | "FLOW_NOT_READY" | "INVALID_VPA") { super(message); }
 }
 
 interface PayuGatewayMeta {
@@ -132,6 +134,8 @@ export interface CreateKatanaOrderResult {
   checkoutGateway?: string | null;
   /** The banker the order belongs to (another of the merchant's bankers when the banker switch moved it). */
   banker?: string | null;
+  /** Quasi-headless (P2P method HEADLESS): the customer pays from Katana's hosted checkout (/pay/{id}/checkout). */
+  headless?: boolean;
 }
 
 /** The txnid is already an order on the banker the switch offered this one to (signed by another Key). */
@@ -327,8 +331,21 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // THE BANKER'S ONE P2P METHOD (lib/p2p-method, merchant 0027): with its UPI ID or BharatPe
   // chosen, a P2P order never goes to a P2P processor account; with PayAtom chosen it never falls
   // back to the bare UPI ID (below). Not chosen: routed as before.
-  const p2pMethod = livemode && flow !== "INTENT" ? await getP2pMethod(input.merchantId) : null;
+  const p2pMethod = flow !== "INTENT" && input.merchantId ? await getP2pMethod(input.merchantId) : null;
   const p2pProviderAllowed = flow !== "INTENT" && p2pProcessorAllowed(p2pMethod);
+  // QUASI-HEADLESS (lib/headless): a P2P order on a HEADLESS banker is created with no PSP and no
+  // UPI ID. The customer picks PhonePe or Paytm on Katana's hosted checkout and the Pay tap asks
+  // that PSP (lib/headless-store). A live one needs at least one of the banker's PSP accounts.
+  const headless = flow === "P2P" && p2pMethod === "HEADLESS";
+  const headlessPsps = !headless ? []
+    : livemode ? (await headlessAccounts(input.merchantId!, true)).map((a) => a.psp) : [...HEADLESS_PSPS];
+  // The checkout pre-selects the app from the payer's UPI ID, so a malformed one is refused.
+  if (headless && input.customerVpa?.trim() && !validVpa(input.customerVpa)) {
+    throw new PayinFlowError("customer_vpa is not a valid UPI ID (name@handle)", "INVALID_VPA");
+  }
+  if (headless && livemode && !headlessPsps.length) {
+    throw new PayinFlowError("This account takes P2P payments through its payment app checkout, which is not connected", "FLOW_NOT_READY");
+  }
 
   // Route through the merchant's ACTIVE sub-MID, if one is set. The sub-MID reuses
   // the parent merchant's API key but carries its own identity, so payin volume is
@@ -399,7 +416,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     : null;
   // The other gateways with a UPI intent, on the same terms. CCAvenue has none, so its merchants
   // keep the direct UPI link.
-  let anyAccount = livemode && (gatewayAllowed || p2pProviderAllowed) && !payuMid && input.merchantId
+  let anyAccount = livemode && !headless && (gatewayAllowed || p2pProviderAllowed) && !payuMid && input.merchantId
     ? await gatewayPayinFor(input.merchantId, vaultLabel).catch(() => null)
     : null;
   if (anyAccount && ownGateway && anyAccount.mid.gateway?.toUpperCase() === ownGateway) { anyAccount = null; ownSkipped = true; }
@@ -436,7 +453,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // that can take the order kept as the order's backup UPI IDs. A receiver named on the request
   // is still honoured as it was.
   let upiPick: MidPick | null = null;
-  if (livemode && input.merchantId && !payuMid && !otherGw && !linkGw && flow !== "INTENT"
+  if (livemode && input.merchantId && !payuMid && !otherGw && !linkGw && flow !== "INTENT" && !headless
       && !(input.receiverVpas?.length || input.receiverVpa)) {
     upiPick = await pickMidForOrder(input.merchantId, "UPI", input.amount, input.excludeMids);
     if (upiPick) {
@@ -584,7 +601,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
       throw new PayinFlowError(
         "This account is on the Intent flow but no payment gateway is connected that can take this payment", "FLOW_NOT_READY");
     }
-    if (livemode && !active) {
+    if (livemode && !active && !headless) {
       throw new PayinSetupError(flow === "P2P"
         ? "This account is on the P2P flow but has no settlement UPI ID to be paid on"
         : "This account has no way to take this payment: a payment gateway or a settlement UPI ID must be set up first");
@@ -593,9 +610,22 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     // The vendor txn id carries the routing sub-MID as a prefix so each sub-MID
     // produces a distinct transaction identity (and is greppable per sub-MID).
     vendorTxnId = `${livemode ? "" : "test_"}${subMidCode ? subMidCode.toLowerCase() + "_" : ""}${shortId("txn")}`;
-    const query = buildUpiQuery({ payeeVpa: active || undefined, payeeName, orderId, amount: input.amount, note });
-    deeplinks = buildDeeplinks(query);
-    upiIntent = deeplinks.upi;
+    if (headless) {
+      // The receiver's name, shown on the hosted checkout before any PSP is asked.
+      const who = await rows<{ n: string | null }>("merchant",
+        `SELECT COALESCE(NULLIF(brand_name, ''), legal_name) AS n FROM merchants WHERE merchant_code = $1`, [input.merchantId],
+      ).catch(() => []);
+      merchantName = payeeName || who[0]?.n?.trim() || null;
+    }
+    if (headless && livemode) {
+      // No link yet: the PSP issues it when the customer taps Pay on the hosted checkout.
+      deeplinks = { upi: "", paytm: "", phonepe: "" } as DeepLinks;
+      upiIntent = "";
+    } else {
+      const query = buildUpiQuery({ payeeVpa: (headless ? null : active) || undefined, payeeName, orderId, amount: input.amount, note });
+      deeplinks = buildDeeplinks(query);
+      upiIntent = deeplinks.upi;
+    }
   }
   } catch (err) {
     // The processor account the switch picked could not create the order: createKatanaOrder
@@ -617,8 +647,13 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
     deeplinks, upi_intent: upiIntent, qr_payload: upiIntent,
     ...(appLinks ? { app_links: appLinks } : {}),
     mode,                                  // QR | INTENT
-    // A PayU order is paid to PayU's collection account, not the merchant's UPI ID.
-    receiver_vpa: gateway ? gateway.payee_vpa : livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,
+    // A PayU order is paid to PayU's collection account, not the merchant's UPI ID. A quasi-headless
+    // order learns its receiver when the PSP issues the intent.
+    receiver_vpa: gateway ? gateway.payee_vpa : headless && livemode ? null : livemode ? (active ?? input.receiverVpa ?? null) : SANDBOX_PAYEE_VPA,
+    // Quasi-headless: the PSPs the hosted checkout offers, the one pre-selected from the
+    // customer's UPI ID, and the note it shows. meta.headless also keeps it off the bank-credit
+    // reconciler (lib/txn-reconcile): only its PSP confirms it.
+    ...(headless ? { headless: { psps: headlessPsps, default: defaultPsp(input.customerVpa, headlessPsps), note } } : {}),
     vpa_pool: pool,                        // [{ vpa, status }] for backup failover
     sender_vpa: input.customerVpa ?? null,
     sub_mid_code: subMidCode,
@@ -656,6 +691,8 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
   // as P2P, the Intent API answered `flow: "P2P"` and the Intent status lookup did not find it.
   const payinChannel = !gateway?.provider && flow === "INTENT"
     ? { type: "INTENT" as const, id: SANDBOX_CHANNEL_ID }
+    // Its PSP is stamped as channel_id when the customer taps Pay.
+    : headless ? { type: "P2P" as const, id: "HEADLESS" }
     : classifyPayinOrder(gateway?.provider, otherGw ? accountChannel : null);
 
   const insertSql = `
@@ -682,7 +719,7 @@ async function createKatanaOrderOnce(input: CreateKatanaOrderInput): Promise<Cre
         mid: midPick?.mid ?? null, sql: insertSql, args: insertArgs })
     : await rows<any>("vendorGateway", insertSql, insertArgs);
 
-  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null, banker: input.merchantId ?? null };
+  if (inserted.length) return { order: inserted[0], deeplinks, upiIntent, reused: false, checkoutUrl, checkoutGateway: checkoutUrl ? gateway?.provider ?? null : null, banker: input.merchantId ?? null, headless };
 
   // Two requests for the same ref raced and the other one inserted first.
   const raced = await readExistingOrder(orderId, signerKey, livemode);
@@ -728,6 +765,7 @@ export async function readExistingOrder(orderId: string, signer: string | null, 
     checkoutGateway: (storedMeta.gateway as PayuGatewayMeta | null | undefined)?.checkout_url
       ? (storedMeta.gateway as PayuGatewayMeta).provider : null,
     banker: exBanker ?? null,
+    headless: !!storedMeta.headless,
   };
 }
 

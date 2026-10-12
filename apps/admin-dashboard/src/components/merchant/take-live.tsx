@@ -289,7 +289,7 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
                       <div><span className="font-medium">{it.label}</span><span className="text-[color:var(--color-text-muted)]"> — {it.detail}</span></div>
                       {it.key === "SETUP" && !it.done && (() => {
                         const to = f === "P2P" ? "p2p" : "intent";
-                        const label = f === "P2P" ? (d.p2pMethod === "BHARATPE" ? "Set up BharatPe" : d.p2pMethod === "PAYATOM" ? "Connect PayAtom" : "Set up the UPI ID")
+                        const label = f === "P2P" ? (d.p2pMethod === "BHARATPE" ? "Set up BharatPe" : d.p2pMethod === "PAYATOM" ? "Connect PayAtom" : d.p2pMethod === "HEADLESS" ? "Connect PhonePe / Paytm" : "Set up the UPI ID")
                           : "Connect a payment gateway";
                         return onOpenTab
                           ? <Button size="sm" variant="secondary" onClick={() => onOpenTab(to)}>{label} →</Button>

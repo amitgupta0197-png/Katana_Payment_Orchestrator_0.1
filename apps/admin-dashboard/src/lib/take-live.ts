@@ -80,6 +80,7 @@ const P2P_SETUP: Record<string, { need: string; done: string }> = {
   UPI_ID: { need: "No settlement UPI ID yet.", done: "Paid on its own UPI ID; the UPI ID is set." },
   BHARATPE: { need: "No active BharatPe MID for the settlement UPI ID.", done: "Paid on its BharatPe QR; the MID is active." },
   PAYATOM: { need: "No PayAtom P2P account connected.", done: "Paid through PayAtom; the P2P account is connected." },
+  HEADLESS: { need: "No PhonePe or Paytm PG account saved live for P2P.", done: "Paid on Katana's checkout through the banker's PhonePe / Paytm account." },
 };
 
 /**

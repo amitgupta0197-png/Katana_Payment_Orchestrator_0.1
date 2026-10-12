@@ -6,12 +6,15 @@
 //   BHARATPE  the customer pays the banker's BharatPe QR; the Katana agent reads BharatPe on the
 //             banker's phone and posts each payment signed with the BharatPe MID key
 //   PAYATOM   PayAtom issues the payment (UPI link / QR) and confirms it
+//   HEADLESS  quasi-headless (lib/headless): the customer pays from Katana's hosted checkout in the
+//             merchant app's WebView, through the banker's own PhonePe or Paytm PG account (saved
+//             for P2P); the PSP confirms it (merchant 0029)
 //
 // null = not chosen: the order path routes as it always did (a P2P processor account if the
 // banker's first account is one, else its UPI ID). Only the chosen method takes P2P orders.
 
-export type P2pMethod = "UPI_ID" | "BHARATPE" | "PAYATOM";
-export const P2P_METHODS: P2pMethod[] = ["UPI_ID", "BHARATPE", "PAYATOM"];
+export type P2pMethod = "UPI_ID" | "BHARATPE" | "PAYATOM" | "HEADLESS";
+export const P2P_METHODS: P2pMethod[] = ["UPI_ID", "BHARATPE", "PAYATOM", "HEADLESS"];
 
 export const P2P_METHOD_INFO: Record<P2pMethod, { title: string; line: string; confirmedBy: string; needs: string[] }> = {
   UPI_ID: {
@@ -32,6 +35,12 @@ export const P2P_METHOD_INFO: Record<P2pMethod, { title: string; line: string; c
     confirmedBy: "PayAtom confirms each payment to Katana. No phone needed.",
     needs: ["A PayAtom account set to P2P (money lands with the banker)"],
   },
+  HEADLESS: {
+    title: "Quasi-headless",
+    line: "Scan, pay and verify (quasi-headless): the merchant's app opens Katana's checkout in a WebView; the customer picks PhonePe or Paytm and pays in that app.",
+    confirmedBy: "The banker's own PhonePe / Paytm PG account confirms each payment to Katana. No phone needed.",
+    needs: ["The banker's PhonePe and / or Paytm PG account, saved for P2P"],
+  },
 };
 
 /**
@@ -41,7 +50,7 @@ export const P2P_METHOD_INFO: Record<P2pMethod, { title: string; line: string; c
  * banker, and the processor verifies it (PAYATOM).
  */
 export type P2pKind = "SCAN_PAY" | "QUASI";
-export const P2P_KIND_OF: Record<P2pMethod, P2pKind> = { UPI_ID: "SCAN_PAY", BHARATPE: "SCAN_PAY", PAYATOM: "QUASI" };
+export const P2P_KIND_OF: Record<P2pMethod, P2pKind> = { UPI_ID: "SCAN_PAY", BHARATPE: "SCAN_PAY", PAYATOM: "QUASI", HEADLESS: "QUASI" };
 export const P2P_KIND_INFO: Record<P2pKind, { title: string; line: string }> = {
   SCAN_PAY: { title: "Scan and pay", line: "The customer scans the banker's own QR and pays. A phone with the Katana agent confirms it." },
   QUASI: { title: "Scan, pay and verify", line: "Quasi channel (P2P intent): a processor gives the customer the payment link, the money lands with the banker, and the processor verifies it." },
@@ -79,6 +88,8 @@ export interface P2pFacts {
   bharatpeAny: number;
   /** The banker's first payment account is PayAtom on P2P. */
   payatomP2p: { env: string } | null;
+  /** Quasi-headless: the PSPs (PhonePe / Paytm) with a PG account of this banker saved for P2P. */
+  headlessPsps?: ("PHONEPE" | "PAYTM")[];
   /** Capture phones: enrolled, and online with permissions now. */
   phones: { enrolled: number; online: number };
 }
@@ -96,7 +107,8 @@ export function inferP2pMethod(f: P2pFacts): P2pMethod | null {
 
 /**
  * May a P2P order go to a P2P processor account (PayAtom on P2P)? Only when that is the method,
- * or when nothing was chosen (the old routing).
+ * or when nothing was chosen (the old routing). Quasi-headless picks its PSP account at Pay time
+ * (lib/headless-store), never at order creation.
  */
 export function p2pProcessorAllowed(method: P2pMethod | null): boolean {
   return method === null || method === "PAYATOM";
@@ -114,6 +126,9 @@ export function p2pSteps(method: P2pMethod, f: P2pFacts): { steps: P2pStep[]; re
     : method === "BHARATPE" ? [
       { key: "BHARATPE_MID", label: "BharatPe MID connected", done: !!f.bharatpeMid, required: true },
       { key: "PHONE", label: "Agent phone online", done: f.phones.online > 0, required: false },
+    ]
+    : method === "HEADLESS" ? [
+      { key: "HEADLESS_PSP", label: "PhonePe or Paytm PG account on P2P", done: (f.headlessPsps?.length ?? 0) > 0, required: true },
     ]
     : [
       { key: "PAYATOM", label: "PayAtom account on P2P", done: !!f.payatomP2p, required: true },

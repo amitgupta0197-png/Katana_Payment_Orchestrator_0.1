@@ -16,6 +16,7 @@ export async function openOrdersForLinking(code: string): Promise<LinkableOrder[
      WHERE o.vendor = 'KATANA' AND o.merchant_id = $1 AND o.livemode = true AND o.channel_type = 'P2P'
        AND o.status NOT IN ('SUCCESS', 'SUCCEEDED', 'FAILED')
        AND COALESCE(o.meta->'gateway'->>'provider', '') = ''
+       AND o.meta->'headless' IS NULL   -- quasi-headless: only its PSP confirms it
        AND COALESCE(o.rrn, '') = ''
        AND o.created_at > now() - interval '2 days' - make_interval(mins => $2::int)
        AND NOT EXISTS (SELECT 1 FROM vendor_txn_alerts a WHERE a.matched_order_id = o.id AND a.outcome = 'CONFIRMED')

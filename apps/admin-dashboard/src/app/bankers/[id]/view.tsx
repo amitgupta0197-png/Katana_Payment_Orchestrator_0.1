@@ -28,6 +28,7 @@ import { StarterKitCard } from "@/components/merchant/starter-kit-card";
 import { PayinGatewayCard } from "@/components/merchant/payin-gateway-card";
 import { BankerH2hCard } from "@/components/merchant/banker-h2h-card";
 import { PayatomConnectCard } from "@/components/merchant/payatom-connect";
+import { HeadlessConnectCard } from "@/components/merchant/headless-connect";
 import { BharatPeConnectCard } from "@/components/merchant/bharatpe-connect";
 import { P2pMethodPanel } from "@/components/merchant/p2p-method";
 import { AgentPairCard } from "@/components/merchant/agent-pair";
@@ -774,7 +775,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
           </div>
         </TabsContent>
 
-        {/* P2P: one method at a time (lib/p2p-method) — the banker's UPI ID, BharatPe or PayAtom.
+        {/* P2P: one method at a time (lib/p2p-method) — the banker's UPI ID, BharatPe, PayAtom or quasi-headless.
             Only the chosen method's setup is shown; then the live test and the P2P orders. */}
         <TabsContent value="p2p">
           <FlowFitNote bankerId={merchant.id} flow="P2P" />
@@ -790,6 +791,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
                 <div className="mt-4"><AgentPairCard merchantId={merchant.id} /><MerchantAgentCard merchantId={merchant.id} merchantCode={merchant.merchant_code} /></div>
               </>,
               PAYATOM: <PayatomConnectCard merchantId={merchant.id} />,
+              HEADLESS: <HeadlessConnectCard merchantId={merchant.id} merchantCode={merchant.merchant_code} />,
             }} />
           ) : <>
             <KatanaPayConfigCard merchantId={merchant.id} />

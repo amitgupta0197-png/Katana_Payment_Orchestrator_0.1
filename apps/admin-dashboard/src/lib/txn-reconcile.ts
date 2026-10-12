@@ -548,6 +548,7 @@ export async function ingestTxnAlert(
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'KATANA' AND order_id = $1
          AND COALESCE(meta->'gateway'->>'provider', '') = ''   -- gateway orders (PayU, Razorpay, …) are confirmed by their gateway only
+         AND meta->'headless' IS NULL   -- quasi-headless orders: only their PSP confirms them (lib/headless)
          AND channel_type = 'P2P'   -- a captured credit is P2P evidence; it never settles an INTENT order
          AND ($2::text IS NULL OR merchant_id = $2)
          AND livemode = $3
@@ -570,6 +571,7 @@ export async function ingestTxnAlert(
       SELECT id::text, order_id, status, lower(COALESCE(meta->>'receiver_vpa','')) AS receiver_vpa, created_at, amount::float AS amount
         FROM vendor_payin_orders WHERE vendor = 'KATANA' AND rrn = $1
          AND COALESCE(meta->'gateway'->>'provider', '') = ''
+         AND meta->'headless' IS NULL
          AND channel_type = 'P2P'
          AND ($2::text IS NULL OR merchant_id = $2)
          AND livemode = $3
@@ -593,6 +595,7 @@ export async function ingestTxnAlert(
          -- A PayU order is paid to PayU, never to the merchant's account, so a credit the
          -- merchant's device sees can never be its payment — even at the same amount.
          AND COALESCE(meta->'gateway'->>'provider', '') = ''
+         AND meta->'headless' IS NULL
          AND channel_type = 'P2P'
          AND amount = $1 AND created_at >= now() - ($2 || ' minutes')::interval
          AND ($3::text IS NULL OR merchant_id = $3)
