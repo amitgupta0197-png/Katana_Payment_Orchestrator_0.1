@@ -591,7 +591,13 @@ export default function MerchantDetailView({ id }: { id: string }) {
     { key: "settlement_enabled", header: "Settle?", render: (r) => r.settlement_enabled ? <Badge variant="success">on</Badge> : <Badge variant="default">off</Badge> },
   ];
 
-  const openTab = (t: string) => { setTab(t); window.scrollTo?.({ top: 0 }); };
+  // The tabs sit below the to-do list and Take live, so a button there brings them into view;
+  // scrolling to the top of the page hid the tab it had just opened. Instant: a smooth scroll is
+  // cut short while the new tab renders.
+  const openTab = (t: string) => {
+    setTab(t);
+    requestAnimationFrame(() => document.getElementById("banker-tabs")?.scrollIntoView({ block: "start" }));
+  };
   const stopped = merchant.stage === "REJECTED" || merchant.stage === "TERMINATED";
   const details: [string, React.ReactNode][] = [
     ["Merchant code", <span key="c" className="font-mono">{merchant.merchant_code}</span>],
@@ -685,7 +691,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
       {/* What this banker can do right now; each light opens its tab */}
       <StatusLights merchantId={merchant.id} onOpen={openTab} />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+      <Tabs id="banker-tabs" className="scroll-mt-4" value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <div>
           <TabsList className="h-auto w-full justify-start">
             {tabs.map((t) => (
