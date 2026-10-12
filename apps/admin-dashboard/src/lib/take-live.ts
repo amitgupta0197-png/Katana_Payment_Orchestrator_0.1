@@ -77,9 +77,9 @@ export function flowsInUse(flow: string | null | undefined): LiveFlow[] {
 export const accountFlow = (a: GoLiveAccount): LiveFlow => (a.channel === "P2P" ? "P2P" : "INTENT");
 
 const P2P_SETUP: Record<string, { need: string; done: string }> = {
-  UPI_ID: { need: "No settlement UPI ID yet: add it on the Pays UPI ID tab.", done: "Paid on its own UPI ID; the UPI ID is set." },
-  BHARATPE: { need: "No active BharatPe MID for the settlement UPI ID: set it up on the Pays UPI ID tab.", done: "Paid on its BharatPe QR; the MID is active." },
-  PAYATOM: { need: "No PayAtom P2P account connected: set it up on the Pays UPI ID tab.", done: "Paid through PayAtom; the P2P account is connected." },
+  UPI_ID: { need: "No settlement UPI ID yet.", done: "Paid on its own UPI ID; the UPI ID is set." },
+  BHARATPE: { need: "No active BharatPe MID for the settlement UPI ID.", done: "Paid on its BharatPe QR; the MID is active." },
+  PAYATOM: { need: "No PayAtom P2P account connected.", done: "Paid through PayAtom; the P2P account is connected." },
 };
 
 /**
@@ -93,8 +93,8 @@ export function flowLiveItems(flow: LiveFlow, f: {
   const accounts = f.accounts.filter((a) => accountFlow(a) === flow);
   const verifying = accounts.filter((a) => a.status === "VERIFYING");
   const words = flow === "P2P"
-    ? P2P_SETUP[f.p2pMethod ?? ""] ?? { need: "No P2P method chosen and no settlement UPI ID: choose one on the Pays UPI ID tab.", done: "A settlement UPI ID or P2P processor account is set." }
-    : { need: "No payment gateway connected for Intent: connect one on the Pays via gateway tab.", done: "A payment gateway is connected." };
+    ? P2P_SETUP[f.p2pMethod ?? ""] ?? { need: "No P2P method chosen and no settlement UPI ID.", done: "A settlement UPI ID or P2P processor account is set." }
+    : { need: "No payment gateway connected for Intent.", done: "A payment gateway is connected." };
   const items: LiveItem[] = [
     { key: "SETUP", label: flow === "P2P" ? "UPI ID set up" : "Payment gateway connected", done: f.ready, detail: f.ready ? words.done : words.need },
   ];

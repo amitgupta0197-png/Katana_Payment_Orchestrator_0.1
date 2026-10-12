@@ -35,8 +35,10 @@ const post = async (url: string, body: unknown) => {
   return { ok: r.ok, status: r.status, d };
 };
 
-export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = false }: {
+export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = false, onOpenTab }: {
   merchantId: string; merchantCode: string; flow?: "P2P" | "INTENT"; alwaysShow?: boolean;
+  /** On the banker page: open one of its tabs. Elsewhere (the wizard) the button links to the page. */
+  onOpenTab?: (tab: "p2p" | "intent") => void;
 }) {
   const qc = useQueryClient();
   const key = ["take-live", merchantId];
@@ -285,6 +287,14 @@ export function TakeLivePanel({ merchantId, merchantCode, flow, alwaysShow = fal
                     {mark(it)}
                     <div className="min-w-0 flex-1 space-y-2">
                       <div><span className="font-medium">{it.label}</span><span className="text-[color:var(--color-text-muted)]"> — {it.detail}</span></div>
+                      {it.key === "SETUP" && !it.done && (() => {
+                        const to = f === "P2P" ? "p2p" : "intent";
+                        const label = f === "P2P" ? (d.p2pMethod === "BHARATPE" ? "Set up BharatPe" : d.p2pMethod === "PAYATOM" ? "Connect PayAtom" : "Set up the UPI ID")
+                          : "Connect a payment gateway";
+                        return onOpenTab
+                          ? <Button size="sm" variant="secondary" onClick={() => onOpenTab(to)}>{label} →</Button>
+                          : <Button size="sm" variant="secondary" asChild><a href={`/bankers/${merchantId}?tab=${to}`}>{label} →</a></Button>;
+                      })()}
                       {it.key === "ACCOUNT" && d.accounts.filter((a) => a.status === "VERIFYING" && accountFlow(a) === f).map((a) => (
                         <div key={a.account} className="rounded-xl border border-[color:var(--color-border)] px-3 py-2">
                           <div className="flex flex-wrap items-center justify-between gap-2">

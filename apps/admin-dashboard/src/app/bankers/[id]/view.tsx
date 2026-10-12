@@ -680,7 +680,7 @@ export default function MerchantDetailView({ id }: { id: string }) {
       )}
 
       {/* Take live: onboarding approval, live mode, account go-live and a real payment, in one place. */}
-      {persona === "SUPER_ADMIN" && <TakeLivePanel merchantId={merchant.id} merchantCode={merchant.merchant_code} />}
+      {persona === "SUPER_ADMIN" && <TakeLivePanel merchantId={merchant.id} merchantCode={merchant.merchant_code} onOpenTab={openTab} />}
 
       {/* What this banker can do right now; each light opens its tab */}
       <StatusLights merchantId={merchant.id} onOpen={openTab} />
